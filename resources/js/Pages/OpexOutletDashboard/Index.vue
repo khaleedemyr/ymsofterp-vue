@@ -1,1537 +1,555 @@
 <template>
   <AppLayout>
-    <Head title="Opex Outlet Dashboard" />
-    
-    <div class="max-w-7xl mx-auto py-8 px-4">
-      <!-- Header -->
-      <div class="flex justify-between items-center mb-6">
-        <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-3">
-          <i class="fa-solid fa-chart-line text-blue-500"></i>
-          Opex Outlet Dashboard
-        </h1>
-      </div>
+    <Head title="Outlet Spend Dashboard" />
 
-      <!-- Filters -->
-      <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+    <div class="w-full min-h-screen bg-gradient-to-b from-slate-50 via-white to-sky-50/40 px-4 sm:px-6 lg:px-8 py-6">
+      <!-- Header -->
+      <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 mb-6">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600 mb-1">Outlet Operations</p>
+          <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Revenue & Spend Dashboard</h1>
+          <p class="text-slate-500 mt-1 text-sm">
+            Ringkasan revenue, GSR/RO, RWS, Retail Food & Non Food
+            <span v-if="dashboardData.outlet_name"> · {{ dashboardData.outlet_name }}</span>
+          </p>
+        </div>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 w-full xl:w-auto xl:min-w-[640px]">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Dari</label>
-            <input
-              type="date"
-              v-model="filters.date_from"
-              @change="applyFilters"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
+            <label class="block text-xs font-medium text-slate-500 mb-1">Dari</label>
+            <input v-model="filters.date_from" type="date" class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Sampai</label>
-            <input
-              type="date"
-              v-model="filters.date_to"
-              @change="applyFilters"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
+            <label class="block text-xs font-medium text-slate-500 mb-1">Sampai</label>
+            <input v-model="filters.date_to" type="date" class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500" />
           </div>
-          <div v-if="canSelectOutlet">
-            <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
+          <div>
+            <label class="block text-xs font-medium text-slate-500 mb-1">Outlet</label>
             <select
               v-model="filters.outlet_id"
-              @change="applyFilters"
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              :disabled="!canSelectOutlet"
+              class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500 disabled:bg-slate-100"
             >
-              <option :value="null">Semua Outlet</option>
-              <option v-for="outlet in props.outlets" :key="outlet.id_outlet" :value="outlet.id_outlet">
-                {{ outlet.nama_outlet }}
-              </option>
+              <option v-if="canSelectOutlet" :value="null">Pilih outlet</option>
+              <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
             </select>
-          </div>
-          <div v-else>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
-            <input
-              type="text"
-              :value="currentOutletName"
-              disabled
-              class="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-100 text-gray-600 cursor-not-allowed"
-            />
           </div>
           <div class="flex items-end">
             <button
+              type="button"
+              class="w-full rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold py-2.5 shadow-sm"
               @click="applyFilters"
-              class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors"
             >
-              <i class="fa-solid fa-filter mr-2"></i>
-              Terapkan Filter
+              Tampilkan
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Message jika outlet belum dipilih (untuk admin) -->
-      <div v-if="canSelectOutlet && !filters.outlet_id" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 mb-6 rounded-lg">
-        <div class="flex items-center">
-          <i class="fa-solid fa-exclamation-triangle text-yellow-600 text-xl mr-3"></i>
-          <div>
-            <p class="text-yellow-800 font-semibold">Pilih Outlet Terlebih Dahulu</p>
-            <p class="text-yellow-700 text-sm mt-1">Silakan pilih outlet dari filter di atas untuk menampilkan data dashboard.</p>
-          </div>
-        </div>
+      <div v-if="!filters.outlet_id" class="rounded-3xl border border-dashed border-slate-300 bg-white/70 py-24 text-center text-slate-400">
+        <i class="fa-solid fa-store text-4xl mb-3"></i>
+        <p class="font-medium">Pilih outlet untuk melihat dashboard</p>
       </div>
 
-      <!-- Quick links + Revenue KPI -->
-      <div v-if="!canSelectOutlet || filters.outlet_id" class="mb-6 flex flex-col lg:flex-row gap-4">
-        <div class="flex-1 rounded-xl bg-slate-900 text-white p-4 sm:p-5 shadow-lg">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Opex vs MTD Revenue</div>
-          <div class="mt-2 flex flex-wrap items-end gap-3">
-            <div class="text-2xl font-bold text-violet-300">
-              {{ revenueKpi?.opex_ratio_percent != null ? revenueKpi.opex_ratio_percent.toFixed(2) + '%' : '—' }}
-            </div>
-            <div class="text-sm text-slate-400 pb-0.5">
-              Opex {{ formatCurrency(dashboardData.overview?.total_opex || 0) }}
-              · MTD Rev {{ formatCurrency(revenueKpi?.mtd_revenue || 0) }}
-            </div>
-          </div>
-        </div>
-        <div class="flex flex-wrap gap-2 items-stretch lg:items-center">
-          <a
-            :href="pettyCashLink"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-50 text-sm font-medium shadow-sm"
+      <template v-else>
+        <!-- Hero metrics -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
+          <button
+            type="button"
+            class="lg:col-span-4 rounded-3xl bg-white border border-sky-100 shadow-sm p-6 text-left hover:shadow-md transition"
+            @click="openCard('revenue')"
           >
-            <i class="fa-solid fa-wallet"></i> Petty Cash Report
-          </a>
-          <a
-            href="/report-receiving-sheet"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-amber-200 text-amber-800 hover:bg-amber-50 text-sm font-medium shadow-sm"
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Revenue</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.revenue) }}</p>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.revenue_count || 0 }} orders</p>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center">
+                <i class="fa-solid fa-chart-line text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="lg:col-span-4 rounded-3xl bg-white border border-rose-100 shadow-sm p-6 text-left hover:shadow-md transition"
+            @click="openCard('total_spend')"
           >
-            <i class="fa-solid fa-receipt"></i> Receiving Sheet
-          </a>
-          <a
-            href="/report-daily-outlet-revenue"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-sky-200 text-sky-800 hover:bg-sky-50 text-sm font-medium shadow-sm"
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600">Total Spend</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.total_spend) }}</p>
+                <p class="mt-2 text-sm text-slate-500">
+                  {{ ov.spend_ratio_percent != null ? ov.spend_ratio_percent + '% dari revenue' : '—' }}
+                </p>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                <i class="fa-solid fa-cart-shopping text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <div class="lg:col-span-4 rounded-3xl bg-white border border-emerald-100 shadow-sm p-6">
+            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600">Net (Rev − Spend)</p>
+            <p class="mt-2 text-3xl font-bold" :class="(ov.net || 0) >= 0 ? 'text-emerald-700' : 'text-rose-600'">
+              {{ formatCurrency(ov.net) }}
+            </p>
+            <div class="mt-4 h-2 rounded-full bg-slate-100 overflow-hidden">
+              <div
+                class="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-400 transition-all"
+                :style="{ width: Math.min(100, ov.spend_ratio_percent || 0) + '%' }"
+              ></div>
+            </div>
+            <p class="mt-2 text-xs text-slate-500">Spend ratio bar vs revenue</p>
+          </div>
+        </div>
+
+        <!-- Source cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          <button
+            v-for="card in sourceCards"
+            :key="card.key"
+            type="button"
+            class="rounded-3xl bg-white border shadow-sm p-5 text-left hover:shadow-md transition group"
+            :class="card.border"
+            @click="openCard(card.key)"
           >
-            <i class="fa-solid fa-chart-bar"></i> Daily Revenue
-          </a>
-        </div>
-      </div>
-
-      <!-- Overview Cards -->
-      <div v-if="!canSelectOutlet || filters.outlet_id" class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
-        <div 
-          @click="openCardModal('total_paid')"
-          class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-blue-500 cursor-pointer hover:shadow-xl transition-shadow"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Total Paid PR</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_paid || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.payment_count || 0 }} payments</p>
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-semibold uppercase tracking-wide" :class="card.tone">{{ card.label }}</span>
+              <span class="w-10 h-10 rounded-xl flex items-center justify-center" :class="card.iconBg">
+                <i :class="[card.icon, card.tone]"></i>
+              </span>
             </div>
-            <i class="fa-solid fa-money-bill-wave text-4xl text-blue-300"></i>
+            <p class="text-2xl font-bold text-slate-900">{{ formatCurrency(card.amount) }}</p>
+            <p class="text-xs text-slate-500 mt-1">{{ card.hint }}</p>
+            <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
+            </div>
+          </button>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+          <div class="xl:col-span-2 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <div class="flex items-center justify-between mb-4">
+              <div>
+                <h2 class="text-lg font-bold text-slate-900">Revenue vs Spend Trend</h2>
+                <p class="text-xs text-slate-500">Harian sepanjang periode filter</p>
+              </div>
+            </div>
+            <apexchart type="area" height="360" :options="trendOptions" :series="trendSeries" />
+          </div>
+
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Spend Mix</h2>
+            <p class="text-xs text-slate-500 mb-4">Komposisi pembelanjaan</p>
+            <apexchart type="donut" height="320" :options="mixOptions" :series="mixSeries" />
           </div>
         </div>
 
-        <div 
-          @click="openCardModal('petty_cash')"
-          class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500 cursor-pointer hover:shadow-xl transition-shadow"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Petty Cash</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_petty_cash || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">
-                {{ dashboardData.overview?.petty_cash_count || 0 }} txn · RF+RNF non contra
-              </p>
-            </div>
-            <i class="fa-solid fa-wallet text-4xl text-green-300"></i>
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
+            <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
+            <apexchart type="bar" height="340" :options="stackOptions" :series="stackSeries" />
           </div>
-        </div>
 
-        <div 
-          @click="openCardModal('food')"
-          class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-yellow-500 cursor-pointer hover:shadow-xl transition-shadow"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Food Receive</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_food || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.food_count || 0 }} GR</p>
-            </div>
-            <i class="fa-solid fa-truck-ramp-box text-4xl text-yellow-300"></i>
-          </div>
-        </div>
-
-        <div 
-          @click="openCardModal('unpaid_pr')"
-          class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-orange-500 cursor-pointer hover:shadow-xl transition-shadow"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Unpaid PR</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_unpaid || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.unpaid_pr_count || 0 }} PRs · alert only</p>
-            </div>
-            <i class="fa-solid fa-exclamation-triangle text-4xl text-orange-300"></i>
-          </div>
-        </div>
-
-        <div 
-          @click="openCardModal('total_opex')"
-          class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-purple-500 cursor-pointer hover:shadow-xl transition-shadow"
-        >
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-sm font-medium text-gray-600">Total Opex</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_opex || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">Paid + Petty + Food GR</p>
-            </div>
-            <i class="fa-solid fa-chart-pie text-4xl text-purple-300"></i>
-          </div>
-        </div>
-      </div>
-
-      <!-- Opex Trend Chart -->
-      <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">Opex Trend</h2>
-        <apexchart
-          type="line"
-          height="350"
-          :options="opexTrendOptions"
-          :series="opexTrendSeries"
-        />
-      </div>
-
-      <!-- Opex by Category Chart -->
-      <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">Opex by Category</h2>
-        <apexchart
-          type="bar"
-          height="400"
-          :options="opexByCategoryOptions"
-          :series="opexByCategorySeries"
-        />
-      </div>
-
-      <!-- Food by Category Chart -->
-      <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">Food Receive by Category Item</h2>
-        <apexchart
-          type="bar"
-          height="400"
-          :options="foodByCategoryOptions"
-          :series="foodByCategorySeries"
-        />
-      </div>
-
-      <!-- Food Category Items Modal -->
-      <div v-if="showFoodCategoryModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" @click.self="closeFoodCategoryModal">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-          <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-            <h3 class="text-lg font-bold text-gray-800">
-              Detail Items - {{ selectedFoodCategory?.category_name }}{{ selectedFoodCategory?.sub_category_name ? ' - ' + selectedFoodCategory.sub_category_name : '' }}
-            </h3>
-            <button @click="closeFoodCategoryModal" class="text-gray-400 hover:text-gray-600">
-              <i class="fas fa-times text-xl"></i>
-            </button>
-          </div>
-          
-          <div class="flex-1 overflow-y-auto p-6">
-            <div v-if="loadingFoodCategoryItems" class="text-center py-8">
-              <i class="fas fa-spinner fa-spin text-3xl text-gray-400"></i>
-              <p class="mt-2 text-gray-500">Memuat data...</p>
-            </div>
-            
-            <div v-else-if="foodCategoryItems.length === 0" class="text-center py-8 text-gray-500">
-              Tidak ada data
-            </div>
-            
-            <div v-else class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50">
-                  <tr>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider w-10"></th>
-                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-700 uppercase tracking-wider">Item Name</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Qty</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Unit</th>
-                    <th class="px-4 py-3 text-right text-xs font-medium text-gray-700 uppercase tracking-wider">Total</th>
-                    <th class="px-4 py-3 text-center text-xs font-medium text-gray-700 uppercase tracking-wider">Source</th>
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Daily Snapshot</h2>
+            <p class="text-xs text-slate-500 mb-4">Revenue & total spend per hari</p>
+            <div class="overflow-auto max-h-[340px] rounded-2xl border border-slate-100">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 sticky top-0">
+                  <tr class="text-left text-slate-500">
+                    <th class="px-4 py-3 font-semibold">Tanggal</th>
+                    <th class="px-4 py-3 font-semibold text-right">Revenue</th>
+                    <th class="px-4 py-3 font-semibold text-right">Spend</th>
+                    <th class="px-4 py-3 font-semibold text-right">Net</th>
                   </tr>
                 </thead>
-                <tbody class="bg-white divide-y divide-gray-200">
-                  <template v-for="(item, index) in foodCategoryItems" :key="index">
-                    <tr 
-                      v-if="item.transactions && item.transactions.length > 0"
-                      @click="toggleFoodItem(index)"
-                      class="hover:bg-gray-50 cursor-pointer"
-                    >
-                      <td class="px-4 py-3 text-sm">
-                        <i :class="expandedFoodItems.includes(index) ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
-                      </td>
-                      <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.item_name }}</td>
-                      <td class="px-4 py-3 text-sm text-right text-gray-900">{{ item.total_qty.toLocaleString('id-ID') }}</td>
-                      <td class="px-4 py-3 text-sm text-right text-gray-600">{{ item.unit || '-' }}</td>
-                      <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatCurrency(item.price * item.total_qty) }}</td>
-                      <td class="px-4 py-3 text-sm text-center">
-                        <span v-if="item.source_type === 'floor_order'" class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">Floor Order</span>
-                        <span v-else-if="item.source_type === 'retail_food'" class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">Retail Food</span>
-                        <span v-else-if="item.source_type === 'mixed'" class="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-semibold">Mixed</span>
-                      </td>
-                    </tr>
-                    <tr 
-                      v-else
-                      class="hover:bg-gray-50"
-                    >
-                      <td class="px-4 py-3 text-sm"></td>
-                      <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ item.item_name }}</td>
-                      <td class="px-4 py-3 text-sm text-right text-gray-900">{{ item.total_qty.toLocaleString('id-ID') }}</td>
-                      <td class="px-4 py-3 text-sm text-right text-gray-600">{{ item.unit || '-' }}</td>
-                      <td class="px-4 py-3 text-sm text-right font-semibold text-gray-900">{{ formatCurrency(item.price * item.total_qty) }}</td>
-                      <td class="px-4 py-3 text-sm text-center">
-                        <span v-if="item.source_type === 'floor_order'" class="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-semibold">Floor Order</span>
-                        <span v-else-if="item.source_type === 'retail_food'" class="px-2 py-1 bg-green-100 text-green-800 rounded text-xs font-semibold">Retail Food</span>
-                        <span v-else-if="item.source_type === 'mixed'" class="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-semibold">Mixed</span>
-                      </td>
-                    </tr>
-                    <tr v-if="expandedFoodItems.includes(index) && item.transactions && item.transactions.length > 0">
-                      <td colspan="6" class="px-4 py-3 bg-gray-50">
-                        <div class="overflow-x-auto">
-                          <table class="min-w-full text-xs">
-                            <thead class="bg-gray-100">
-                              <tr>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-left">Floor Order</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-left">DO</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-left">GR</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-left">Creator FO</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-left">Creator DO</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-left">Creator GR</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Qty (Order)</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Price (Order)</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Qty (Received)</th>
-                                <th v-if="item.source_type === 'floor_order' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Subtotal</th>
-                                <th v-if="item.source_type === 'retail_food' || item.source_type === 'mixed'" class="px-2 py-1 text-left">Retail Number</th>
-                                <th v-if="item.source_type === 'retail_food' || item.source_type === 'mixed'" class="px-2 py-1 text-left">Creator</th>
-                                <th v-if="item.source_type === 'retail_food' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Qty</th>
-                                <th v-if="item.source_type === 'retail_food' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Price</th>
-                                <th v-if="item.source_type === 'retail_food' || item.source_type === 'mixed'" class="px-2 py-1 text-right">Subtotal</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              <tr v-for="(transaction, tIndex) in item.transactions" :key="tIndex" class="border-b border-gray-200">
-                                <!-- Floor Order transaction -->
-                                <template v-if="transaction.floor_order_number || transaction.gr_number">
-                                  <td class="px-2 py-1">{{ transaction.floor_order_number || '-' }}</td>
-                                  <td class="px-2 py-1">{{ transaction.do_number || '-' }}</td>
-                                  <td class="px-2 py-1">{{ transaction.gr_number || '-' }}</td>
-                                  <td class="px-2 py-1">
-                                    <div>{{ transaction.fo_creator_name || '-' }}</div>
-                                    <div v-if="transaction.fo_created_at" class="text-xs text-gray-500 mt-1">
-                                      {{ formatDateTime(transaction.fo_created_at) }}
-                                    </div>
-                                  </td>
-                                  <td class="px-2 py-1">
-                                    <div>{{ transaction.do_creator_name || '-' }}</div>
-                                    <div v-if="transaction.do_created_at" class="text-xs text-gray-500 mt-1">
-                                      {{ formatDateTime(transaction.do_created_at) }}
-                                    </div>
-                                  </td>
-                                  <td class="px-2 py-1">
-                                    <div>{{ transaction.gr_creator_name || '-' }}</div>
-                                    <div v-if="transaction.gr_created_at" class="text-xs text-gray-500 mt-1">
-                                      {{ formatDateTime(transaction.gr_created_at) }}
-                                    </div>
-                                  </td>
-                                  <td class="px-2 py-1 text-right">{{ transaction.fo_qty ? transaction.fo_qty.toLocaleString('id-ID') : '-' }}</td>
-                                  <td class="px-2 py-1 text-right">{{ transaction.fo_price ? formatCurrency(transaction.fo_price) : '-' }}</td>
-                                  <td class="px-2 py-1 text-right">{{ transaction.received_qty ? transaction.received_qty.toLocaleString('id-ID') : '-' }}</td>
-                                  <td class="px-2 py-1 text-right font-semibold">{{ transaction.fo_price && transaction.fo_qty ? formatCurrency(transaction.fo_price * transaction.fo_qty) : '-' }}</td>
-                                  <td v-if="item.source_type === 'mixed'" colspan="5" class="px-2 py-1">-</td>
-                                </template>
-                                <!-- Retail Food transaction -->
-                                <template v-else-if="transaction.retail_number">
-                                  <td v-if="item.source_type === 'mixed'" colspan="10" class="px-2 py-1">-</td>
-                                  <td class="px-2 py-1">{{ transaction.retail_number || '-' }}</td>
-                                  <td class="px-2 py-1">
-                                    <div>{{ transaction.rf_creator_name || '-' }}</div>
-                                    <div v-if="transaction.rf_created_at" class="text-xs text-gray-500 mt-1">
-                                      {{ formatDateTime(transaction.rf_created_at) }}
-                                    </div>
-                                  </td>
-                                  <td class="px-2 py-1 text-right">{{ transaction.qty ? transaction.qty.toLocaleString('id-ID') : '-' }}</td>
-                                  <td class="px-2 py-1 text-right">{{ transaction.price ? formatCurrency(transaction.price) : '-' }}</td>
-                                  <td class="px-2 py-1 text-right font-semibold">{{ transaction.price && transaction.qty ? formatCurrency(transaction.price * transaction.qty) : '-' }}</td>
-                                </template>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-                      </td>
-                    </tr>
-                  </template>
-                </tbody>
-                <tfoot class="bg-gray-50">
-                  <tr>
-                    <td class="px-4 py-3 text-sm font-bold text-gray-900" colspan="5">Total</td>
-                    <td class="px-4 py-3 text-sm text-right font-bold text-gray-900">
-                      {{ formatCurrency(foodCategoryItems.reduce((sum, item) => sum + (item.price * item.total_qty), 0)) }}
+                <tbody>
+                  <tr
+                    v-for="row in trendRows"
+                    :key="row.date"
+                    class="border-t border-slate-100 hover:bg-sky-50/40"
+                  >
+                    <td class="px-4 py-2.5 text-slate-700">{{ formatShortDate(row.date) }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-sky-700">{{ formatCurrency(row.revenue) }}</td>
+                    <td class="px-4 py-2.5 text-right font-medium text-rose-600">{{ formatCurrency(row.total_spend) }}</td>
+                    <td class="px-4 py-2.5 text-right font-semibold" :class="(row.revenue - row.total_spend) >= 0 ? 'text-emerald-600' : 'text-rose-600'">
+                      {{ formatCurrency(row.revenue - row.total_spend) }}
                     </td>
-                    <td></td>
                   </tr>
-                </tfoot>
+                  <tr v-if="!trendRows.length">
+                    <td colspan="4" class="px-4 py-10 text-center text-slate-400">Tidak ada data</td>
+                  </tr>
+                </tbody>
               </table>
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- Category Detail Modal -->
-      <div v-if="showCategoryModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" @click.self="closeCategoryModal">
-        <div class="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-          <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <h2 class="text-2xl font-bold text-gray-800">
-              <span v-if="categoryDetail?.category">
-                [{{ categoryDetail.category.division }}] {{ categoryDetail.category.name }}
-              </span>
-            </h2>
-            <button @click="closeCategoryModal" class="text-gray-400 hover:text-gray-600">
-              <i class="fas fa-times text-2xl"></i>
-            </button>
+        <!-- Quick links -->
+        <div class="flex flex-wrap gap-3">
+          <a href="/report-daily-outlet-revenue" class="px-4 py-2 rounded-xl bg-white border border-sky-200 text-sky-700 text-sm font-medium hover:bg-sky-50">Daily Revenue</a>
+          <a href="/report-receiving-sheet" class="px-4 py-2 rounded-xl bg-white border border-amber-200 text-amber-700 text-sm font-medium hover:bg-amber-50">Receiving Sheet</a>
+          <a :href="pettyCashHref" class="px-4 py-2 rounded-xl bg-white border border-emerald-200 text-emerald-700 text-sm font-medium hover:bg-emerald-50">Petty Cash Report</a>
+        </div>
+      </template>
+    </div>
+
+    <!-- Detail Modal -->
+    <div
+      v-if="modalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-[2px]"
+      @click.self="closeModal"
+    >
+      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[88vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-xl font-bold text-slate-900">{{ modalTitle }}</h3>
+            <p class="text-sm text-slate-500">{{ filters.date_from }} s/d {{ filters.date_to }}</p>
           </div>
-          
-          <div class="p-6">
-            <!-- Loading State -->
-            <div v-if="loadingCategoryDetail" class="text-center py-12">
-              <i class="fas fa-spinner fa-spin text-4xl text-blue-500"></i>
-              <p class="mt-4 text-gray-600">Memuat data...</p>
+          <button type="button" class="text-slate-400 hover:text-slate-700" @click="closeModal">
+            <i class="fa-solid fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto flex-1 space-y-5">
+          <div v-if="modalLoading" class="py-16 text-center text-slate-400">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
+          </div>
+          <template v-else>
+            <apexchart type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+
+            <div class="flex flex-wrap gap-2 items-end">
+              <input
+                v-model="modalSearch"
+                type="text"
+                placeholder="Cari nomor / user..."
+                class="flex-1 min-w-[200px] rounded-xl border-slate-200 text-sm"
+                @keyup.enter="fetchModal"
+              />
+              <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="fetchModal">Cari</button>
             </div>
-            
-            <!-- Content -->
-            <div v-else>
-              <!-- Trend Chart -->
-              <div class="mb-6">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Trend</h3>
-                <apexchart
-                  type="line"
-                  height="300"
-                  :options="categoryTrendOptions"
-                  :series="categoryTrendSeries"
-                />
-              </div>
-              
-              <!-- Transactions Table -->
-              <div>
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Transaksi</h3>
-                <div class="overflow-x-auto">
-                  <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                      <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-12"></th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipe</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Number</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Outlet</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                      <template v-for="transaction in categoryDetail?.transactions" :key="transaction.id">
-                        <tr class="hover:bg-gray-50 cursor-pointer" @click="toggleCategoryTransaction(transaction.id)">
-                          <td class="px-4 py-3 text-sm">
-                            <i :class="expandedCategoryTransactions.includes(transaction.id) ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
-                          </td>
-                          <td class="px-4 py-3 text-sm text-gray-600">{{ formatDate(transaction.payment_date) }}</td>
-                          <td class="px-4 py-3 text-sm">
-                            <div class="flex flex-col gap-1">
-                              <span :class="transaction.type === 'payment' ? 'bg-blue-100 text-blue-800' : 'bg-green-100 text-green-800'" class="px-2 py-1 rounded text-xs font-semibold">
-                                {{ transaction.type === 'payment' ? 'Payment' : 'Retail Non Food' }}
-                              </span>
-                              <span v-if="transaction.type === 'floor_order_gr'" :class="transaction.has_payment ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'" class="px-2 py-1 rounded text-xs font-semibold">
-                                {{ transaction.has_payment ? 'Paid' : 'Unpaid' }}
-                              </span>
-                            </div>
-                          </td>
-                          <td class="px-4 py-3 text-sm font-medium text-gray-900">
-                            <div class="whitespace-normal break-words max-w-xs">
-                              {{ transaction.payment_number || transaction.retail_number || transaction.number || '-' }}
-                            </div>
-                          </td>
-                          <td class="px-4 py-3 text-sm text-gray-600">{{ transaction.outlet_name || '-' }}</td>
-                          <td class="px-4 py-3 text-sm text-right font-semibold text-green-600">{{ formatCurrency(transaction.amount) }}</td>
-                        </tr>
-                        <tr v-if="expandedCategoryTransactions.includes(transaction.id) && transaction.items && transaction.items.length > 0">
-                          <td colspan="6" class="px-4 py-3 bg-gray-50">
-                            <div class="overflow-x-auto">
-                              <table class="min-w-full text-xs">
-                                <thead class="bg-gray-100">
-                                  <tr>
-                                    <th class="px-2 py-1 text-left">Item</th>
-                                    <th class="px-2 py-1 text-right">Qty</th>
-                                    <th class="px-2 py-1 text-right">Price</th>
-                                    <th class="px-2 py-1 text-right">Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  <tr v-for="item in transaction.items" :key="item.id" class="border-b border-gray-200">
-                                    <td class="px-2 py-1">{{ item.item_name }}</td>
-                                    <td class="px-2 py-1 text-right">{{ item.qty }} {{ item.unit }}</td>
-                                    <td class="px-2 py-1 text-right">{{ formatCurrency(item.price) }}</td>
-                                    <td class="px-2 py-1 text-right font-semibold">{{ formatCurrency(item.total || item.subtotal) }}</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          </td>
-                        </tr>
-                      </template>
-                      <tr v-if="!categoryDetail?.transactions || categoryDetail.transactions.length === 0">
-                        <td colspan="6" class="px-4 py-8 text-center text-gray-500">Tidak ada data</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+
+            <div class="overflow-x-auto rounded-2xl border border-slate-100">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Tanggal</th>
+                    <th class="px-4 py-3 text-left">Sumber</th>
+                    <th class="px-4 py-3 text-left">Nomor</th>
+                    <th class="px-4 py-3 text-left">User / Supplier</th>
+                    <th class="px-4 py-3 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="txn in modalTxns" :key="txn.id + '-' + (txn.source || '')" class="border-t border-slate-100">
+                    <td class="px-4 py-2.5">{{ formatShortDate(txn.date) }}</td>
+                    <td class="px-4 py-2.5">
+                      <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.source || txn.type }}</span>
+                    </td>
+                    <td class="px-4 py-2.5 font-medium text-slate-800">{{ txn.number || '-' }}</td>
+                    <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || txn.supplier_name || '-' }}</td>
+                    <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(txn.amount) }}</td>
+                  </tr>
+                  <tr v-if="!modalTxns.length">
+                    <td colspan="5" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div v-if="modalPagination.total_pages > 1" class="flex justify-between items-center text-sm">
+              <span class="text-slate-500">{{ modalPagination.total }} transaksi</span>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-lg border disabled:opacity-40"
+                  :disabled="modalPage <= 1"
+                  @click="modalPage--; fetchModal()"
+                >Prev</button>
+                <span class="px-2 py-1.5">{{ modalPage }} / {{ modalPagination.total_pages }}</span>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-lg border disabled:opacity-40"
+                  :disabled="modalPage >= modalPagination.total_pages"
+                  @click="modalPage++; fetchModal()"
+                >Next</button>
               </div>
             </div>
-          </div>
+          </template>
         </div>
       </div>
-
-      <!-- Card Detail Modal -->
-      <div v-if="showCardModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4" @click.self="closeCardModal">
-        <div class="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[90vh] overflow-y-auto">
-          <div class="sticky top-0 bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between z-10">
-            <h2 class="text-2xl font-bold text-gray-800">
-              {{ cardModalTitle }}
-            </h2>
-            <button @click="closeCardModal" class="text-gray-400 hover:text-gray-600">
-              <i class="fas fa-times text-2xl"></i>
-            </button>
-          </div>
-          
-          <div class="p-6">
-            <!-- Loading State -->
-            <div v-if="loadingCardDetail" class="text-center py-12">
-              <i class="fas fa-spinner fa-spin text-4xl text-blue-500"></i>
-              <p class="mt-4 text-gray-600">Memuat data...</p>
-            </div>
-            
-            <!-- Content -->
-            <div v-else>
-              <!-- Trend Chart -->
-              <div class="mb-6">
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Trend</h3>
-                <apexchart
-                  type="line"
-                  height="300"
-                  :options="cardTrendOptions"
-                  :series="cardTrendSeries"
-                />
-              </div>
-              
-              <!-- Filters -->
-              <div class="mb-6 bg-gray-50 rounded-lg p-4">
-                <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
-                  <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Tanggal Dari</label>
-                    <input
-                      type="date"
-                      v-model="cardModalFilters.date_from"
-                      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Tanggal Sampai</label>
-                    <input
-                      type="date"
-                      v-model="cardModalFilters.date_to"
-                      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Search</label>
-                    <input
-                      type="text"
-                      v-model="cardModalFilters.search"
-                      @keyup.enter="applyCardModalFilters"
-                      placeholder="Cari nomor, outlet, creator..."
-                      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-xs font-medium text-gray-700 mb-1">Per Page</label>
-                    <select
-                      v-model="cardModalFilters.per_page"
-                      class="w-full px-2 py-1.5 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option :value="10">10</option>
-                      <option :value="20">20</option>
-                      <option :value="50">50</option>
-                      <option :value="100">100</option>
-                    </select>
-                  </div>
-                  <div class="flex items-end">
-                    <button
-                      @click="applyCardModalFilters"
-                      class="w-full bg-blue-600 text-white px-3 py-1.5 text-sm rounded hover:bg-blue-700 transition-colors"
-                    >
-                      <i class="fa-solid fa-filter mr-1"></i>
-                      Filter
-                    </button>
-                  </div>
-                </div>
-              </div>
-              
-              <!-- Transactions Table -->
-              <div>
-                <h3 class="text-lg font-bold text-gray-800 mb-4">Transaksi</h3>
-                <div class="overflow-x-auto">
-                  <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                      <tr>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase w-12"></th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tanggal</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Tipe</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Number</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Outlet</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Creator</th>
-                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                      <template v-for="transaction in cardDetail?.transactions" :key="transaction.id">
-                        <tr class="hover:bg-gray-50 cursor-pointer" @click="toggleCardTransaction(transaction.id)">
-                          <td class="px-4 py-3 text-sm">
-                            <i :class="expandedCardTransactions.includes(transaction.id) ? 'fas fa-chevron-down' : 'fas fa-chevron-right'"></i>
-                          </td>
-                          <td class="px-4 py-3 text-sm text-gray-600">{{ formatDate(transaction.payment_date || transaction.transaction_date || transaction.created_at) }}</td>
-                          <td class="px-4 py-3 text-sm">
-                            <div class="flex flex-col gap-1">
-                              <span :class="getTransactionTypeClass(transaction.type)" class="px-2 py-1 rounded text-xs font-semibold">
-                                {{ getTransactionTypeLabel(transaction.type) }}
-                              </span>
-                              <span v-if="transaction.type === 'floor_order_gr'" :class="transaction.has_payment ? 'bg-green-100 text-green-800' : 'bg-orange-100 text-orange-800'" class="px-2 py-1 rounded text-xs font-semibold">
-                                {{ transaction.has_payment ? 'Paid' : 'Unpaid' }}
-                              </span>
-                            </div>
-                          </td>
-                          <td class="px-4 py-3 text-sm font-medium text-gray-900">
-                            <div class="whitespace-normal break-words max-w-xs">
-                              {{ transaction.payment_number || transaction.retail_number || transaction.pr_number || transaction.number || '-' }}
-                            </div>
-                          </td>
-                          <td class="px-4 py-3 text-sm text-gray-600">{{ transaction.outlet_name || '-' }}</td>
-                          <td class="px-4 py-3 text-sm text-gray-600" v-if="transaction.type !== 'floor_order_gr' && transaction.type !== 'retail_food'">
-                            <span v-if="transaction.category_division && transaction.category_name">
-                              [{{ transaction.category_division }}] {{ transaction.category_name }}
-                            </span>
-                            <span v-else>-</span>
-                          </td>
-                          <td class="px-4 py-3 text-sm text-gray-600" v-else>-</td>
-                          <td class="px-4 py-3 text-sm text-gray-600">{{ transaction.creator_name || '-' }}</td>
-                          <td class="px-4 py-3 text-sm text-right font-semibold" :class="getAmountClass(transaction.type)">
-                            {{ formatCurrency(transaction.amount || transaction.unpaid_amount || transaction.total_amount) }}
-                          </td>
-                        </tr>
-                        <tr v-if="expandedCardTransactions.includes(transaction.id) && transaction.items && transaction.items.length > 0">
-                          <td colspan="8" class="px-4 py-3 bg-gray-50">
-                            <div class="overflow-x-auto">
-                              <table class="min-w-full text-xs">
-                                <thead class="bg-gray-100">
-                                  <tr>
-                                    <th class="px-2 py-1 text-left">Item</th>
-                                    <th class="px-2 py-1 text-right">Qty</th>
-                                    <th class="px-2 py-1 text-right">Price</th>
-                                    <th class="px-2 py-1 text-right">Total</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  <tr v-for="item in transaction.items" :key="item.id" class="border-b border-gray-200">
-                                    <td class="px-2 py-1">{{ item.item_name }}</td>
-                                    <td class="px-2 py-1 text-right">{{ item.qty }} {{ item.unit }}</td>
-                                    <td class="px-2 py-1 text-right">{{ formatCurrency(item.price) }}</td>
-                                    <td class="px-2 py-1 text-right font-semibold">{{ formatCurrency(item.total || item.subtotal) }}</td>
-                                  </tr>
-                                </tbody>
-                              </table>
-                            </div>
-                          </td>
-                        </tr>
-                      </template>
-                      <tr v-if="!cardDetail?.transactions || cardDetail.transactions.length === 0">
-                        <td colspan="8" class="px-4 py-8 text-center text-gray-500">Tidak ada data</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-                
-                <!-- Pagination -->
-                <div v-if="cardDetail?.pagination && cardDetail.pagination.total_pages > 1" class="mt-4 flex items-center justify-between">
-                  <div class="text-sm text-gray-700">
-                    Menampilkan {{ cardDetail.pagination.from }} - {{ cardDetail.pagination.to }} dari {{ cardDetail.pagination.total }} transaksi
-                  </div>
-                  <div class="flex gap-2">
-                    <button
-                      @click="changeCardModalPage(cardDetail.pagination.current_page - 1)"
-                      :disabled="cardDetail.pagination.current_page === 1"
-                      :class="cardDetail.pagination.current_page === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'"
-                      class="px-3 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                    >
-                      <i class="fas fa-chevron-left"></i>
-                    </button>
-                    <template v-for="page in Math.min(5, cardDetail.pagination.total_pages)" :key="page">
-                      <button
-                        v-if="page === 1 || page === cardDetail.pagination.total_pages || (page >= cardDetail.pagination.current_page - 1 && page <= cardDetail.pagination.current_page + 1)"
-                        @click="changeCardModalPage(page)"
-                        :class="page === cardDetail.pagination.current_page ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-100'"
-                        class="px-3 py-1.5 text-sm border border-gray-300 rounded"
-                      >
-                        {{ page }}
-                      </button>
-                      <span
-                        v-else-if="page === cardDetail.pagination.current_page - 2 || page === cardDetail.pagination.current_page + 2"
-                        class="px-2 py-1.5 text-sm text-gray-500"
-                      >
-                        ...
-                      </span>
-                    </template>
-                    <button
-                      @click="changeCardModalPage(cardDetail.pagination.current_page + 1)"
-                      :disabled="cardDetail.pagination.current_page === cardDetail.pagination.total_pages"
-                      :class="cardDetail.pagination.current_page === cardDetail.pagination.total_pages ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'"
-                      class="px-3 py-1.5 text-sm border border-gray-300 rounded bg-white"
-                    >
-                      <i class="fas fa-chevron-right"></i>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
     </div>
   </AppLayout>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
-import { Head, router, usePage } from '@inertiajs/vue3';
-import AppLayout from '@/Layouts/AppLayout.vue';
-import VueApexCharts from 'vue3-apexcharts';
+import { Head, router, usePage } from '@inertiajs/vue3'
+import AppLayout from '@/Layouts/AppLayout.vue'
+import { computed, ref } from 'vue'
+import axios from 'axios'
 
 const props = defineProps({
-  dashboardData: Object,
-  outlets: Array,
-  filters: Object,
-  userOutletId: Number,
-  selectedOutletId: Number
-});
+  dashboardData: { type: Object, default: () => ({}) },
+  outlets: { type: Array, default: () => [] },
+  userOutletId: { type: [Number, String], default: null },
+  canSelectOutlet: { type: Boolean, default: false },
+  filters: { type: Object, default: () => ({}) },
+})
 
-const page = usePage();
-const user = computed(() => page.props.auth?.user || {});
-
-const canSelectOutlet = computed(() => props.userOutletId === 1);
-
-const currentOutletName = computed(() => {
-  if (props.selectedOutletId && props.outlets && props.outlets.length > 0) {
-    const outlet = props.outlets.find(o => o.id_outlet === props.selectedOutletId);
-    if (outlet) return outlet.nama_outlet;
-  }
-  return user.value?.outlet?.nama_outlet || 'Outlet User';
-});
-
-const dashboardData = computed(() => props.dashboardData || {});
+const page = usePage()
+const outlets = computed(() => props.outlets || [])
+const canSelectOutlet = computed(() => props.canSelectOutlet)
+const dashboardData = computed(() => props.dashboardData || {})
+const ov = computed(() => dashboardData.value.overview || {})
+const trendRows = computed(() => dashboardData.value.trend || [])
 
 const filters = ref({
-  date_from: props.filters?.date_from || new Date().toISOString().split('T')[0],
-  date_to: props.filters?.date_to || new Date().toISOString().split('T')[0],
-  outlet_id: props.filters?.outlet_id || null
-});
+  date_from: props.filters?.date_from || '',
+  date_to: props.filters?.date_to || '',
+  outlet_id: props.filters?.outlet_id || null,
+})
 
-const expandedCategoryTransactions = ref([]);
-const expandedCardTransactions = ref([]);
+const sourceCards = computed(() => [
+  {
+    key: 'gsr_ro',
+    label: 'GSR / RO',
+    amount: ov.value.gsr_ro || 0,
+    hint: `GR ${formatCurrency(ov.value.gsr_ro_gr || 0)} · GSR ${formatCurrency(ov.value.gsr_ro_gsr || 0)}`,
+    icon: 'fa-solid fa-truck',
+    tone: 'text-amber-600',
+    iconBg: 'bg-amber-50',
+    border: 'border-amber-100',
+    bar: 'bg-amber-400',
+  },
+  {
+    key: 'rws',
+    label: 'RWS',
+    amount: ov.value.rws || 0,
+    hint: `${ov.value.rws_count || 0} transaksi warehouse`,
+    icon: 'fa-solid fa-warehouse',
+    tone: 'text-violet-600',
+    iconBg: 'bg-violet-50',
+    border: 'border-violet-100',
+    bar: 'bg-violet-400',
+  },
+  {
+    key: 'retail_food',
+    label: 'Retail Food',
+    amount: ov.value.retail_food || 0,
+    hint: `${ov.value.retail_food_count || 0} transaksi`,
+    icon: 'fa-solid fa-utensils',
+    tone: 'text-emerald-600',
+    iconBg: 'bg-emerald-50',
+    border: 'border-emerald-100',
+    bar: 'bg-emerald-400',
+  },
+  {
+    key: 'retail_non_food',
+    label: 'Retail Non Food',
+    amount: ov.value.retail_non_food || 0,
+    hint: `${ov.value.retail_non_food_count || 0} transaksi`,
+    icon: 'fa-solid fa-bag-shopping',
+    tone: 'text-orange-600',
+    iconBg: 'bg-orange-50',
+    border: 'border-orange-100',
+    bar: 'bg-orange-400',
+  },
+])
 
-const showCategoryModal = ref(false);
-const categoryDetail = ref(null);
-const loadingCategoryDetail = ref(false);
+const pettyCashHref = computed(() => {
+  const p = new URLSearchParams()
+  if (filters.value.outlet_id) p.set('outlet', String(filters.value.outlet_id))
+  if (filters.value.date_from) p.set('date_from', filters.value.date_from)
+  if (filters.value.date_to) p.set('date_to', filters.value.date_to)
+  const q = p.toString()
+  return q ? `/report-petty-cash?${q}` : '/report-petty-cash'
+})
 
-const showCardModal = ref(false);
-const cardDetail = ref(null);
-const loadingCardDetail = ref(false);
-const cardModalType = ref(null);
-const cardModalFilters = ref({
-  date_from: '',
-  date_to: '',
-  search: '',
-  page: 1,
-  per_page: 20
-});
+const spendShare = (amount) => {
+  const total = Number(ov.value.total_spend) || 0
+  if (total <= 0) return 0
+  return Math.min(100, Math.round((Number(amount) / total) * 100))
+}
 
-const foodByCategoryData = ref([]);
-const loadingFoodByCategory = ref(false);
-
-const showFoodCategoryModal = ref(false);
-const foodCategoryItems = ref([]);
-const loadingFoodCategoryItems = ref(false);
-const selectedFoodCategory = ref(null);
-const expandedFoodItems = ref([]);
-
-// Store function reference for chart events
-let openFoodCategoryModalFn = null;
-
-function toggleCategoryTransaction(transactionId) {
-  const index = expandedCategoryTransactions.value.indexOf(transactionId);
-  if (index > -1) {
-    expandedCategoryTransactions.value.splice(index, 1);
-  } else {
-    expandedCategoryTransactions.value.push(transactionId);
+const applyFilters = () => {
+  if (!filters.value.outlet_id) {
+    alert('Pilih outlet terlebih dahulu')
+    return
   }
+  router.get('/opex-outlet-dashboard', filters.value, { preserveState: true, preserveScroll: true })
 }
 
-function toggleCardTransaction(transactionId) {
-  const index = expandedCardTransactions.value.indexOf(transactionId);
-  if (index > -1) {
-    expandedCardTransactions.value.splice(index, 1);
-  } else {
-    expandedCardTransactions.value.push(transactionId);
+const categories = computed(() =>
+  trendRows.value.map((r) =>
+    new Date(r.date + 'T12:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+  )
+)
+
+const moneyTooltip = {
+  y: {
+    formatter: (val) => formatCurrency(val),
+  },
+}
+
+const trendSeries = computed(() => [
+  { name: 'Revenue', data: trendRows.value.map((r) => Number(r.revenue) || 0) },
+  { name: 'Total Spend', data: trendRows.value.map((r) => Number(r.total_spend) || 0) },
+])
+
+const trendOptions = computed(() => ({
+  chart: { toolbar: { show: false }, zoom: { enabled: false }, fontFamily: 'inherit' },
+  colors: ['#0ea5e9', '#f43f5e'],
+  dataLabels: { enabled: false },
+  stroke: { curve: 'smooth', width: 3 },
+  fill: {
+    type: 'gradient',
+    gradient: { shadeIntensity: 1, opacityFrom: 0.35, opacityTo: 0.05, stops: [0, 90, 100] },
+  },
+  xaxis: { categories: categories.value, labels: { rotate: -35, style: { fontSize: '11px' } } },
+  yaxis: { labels: { formatter: (v) => formatCompact(v) } },
+  legend: { position: 'top' },
+  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
+  tooltip: moneyTooltip,
+}))
+
+const mixSeries = computed(() => (dashboardData.value.spend_mix || []).map((i) => Number(i.amount) || 0))
+const mixOptions = computed(() => ({
+  labels: (dashboardData.value.spend_mix || []).map((i) => i.label),
+  colors: ['#f59e0b', '#8b5cf6', '#10b981', '#f97316'],
+  legend: { position: 'bottom' },
+  dataLabels: { enabled: true, formatter: (val) => `${val.toFixed(1)}%` },
+  plotOptions: { pie: { donut: { size: '62%' } } },
+  tooltip: {
+    y: { formatter: (val) => formatCurrency(val) },
+  },
+}))
+
+const stackSeries = computed(() => [
+  { name: 'GSR / RO', data: trendRows.value.map((r) => Number(r.gsr_ro) || 0) },
+  { name: 'RWS', data: trendRows.value.map((r) => Number(r.rws) || 0) },
+  { name: 'Retail Food', data: trendRows.value.map((r) => Number(r.retail_food) || 0) },
+  { name: 'Retail Non Food', data: trendRows.value.map((r) => Number(r.retail_non_food) || 0) },
+])
+
+const stackOptions = computed(() => ({
+  chart: { stacked: true, toolbar: { show: false }, fontFamily: 'inherit' },
+  colors: ['#f59e0b', '#8b5cf6', '#10b981', '#f97316'],
+  plotOptions: { bar: { columnWidth: '55%', borderRadius: 4 } },
+  dataLabels: { enabled: false },
+  xaxis: { categories: categories.value, labels: { rotate: -35, style: { fontSize: '11px' } } },
+  yaxis: { labels: { formatter: (v) => formatCompact(v) } },
+  legend: { position: 'top' },
+  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
+  tooltip: moneyTooltip,
+}))
+
+const modalOpen = ref(false)
+const modalLoading = ref(false)
+const modalType = ref('')
+const modalSearch = ref('')
+const modalPage = ref(1)
+const modalTxns = ref([])
+const modalTrend = ref([])
+const modalPagination = ref({ total: 0, total_pages: 1 })
+
+const modalTitle = computed(() => {
+  const map = {
+    revenue: 'Revenue',
+    gsr_ro: 'GSR / RO',
+    rws: 'RWS',
+    retail_food: 'Retail Food',
+    retail_non_food: 'Retail Non Food',
+    total_spend: 'Total Spend',
   }
+  return map[modalType.value] || 'Detail'
+})
+
+const modalTrendSeries = computed(() => [{ name: modalTitle.value, data: modalTrend.value.map((r) => Number(r.amount) || 0) }])
+const modalTrendOptions = computed(() => ({
+  chart: { toolbar: { show: false }, sparkline: { enabled: false } },
+  colors: ['#0ea5e9'],
+  stroke: { curve: 'smooth', width: 2 },
+  fill: { type: 'gradient', gradient: { opacityFrom: 0.3, opacityTo: 0.05 } },
+  dataLabels: { enabled: false },
+  xaxis: {
+    categories: modalTrend.value.map((r) =>
+      new Date(r.date + 'T12:00:00').toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+    ),
+    labels: { rotate: -30, style: { fontSize: '10px' } },
+  },
+  yaxis: { labels: { formatter: (v) => formatCompact(v) } },
+  tooltip: moneyTooltip,
+}))
+
+const openCard = async (type) => {
+  modalType.value = type
+  modalOpen.value = true
+  modalSearch.value = ''
+  modalPage.value = 1
+  await fetchModal()
 }
 
-function getTransactionTypeClass(type) {
-  if (type === 'payment') return 'bg-blue-100 text-blue-800';
-  if (type === 'retail_non_food') return 'bg-green-100 text-green-800';
-  if (type === 'floor_order_gr' || type === 'retail_food') return 'bg-yellow-100 text-yellow-800';
-  if (type === 'unpaid_pr') return 'bg-orange-100 text-orange-800';
-  return 'bg-gray-100 text-gray-800';
+const closeModal = () => {
+  modalOpen.value = false
+  modalTxns.value = []
+  modalTrend.value = []
 }
 
-function getTransactionTypeLabel(type) {
-  if (type === 'payment') return 'Payment';
-  if (type === 'retail_non_food') return 'Retail Non Food';
-  if (type === 'floor_order_gr') return 'Food Receive GR';
-  if (type === 'retail_food') return 'Retail Food';
-  if (type === 'unpaid_pr') return 'Unpaid PR';
-  return type;
-}
-
-function getAmountClass(type) {
-  if (type === 'unpaid_pr') return 'text-orange-600';
-  return 'text-green-600';
-}
-
-const cardModalTitle = computed(() => {
-  if (cardModalType.value === 'total_paid') return 'Total Paid PR';
-  if (cardModalType.value === 'petty_cash' || cardModalType.value === 'retail_non_food') return 'Petty Cash (RF + RNF)';
-  if (cardModalType.value === 'food' || cardModalType.value === 'food_receive') return 'Food Receive (GR)';
-  if (cardModalType.value === 'unpaid_pr') return 'Unpaid PR';
-  if (cardModalType.value === 'total_opex') return 'Total Opex';
-  return '';
-});
-
-const revenueKpi = computed(() => dashboardData.value?.revenueKpi || null);
-
-const pettyCashLink = computed(() => {
-  const params = new URLSearchParams();
-  if (filters.value.outlet_id) params.set('outlet', String(filters.value.outlet_id));
-  if (filters.value.date_from) params.set('date_from', filters.value.date_from);
-  if (filters.value.date_to) params.set('date_to', filters.value.date_to);
-  const q = params.toString();
-  return q ? `/report-petty-cash?${q}` : '/report-petty-cash';
-});
-
-async function openCardModal(type) {
-  showCardModal.value = true;
-  loadingCardDetail.value = true;
-  cardModalType.value = type;
-  cardDetail.value = null;
-  expandedCardTransactions.value = [];
-  
-  // Initialize modal filters with main filters
-  cardModalFilters.value = {
-    date_from: filters.value.date_from,
-    date_to: filters.value.date_to,
-    search: '',
-    page: 1,
-    per_page: 20
-  };
-  
-  await fetchCardDetail();
-}
-
-async function fetchCardDetail() {
-  if (!cardModalType.value) return;
-  
-  loadingCardDetail.value = true;
+const fetchModal = async () => {
+  modalLoading.value = true
   try {
-    const params = new URLSearchParams({
-      type: cardModalType.value,
-      date_from: filters.value.date_from,
-      date_to: filters.value.date_to,
-      outlet_id: filters.value.outlet_id || '',
-      modal_date_from: cardModalFilters.value.date_from,
-      modal_date_to: cardModalFilters.value.date_to,
-      search: cardModalFilters.value.search,
-      page: cardModalFilters.value.page,
-      per_page: cardModalFilters.value.per_page
-    });
-    
-    const response = await fetch(`/opex-outlet-dashboard/card-detail?${params.toString()}`);
-    const data = await response.json();
-    cardDetail.value = data;
-  } catch (error) {
-    console.error('Error fetching card detail:', error);
-    alert('Terjadi kesalahan saat memuat data');
+    const { data } = await axios.get('/opex-outlet-dashboard/card-detail', {
+      params: {
+        type: modalType.value,
+        outlet_id: filters.value.outlet_id,
+        date_from: filters.value.date_from,
+        date_to: filters.value.date_to,
+        search: modalSearch.value,
+        page: modalPage.value,
+        per_page: 20,
+      },
+    })
+    modalTrend.value = data.trend || []
+    modalTxns.value = data.transactions || []
+    modalPagination.value = data.pagination || { total: 0, total_pages: 1 }
+  } catch (e) {
+    console.error(e)
+    alert('Gagal memuat detail')
   } finally {
-    loadingCardDetail.value = false;
+    modalLoading.value = false
   }
 }
 
-function applyCardModalFilters() {
-  cardModalFilters.value.page = 1; // Reset to first page
-  fetchCardDetail();
-}
-
-function changeCardModalPage(page) {
-  cardModalFilters.value.page = page;
-  fetchCardDetail();
-}
-
-function changeCardModalPerPage() {
-  cardModalFilters.value.page = 1; // Reset to first page
-  fetchCardDetail();
-}
-
-function closeCardModal() {
-  showCardModal.value = false;
-  cardDetail.value = null;
-  cardModalType.value = null;
-  expandedCardTransactions.value = [];
-}
-
-async function openCategoryModal(categoryId) {
-  showCategoryModal.value = true;
-  loadingCategoryDetail.value = true;
-  categoryDetail.value = null;
-  
-  try {
-    const response = await fetch(`/opex-outlet-dashboard/category-detail?category_id=${categoryId}&date_from=${filters.value.date_from}&date_to=${filters.value.date_to}&outlet_id=${filters.value.outlet_id || ''}`);
-    const data = await response.json();
-    categoryDetail.value = data;
-  } catch (error) {
-    console.error('Error fetching category detail:', error);
-    alert('Terjadi kesalahan saat memuat data kategori');
-  } finally {
-    loadingCategoryDetail.value = false;
-  }
-}
-
-function closeCategoryModal() {
-  showCategoryModal.value = false;
-  categoryDetail.value = null;
-  expandedCategoryTransactions.value = [];
-}
-
-async function openFoodCategoryModal(category) {
-  showFoodCategoryModal.value = true;
-  loadingFoodCategoryItems.value = true;
-  foodCategoryItems.value = [];
-  selectedFoodCategory.value = category;
-  
-  try {
-    const params = new URLSearchParams({
-      category_name: category.category_name,
-      date_from: filters.value.date_from,
-      date_to: filters.value.date_to,
-      outlet_id: filters.value.outlet_id || ''
-    });
-    
-    if (category.sub_category_name) {
-      params.append('sub_category_name', category.sub_category_name);
-    }
-    
-    const response = await fetch(`/opex-outlet-dashboard/food-category-items?${params.toString()}`);
-    const data = await response.json();
-    foodCategoryItems.value = data;
-  } catch (error) {
-    console.error('Error fetching food category items:', error);
-    alert('Terjadi kesalahan saat memuat data items');
-  } finally {
-    loadingFoodCategoryItems.value = false;
-  }
-}
-
-function closeFoodCategoryModal() {
-  showFoodCategoryModal.value = false;
-  foodCategoryItems.value = [];
-  selectedFoodCategory.value = null;
-  expandedFoodItems.value = [];
-}
-
-function toggleFoodItem(index) {
-  const itemIndex = expandedFoodItems.value.indexOf(index);
-  if (itemIndex > -1) {
-    expandedFoodItems.value.splice(itemIndex, 1);
-  } else {
-    expandedFoodItems.value.push(index);
-  }
-}
-
-// Assign function reference after definition
-openFoodCategoryModalFn = openFoodCategoryModal;
-
-
-function applyFilters() {
-  router.get('/opex-outlet-dashboard', filters.value, {
-    preserveState: true,
-    replace: true
-  });
-  // Hanya fetch jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
-  if (!canSelectOutlet.value || filters.value.outlet_id) {
-    fetchFoodByCategory();
-  }
-}
-
-async function fetchFoodByCategory() {
-  loadingFoodByCategory.value = true;
-  try {
-    const params = new URLSearchParams({
-      date_from: filters.value.date_from,
-      date_to: filters.value.date_to,
-      outlet_id: filters.value.outlet_id || ''
-    });
-    
-    const response = await fetch(`/opex-outlet-dashboard/food-by-category?${params.toString()}`);
-    const data = await response.json();
-    foodByCategoryData.value = data;
-  } catch (error) {
-    console.error('Error fetching food by category:', error);
-  } finally {
-    loadingFoodByCategory.value = false;
-  }
-}
-
-function formatCurrency(value) {
-  if (!value) return 'Rp 0';
-  return new Intl.NumberFormat('id-ID', {
+const formatCurrency = (value) =>
+  new Intl.NumberFormat('id-ID', {
     style: 'currency',
     currency: 'IDR',
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0
-  }).format(value);
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0)
+
+const formatCompact = (value) => {
+  const n = Number(value) || 0
+  if (Math.abs(n) >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'M'
+  if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'jt'
+  if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(0) + 'rb'
+  return String(Math.round(n))
 }
 
-function formatDate(date) {
-  if (!date) return '-';
-  return new Date(date).toLocaleDateString('id-ID', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
-}
-
-function formatDateTime(date) {
-  if (!date) return '-';
-  return new Date(date).toLocaleString('id-ID', {
-    year: 'numeric',
-    month: '2-digit',
+const formatShortDate = (date) => {
+  if (!date) return '-'
+  const d = String(date).slice(0, 10)
+  return new Date(d + 'T12:00:00').toLocaleDateString('id-ID', {
     day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  });
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
-// Opex Trend Chart
-const opexTrendSeries = computed(() => {
-  if (!dashboardData.value?.opexTrend) return [];
-  
-  return [
-    {
-      name: 'Paid PR',
-      type: 'line',
-      data: dashboardData.value.opexTrend.map(item => parseFloat(item.paid_amount || 0))
-    },
-    {
-      name: 'Petty Cash',
-      type: 'line',
-      data: dashboardData.value.opexTrend.map(item => parseFloat(item.petty_cash_amount ?? item.retail_non_food_amount ?? 0))
-    },
-    {
-      name: 'Food Receive',
-      type: 'line',
-      data: dashboardData.value.opexTrend.map(item => parseFloat(item.food_amount || 0))
-    }
-  ];
-});
-
-const opexTrendOptions = computed(() => ({
-  chart: {
-    type: 'line',
-    height: 350,
-    toolbar: { show: true },
-    animations: { enabled: true, easing: 'easeinout', speed: 800 }
-  },
-  xaxis: {
-    categories: dashboardData.value?.opexTrend?.map(item => {
-      return new Date(item.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-    }) || [],
-    labels: { rotate: -45, style: { fontSize: '12px' } }
-  },
-  yaxis: {
-    title: { text: 'Amount (Rp)' },
-    labels: {
-      formatter: (value) => formatCurrency(value)
-    }
-  },
-  colors: ['#3B82F6', '#10B981', '#EAB308'],
-  stroke: { width: 3, curve: 'smooth' },
-  legend: { position: 'top' },
-  grid: { borderColor: '#e5e7eb' },
-  tooltip: {
-    shared: true,
-    intersect: false,
-    y: {
-      formatter: (value) => formatCurrency(value)
-    }
-  }
-}));
-
-// Opex by Category Chart
-const opexByCategorySeries = computed(() => {
-  if (!dashboardData.value?.opexByCategory || !Array.isArray(dashboardData.value.opexByCategory)) return [];
-  
-  const seriesData = dashboardData.value.opexByCategory.map(cat => {
-    const paid = parseFloat(cat.paid_amount || 0);
-    const retail = parseFloat(cat.retail_non_food_amount || 0);
-    return paid + retail;
-  });
-  
-  return [{
-    name: 'Opex Amount',
-    data: seriesData
-  }];
-});
-
-const opexByCategoryOptions = computed(() => {
-  const categories = dashboardData.value?.opexByCategory || [];
-  const labels = categories.map(cat => {
-    const division = cat.division ? `[${cat.division}] ` : '';
-    const name = cat.category_name || 'Unknown';
-    // Truncate long names for better display
-    const displayName = name.length > 20 ? name.substring(0, 17) + '...' : name;
-    return `${division}${displayName}`;
-  });
-  
-  return {
-    chart: {
-      type: 'bar',
-      height: 400,
-      toolbar: { show: true },
-      events: {
-        dataPointSelection: function(event, chartContext, config) {
-          if (config.dataPointIndex !== undefined && categories.length > config.dataPointIndex) {
-            const category = categories[config.dataPointIndex];
-            // Allow clicking on uncategorized too, but skip modal for now
-            if (category && category.category_id && category.category_id !== 'uncategorized') {
-              openCategoryModal(category.category_id);
-            }
-          }
-        },
-        click: function(event, chartContext, config) {
-          if (config.dataPointIndex !== undefined && categories.length > config.dataPointIndex) {
-            const category = categories[config.dataPointIndex];
-            // Allow clicking on uncategorized too, but skip modal for now
-            if (category && category.category_id && category.category_id !== 'uncategorized') {
-              openCategoryModal(category.category_id);
-            }
-          }
-        }
-      }
-    },
-    plotOptions: {
-      bar: {
-        horizontal: false,
-        columnWidth: '60%',
-        borderRadius: 8,
-        borderRadiusApplication: 'end',
-        dataLabels: {
-          position: 'top'
-        }
-      }
-    },
-    dataLabels: {
-      enabled: true,
-      offsetY: -20,
-      style: {
-        fontSize: '12px',
-        colors: ['#304758'],
-        fontWeight: 600
-      },
-      formatter: function(val) {
-        return formatCurrency(val);
-      }
-    },
-    xaxis: {
-      categories: labels.length > 0 ? labels : [],
-      labels: {
-        rotate: -45,
-        rotateAlways: true,
-        style: {
-          fontSize: '11px'
-        }
-      }
-    },
-    yaxis: {
-      title: {
-        text: 'Amount (Rp)'
-      },
-      labels: {
-        formatter: (value) => formatCurrency(value)
-      }
-    },
-    colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16', '#F97316', '#EC4899', '#14B8A6'],
-    tooltip: {
-      y: {
-        formatter: (value) => formatCurrency(value)
-      }
-    },
-    grid: {
-      borderColor: '#e5e7eb',
-      strokeDashArray: 4
-    },
-    fill: {
-      type: 'solid',
-      opacity: 1
-    },
-    noData: {
-      text: 'Tidak ada data',
-      align: 'center',
-      verticalAlign: 'middle'
-    }
-  };
-});
-
-// Category Trend Chart (for modal)
-const categoryTrendSeries = computed(() => {
-  if (!categoryDetail.value?.trend) return [];
-  
-  return [
-    {
-      name: 'Paid Amount',
-      type: 'line',
-      data: categoryDetail.value.trend.map(item => parseFloat(item.paid_amount || 0))
-    },
-    {
-      name: 'Petty Cash (RNF)',
-      type: 'line',
-      data: categoryDetail.value.trend.map(item => parseFloat(item.retail_non_food_amount || 0))
-    }
-  ];
-});
-
-const categoryTrendOptions = computed(() => ({
-  chart: {
-    type: 'line',
-    height: 300,
-    toolbar: { show: true },
-    animations: { enabled: true, easing: 'easeinout', speed: 800 }
-  },
-  xaxis: {
-    categories: categoryDetail.value?.trend?.map(item => {
-      return new Date(item.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-    }) || [],
-    labels: { rotate: -45, style: { fontSize: '12px' } }
-  },
-  yaxis: {
-    title: { text: 'Amount (Rp)' },
-    labels: {
-      formatter: (value) => formatCurrency(value)
-    }
-  },
-  colors: ['#3B82F6', '#10B981'],
-  stroke: { width: 3, curve: 'smooth' },
-  legend: { position: 'top' },
-  grid: { borderColor: '#e5e7eb' },
-  tooltip: {
-    shared: true,
-    intersect: false,
-    y: {
-      formatter: (value) => formatCurrency(value)
-    }
-  }
-}));
-
-// Card Trend Chart (for card modal)
-const cardTrendSeries = computed(() => {
-  if (!cardDetail.value?.trend) return [];
-  
-  return [
-    {
-      name: cardModalType.value === 'unpaid_pr' ? 'Unpaid Amount' : 'Amount',
-      type: 'line',
-      data: cardDetail.value.trend.map(item => parseFloat(item.amount || item.paid_amount || item.retail_non_food_amount || item.unpaid_amount || 0))
-    }
-  ];
-});
-
-const cardTrendOptions = computed(() => ({
-  chart: {
-    type: 'line',
-    height: 300,
-    toolbar: { show: true },
-    animations: { enabled: true, easing: 'easeinout', speed: 800 }
-  },
-  xaxis: {
-    categories: cardDetail.value?.trend?.map(item => {
-      return new Date(item.date).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' });
-    }) || [],
-    labels: { rotate: -45, style: { fontSize: '12px' } }
-  },
-  yaxis: {
-    title: { text: 'Amount (Rp)' },
-    labels: {
-      formatter: (value) => formatCurrency(value)
-    }
-  },
-  colors: cardModalType.value === 'unpaid_pr' ? ['#F59E0B'] : cardModalType.value === 'retail_non_food' ? ['#10B981'] : ['#3B82F6'],
-  stroke: { width: 3, curve: 'smooth' },
-  legend: { position: 'top' },
-  grid: { borderColor: '#e5e7eb' },
-  tooltip: {
-    shared: true,
-    intersect: false,
-    y: {
-      formatter: (value) => formatCurrency(value)
-    }
-  }
-}));
-
-// Food by Category Chart
-const foodByCategorySeries = computed(() => {
-  if (!foodByCategoryData.value || foodByCategoryData.value.length === 0) return [{ name: 'Amount', data: [] }];
-  
-  const categories = foodByCategoryData.value || [];
-  
-  // Main series for actual amount
-  const series = [{
-    name: 'Food Amount',
-    data: categories.map(cat => parseFloat(cat.total_amount || 0))
-  }];
-  
-  // Add budget series if there are any locked budgets
-  const hasBudget = categories.some(cat => cat.locked_budget !== null && cat.locked_budget > 0);
-  if (hasBudget) {
-    series.push({
-      name: 'Budget',
-      data: categories.map(cat => {
-        if (cat.locked_budget !== null && cat.locked_budget > 0) {
-          return parseFloat(cat.locked_budget);
-        }
-        return null; // null will not show a bar
-      })
-    });
-  }
-  
-  return series;
-});
-
-const foodByCategoryOptions = computed(() => {
-  const categories = foodByCategoryData.value || [];
-  const labels = categories.map(cat => {
-    if (cat.is_sub_category && cat.sub_category_name) {
-      return `${cat.category_name} - ${cat.sub_category_name}`;
-    }
-    return cat.category_name || 'Uncategorized';
-  });
-  
-  // Calculate dynamic height based on number of categories
-  const baseHeight = 400;
-  const itemHeight = 40;
-  const calculatedHeight = Math.max(baseHeight, categories.length * itemHeight);
-  
-  return {
-    chart: {
-      type: 'bar',
-      height: calculatedHeight,
-      toolbar: { show: true },
-      animations: { enabled: true, easing: 'easeinout', speed: 800 },
-      events: {
-        dataPointSelection: (event, chartContext, config) => {
-          const currentCategories = foodByCategoryData.value || [];
-          // Only handle clicks on the first series (actual amount), not budget series
-          if (config.seriesIndex === 0 && config.dataPointIndex !== undefined && currentCategories.length > config.dataPointIndex) {
-            const category = currentCategories[config.dataPointIndex];
-            if (openFoodCategoryModalFn) {
-              openFoodCategoryModalFn(category);
-            }
-          }
-        },
-        click: (event, chartContext, config) => {
-          const currentCategories = foodByCategoryData.value || [];
-          // Only handle clicks on the first series (actual amount), not budget series
-          if (config.seriesIndex === 0 && config.dataPointIndex !== undefined && currentCategories.length > config.dataPointIndex) {
-            const category = currentCategories[config.dataPointIndex];
-            if (openFoodCategoryModalFn) {
-              openFoodCategoryModalFn(category);
-            }
-          }
-        }
-      },
-      stacked: false
-    },
-    dataLabels: {
-      enabled: true,
-      formatter: (val, opts) => {
-        // Only show labels for the first series (actual amount)
-        if (opts.seriesIndex !== 0) return '';
-        
-        const category = categories[opts.dataPointIndex];
-        if (!category) return '';
-        
-        let label = formatCurrency(val);
-        
-        // Add budget indicator if over budget
-        if (category.locked_budget !== null && category.is_over_budget) {
-          label += ' ⚠️';
-        }
-        
-        return label;
-      },
-      offsetX: 10,
-      style: {
-        fontSize: '11px',
-        colors: [
-          // Colors for actual amount series
-          ...categories.map(cat => {
-            // If over budget, use red color for label
-            if (cat.locked_budget !== null && cat.is_over_budget) {
-              return '#EF4444';
-            }
-            return '#304758';
-          }),
-          // Colors for budget series (hidden)
-          ...categories.map(() => 'transparent')
-        ],
-        fontWeight: 600
-      }
-    },
-    xaxis: {
-      categories: labels.length > 0 ? labels : [],
-      labels: {
-        show: true,
-        style: {
-          fontSize: '11px'
-        },
-        maxWidth: 300
-      }
-    },
-    yaxis: {
-      title: {
-        text: 'Amount (Rp)'
-      },
-      labels: {
-        formatter: (value) => {
-          if (typeof value === 'number' && !isNaN(value)) {
-            return formatCurrency(value);
-          }
-          return value;
-        },
-        style: {
-          fontSize: '11px'
-        }
-      }
-    },
-    colors: [
-      // Colors array: [series0_bar0, series1_bar0, series0_bar1, series1_bar1, ...]
-      // For each category, we have 2 bars: Food Amount (series 0) and Budget (series 1)
-      ...categories.flatMap(cat => [
-        // Food Amount color (series 0)
-        cat.locked_budget !== null && cat.is_over_budget ? '#EF4444' : '#10B981',
-        // Budget color (series 1) - always blue
-        '#3B82F6'
-      ])
-    ],
-    fill: {
-      type: 'solid',
-      opacity: [1, 0.6] // Full opacity for actual amount, 60% for budget marker (more visible)
-    },
-    plotOptions: {
-      bar: {
-        horizontal: true,
-        barHeight: ['70%', '8%'], // 70% for actual amount, 8% for budget marker (thicker for visibility)
-        borderRadius: 4,
-        dataLabels: {
-          position: 'right'
-        }
-      }
-    },
-    tooltip: {
-      y: {
-        formatter: (value, { seriesIndex, dataPointIndex }) => {
-          const category = categories[dataPointIndex];
-          let tooltip = formatCurrency(value);
-          
-          // Add budget information if available
-          if (category && category.locked_budget !== null) {
-            const budget = formatCurrency(category.locked_budget);
-            const percentage = ((value / category.locked_budget) * 100).toFixed(1);
-            const status = category.is_over_budget ? '⚠️ OVER BUDGET' : '✓ OK';
-            tooltip += `<br/><br/><strong>Budget:</strong> ${budget}`;
-            tooltip += `<br/><strong>Usage:</strong> ${percentage}%`;
-            tooltip += `<br/><strong>Status:</strong> ${status}`;
-          }
-          
-          return tooltip;
-        }
-      }
-    },
-    grid: {
-      borderColor: '#e5e7eb',
-      strokeDashArray: 4,
-      xaxis: {
-        lines: {
-          show: true
-        }
-      },
-      yaxis: {
-        lines: {
-          show: false
-        }
-      }
-    },
-    legend: {
-      show: true,
-      position: 'top',
-      markers: {
-        width: 12,
-        height: 12,
-        radius: 2
-      }
-    },
-    noData: {
-      text: 'Tidak ada data',
-      align: 'center',
-      verticalAlign: 'middle'
-    }
-  };
-});
-
-// Fetch food by category on mount and when filters change - hanya jika outlet sudah dipilih
-onMounted(() => {
-  // Hanya fetch jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
-  if (!canSelectOutlet.value || filters.value.outlet_id) {
-    fetchFoodByCategory();
-  }
-});
-
-watch([() => filters.value.date_from, () => filters.value.date_to, () => filters.value.outlet_id], () => {
-  // Hanya fetch jika outlet sudah dipilih (untuk admin) atau sudah ada outlet (untuk non-admin)
-  if (!canSelectOutlet.value || filters.value.outlet_id) {
-    fetchFoodByCategory();
-  }
-});
-
+void page
 </script>
-
-<style scoped>
-/* Custom styles */
-</style>
-
