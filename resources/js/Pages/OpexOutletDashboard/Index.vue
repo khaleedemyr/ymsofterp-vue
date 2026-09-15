@@ -59,7 +59,8 @@
               <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">RO Forecast</p>
               <h2 class="text-xl font-bold text-slate-900 mt-0.5">Budget vs Purchase</h2>
               <p class="text-xs text-slate-500 mt-1">
-                Forecast periode filter · F&amp;B 40% · Service 5%
+                Full month {{ roForecast?.period_from || '—' }} s/d {{ roForecast?.period_to || '—' }}
+                · F&amp;B 40% · Service 5% (bukan MTD)
               </p>
             </div>
             <a
@@ -78,7 +79,7 @@
             <div class="xl:col-span-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
               <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Forecast</p>
               <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(roForecast.forecast) }}</p>
-              <p class="mt-1 text-xs text-slate-500">Total forecast revenue periode</p>
+              <p class="mt-1 text-xs text-slate-500">Total forecast revenue 1 bulan penuh</p>
             </div>
 
             <div class="xl:col-span-4 rounded-2xl border border-teal-100 bg-teal-50/40 p-4">

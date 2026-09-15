@@ -80,13 +80,16 @@ class OpexOutletDashboardService
     /**
      * Ringkas kolom RO Forecast (Floor Order vs Forecast):
      * Forecast, F&B Purchase (budget 40%), Service Purchase (budget 5%), sisa budget.
+     * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
      *
      * @return array<string, mixed>
      */
     public function buildRoForecastSummary(int $outletId, string $dateFrom, string $dateTo): array
     {
-        $forecastTotal = $this->sumForecastRevenue($outletId, $dateFrom, $dateTo);
-        $purchased = $this->sumRoPurchasedByBucket($outletId, $dateFrom, $dateTo);
+        [$monthFrom, $monthTo] = $this->fullMonthBounds($dateFrom, $dateTo);
+
+        $forecastTotal = $this->sumForecastRevenue($outletId, $monthFrom, $monthTo);
+        $purchased = $this->sumRoPurchasedByBucket($outletId, $monthFrom, $monthTo);
 
         $fbBudget = round($forecastTotal * self::FB_BUDGET_RATIO, 2);
         $svcBudget = round($forecastTotal * self::SERVICE_BUDGET_RATIO, 2);
@@ -99,7 +102,10 @@ class OpexOutletDashboardService
         $svcPct = $svcBudget > 0 ? round(($svcPurchased / $svcBudget) * 100, 1) : null;
 
         return [
-            'has_forecast' => $forecastTotal > 0 || $this->hasForecastHeaderForRange($outletId, $dateFrom, $dateTo),
+            'has_forecast' => $forecastTotal > 0 || $this->hasForecastHeaderForRange($outletId, $monthFrom, $monthTo),
+            'period_from' => $monthFrom,
+            'period_to' => $monthTo,
+            'is_full_month' => true,
             'forecast' => $forecastTotal,
             'fb' => [
                 'budget_ratio_pct' => (int) round(self::FB_BUDGET_RATIO * 100),
@@ -117,6 +123,19 @@ class OpexOutletDashboardService
                 'variance' => round($svcPurchased - $svcBudget, 2),
                 'pct' => $svcPct,
             ],
+        ];
+    }
+
+    /**
+     * Expand filter dates to full calendar month(s): startOfMonth(from) .. endOfMonth(to).
+     *
+     * @return array{0: string, 1: string}
+     */
+    private function fullMonthBounds(string $dateFrom, string $dateTo): array
+    {
+        return [
+            Carbon::parse($dateFrom)->startOfMonth()->format('Y-m-d'),
+            Carbon::parse($dateTo)->endOfMonth()->format('Y-m-d'),
         ];
     }
 
