@@ -80,7 +80,7 @@
       </div>
 
       <!-- Report Table -->
-      <div class="overflow-x-auto">
+      <div v-if="report.length > 0" class="overflow-x-auto mb-8">
         <table class="min-w-full rounded-2xl overflow-hidden shadow-lg text-sm">
           <thead>
             <tr class="font-bold">
@@ -162,8 +162,43 @@
                 </span>
               </td>
             </tr>
+
+            <!-- Grand Total -->
+            <tr class="border-t-2 border-slate-400 font-bold">
+              <td class="px-4 py-3 bg-slate-700 text-white" colspan="2">GRAND TOTAL</td>
+              <td class="px-4 py-3 bg-emerald-700 text-white text-right">{{ formatCurrency(grandTotal.omzet) }}</td>
+              <td
+                v-for="wh in warehouseColumns"
+                :key="'gt-wh-'+wh.key"
+                class="px-4 py-3 bg-indigo-700 text-white text-right"
+              >
+                {{ formatCurrency(grandTotal.warehouses[wh.key] || 0) }}
+              </td>
+              <td
+                v-for="sp in suppliers"
+                :key="'gt-sp-'+sp.id"
+                class="px-4 py-3 bg-amber-700 text-white text-right"
+              >
+                {{ formatCurrency(grandTotal.suppliers[sp.id] || 0) }}
+              </td>
+              <td class="px-4 py-3 bg-rose-700 text-white text-right">{{ formatCurrency(grandTotal.cost) }}</td>
+              <td class="px-4 py-3 bg-violet-700 text-white text-right">
+                <span class="font-bold px-2 py-1 rounded text-sm bg-white/20">
+                  {{ grandTotal.avg_persentase_cost.toFixed(2) }}%
+                </span>
+              </td>
+            </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Chart -->
+      <div v-if="report.length > 0" class="rounded-2xl border border-slate-200 bg-white p-6 shadow-lg mb-4">
+        <div class="mb-4">
+          <h3 class="text-lg font-bold text-slate-800">Omzet vs Cost Trend</h3>
+          <p class="text-sm text-slate-500">Perbandingan harian omzet, cost, dan % cost</p>
+        </div>
+        <VueApexCharts type="line" height="380" :options="chartOptions" :series="chartSeries" />
       </div>
 
       <div v-if="report.length === 0" class="text-center py-12">
@@ -266,6 +301,7 @@ defineOptions({ layout: AppLayout })
 import { ref, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
 import axios from 'axios'
+import VueApexCharts from 'vue3-apexcharts'
 
 const props = defineProps({
   report: {
@@ -320,6 +356,122 @@ const summary = computed(() => {
     avg_persentase_cost
   }
 })
+
+const grandTotal = computed(() => {
+  const warehouses = {}
+  props.warehouseColumns.forEach((wh) => {
+    warehouses[wh.key] = props.report.reduce((sum, row) => sum + (Number(row[wh.key]) || 0), 0)
+  })
+  const suppliers = {}
+  props.suppliers.forEach((sp) => {
+    suppliers[sp.id] = props.report.reduce((sum, row) => sum + (Number(row['supplier_' + sp.id]) || 0), 0)
+  })
+  return {
+    omzet: summary.value.total_omzet,
+    cost: summary.value.total_cost,
+    avg_persentase_cost: summary.value.avg_persentase_cost,
+    warehouses,
+    suppliers,
+  }
+})
+
+const chartRows = computed(() => {
+  // Chronological for chart (table may be descending)
+  return [...props.report].sort((a, b) => String(a.tanggal).localeCompare(String(b.tanggal)))
+})
+
+const chartCategories = computed(() => {
+  return chartRows.value.map((row) => {
+    const d = new Date(String(row.tanggal) + 'T12:00:00')
+    return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })
+  })
+})
+
+const chartSeries = computed(() => [
+  {
+    name: 'Omzet',
+    data: chartRows.value.map((row) => Number(row.omzet) || 0),
+  },
+  {
+    name: 'Cost',
+    data: chartRows.value.map((row) => Number(row.cost) || 0),
+  },
+  {
+    name: '% Cost',
+    data: chartRows.value.map((row) => Number(row.persentase_cost) || 0),
+  },
+])
+
+const chartOptions = computed(() => ({
+  chart: {
+    type: 'line',
+    height: 380,
+    toolbar: { show: true },
+    animations: { enabled: true, easing: 'easeinout', speed: 800 },
+    zoom: { enabled: false },
+    fontFamily: 'inherit',
+  },
+  stroke: {
+    width: [3, 3, 2.5],
+    curve: 'smooth',
+    dashArray: [0, 0, 5],
+  },
+  markers: {
+    size: 4,
+    hover: { size: 7 },
+  },
+  colors: ['#059669', '#e11d48', '#7c3aed'],
+  dataLabels: { enabled: false },
+  xaxis: {
+    categories: chartCategories.value,
+    title: { text: 'Tanggal', style: { fontWeight: 600 } },
+    labels: { rotate: -45, style: { fontSize: '11px', fontWeight: 600 } },
+  },
+  yaxis: [
+    {
+      seriesName: 'Omzet',
+      title: { text: 'Omzet / Cost (Rp)', style: { fontWeight: 600 } },
+      labels: {
+        style: { fontWeight: 600 },
+        formatter: (val) => {
+          if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + ' jt'
+          if (val >= 1_000) return (val / 1_000).toFixed(0) + ' rb'
+          return Math.round(val).toLocaleString('id-ID')
+        },
+      },
+    },
+    {
+      seriesName: 'Cost',
+      show: false,
+    },
+    {
+      seriesName: '% Cost',
+      opposite: true,
+      title: { text: '% Cost', style: { fontWeight: 600 } },
+      labels: {
+        style: { fontWeight: 600 },
+        formatter: (val) => `${Number(val || 0).toFixed(0)}%`,
+      },
+    },
+  ],
+  legend: {
+    position: 'top',
+    horizontalAlign: 'left',
+    fontWeight: 600,
+  },
+  grid: { borderColor: '#e5e7eb', strokeDashArray: 4 },
+  tooltip: {
+    shared: true,
+    intersect: false,
+    y: {
+      formatter: (val, opts) => {
+        const seriesName = opts?.w?.globals?.seriesNames?.[opts.seriesIndex] || ''
+        if (seriesName === '% Cost') return `${Number(val || 0).toFixed(2)}%`
+        return formatCurrency(val)
+      },
+    },
+  },
+}))
 
 const detailOpen = ref(false)
 const detailLoading = ref(false)

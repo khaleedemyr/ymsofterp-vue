@@ -263,7 +263,7 @@ class ReportDailyOutletRevenueController extends Controller
     }
 
     /**
-     * Last month MTD (same calendar day) + last month full + daily series for charts.
+     * Last month MTD/full metrics + daily series for last 3 months and last year.
      *
      * @return array<string, mixed>
      */
@@ -311,29 +311,20 @@ class ReportDailyOutletRevenueController extends Controller
             return round((($current - $previous) / $previous) * 100, 1);
         };
 
-        $dailyRows = DB::table('orders')
-            ->where('kode_outlet', $outletQr)
-            ->where('created_at', '>=', $prevMonthStart->toDateTimeString())
-            ->where('created_at', '<', $prevMonthEndExclusive->toDateTimeString())
-            ->where('status', '!=', 'cancelled')
-            ->where('grand_total', '>', 0)
-            ->selectRaw('DAY(created_at) as d, SUM(COALESCE(grand_total, 0)) as revenue, SUM(COALESCE(pax, 0)) as cover')
-            ->groupByRaw('DAY(created_at)')
-            ->get()
-            ->keyBy('d');
-
-        $chartDays = min($daysInMonth, $daysInPrevMonth);
-        $lmDailyRevenue = [];
-        $lmDailyCover = [];
-        $lmDailyAvgCheck = [];
-        for ($d = 1; $d <= $chartDays; $d++) {
-            $row = $dailyRows->get($d);
-            $rev = (float) ($row->revenue ?? 0);
-            $cov = (float) ($row->cover ?? 0);
-            $lmDailyRevenue[] = $rev;
-            $lmDailyCover[] = $cov;
-            $lmDailyAvgCheck[] = $cov > 0 ? (float) round($rev / $cov) : 0;
+        // Chart series: last 3 months (e.g. Jun, Jul, Aug) + same month last year.
+        $comparisonSeries = [];
+        for ($i = 3; $i >= 1; $i--) {
+            $periodStart = $monthStart->copy()->subMonthsNoOverflow($i)->startOfMonth();
+            $comparisonSeries[] = $this->buildDailySeriesForMonth($outletQr, $periodStart, $daysInMonth);
         }
+        $lastYearStart = $monthStart->copy()->subYear()->startOfMonth();
+        $comparisonSeries[] = $this->buildDailySeriesForMonth($outletQr, $lastYearStart, $daysInMonth, 'Last Year');
+
+        $lastMonthDaily = $comparisonSeries[2] ?? [
+            'revenue' => [],
+            'cover' => [],
+            'avg_check' => [],
+        ];
 
         return [
             'last_month_label' => $prevMonthStart->locale('id')->translatedFormat('F Y'),
@@ -361,10 +352,65 @@ class ReportDailyOutletRevenueController extends Controller
             'vs_last_full_avg_percent' => $pct($mtdAvgCheck, $lastMonthFullAvg),
 
             'last_month_daily' => [
-                'revenue' => $lmDailyRevenue,
-                'cover' => $lmDailyCover,
-                'avg_check' => $lmDailyAvgCheck,
+                'revenue' => $lastMonthDaily['revenue'] ?? [],
+                'cover' => $lastMonthDaily['cover'] ?? [],
+                'avg_check' => $lastMonthDaily['avg_check'] ?? [],
             ],
+            'comparison_series' => $comparisonSeries,
+        ];
+    }
+
+    /**
+     * @return array{key: string, label: string, revenue: list<float>, cover: list<float>, avg_check: list<float>}
+     */
+    private function buildDailySeriesForMonth(
+        string $outletQr,
+        Carbon $periodStart,
+        int $chartDays,
+        ?string $labelSuffix = null
+    ): array {
+        $periodEndExclusive = $periodStart->copy()->addMonth()->startOfDay();
+        $label = $periodStart->locale('id')->translatedFormat('F Y');
+        if ($labelSuffix) {
+            $label .= ' ('.$labelSuffix.')';
+        }
+
+        $dailyRows = DB::table('orders')
+            ->where('kode_outlet', $outletQr)
+            ->where('created_at', '>=', $periodStart->toDateTimeString())
+            ->where('created_at', '<', $periodEndExclusive->toDateTimeString())
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw('DAY(created_at) as d, SUM(COALESCE(grand_total, 0)) as revenue, SUM(COALESCE(pax, 0)) as cover')
+            ->groupByRaw('DAY(created_at)')
+            ->get()
+            ->keyBy('d');
+
+        $revenue = [];
+        $cover = [];
+        $avgCheck = [];
+        $daysAvailable = $periodStart->daysInMonth;
+        for ($d = 1; $d <= $chartDays; $d++) {
+            if ($d > $daysAvailable) {
+                $revenue[] = 0.0;
+                $cover[] = 0.0;
+                $avgCheck[] = 0.0;
+                continue;
+            }
+            $row = $dailyRows->get($d);
+            $rev = (float) ($row->revenue ?? 0);
+            $cov = (float) ($row->cover ?? 0);
+            $revenue[] = $rev;
+            $cover[] = $cov;
+            $avgCheck[] = $cov > 0 ? (float) round($rev / $cov) : 0.0;
+        }
+
+        return [
+            'key' => $periodStart->format('Y-m'),
+            'label' => $label,
+            'revenue' => $revenue,
+            'cover' => $cover,
+            'avg_check' => $avgCheck,
         ];
     }
 

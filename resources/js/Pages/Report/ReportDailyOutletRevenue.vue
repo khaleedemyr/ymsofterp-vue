@@ -71,21 +71,21 @@
               <div class="mt-1 text-xl font-bold text-sky-900">{{ formatCurrency(performance.mtd_revenue) }}</div>
               <div class="mt-3 space-y-1.5 text-xs">
                 <div class="flex justify-between gap-2">
-                  <span class="text-slate-500">LM MTD</span>
+                  <span class="text-slate-500">Last Month MTD</span>
                   <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_mtd_to_date) }}</span>
                 </div>
                 <div class="flex justify-between gap-2 items-center">
-                  <span class="text-slate-500">vs LM MTD</span>
+                  <span class="text-slate-500">vs Last Month MTD</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_mtd_percent)">
                     {{ formatGrowthPercent(performance.vs_last_mtd_percent) }}
                   </span>
                 </div>
                 <div class="flex justify-between gap-2">
-                  <span class="text-slate-500">LM Full</span>
+                  <span class="text-slate-500">Last Month Full</span>
                   <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_full) }}</span>
                 </div>
                 <div class="flex justify-between gap-2 items-center">
-                  <span class="text-slate-500">vs LM Full</span>
+                  <span class="text-slate-500">vs Last Month Full</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_full_percent)">
                     {{ formatGrowthPercent(performance.vs_last_full_percent) }}
                   </span>
@@ -99,21 +99,21 @@
               <div class="mt-1 text-xl font-bold text-emerald-900">{{ formatNumber(performance.mtd_cover || 0) }}</div>
               <div class="mt-3 space-y-1.5 text-xs">
                 <div class="flex justify-between gap-2">
-                  <span class="text-slate-500">LM MTD</span>
+                  <span class="text-slate-500">Last Month MTD</span>
                   <span class="font-medium text-slate-700">{{ formatNumber(performance.last_month_mtd_cover || 0) }}</span>
                 </div>
                 <div class="flex justify-between gap-2 items-center">
-                  <span class="text-slate-500">vs LM MTD</span>
+                  <span class="text-slate-500">vs Last Month MTD</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_mtd_cover_percent)">
                     {{ formatGrowthPercent(performance.vs_last_mtd_cover_percent) }}
                   </span>
                 </div>
                 <div class="flex justify-between gap-2">
-                  <span class="text-slate-500">LM Full</span>
+                  <span class="text-slate-500">Last Month Full</span>
                   <span class="font-medium text-slate-700">{{ formatNumber(performance.last_month_full_cover || 0) }}</span>
                 </div>
                 <div class="flex justify-between gap-2 items-center">
-                  <span class="text-slate-500">vs LM Full</span>
+                  <span class="text-slate-500">vs Last Month Full</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_full_cover_percent)">
                     {{ formatGrowthPercent(performance.vs_last_full_cover_percent) }}
                   </span>
@@ -127,21 +127,21 @@
               <div class="mt-1 text-xl font-bold text-amber-900">{{ formatCurrency(performance.mtd_avg_check) }}</div>
               <div class="mt-3 space-y-1.5 text-xs">
                 <div class="flex justify-between gap-2">
-                  <span class="text-slate-500">LM MTD</span>
+                  <span class="text-slate-500">Last Month MTD</span>
                   <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_mtd_avg_check) }}</span>
                 </div>
                 <div class="flex justify-between gap-2 items-center">
-                  <span class="text-slate-500">vs LM MTD</span>
+                  <span class="text-slate-500">vs Last Month MTD</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_mtd_avg_percent)">
                     {{ formatGrowthPercent(performance.vs_last_mtd_avg_percent) }}
                   </span>
                 </div>
                 <div class="flex justify-between gap-2">
-                  <span class="text-slate-500">LM Full</span>
+                  <span class="text-slate-500">Last Month Full</span>
                   <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_full_avg_check) }}</span>
                 </div>
                 <div class="flex justify-between gap-2 items-center">
-                  <span class="text-slate-500">vs LM Full</span>
+                  <span class="text-slate-500">vs Last Month Full</span>
                   <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_full_avg_percent)">
                     {{ formatGrowthPercent(performance.vs_last_full_avg_percent) }}
                   </span>
@@ -252,7 +252,7 @@
             <div>
               <h3 class="text-lg font-bold text-slate-800">Daily Trend vs Last Month</h3>
               <p class="text-sm text-slate-500">
-                Line chart seperti Sales Outlet Dashboard — bandingkan hari ke-hari dengan {{ performance.last_month_label || 'bulan lalu' }}
+                Bandingkan hari ke-hari: last 3 months + last year same month
               </p>
             </div>
             <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden">
@@ -354,6 +354,7 @@ const performance = reactive({
   vs_last_full_avg_var: null,
   vs_last_full_avg_percent: null,
   last_month_daily: { revenue: [], cover: [], avg_check: [] },
+  comparison_series: [],
 });
 const loading = ref(false);
 const showReport = ref(false);
@@ -434,20 +435,52 @@ const lastMonthDailyMetric = (metric) => {
   return out;
 };
 
+const padSeries = (arr) => {
+  const len = chartCategories.value.length;
+  const out = [];
+  for (let i = 0; i < len; i++) {
+    out.push(Number(arr?.[i] ?? 0));
+  }
+  return out;
+};
+
+const CHART_COMPARE_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626'];
+
 const activeChartSeries = computed(() => {
   const metric = activeChartTab.value;
   const currentLabel = getMonthName(filters.month) + ' ' + filters.year;
-  const lastLabel = performance.last_month_label || 'Bulan Lalu';
-  return [
+  const series = [
     { name: currentLabel, data: currentDailyMetric(metric) },
-    { name: lastLabel, data: lastMonthDailyMetric(metric) },
   ];
+  const comparisons = Array.isArray(performance.comparison_series) ? performance.comparison_series : [];
+  if (comparisons.length) {
+    comparisons.forEach((item) => {
+      series.push({
+        name: item.label || item.key,
+        data: padSeries(item[metric] || []),
+      });
+    });
+  } else {
+    series.push({
+      name: performance.last_month_label || 'Last Month',
+      data: lastMonthDailyMetric(metric),
+    });
+  }
+  return series;
 });
 
 const activeChartOptions = computed(() => {
   const metric = activeChartTab.value;
   const yTitle = metric === 'revenue' ? 'Revenue (Rp)' : metric === 'cover' ? 'Cover' : 'Avg Check (Rp)';
   const isMoney = metric !== 'cover';
+  const seriesCount = activeChartSeries.value.length;
+  const colors = CHART_COMPARE_COLORS.slice(0, seriesCount);
+  const widths = Array(seriesCount).fill(2.5);
+  widths[0] = 3.5;
+  const dashes = Array(seriesCount).fill(5);
+  dashes[0] = 0;
+  const markerColors = Array(seriesCount).fill('#fff');
+  const markerStrokes = colors.slice();
 
   return {
     chart: {
@@ -459,18 +492,18 @@ const activeChartOptions = computed(() => {
       fontFamily: 'inherit',
     },
     stroke: {
-      width: [3, 3],
+      width: widths,
       curve: 'smooth',
-      dashArray: [0, 6],
+      dashArray: dashes,
     },
     markers: {
-      size: 4,
-      colors: ['#fff', '#fff'],
-      strokeColors: ['#2563eb', '#94a3b8'],
-      strokeWidth: 3,
-      hover: { size: 7 },
+      size: 3,
+      colors: markerColors,
+      strokeColors: markerStrokes,
+      strokeWidth: 2,
+      hover: { size: 6 },
     },
-    colors: ['#2563eb', '#94a3b8'],
+    colors,
     dataLabels: { enabled: false },
     xaxis: {
       categories: chartCategories.value,
@@ -494,6 +527,7 @@ const activeChartOptions = computed(() => {
       horizontalAlign: 'left',
       fontWeight: 600,
       offsetY: 0,
+      fontSize: '12px',
     },
     grid: { borderColor: '#e5e7eb', strokeDashArray: 4 },
     tooltip: {

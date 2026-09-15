@@ -76,6 +76,29 @@ class ReceivingSheetExport implements FromArray, WithStyles, ShouldAutoSize, Wit
             $line[] = (float) ($row['persentase_cost'] ?? 0);
             $this->rows[] = $line;
         }
+
+        if (count($this->rows) > 0) {
+            $count = count($this->rows);
+            $grand = ['', 'GRAND TOTAL'];
+            $colCount = count($this->headings);
+            for ($c = 2; $c < $colCount; $c++) {
+                if ($c === $colCount - 1) {
+                    // % Cost = average
+                    $sumPct = 0.0;
+                    foreach ($this->rows as $r) {
+                        $sumPct += (float) ($r[$c] ?? 0);
+                    }
+                    $grand[] = round($sumPct / $count, 2);
+                } else {
+                    $sum = 0.0;
+                    foreach ($this->rows as $r) {
+                        $sum += (float) ($r[$c] ?? 0);
+                    }
+                    $grand[] = $sum;
+                }
+            }
+            $this->rows[] = $grand;
+        }
     }
 
     public function array(): array
