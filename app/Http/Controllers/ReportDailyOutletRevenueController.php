@@ -189,7 +189,8 @@ class ReportDailyOutletRevenueController extends Controller
 
         $monthlyBudget = $this->getMonthlyBudgetFromRevenueTarget($outletId, $monthStart);
         $mtdRevenue = (float) $summary['total']['revenue'];
-        $performance = $this->buildPerformanceMetrics($mtdRevenue, $monthlyBudget);
+        $lastMonthComparison = $this->getLastMonthComparison($outlet, $monthStart, $mtdCutoff, $mtdRevenue);
+        $performance = $this->buildPerformanceMetrics($mtdRevenue, $monthlyBudget, $lastMonthComparison);
 
         return [
             'daily_data' => $dailyData,
@@ -252,31 +253,88 @@ class ReportDailyOutletRevenueController extends Controller
     }
 
     /**
-     * @return array<string, float|null>
+     * Last month MTD (same calendar day) + last month full, with growth vs current MTD.
+     *
+     * @return array{
+     *   last_month_label: string,
+     *   last_month_mtd_to_date: float,
+     *   last_month_full: float,
+     *   compare_day: int,
+     *   vs_last_mtd_var: float|null,
+     *   vs_last_mtd_percent: float|null,
+     *   vs_last_full_var: float|null,
+     *   vs_last_full_percent: float|null
+     * }
      */
-    private function buildPerformanceMetrics(float $mtdRevenue, ?float $monthlyBudget): array
+    private function getLastMonthComparison(string $outletQr, Carbon $monthStart, Carbon $mtdCutoff, float $mtdRevenue): array
     {
+        $prevMonthStart = $monthStart->copy()->subMonthNoOverflow()->startOfMonth();
+        $prevMonthEndExclusive = $prevMonthStart->copy()->addMonth()->startOfDay();
+        $daysInPrevMonth = $prevMonthStart->daysInMonth;
+
+        // Same day-of-month as current MTD cutoff (capped to prev month length).
+        $compareDay = min(max(1, $mtdCutoff->day), $daysInPrevMonth);
+        $prevMtdEndExclusive = $prevMonthStart->copy()->day($compareDay)->addDay()->startOfDay();
+
+        $lastMonthFull = (float) DB::table('orders')
+            ->where('kode_outlet', $outletQr)
+            ->where('created_at', '>=', $prevMonthStart->toDateTimeString())
+            ->where('created_at', '<', $prevMonthEndExclusive->toDateTimeString())
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->sum(DB::raw('COALESCE(grand_total, 0)'));
+
+        $lastMonthMtd = (float) DB::table('orders')
+            ->where('kode_outlet', $outletQr)
+            ->where('created_at', '>=', $prevMonthStart->toDateTimeString())
+            ->where('created_at', '<', $prevMtdEndExclusive->toDateTimeString())
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->sum(DB::raw('COALESCE(grand_total, 0)'));
+
+        $vsLastMtdVar = $lastMonthMtd > 0 || $mtdRevenue > 0 ? $mtdRevenue - $lastMonthMtd : null;
+        $vsLastMtdPct = $lastMonthMtd > 0 ? round((($mtdRevenue - $lastMonthMtd) / $lastMonthMtd) * 100, 1) : null;
+        $vsLastFullVar = $lastMonthFull > 0 || $mtdRevenue > 0 ? $mtdRevenue - $lastMonthFull : null;
+        $vsLastFullPct = $lastMonthFull > 0 ? round((($mtdRevenue - $lastMonthFull) / $lastMonthFull) * 100, 1) : null;
+
+        return [
+            'last_month_label' => $prevMonthStart->locale('id')->translatedFormat('F Y'),
+            'last_month_mtd_to_date' => $lastMonthMtd,
+            'last_month_full' => $lastMonthFull,
+            'compare_day' => $compareDay,
+            'vs_last_mtd_var' => $vsLastMtdVar,
+            'vs_last_mtd_percent' => $vsLastMtdPct,
+            'vs_last_full_var' => $vsLastFullVar,
+            'vs_last_full_percent' => $vsLastFullPct,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $lastMonthComparison
+     * @return array<string, mixed>
+     */
+    private function buildPerformanceMetrics(float $mtdRevenue, ?float $monthlyBudget, array $lastMonthComparison = []): array
+    {
+        $base = [
+            'mtd_revenue' => $mtdRevenue,
+            'budget' => null,
+            'perf_percent' => null,
+            'variance' => null,
+            'variance_percent' => null,
+            ...$lastMonthComparison,
+        ];
+
         if ($monthlyBudget === null || $monthlyBudget <= 0) {
-            return [
-                'mtd_revenue' => $mtdRevenue,
-                'budget' => null,
-                'perf_percent' => null,
-                'variance' => null,
-                'variance_percent' => null,
-            ];
+            return $base;
         }
 
         $variance = $mtdRevenue - $monthlyBudget;
-        $perfPercent = round(($mtdRevenue / $monthlyBudget) * 100, 1);
-        $variancePercent = round(($variance / $monthlyBudget) * 100, 1);
+        $base['budget'] = $monthlyBudget;
+        $base['perf_percent'] = round(($mtdRevenue / $monthlyBudget) * 100, 1);
+        $base['variance'] = $variance;
+        $base['variance_percent'] = round(($variance / $monthlyBudget) * 100, 1);
 
-        return [
-            'mtd_revenue' => $mtdRevenue,
-            'budget' => $monthlyBudget,
-            'perf_percent' => $perfPercent,
-            'variance' => $variance,
-            'variance_percent' => $variancePercent,
-        ];
+        return $base;
     }
 
     /**

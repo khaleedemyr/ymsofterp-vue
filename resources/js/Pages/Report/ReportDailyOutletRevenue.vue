@@ -54,9 +54,14 @@
       <div v-else-if="showReport">
         <!-- Performance / Outlet Info -->
         <div class="mb-8 rounded-2xl overflow-hidden shadow-lg border border-slate-700">
-          <div class="bg-slate-900 px-5 py-3 flex items-center justify-between">
+          <div class="bg-slate-900 px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
             <h3 class="text-white font-bold tracking-wide uppercase text-sm">Outlet Info — {{ getMonthName(filters.month) }} (Current)</h3>
-            <span class="text-slate-400 text-xs">{{ reportMeta.outlet_name }}</span>
+            <span class="text-slate-400 text-xs">
+              {{ reportMeta.outlet_name }}
+              <span v-if="performance.last_month_label" class="ml-2 text-slate-500">
+                · vs {{ performance.last_month_label }} (tgl {{ performance.compare_day }})
+              </span>
+            </span>
           </div>
           <div class="overflow-x-auto bg-slate-800">
             <table class="min-w-full text-sm text-white">
@@ -65,6 +70,16 @@
                   <th class="px-4 py-3 text-left w-12">No</th>
                   <th class="px-4 py-3 text-left">Outlet Name</th>
                   <th class="px-4 py-3 text-right">MTD Revenue</th>
+                  <th class="px-4 py-3 text-right">
+                    LM MTD
+                    <span class="block normal-case font-normal text-[10px] text-slate-400">s/d tgl {{ performance.compare_day || '—' }}</span>
+                  </th>
+                  <th class="px-4 py-3 text-center">vs LM MTD</th>
+                  <th class="px-4 py-3 text-right">
+                    LM Full
+                    <span class="block normal-case font-normal text-[10px] text-slate-400">bulan lalu full</span>
+                  </th>
+                  <th class="px-4 py-3 text-center">vs LM Full</th>
                   <th class="px-4 py-3 text-right">Budget</th>
                   <th class="px-4 py-3 text-center w-28">Perf%</th>
                   <th class="px-4 py-3 text-right">Var</th>
@@ -76,6 +91,32 @@
                   <td class="px-4 py-4">1</td>
                   <td class="px-4 py-4 font-semibold">{{ reportMeta.outlet_name }}</td>
                   <td class="px-4 py-4 text-right text-sky-300 font-semibold">{{ formatCurrency(performance.mtd_revenue) }}</td>
+                  <td class="px-4 py-4 text-right text-cyan-200/90">{{ formatCurrency(performance.last_month_mtd_to_date) }}</td>
+                  <td class="px-4 py-4 text-center">
+                    <span
+                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-white text-xs"
+                      :class="growthBadgeClass(performance.vs_last_mtd_percent)"
+                    >
+                      <i v-if="performance.vs_last_mtd_percent != null" :class="performance.vs_last_mtd_percent >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+                      {{ formatGrowthPercent(performance.vs_last_mtd_percent) }}
+                    </span>
+                    <div class="text-[10px] mt-1" :class="growthTextClass(performance.vs_last_mtd_var)">
+                      {{ formatVariance(performance.vs_last_mtd_var) }}
+                    </div>
+                  </td>
+                  <td class="px-4 py-4 text-right text-slate-300">{{ formatCurrency(performance.last_month_full) }}</td>
+                  <td class="px-4 py-4 text-center">
+                    <span
+                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-white text-xs"
+                      :class="growthBadgeClass(performance.vs_last_full_percent)"
+                    >
+                      <i v-if="performance.vs_last_full_percent != null" :class="performance.vs_last_full_percent >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+                      {{ formatGrowthPercent(performance.vs_last_full_percent) }}
+                    </span>
+                    <div class="text-[10px] mt-1" :class="growthTextClass(performance.vs_last_full_var)">
+                      {{ formatVariance(performance.vs_last_full_var) }}
+                    </div>
+                  </td>
                   <td class="px-4 py-4 text-right text-slate-300 italic">
                     {{ performance.budget != null ? formatCurrency(performance.budget) : '—' }}
                   </td>
@@ -120,28 +161,31 @@
               <tr
                 v-for="(dayData, date) in report.daily_data"
                 :key="date"
-                class="border-b border-gray-200 last:border-b-0"
+                class="border-b border-gray-200 last:border-b-0 cursor-pointer transition-colors duration-150"
+                @click="selectDailyRow(date)"
+                @mouseenter="hoveredDate = date"
+                @mouseleave="hoveredDate = null"
               >
-                <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200" :class="rowHighlightClass(dayData)">{{ formatDate(date) }}</td>
-                <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200" :class="rowHighlightClass(dayData)">
+                <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200" :class="cellClass(dayData, date, 'meta')">{{ formatDate(date) }}</td>
+                <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200" :class="cellClass(dayData, date, 'meta')">
                   {{ dayData.day_name }}
                   <span v-if="dayData.is_holiday" class="block text-[10px] text-red-600 font-normal">{{ dayData.holiday_description }}</span>
                 </td>
 
-                <td class="px-3 py-3 text-center border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ dayData.lunch.cover || 0 }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ formatNumber(dayData.lunch.revenue || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ formatNumber(dayData.lunch.avg_check || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ formatNumber(dayData.lunch.disc || 0) }}</td>
+                <td class="px-3 py-3 text-center border-r border-gray-200" :class="cellClass(dayData, date, 'lunch')">{{ dayData.lunch.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, date, 'lunch')">{{ formatNumber(dayData.lunch.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, date, 'lunch')">{{ formatNumber(dayData.lunch.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, date, 'lunch')">{{ formatNumber(dayData.lunch.disc || 0) }}</td>
 
-                <td class="px-3 py-3 text-center border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ dayData.dinner.cover || 0 }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ formatNumber(dayData.dinner.revenue || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ formatNumber(dayData.dinner.avg_check || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ formatNumber(dayData.dinner.disc || 0) }}</td>
+                <td class="px-3 py-3 text-center border-r border-gray-200" :class="cellClass(dayData, date, 'dinner')">{{ dayData.dinner.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, date, 'dinner')">{{ formatNumber(dayData.dinner.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, date, 'dinner')">{{ formatNumber(dayData.dinner.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, date, 'dinner')">{{ formatNumber(dayData.dinner.disc || 0) }}</td>
 
-                <td class="px-3 py-3 text-center border-r border-gray-200 font-semibold" :class="cellClass(dayData, 'total')">{{ dayData.total.cover || 0 }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold" :class="cellClass(dayData, 'total')">{{ formatNumber(dayData.total.revenue || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold" :class="cellClass(dayData, 'total')">{{ formatNumber(dayData.total.avg_check || 0) }}</td>
-                <td class="px-3 py-3 text-right font-semibold" :class="cellClass(dayData, 'total')">{{ formatNumber(dayData.total.disc || 0) }}</td>
+                <td class="px-3 py-3 text-center border-r border-gray-200 font-semibold" :class="cellClass(dayData, date, 'total')">{{ dayData.total.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold" :class="cellClass(dayData, date, 'total')">{{ formatNumber(dayData.total.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold" :class="cellClass(dayData, date, 'total')">{{ formatNumber(dayData.total.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right font-semibold" :class="cellClass(dayData, date, 'total')">{{ formatNumber(dayData.total.disc || 0) }}</td>
               </tr>
 
               <tr class="bg-[#1e3a8a] text-white font-bold">
@@ -163,15 +207,15 @@
           </table>
         </div>
 
-        <!-- 3D-style chart -->
+        <!-- Line chart -->
         <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-6 shadow-lg">
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
             <div>
               <h3 class="text-lg font-bold text-slate-800">Daily Revenue Trend</h3>
-              <p class="text-sm text-slate-500">Lunch vs Dinner vs Total — tampilan 3D modern</p>
+              <p class="text-sm text-slate-500">Lunch vs Dinner vs Total — line chart</p>
             </div>
           </div>
-          <VueApexCharts type="bar" height="420" :options="chartOptions" :series="chartSeries" />
+          <VueApexCharts type="line" height="420" :options="chartOptions" :series="chartSeries" />
         </div>
       </div>
     </div>
@@ -228,9 +272,19 @@ const performance = reactive({
   perf_percent: null,
   variance: null,
   variance_percent: null,
+  last_month_label: '',
+  last_month_mtd_to_date: 0,
+  last_month_full: 0,
+  compare_day: null,
+  vs_last_mtd_var: null,
+  vs_last_mtd_percent: null,
+  vs_last_full_var: null,
+  vs_last_full_percent: null,
 });
 const loading = ref(false);
 const showReport = ref(false);
+const selectedDate = ref(null);
+const hoveredDate = ref(null);
 const user = usePage().props.auth?.user || {};
 
 const canSelectOutlet = computed(() => Number(user.id_outlet) === 1);
@@ -256,6 +310,23 @@ const varianceClass = computed(() => {
   return performance.variance >= 0 ? 'text-emerald-400' : 'text-red-400';
 });
 
+const growthBadgeClass = (pct) => {
+  if (pct == null) return 'bg-slate-500';
+  if (pct >= 0) return 'bg-emerald-600';
+  return 'bg-red-600';
+};
+
+const growthTextClass = (val) => {
+  if (val == null) return 'text-slate-400';
+  return val >= 0 ? 'text-emerald-400' : 'text-red-400';
+};
+
+const formatGrowthPercent = (pct) => {
+  if (pct == null) return '—';
+  const prefix = pct > 0 ? '+' : '';
+  return `${prefix}${pct}%`;
+};
+
 const chartCategories = computed(() => {
   return Object.keys(report.daily_data).map((date) => {
     const d = new Date(date + 'T12:00:00');
@@ -274,37 +345,25 @@ const chartSeries = computed(() => {
 
 const chartOptions = computed(() => ({
   chart: {
-    type: 'bar',
-    stacked: false,
+    type: 'line',
     toolbar: { show: true, tools: { download: true } },
-    animations: { enabled: true, easing: 'easeinout', speed: 800 },
-    dropShadow: { enabled: true, top: 6, left: 2, blur: 8, opacity: 0.25 },
+    animations: { enabled: true, easing: 'easeinout', speed: 700 },
     background: 'transparent',
-  },
-  theme: { mode: 'light' },
-  plotOptions: {
-    bar: {
-      horizontal: false,
-      columnWidth: '62%',
-      borderRadius: 8,
-      borderRadiusApplication: 'end',
-      dataLabels: { position: 'top' },
-    },
+    zoom: { enabled: true },
   },
   colors: ['#059669', '#D97706', '#4F46E5'],
-  fill: {
-    type: 'gradient',
-    gradient: {
-      shade: 'dark',
-      type: 'vertical',
-      shadeIntensity: 0.35,
-      opacityFrom: 1,
-      opacityTo: 0.85,
-      stops: [0, 90, 100],
-    },
+  stroke: {
+    curve: 'smooth',
+    width: [3, 3, 3.5],
+  },
+  markers: {
+    size: 4,
+    strokeWidth: 2,
+    strokeColors: '#fff',
+    hover: { size: 6 },
   },
   dataLabels: { enabled: false },
-  stroke: { show: true, width: 2, colors: ['transparent'] },
+  fill: { type: 'solid', opacity: 0 },
   xaxis: {
     categories: chartCategories.value,
     title: { text: 'Tanggal', style: { fontWeight: 600 } },
@@ -373,6 +432,8 @@ const fetchReport = async () => {
     report.summary = res.data.summary || report.summary;
     reportMeta.outlet_name = res.data.outlet_name || lockedOutletName.value || '';
     Object.assign(performance, res.data.performance || {});
+    selectedDate.value = null;
+    hoveredDate.value = null;
     showReport.value = true;
   } catch (error) {
     console.error('Error fetching report:', error);
@@ -421,14 +482,21 @@ const isSpecialDay = (dayData) => {
   return dayData.is_weekend || dayData.is_holiday;
 };
 
-const rowHighlightClass = (dayData) => {
-  return isSpecialDay(dayData) ? 'bg-orange-100' : 'bg-white';
+const selectDailyRow = (date) => {
+  selectedDate.value = date;
 };
 
-const cellClass = (dayData, section) => {
+const cellClass = (dayData, date, section) => {
+  if (selectedDate.value === date) {
+    return 'bg-sky-200 ring-1 ring-inset ring-sky-300';
+  }
+  if (hoveredDate.value === date) {
+    return 'bg-sky-100';
+  }
   if (isSpecialDay(dayData)) {
     return 'bg-orange-100';
   }
+  if (section === 'meta') return 'bg-white';
   if (section === 'lunch') return 'bg-emerald-50/80';
   if (section === 'dinner') return 'bg-amber-50/80';
   return 'bg-indigo-50/80';
