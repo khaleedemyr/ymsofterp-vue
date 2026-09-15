@@ -61,6 +61,8 @@ class OpexOutletDashboardService
             'overview' => array_merge($overview['overview'] ?? [], $member['overview'] ?? []),
             'trend' => $charts['trend'] ?? [],
             'spend_mix' => $charts['spend_mix'] ?? [],
+            'mcs_mix' => $charts['mcs_mix'] ?? [],
+            'purchase_category_mix' => $charts['purchase_category_mix'] ?? [],
             'payment_methods' => $payments['payment_methods'] ?? [],
             'ro_forecast' => $ro['ro_forecast'] ?? null,
         ]);
@@ -91,6 +93,8 @@ class OpexOutletDashboardService
             'overview' => null,
             'trend' => [],
             'spend_mix' => [],
+            'mcs_mix' => [],
+            'purchase_category_mix' => [],
             'payment_methods' => [],
             'ro_forecast' => null,
             'outlet_name' => null,
@@ -357,7 +361,12 @@ class OpexOutletDashboardService
     }
 
     /**
-     * @return array{trend: list<array<string, mixed>>, spend_mix: list<array<string, mixed>>}
+     * @return array{
+     *   trend: list<array<string, mixed>>,
+     *   spend_mix: list<array<string, mixed>>,
+     *   mcs_mix: list<array<string, mixed>>,
+     *   purchase_category_mix: list<array<string, mixed>>
+     * }
      */
     public function buildSectionCharts(int $outletId, string $dateFrom, string $dateTo): array
     {
@@ -381,6 +390,9 @@ class OpexOutletDashboardService
             $mix['retail_non_food'] += (float) ($row['retail_non_food'] ?? 0);
         }
 
+        $mcs = $this->sumMcsPurchase($outletId, $dateFrom, $dateTo);
+        $purchaseCats = $this->sumPurchaseByCategory($outletId, $dateFrom, $dateTo);
+
         return [
             'trend' => $trend,
             'spend_mix' => [
@@ -389,6 +401,8 @@ class OpexOutletDashboardService
                 ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => round($mix['retail_food'], 2)],
                 ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => round($mix['retail_non_food'], 2)],
             ],
+            'mcs_mix' => $mcs['by_category'],
+            'purchase_category_mix' => $purchaseCats['by_category'],
         ];
     }
 
@@ -2167,7 +2181,8 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Pembelian item sub-category Marketing / Chemical / Stationary (Food GR + Serial GR).
+     * Pembelian item sub-category Marketing / Chemical / Stationary
+     * dari GSR + RWS + Retail Food.
      *
      * @return array{
      *   total: float,
@@ -2184,22 +2199,13 @@ class OpexOutletDashboardService
         ];
         $headerIds = [];
 
-        foreach ($this->mcsFoodGrLines($outletId, $dateFrom, $dateTo) as $line) {
+        foreach ($this->mcsAllLines($outletId, $dateFrom, $dateTo) as $line) {
             $cat = $this->normalizeMcsCategory((string) ($line->category ?? ''));
             if ($cat === null) {
                 continue;
             }
             $byCat[$cat] += (float) ($line->amount ?? 0);
-            $headerIds['gr-'.$line->header_id] = true;
-        }
-
-        foreach ($this->mcsSerialGrLines($outletId, $dateFrom, $dateTo) as $line) {
-            $cat = $this->normalizeMcsCategory((string) ($line->category ?? ''));
-            if ($cat === null) {
-                continue;
-            }
-            $byCat[$cat] += (float) ($line->amount ?? 0);
-            $headerIds['gsr-'.$line->header_id] = true;
+            $headerIds[(string) ($line->source_prefix ?? 'x').$line->header_id] = true;
         }
 
         $byCategory = [];
@@ -2227,10 +2233,7 @@ class OpexOutletDashboardService
     public function mcsPurchaseByDate(int $outletId, string $dateFrom, string $dateTo): array
     {
         $map = [];
-        foreach (array_merge(
-            $this->mcsFoodGrLines($outletId, $dateFrom, $dateTo)->all(),
-            $this->mcsSerialGrLines($outletId, $dateFrom, $dateTo)->all()
-        ) as $line) {
+        foreach ($this->mcsAllLines($outletId, $dateFrom, $dateTo) as $line) {
             $d = (string) ($line->date ?? '');
             if ($d === '') {
                 continue;
@@ -2242,26 +2245,42 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Transaksi GR/GSR berisi item MCS + item lines untuk modal.
+     * Transaksi GSR/RWS/RF berisi item MCS + item lines untuk modal.
      *
      * @return list<object>
      */
-    public function listMcsPurchaseTransactions(int $outletId, string $dateFrom, string $dateTo): array
-    {
+    public function listMcsPurchaseTransactions(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        ?string $category = null
+    ): array {
+        $categoryFilter = $category ? $this->normalizeMcsCategory($category) : null;
         $grouped = [];
 
-        $pushLine = function (string $prefix, object $line) use (&$grouped): void {
+        $sourceLabels = [
+            'gsr-' => 'GSR',
+            'rws-' => 'RWS',
+            'rf-' => 'Retail Food',
+        ];
+
+        foreach ($this->mcsAllLines($outletId, $dateFrom, $dateTo) as $line) {
             $cat = $this->normalizeMcsCategory((string) ($line->category ?? ''));
             if ($cat === null) {
-                return;
+                continue;
             }
+            if ($categoryFilter !== null && $cat !== $categoryFilter) {
+                continue;
+            }
+
+            $prefix = (string) ($line->source_prefix ?? 'gsr-');
             $key = $prefix.$line->header_id;
             if (! isset($grouped[$key])) {
                 $grouped[$key] = (object) [
                     'id' => $key,
                     'number' => (string) ($line->number ?? '-'),
                     'date' => (string) ($line->date ?? ''),
-                    'source' => $prefix === 'gr-' ? 'GR / RO' : 'GSR',
+                    'source' => $sourceLabels[$prefix] ?? strtoupper(rtrim($prefix, '-')),
                     'type' => 'mcs_purchase',
                     'creator_name' => (string) ($line->creator_name ?? '-'),
                     'amount' => 0.0,
@@ -2278,13 +2297,6 @@ class OpexOutletDashboardService
                 'price' => round((float) ($line->price ?? 0), 2),
                 'amount' => $amount,
             ];
-        };
-
-        foreach ($this->mcsFoodGrLines($outletId, $dateFrom, $dateTo) as $line) {
-            $pushLine('gr-', $line);
-        }
-        foreach ($this->mcsSerialGrLines($outletId, $dateFrom, $dateTo) as $line) {
-            $pushLine('gsr-', $line);
         }
 
         $rows = array_values($grouped);
@@ -2303,49 +2315,12 @@ class OpexOutletDashboardService
     /**
      * @return \Illuminate\Support\Collection<int, object>
      */
-    private function mcsFoodGrLines(int $outletId, string $dateFrom, string $dateTo)
+    private function mcsAllLines(int $outletId, string $dateFrom, string $dateTo)
     {
-        if (! Schema::hasTable('outlet_food_good_receive_items')) {
-            return collect();
-        }
-
-        $names = array_keys(self::MCS_SUB_CATEGORY_LABELS);
-
-        return DB::table('outlet_food_good_receive_items as ofgri')
-            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
-            ->join('items as it', 'ofgri.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
-            ->leftJoin('units as u', 'ofgri.unit_id', '=', 'u.id')
-            ->leftJoin('users as usr', 'ofgr.created_by', '=', 'usr.id')
-            ->leftJoin('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
-            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
-            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
-            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
-                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
-                    ->where(function ($q) {
-                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
-                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
-                    });
-            })
-            ->whereNull('ofgr.deleted_at')
-            ->where('ofgr.outlet_id', $outletId)
-            ->whereIn('sc.name', $names)
-            ->whereDate('ofgr.receive_date', '>=', $dateFrom)
-            ->whereDate('ofgr.receive_date', '<=', $dateTo)
-            ->select([
-                'ofgr.id as header_id',
-                'ofgr.number',
-                'ofgr.receive_date as date',
-                'sc.name as category',
-                'it.name as item_name',
-                'u.name as unit_name',
-                'usr.nama_lengkap as creator_name',
-                DB::raw('ofgri.received_qty as qty'),
-                DB::raw('COALESCE(ffoi.price, 0) as price'),
-                DB::raw('ofgri.received_qty * COALESCE(ffoi.price, 0) as amount'),
-            ])
-            ->get();
+        return $this->mcsSerialGrLines($outletId, $dateFrom, $dateTo)
+            ->concat($this->mcsRwsLines($outletId, $dateFrom, $dateTo))
+            ->concat($this->mcsRwsSerialLines($outletId, $dateFrom, $dateTo))
+            ->concat($this->mcsRetailFoodLines($outletId, $dateFrom, $dateTo));
     }
 
     /**
@@ -2380,6 +2355,7 @@ class OpexOutletDashboardService
                 'it.name as item_name',
                 'u.name as unit_name',
                 'usr.nama_lengkap as creator_name',
+                DB::raw("'gsr-' as source_prefix"),
                 DB::raw('si.qty as qty'),
                 DB::raw("({$priceSql}) as price"),
                 DB::raw("si.qty * ({$priceSql}) as amount"),
@@ -2387,15 +2363,407 @@ class OpexOutletDashboardService
             ->get();
     }
 
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mcsRwsLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('retail_warehouse_sale_items')) {
+            return collect();
+        }
+
+        $names = array_keys(self::MCS_SUB_CATEGORY_LABELS);
+
+        return DB::table('retail_warehouse_sale_items as rwsi')
+            ->join('retail_warehouse_sales as rws', 'rwsi.retail_warehouse_sale_id', '=', 'rws.id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereIn('sc.name', $names)
+            ->whereDate('rws.sale_date', '>=', $dateFrom)
+            ->whereDate('rws.sale_date', '<=', $dateTo)
+            ->select([
+                'rws.id as header_id',
+                'rws.number',
+                'rws.sale_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'rwsi.unit as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'rws-' as source_prefix"),
+                DB::raw('rwsi.qty as qty'),
+                DB::raw('COALESCE(rwsi.price, 0) as price'),
+                DB::raw('COALESCE(rwsi.subtotal, rwsi.qty * rwsi.price, 0) as amount'),
+            ])
+            ->get();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mcsRwsSerialLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('retail_warehouse_sale_serial_items')) {
+            return collect();
+        }
+
+        $names = array_keys(self::MCS_SUB_CATEGORY_LABELS);
+
+        return DB::table('retail_warehouse_sale_serial_items as rwss')
+            ->join('retail_warehouse_sales as rws', 'rwss.retail_warehouse_sale_id', '=', 'rws.id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwss.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereIn('sc.name', $names)
+            ->whereDate('rws.sale_date', '>=', $dateFrom)
+            ->whereDate('rws.sale_date', '<=', $dateTo)
+            ->select([
+                'rws.id as header_id',
+                'rws.number',
+                'rws.sale_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'rwss.unit_name as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'rws-' as source_prefix"),
+                DB::raw('rwss.qty as qty'),
+                DB::raw('COALESCE(rwss.price, 0) as price'),
+                DB::raw('COALESCE(rwss.subtotal, rwss.qty * rwss.price, 0) as amount'),
+            ])
+            ->get();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mcsRetailFoodLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('retail_food_items')) {
+            return collect();
+        }
+
+        $names = array_keys(self::MCS_SUB_CATEGORY_LABELS);
+
+        return DB::table('retail_food_items as rfi')
+            ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+            ->join('items as it', DB::raw('TRIM(it.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as usr', 'rf.created_by', '=', 'usr.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereIn('sc.name', $names)
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->select([
+                'rf.id as header_id',
+                'rf.retail_number as number',
+                'rf.transaction_date as date',
+                'sc.name as category',
+                'rfi.item_name as item_name',
+                'rfi.unit as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'rf-' as source_prefix"),
+                DB::raw('rfi.qty as qty'),
+                DB::raw('COALESCE(rfi.price, 0) as price'),
+                DB::raw('COALESCE(rfi.subtotal, rfi.qty * rfi.price, 0) as amount'),
+            ])
+            ->get();
+    }
+
     private function normalizeMcsCategory(string $name): ?string
     {
+        $name = trim($name);
         foreach (array_keys(self::MCS_SUB_CATEGORY_LABELS) as $key) {
-            if (strcasecmp(trim($name), $key) === 0) {
+            if (strcasecmp($name, $key) === 0) {
                 return $key;
             }
         }
 
         return null;
+    }
+
+    /**
+     * Pembelian semua sub-category dari GSR + RWS + Retail Food (untuk pie chart).
+     *
+     * @return array{
+     *   total: float,
+     *   count: int,
+     *   by_category: list<array{key: string, label: string, amount: float}>
+     * }
+     */
+    public function sumPurchaseByCategory(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $byCat = [];
+        $headerIds = [];
+
+        foreach ($this->allPurchaseLines($outletId, $dateFrom, $dateTo) as $line) {
+            $cat = trim((string) ($line->category ?? ''));
+            if ($cat === '') {
+                $cat = 'Other';
+            }
+            $byCat[$cat] = ($byCat[$cat] ?? 0) + (float) ($line->amount ?? 0);
+            $headerIds[(string) ($line->source_prefix ?? 'x').$line->header_id] = true;
+        }
+
+        arsort($byCat);
+        $byCategory = [];
+        $total = 0.0;
+        foreach ($byCat as $label => $amount) {
+            $amount = round((float) $amount, 2);
+            if ($amount <= 0) {
+                continue;
+            }
+            $byCategory[] = [
+                'key' => strtolower(str_replace(' ', '_', $label)),
+                'label' => $label,
+                'amount' => $amount,
+            ];
+            $total += $amount;
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => count($headerIds),
+            'by_category' => $byCategory,
+        ];
+    }
+
+    /**
+     * Transaksi pembelian per category (semua sub-category) untuk modal pie chart.
+     *
+     * @return list<object>
+     */
+    public function listPurchaseCategoryTransactions(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        ?string $category = null
+    ): array {
+        $categoryFilter = $category !== null ? trim($category) : null;
+        if ($categoryFilter === '') {
+            $categoryFilter = null;
+        }
+
+        $grouped = [];
+        $sourceLabels = [
+            'gsr-' => 'GSR',
+            'rws-' => 'RWS',
+            'rf-' => 'Retail Food',
+        ];
+
+        foreach ($this->allPurchaseLines($outletId, $dateFrom, $dateTo) as $line) {
+            $cat = trim((string) ($line->category ?? ''));
+            if ($cat === '') {
+                $cat = 'Other';
+            }
+            if ($categoryFilter !== null && strcasecmp($cat, $categoryFilter) !== 0) {
+                continue;
+            }
+
+            $prefix = (string) ($line->source_prefix ?? 'gsr-');
+            $key = $prefix.$line->header_id;
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = (object) [
+                    'id' => $key,
+                    'number' => (string) ($line->number ?? '-'),
+                    'date' => (string) ($line->date ?? ''),
+                    'source' => $sourceLabels[$prefix] ?? strtoupper(rtrim($prefix, '-')),
+                    'type' => 'purchase_category',
+                    'creator_name' => (string) ($line->creator_name ?? '-'),
+                    'amount' => 0.0,
+                    'items' => [],
+                ];
+            }
+            $amount = round((float) ($line->amount ?? 0), 2);
+            $grouped[$key]->amount = round((float) $grouped[$key]->amount + $amount, 2);
+            $grouped[$key]->items[] = [
+                'item_name' => (string) ($line->item_name ?? '-'),
+                'category' => $cat,
+                'qty' => round((float) ($line->qty ?? 0), 4),
+                'unit' => (string) ($line->unit_name ?? '-'),
+                'price' => round((float) ($line->price ?? 0), 2),
+                'amount' => $amount,
+            ];
+        }
+
+        $rows = array_values($grouped);
+        usort($rows, function ($a, $b) {
+            $cmp = strcmp((string) $b->date, (string) $a->date);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return strcmp((string) $b->number, (string) $a->number);
+        });
+
+        return $rows;
+    }
+
+    /**
+     * Semua line pembelian GSR + RWS + Retail Food (tanpa filter MCS).
+     *
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function allPurchaseLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        return $this->allPurchaseSerialGrLines($outletId, $dateFrom, $dateTo)
+            ->concat($this->allPurchaseRwsLines($outletId, $dateFrom, $dateTo))
+            ->concat($this->allPurchaseRwsSerialLines($outletId, $dateFrom, $dateTo))
+            ->concat($this->allPurchaseRetailFoodLines($outletId, $dateFrom, $dateTo));
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function allPurchaseSerialGrLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! $this->hasSerialGrTables()) {
+            return collect();
+        }
+
+        $priceSql = $this->serialGrPriceSql('it');
+
+        return DB::table('outlet_serial_receive_items as si')
+            ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->leftJoin('users as usr', 'h.created_by', '=', 'usr.id')
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->where('h.outlet_id', $outletId)
+            ->whereDate('h.receive_date', '>=', $dateFrom)
+            ->whereDate('h.receive_date', '<=', $dateTo)
+            ->select([
+                'h.id as header_id',
+                'h.number',
+                'h.receive_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'gsr-' as source_prefix"),
+                DB::raw('si.qty as qty'),
+                DB::raw("({$priceSql}) as price"),
+                DB::raw("si.qty * ({$priceSql}) as amount"),
+            ])
+            ->get();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function allPurchaseRwsLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('retail_warehouse_sale_items')) {
+            return collect();
+        }
+
+        return DB::table('retail_warehouse_sale_items as rwsi')
+            ->join('retail_warehouse_sales as rws', 'rwsi.retail_warehouse_sale_id', '=', 'rws.id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereDate('rws.sale_date', '>=', $dateFrom)
+            ->whereDate('rws.sale_date', '<=', $dateTo)
+            ->select([
+                'rws.id as header_id',
+                'rws.number',
+                'rws.sale_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'rwsi.unit as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'rws-' as source_prefix"),
+                DB::raw('rwsi.qty as qty'),
+                DB::raw('COALESCE(rwsi.price, 0) as price'),
+                DB::raw('COALESCE(rwsi.subtotal, rwsi.qty * rwsi.price, 0) as amount'),
+            ])
+            ->get();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function allPurchaseRwsSerialLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('retail_warehouse_sale_serial_items')) {
+            return collect();
+        }
+
+        return DB::table('retail_warehouse_sale_serial_items as rwss')
+            ->join('retail_warehouse_sales as rws', 'rwss.retail_warehouse_sale_id', '=', 'rws.id')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->join('items as it', 'rwss.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereDate('rws.sale_date', '>=', $dateFrom)
+            ->whereDate('rws.sale_date', '<=', $dateTo)
+            ->select([
+                'rws.id as header_id',
+                'rws.number',
+                'rws.sale_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'rwss.unit_name as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'rws-' as source_prefix"),
+                DB::raw('rwss.qty as qty'),
+                DB::raw('COALESCE(rwss.price, 0) as price'),
+                DB::raw('COALESCE(rwss.subtotal, rwss.qty * rwss.price, 0) as amount'),
+            ])
+            ->get();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function allPurchaseRetailFoodLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('retail_food_items')) {
+            return collect();
+        }
+
+        return DB::table('retail_food_items as rfi')
+            ->join('retail_food as rf', 'rfi.retail_food_id', '=', 'rf.id')
+            ->join('items as it', DB::raw('TRIM(it.name)'), '=', DB::raw('TRIM(rfi.item_name)'))
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('users as usr', 'rf.created_by', '=', 'usr.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->select([
+                'rf.id as header_id',
+                'rf.retail_number as number',
+                'rf.transaction_date as date',
+                'sc.name as category',
+                'rfi.item_name as item_name',
+                'rfi.unit as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw("'rf-' as source_prefix"),
+                DB::raw('rfi.qty as qty'),
+                DB::raw('COALESCE(rfi.price, 0) as price'),
+                DB::raw('COALESCE(rfi.subtotal, rfi.qty * rfi.price, 0) as amount'),
+            ])
+            ->get();
     }
 
     /**

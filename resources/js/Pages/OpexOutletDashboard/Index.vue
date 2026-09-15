@@ -506,7 +506,7 @@
               <div class="min-w-0 flex-1">
                 <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembelian MCS</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
-                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi GR/GSR</p>
+                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · RWS · Retail Food</p>
                 <p v-if="ov.mcs_purchase_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                   {{ ov.mcs_purchase_revenue_pct }}% dari revenue
                 </p>
@@ -552,14 +552,29 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
-          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
-            <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
-            <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
-            <apexchart type="bar" height="340" :options="stackOptions" :series="stackSeries" />
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Pembelian per Category</h2>
+            <p class="text-xs text-slate-500 mb-4">Semua category · GSR · RWS · Retail Food — klik slice untuk detail</p>
+            <apexchart
+              v-if="purchaseCategoryMixSeries.some((v) => v > 0)"
+              type="pie"
+              height="320"
+              :options="purchaseCategoryMixOptions"
+              :series="purchaseCategoryMixSeries"
+            />
+            <p v-else class="text-sm text-slate-500 py-16 text-center">Belum ada pembelian.</p>
           </div>
 
-          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+          <div class="xl:col-span-2 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
+            <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
+            <apexchart type="bar" height="320" :options="stackOptions" :series="stackSeries" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5 xl:col-span-2">
             <h2 class="text-lg font-bold text-slate-900 mb-1">Daily Snapshot</h2>
             <p class="text-xs text-slate-500 mb-4">Revenue & total spend per hari</p>
             <div class="overflow-auto max-h-[340px] rounded-2xl border border-slate-100">
@@ -670,7 +685,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -936,16 +951,24 @@
               </p>
             </template>
 
-            <!-- MCS Purchase: transaksi + items -->
-            <template v-else-if="modalType === 'mcs_purchase'">
+            <!-- Purchase / MCS: transaksi + items -->
+            <template v-else-if="modalType === 'mcs_purchase' || modalType === 'purchase_category'">
               <div class="flex flex-wrap gap-2 items-end">
                 <input
                   v-model="modalSearch"
                   type="text"
-                  placeholder="Cari nomor / item / category..."
+                  placeholder="Cari nomor / item / category / creator..."
                   class="flex-1 min-w-[200px] rounded-xl border-slate-200 text-sm"
                   @keyup.enter="fetchModal"
                 />
+                <button
+                  v-if="mcsCategoryFilter"
+                  type="button"
+                  class="px-4 py-2 rounded-xl border border-amber-200 text-amber-700 text-sm"
+                  @click="mcsCategoryFilter = ''; fetchModal()"
+                >
+                  Semua category
+                </button>
                 <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="fetchModal">Cari</button>
               </div>
 
@@ -1007,11 +1030,12 @@
                   </div>
                 </div>
                 <div v-if="!modalTxns.length" class="py-10 text-center text-slate-400 text-sm">
-                  Tidak ada transaksi pembelian MCS
+                  Tidak ada transaksi pembelian
                 </div>
               </div>
               <p class="text-xs text-slate-500">
-                {{ modalPagination.total }} transaksi · Marketing / Chemical / Stationary
+                {{ modalPagination.total }} transaksi · GSR · RWS · Retail Food
+                <span v-if="mcsCategoryFilter"> · filter {{ mcsCategoryFilter }}</span>
               </p>
             </template>
 
@@ -1107,6 +1131,8 @@ const emptyDashboard = () => ({
   overview: null,
   trend: [],
   spend_mix: [],
+  mcs_mix: [],
+  purchase_category_mix: [],
   payment_methods: [],
   ro_forecast: null,
   outlet_name: null,
@@ -1180,6 +1206,12 @@ const mergeSectionPayload = (section, data) => {
 
   if (data.spend_mix !== undefined) {
     dashboardData.value.spend_mix = data.spend_mix
+  }
+  if (data.mcs_mix !== undefined) {
+    dashboardData.value.mcs_mix = data.mcs_mix
+  }
+  if (data.purchase_category_mix !== undefined) {
+    dashboardData.value.purchase_category_mix = data.purchase_category_mix
   }
 }
 
@@ -1396,6 +1428,32 @@ const mixOptions = computed(() => ({
   },
 }))
 
+const purchaseCategoryMixRows = computed(() => dashboardData.value.purchase_category_mix || [])
+const purchaseCategoryMixSeries = computed(() => purchaseCategoryMixRows.value.map((i) => Number(i.amount) || 0))
+const purchaseCategoryMixOptions = computed(() => ({
+  labels: purchaseCategoryMixRows.value.map((i) => i.label),
+  colors: [
+    '#f59e0b', '#0ea5e9', '#10b981', '#8b5cf6', '#f43f5e', '#14b8a6',
+    '#eab308', '#6366f1', '#fb7185', '#22c55e', '#a855f7', '#64748b',
+  ],
+  legend: { position: 'bottom', fontSize: '11px' },
+  dataLabels: { enabled: true, formatter: (val) => `${val.toFixed(0)}%` },
+  tooltip: {
+    y: { formatter: (val) => formatCurrency(val) },
+  },
+  chart: {
+    events: {
+      dataPointSelection: (_event, _ctx, config) => {
+        const idx = config?.dataPointIndex
+        if (idx == null || idx < 0) return
+        const row = purchaseCategoryMixRows.value[idx]
+        if (!row) return
+        openPurchaseCategory(row.label || row.key)
+      },
+    },
+  },
+}))
+
 const paymentMethods = computed(() => dashboardData.value.payment_methods || [])
 
 const paymentGrouped = computed(() => {
@@ -1451,6 +1509,7 @@ const modalTrend = ref([])
 const modalPagination = ref({ total: 0, total_pages: 1 })
 const modalSheetMeta = ref(null)
 const expandedMcsTxnIds = ref({})
+const mcsCategoryFilter = ref('')
 
 const toggleMcsTxn = (id) => {
   expandedMcsTxnIds.value = {
@@ -1475,7 +1534,12 @@ const modalTitle = computed(() => {
     petty_cash: 'Petty Cash',
     stock_cut: 'Stock Cut',
     category_cost: 'Category Cost',
-    mcs_purchase: 'Pembelian MCS',
+    mcs_purchase: mcsCategoryFilter.value
+      ? `Pembelian MCS · ${mcsCategoryFilter.value}`
+      : 'Pembelian MCS',
+    purchase_category: mcsCategoryFilter.value
+      ? `Pembelian · ${mcsCategoryFilter.value}`
+      : 'Pembelian per Category',
     outlet_city_ledger: 'Outlet City Ledger',
     total_spend: 'Total Spend',
   }
@@ -1620,7 +1684,15 @@ const openCard = async (type) => {
   modalSearch.value = ''
   modalPage.value = 1
   expandedMcsTxnIds.value = {}
+  if (type !== 'mcs_purchase' && type !== 'purchase_category') {
+    mcsCategoryFilter.value = ''
+  }
   await fetchModal()
+}
+
+const openPurchaseCategory = async (category) => {
+  mcsCategoryFilter.value = category || ''
+  await openCard('purchase_category')
 }
 
 const closeModal = () => {
@@ -1629,22 +1701,25 @@ const closeModal = () => {
   modalTrend.value = []
   modalSheetMeta.value = null
   expandedMcsTxnIds.value = {}
+  mcsCategoryFilter.value = ''
 }
 
 const fetchModal = async () => {
   modalLoading.value = true
   try {
-    const { data } = await axios.get('/opex-outlet-dashboard/card-detail', {
-      params: {
-        type: modalType.value,
-        outlet_id: filters.value.outlet_id,
-        date_from: filters.value.date_from,
-        date_to: filters.value.date_to,
-        search: modalSearch.value,
-        page: modalPage.value,
-        per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase'].includes(modalType.value) ? 62 : 20,
-      },
-    })
+    const params = {
+      type: modalType.value,
+      outlet_id: filters.value.outlet_id,
+      date_from: filters.value.date_from,
+      date_to: filters.value.date_to,
+      search: modalSearch.value,
+      page: modalPage.value,
+      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'].includes(modalType.value) ? 62 : 20,
+    }
+    if (['mcs_purchase', 'purchase_category'].includes(modalType.value) && mcsCategoryFilter.value) {
+      params.category = mcsCategoryFilter.value
+    }
+    const { data } = await axios.get('/opex-outlet-dashboard/card-detail', { params })
     modalTrend.value = data.trend || []
     modalTxns.value = data.transactions || []
     modalSheetMeta.value = data.sheet_meta || null

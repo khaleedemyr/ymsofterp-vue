@@ -79,10 +79,11 @@ class OpexOutletDashboardController extends Controller
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
         $page = max(1, (int) $request->get('page', 1));
-        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase'], true) ? 62 : 20;
-        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase'], true) ? 93 : 50;
+        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'], true) ? 62 : 20;
+        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'], true) ? 93 : 50;
         $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
+        $category = trim((string) $request->get('category', ''));
 
         $outletId = $userOutletId === 1
             ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
@@ -109,6 +110,28 @@ class OpexOutletDashboardController extends Controller
             $transactions = collect($sheet['rows']);
             $sheetMeta = [
                 'type_columns' => $sheet['type_columns'],
+            ];
+        } elseif ($type === 'mcs_purchase') {
+            $transactions = collect($this->opexService->listMcsPurchaseTransactions(
+                $outletId,
+                $dateFrom,
+                $dateTo,
+                $category !== '' ? $category : null
+            ));
+            $sheetMeta = [
+                'category' => $category !== '' ? $category : null,
+                'mcs_only' => true,
+            ];
+        } elseif ($type === 'purchase_category') {
+            $transactions = collect($this->opexService->listPurchaseCategoryTransactions(
+                $outletId,
+                $dateFrom,
+                $dateTo,
+                $category !== '' ? $category : null
+            ));
+            $sheetMeta = [
+                'category' => $category !== '' ? $category : null,
+                'mcs_only' => false,
             ];
         } else {
             $transactions = $this->transactionsForType($type, $outletId, $outlet?->qr_code, $dateFrom, $dateTo);
