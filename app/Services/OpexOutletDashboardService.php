@@ -17,6 +17,23 @@ class OpexOutletDashboardService
 
     private const SERVICE_BUDGET_RATIO = 0.05;
 
+    /** @var array<string, string> */
+    public const CATEGORY_COST_TYPE_LABELS = [
+        'internal_use' => 'Internal Use',
+        'spoil' => 'Spoil',
+        'waste' => 'Waste',
+        'usage' => 'Usage',
+        'r_and_d' => 'R & D',
+        'marketing' => 'Marketing',
+        'non_commodity' => 'Non Commodity',
+        'guest_supplies' => 'Guest Supplies',
+        'wrong_maker' => 'Wrong Maker',
+        'training' => 'Training',
+    ];
+
+    /** @var list<string> */
+    private const CATEGORY_COST_APPROVAL_TYPES = ['r_and_d', 'marketing', 'wrong_maker', 'training'];
+
     /**
      * @return array<string, mixed>
      */
@@ -122,6 +139,8 @@ class OpexOutletDashboardService
             'retail_food' => $this->vsMetric($current['retail_food'], $previous['retail_food']),
             'retail_non_food' => $this->vsMetric($current['retail_non_food'], $previous['retail_non_food']),
             'petty_cash' => $this->vsMetric($current['petty_cash'], $previous['petty_cash']),
+            'stock_cut' => $this->vsMetric($current['stock_cut'], $previous['stock_cut']),
+            'category_cost' => $this->vsMetric($current['category_cost'], $previous['category_cost']),
         ];
 
         return ['overview' => $current];
@@ -149,6 +168,8 @@ class OpexOutletDashboardService
         $compliment = $this->sumManualDiscountByType($qrCode, $dateFrom, $dateTo, 'compliment');
         $guestSatisfaction = $this->sumManualDiscountByType($qrCode, $dateFrom, $dateTo, 'guest_satisfaction');
         $officerCheck = $this->sumOfficerCheck($qrCode, $dateFrom, $dateTo);
+        $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
+        $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
         $monthlyBudget = $this->sumMonthlyRevenueBudget($outletId, $dateFrom, $dateTo);
         $budgetPerf = $monthlyBudget !== null && $monthlyBudget > 0
             ? round(($revenue['total'] / $monthlyBudget) * 100, 1)
@@ -206,6 +227,13 @@ class OpexOutletDashboardService
             'petty_cash_rf' => $rf['cash_total'],
             'petty_cash_rnf' => $rnf['cash_total'],
             'petty_cash_revenue_pct' => $pctOfRevenue($pettyCash),
+            'stock_cut' => $stockCut['total'],
+            'stock_cut_count' => $stockCut['count'],
+            'stock_cut_revenue_pct' => $pctOfRevenue($stockCut['total']),
+            'category_cost' => $categoryCost['total'],
+            'category_cost_count' => $categoryCost['count'],
+            'category_cost_by_type' => $categoryCost['by_type'],
+            'category_cost_revenue_pct' => $pctOfRevenue($categoryCost['total']),
             'total_spend' => $totalSpend,
             'spend_ratio_percent' => $spendRatio,
             'net' => round($revenue['total'] - $totalSpend, 2),
@@ -1479,6 +1507,8 @@ class OpexOutletDashboardService
             'retail_food' => $this->retailFoodByDate($outletId, $dateFrom, $dateTo),
             'retail_non_food' => $this->retailNonFoodByDate($outletId, $dateFrom, $dateTo),
             'petty_cash' => $this->pettyCashByDate($outletId, $dateFrom, $dateTo),
+            'stock_cut' => $this->stockCutByDate($outletId, $dateFrom, $dateTo),
+            'category_cost' => $this->categoryCostByDate($outletId, $dateFrom, $dateTo),
             'total_spend' => $this->mergeDateMaps(
                 $this->foodGrByDate($outletId, $dateFrom, $dateTo),
                 $this->gsrByDate($outletId, $dateFrom, $dateTo),
@@ -1645,6 +1675,229 @@ class OpexOutletDashboardService
             && Schema::hasTable('outlet_serial_receive_items');
     }
 
+    /**
+     * Daily spend ala Receiving Sheet: Main Store / MK1 / MK2 + supplier Retail Food.
+     * Tanpa omzet / % cost.
+     *
+     * @return array{
+     *   rows: list<object>,
+     *   warehouse_columns: list<array{key: string, name: string}>,
+     *   suppliers: list<array{id: int|string, name: string}>
+     * }
+     */
+    public function buildReceivingSheetStyleDaily(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $warehouseColumns = [
+            ['key' => 'main_store', 'name' => 'Main Store'],
+            ['key' => 'mk1', 'name' => 'MK1 Hot Kitchen'],
+            ['key' => 'mk2', 'name' => 'MK2 Cold Kitchen'],
+        ];
+
+        $warehouseSpendByDate = [];
+        $addWarehouseSpend = function (array &$warehouseSpendByDate, $date, $warehouseName, $amount): void {
+            $date = (string) $date;
+            $amount = (float) $amount;
+            $bucket = $this->receivingSheetWarehouseBucket($warehouseName);
+            if ($date === '' || $amount == 0.0 || $bucket === null) {
+                return;
+            }
+            if (! isset($warehouseSpendByDate[$date])) {
+                $warehouseSpendByDate[$date] = [
+                    'main_store' => 0.0,
+                    'mk1' => 0.0,
+                    'mk2' => 0.0,
+                ];
+            }
+            $warehouseSpendByDate[$date][$bucket] += $amount;
+        };
+
+        $grSpendQuery = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                $join->on('ffoi.floor_order_id', '=', 'ffo.id')
+                    ->on('ffoi.item_id', '=', 'ofgri.item_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'fpl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->whereDate('ofgr.receive_date', '>=', $dateFrom)
+            ->whereDate('ofgr.receive_date', '<=', $dateTo)
+            ->whereNotNull('w.id')
+            ->select(
+                'ofgr.receive_date as tanggal',
+                'w.name as warehouse_name',
+                DB::raw('SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
+            )
+            ->groupBy('ofgr.receive_date', 'w.name')
+            ->get();
+
+        foreach ($grSpendQuery as $row) {
+            $addWarehouseSpend($warehouseSpendByDate, $row->tanggal, $row->warehouse_name, $row->total);
+        }
+
+        if ($this->hasSerialGrTables()) {
+            $gsrPriceExpr = $this->serialGrPriceSql('it');
+            $gsrSpendQuery = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->where('h.outlet_id', $outletId)
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->whereNotNull('w.id')
+                ->select(
+                    'h.receive_date as tanggal',
+                    'w.name as warehouse_name',
+                    DB::raw("SUM(si.qty * ({$gsrPriceExpr})) as total")
+                )
+                ->groupBy('h.receive_date', 'w.name')
+                ->get();
+
+            foreach ($gsrSpendQuery as $row) {
+                $addWarehouseSpend($warehouseSpendByDate, $row->tanggal, $row->warehouse_name, $row->total);
+            }
+        }
+
+        $rwsSpendQuery = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', function ($join) {
+                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+            })
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereDate('rws.sale_date', '>=', $dateFrom)
+            ->whereDate('rws.sale_date', '<=', $dateTo)
+            ->whereNotNull('w.id')
+            ->select(
+                'rws.sale_date as tanggal',
+                'w.name as warehouse_name',
+                DB::raw('SUM(COALESCE(rws.total_amount, 0)) as total')
+            )
+            ->groupBy('rws.sale_date', 'w.name')
+            ->get();
+
+        foreach ($rwsSpendQuery as $row) {
+            $addWarehouseSpend($warehouseSpendByDate, $row->tanggal, $row->warehouse_name, $row->total);
+        }
+
+        $retailSupplierData = DB::table('retail_food as rf')
+            ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereNotNull('rf.supplier_id')
+            ->where('rf.outlet_id', $outletId)
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->select(
+                'rf.transaction_date as tanggal',
+                's.id as supplier_id',
+                's.name as supplier_name',
+                DB::raw('SUM(COALESCE(rf.total_amount, 0)) as total')
+            )
+            ->groupBy('rf.transaction_date', 's.id', 's.name')
+            ->get();
+
+        $suppliers = $retailSupplierData->map(fn ($row) => [
+            'id' => $row->supplier_id,
+            'name' => $row->supplier_name,
+        ])->unique('id')->sortBy('name')->values()->all();
+
+        $supplierSpendByDate = [];
+        foreach ($retailSupplierData as $row) {
+            $date = (string) $row->tanggal;
+            $sid = $row->supplier_id;
+            if (! isset($supplierSpendByDate[$date])) {
+                $supplierSpendByDate[$date] = [];
+            }
+            $supplierSpendByDate[$date][$sid] = (float) $row->total;
+        }
+
+        $dayNames = [
+            0 => 'Minggu',
+            1 => 'Senin',
+            2 => 'Selasa',
+            3 => 'Rabu',
+            4 => 'Kamis',
+            5 => 'Jumat',
+            6 => 'Sabtu',
+        ];
+
+        $allDates = collect(array_keys($warehouseSpendByDate))
+            ->merge(array_keys($supplierSpendByDate))
+            ->unique()
+            ->sortDesc()
+            ->values();
+
+        $rows = [];
+        foreach ($allDates as $date) {
+            $date = (string) $date;
+            $mainStore = round((float) ($warehouseSpendByDate[$date]['main_store'] ?? 0), 2);
+            $mk1 = round((float) ($warehouseSpendByDate[$date]['mk1'] ?? 0), 2);
+            $mk2 = round((float) ($warehouseSpendByDate[$date]['mk2'] ?? 0), 2);
+            $supplierValues = [];
+            $supplierTotal = 0.0;
+            foreach ($suppliers as $sp) {
+                $sid = $sp['id'];
+                $val = round((float) ($supplierSpendByDate[$date][$sid] ?? 0), 2);
+                $supplierValues['supplier_'.$sid] = $val;
+                $supplierTotal += $val;
+            }
+            $cost = round($mainStore + $mk1 + $mk2 + $supplierTotal, 2);
+            $carbon = Carbon::parse($date);
+            $dow = (int) $carbon->dayOfWeek;
+
+            $rows[] = (object) array_merge([
+                'id' => $date,
+                'type' => 'total_spend',
+                'source' => 'Receiving Sheet',
+                'date' => $date,
+                'number' => $date,
+                'day_name' => $dayNames[$dow] ?? $carbon->format('l'),
+                'is_weekend' => in_array($dow, [0, 6], true),
+                'main_store' => $mainStore,
+                'mk1' => $mk1,
+                'mk2' => $mk2,
+                'amount' => $cost,
+                'total_spend' => $cost,
+                'creator_name' => $dayNames[$dow] ?? '',
+            ], $supplierValues);
+        }
+
+        return [
+            'rows' => $rows,
+            'warehouse_columns' => $warehouseColumns,
+            'suppliers' => $suppliers,
+        ];
+    }
+
+    private function receivingSheetWarehouseBucket(?string $warehouseName): ?string
+    {
+        $whName = strtoupper(trim((string) $warehouseName));
+        if ($whName === '') {
+            return null;
+        }
+        if ($whName === 'MAIN STORE' || str_contains($whName, 'MAIN STORE')) {
+            return 'main_store';
+        }
+        if ($whName === 'MK1 HOT KITCHEN' || str_starts_with($whName, 'MK1')) {
+            return 'mk1';
+        }
+        if ($whName === 'MK2 COLD KITCHEN' || str_starts_with($whName, 'MK2')) {
+            return 'mk2';
+        }
+
+        return null;
+    }
+
     private function serialGrPriceSql(string $itemAlias = 'it'): string
     {
         $costSmall = 'COALESCE(si.cost_small, 0)';
@@ -1656,6 +1909,241 @@ class OpexOutletDashboardService
             WHEN si.unit_id = {$itemAlias}.medium_unit_id THEN {$costSmall} * {$smallConv}
             ELSE {$costSmall}
         END)";
+    }
+
+    /**
+     * Stock Cut value from stock_cut_details.value_out (success logs only).
+     *
+     * @return array{total: float, count: int}
+     */
+    public function sumStockCut(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
+            return ['total' => 0.0, 'count' => 0];
+        }
+
+        $row = DB::table('stock_cut_details as d')
+            ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
+            ->where('l.outlet_id', $outletId)
+            ->where('l.status', 'success')
+            ->whereDate('l.tanggal', '>=', $dateFrom)
+            ->whereDate('l.tanggal', '<=', $dateTo)
+            ->selectRaw('COALESCE(SUM(d.value_out), 0) as total, COUNT(DISTINCT l.id) as cnt')
+            ->first();
+
+        return [
+            'total' => round((float) ($row->total ?? 0), 2),
+            'count' => (int) ($row->cnt ?? 0),
+        ];
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function stockCutByDate(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
+            return [];
+        }
+
+        return DB::table('stock_cut_details as d')
+            ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
+            ->where('l.outlet_id', $outletId)
+            ->where('l.status', 'success')
+            ->whereDate('l.tanggal', '>=', $dateFrom)
+            ->whereDate('l.tanggal', '<=', $dateTo)
+            ->selectRaw('DATE(l.tanggal) as d, COALESCE(SUM(d.value_out), 0) as total')
+            ->groupBy(DB::raw('DATE(l.tanggal)'))
+            ->pluck('total', 'd')
+            ->map(fn ($v) => (float) $v)
+            ->all();
+    }
+
+    /**
+     * Daily Stock Cut rows for modal detail.
+     *
+     * @return list<object>
+     */
+    public function buildStockCutDaily(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $byDate = $this->stockCutByDate($outletId, $dateFrom, $dateTo);
+        $rows = [];
+        foreach ($this->dateRange($dateFrom, $dateTo) as $date) {
+            $carbon = Carbon::parse($date);
+            $amount = round((float) ($byDate[$date] ?? 0), 2);
+            if ($amount == 0.0 && ! isset($byDate[$date])) {
+                // still show all days in range for consistency with revenue modal
+            }
+            $rows[] = (object) [
+                'id' => $date,
+                'date' => $date,
+                'day_name' => $carbon->locale('id')->translatedFormat('l'),
+                'is_weekend' => $carbon->isWeekend(),
+                'amount' => $amount,
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * Category Cost Outlet (outlet_internal_use_waste) using stored subtotal_mac.
+     * Status rules mirror Report Universal: approval types = APPROVED only.
+     *
+     * @return array{total: float, count: int, by_type: list<array{type: string, label: string, amount: float}>}
+     */
+    public function sumCategoryCost(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $empty = ['total' => 0.0, 'count' => 0, 'by_type' => $this->emptyCategoryCostByType()];
+        if (! Schema::hasTable('outlet_internal_use_waste_headers')) {
+            return $empty;
+        }
+
+        $rows = $this->categoryCostHeaderQuery($outletId, $dateFrom, $dateTo)
+            ->selectRaw("
+                CASE WHEN h.type = 'stock_cut' THEN 'usage' ELSE h.type END as type_key,
+                COALESCE(SUM(h.subtotal_mac), 0) as total,
+                COUNT(*) as cnt
+            ")
+            ->groupBy(DB::raw("CASE WHEN h.type = 'stock_cut' THEN 'usage' ELSE h.type END"))
+            ->get();
+
+        $map = [];
+        $total = 0.0;
+        $count = 0;
+        foreach ($rows as $row) {
+            $type = (string) ($row->type_key ?? '');
+            if ($type === '' || ! isset(self::CATEGORY_COST_TYPE_LABELS[$type])) {
+                continue;
+            }
+            $amount = round((float) ($row->total ?? 0), 2);
+            $map[$type] = $amount;
+            $total += $amount;
+            $count += (int) ($row->cnt ?? 0);
+        }
+
+        $byType = [];
+        foreach (self::CATEGORY_COST_TYPE_LABELS as $type => $label) {
+            $byType[] = [
+                'type' => $type,
+                'label' => $label,
+                'amount' => round((float) ($map[$type] ?? 0), 2),
+            ];
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => $count,
+            'by_type' => $byType,
+        ];
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function categoryCostByDate(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('outlet_internal_use_waste_headers')) {
+            return [];
+        }
+
+        return $this->categoryCostHeaderQuery($outletId, $dateFrom, $dateTo)
+            ->selectRaw('DATE(h.date) as d, COALESCE(SUM(h.subtotal_mac), 0) as total')
+            ->groupBy(DB::raw('DATE(h.date)'))
+            ->pluck('total', 'd')
+            ->map(fn ($v) => (float) $v)
+            ->all();
+    }
+
+    /**
+     * Daily Category Cost per type + total.
+     *
+     * @return array{rows: list<object>, type_columns: list<array{key: string, label: string}>}
+     */
+    public function buildCategoryCostDaily(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $typeColumns = [];
+        foreach (self::CATEGORY_COST_TYPE_LABELS as $key => $label) {
+            $typeColumns[] = ['key' => $key, 'label' => $label];
+        }
+
+        $byDateType = [];
+        if (Schema::hasTable('outlet_internal_use_waste_headers')) {
+            $agg = $this->categoryCostHeaderQuery($outletId, $dateFrom, $dateTo)
+                ->selectRaw("
+                    DATE(h.date) as d,
+                    CASE WHEN h.type = 'stock_cut' THEN 'usage' ELSE h.type END as type_key,
+                    COALESCE(SUM(h.subtotal_mac), 0) as total
+                ")
+                ->groupBy(DB::raw('DATE(h.date)'), DB::raw("CASE WHEN h.type = 'stock_cut' THEN 'usage' ELSE h.type END"))
+                ->get();
+
+            foreach ($agg as $row) {
+                $d = (string) $row->d;
+                $type = (string) ($row->type_key ?? '');
+                if ($type === '' || ! isset(self::CATEGORY_COST_TYPE_LABELS[$type])) {
+                    continue;
+                }
+                $byDateType[$d][$type] = round((float) ($row->total ?? 0), 2);
+            }
+        }
+
+        $rows = [];
+        foreach ($this->dateRange($dateFrom, $dateTo) as $date) {
+            $carbon = Carbon::parse($date);
+            $payload = [
+                'id' => $date,
+                'date' => $date,
+                'day_name' => $carbon->locale('id')->translatedFormat('l'),
+                'is_weekend' => $carbon->isWeekend(),
+            ];
+            $total = 0.0;
+            foreach (self::CATEGORY_COST_TYPE_LABELS as $type => $_label) {
+                $amount = (float) ($byDateType[$date][$type] ?? 0);
+                $payload[$type] = $amount;
+                $total += $amount;
+            }
+            $payload['total'] = round($total, 2);
+            $rows[] = (object) $payload;
+        }
+
+        return [
+            'rows' => $rows,
+            'type_columns' => $typeColumns,
+        ];
+    }
+
+    /**
+     * @return list<array{type: string, label: string, amount: float}>
+     */
+    private function emptyCategoryCostByType(): array
+    {
+        $out = [];
+        foreach (self::CATEGORY_COST_TYPE_LABELS as $type => $label) {
+            $out[] = ['type' => $type, 'label' => $label, 'amount' => 0.0];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return \Illuminate\Database\Query\Builder
+     */
+    private function categoryCostHeaderQuery(int $outletId, string $dateFrom, string $dateTo)
+    {
+        $approvalTypes = self::CATEGORY_COST_APPROVAL_TYPES;
+
+        return DB::table('outlet_internal_use_waste_headers as h')
+            ->where('h.outlet_id', $outletId)
+            ->whereDate('h.date', '>=', $dateFrom)
+            ->whereDate('h.date', '<=', $dateTo)
+            ->where(function ($q) use ($approvalTypes) {
+                $q->whereNotIn('h.type', $approvalTypes)
+                    ->orWhere(function ($sub) use ($approvalTypes) {
+                        $sub->whereIn('h.type', $approvalTypes)
+                            ->where('h.status', 'APPROVED');
+                    });
+            });
     }
 
     /**
