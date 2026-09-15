@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\OpexOutletDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -9,6 +10,10 @@ use Inertia\Inertia;
 
 class OpexOutletDashboardController extends Controller
 {
+    public function __construct(
+        private OpexOutletDashboardService $opexService
+    ) {}
+
     public function index(Request $request)
     {
         $user = auth()->user();
@@ -37,7 +42,8 @@ class OpexOutletDashboardController extends Controller
                 'opexByCategory' => [],
                 'unpaidPRs' => [],
                 'recentPayments' => [],
-                'retailNonFood' => []
+                'retailNonFood' => [],
+                'revenueKpi' => null,
             ];
         }
         
@@ -73,24 +79,21 @@ class OpexOutletDashboardController extends Controller
 
     private function getDashboardData($dateFrom, $dateTo, $outletId = null, $request = null)
     {
-        // 1. Overview Metrics
-        $overview = $this->getOverviewMetrics($dateFrom, $dateTo, $outletId);
-        
-        // 2. Opex Trend (Daily)
-        $opexTrend = $this->getOpexTrend($dateFrom, $dateTo, $outletId);
-        
-        // 3. Opex by Category
+        $outletIdInt = $outletId ? (int) $outletId : null;
+
+        $overview = $this->opexService->getOverview($outletIdInt, $dateFrom, $dateTo);
+        $opexTrend = $this->opexService->getOpexTrend($outletIdInt, $dateFrom, $dateTo);
         $opexByCategory = $this->getOpexByCategory($dateFrom, $dateTo, $outletId);
-        
-        // 4. Unpaid PRs
         $unpaidPRs = $this->getUnpaidPRs($dateFrom, $dateTo, $outletId);
-        
-        // 5. Recent Payments
         $recentPayments = $this->getRecentPayments($dateFrom, $dateTo, $outletId);
-        
-        // 6. Retail Non Food (with pagination)
         $retailPage = $request ? $request->get('retail_page', 1) : 1;
         $retailNonFood = $this->getRetailNonFood($dateFrom, $dateTo, $outletId, $retailPage);
+        $revenueKpi = $this->opexService->buildRevenueKpi(
+            $outletIdInt,
+            $dateFrom,
+            $dateTo,
+            (float) ($overview['total_opex'] ?? 0)
+        );
 
         return [
             'overview' => $overview,
@@ -98,316 +101,74 @@ class OpexOutletDashboardController extends Controller
             'opexByCategory' => $opexByCategory,
             'unpaidPRs' => $unpaidPRs,
             'recentPayments' => $recentPayments,
-            'retailNonFood' => $retailNonFood
+            'retailNonFood' => $retailNonFood,
+            'revenueKpi' => $revenueKpi,
         ];
     }
 
     private function getOverviewMetrics($dateFrom, $dateTo, $outletId = null)
     {
-        // Get paid amount from Non Food Payment
-        $paidQuery = DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-            ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-            ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-            ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->where('poi.source_type', 'purchase_requisition_ops');
-        
-        if ($outletId) {
-            $paidQuery->where('pr.outlet_id', $outletId);
-        }
-        
-        $totalPaid = (float) $paidQuery->sum('nfp.amount');
-        $paymentCount = (int) $paidQuery->count('nfp.id');
-        
-        // Get direct payment (without PO)
-        $directPaidQuery = DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-            ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
-            ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->whereNotNull('nfp.purchase_requisition_id');
-        
-        if ($outletId) {
-            $directPaidQuery->where('pr.outlet_id', $outletId);
-        }
-        
-        $totalDirectPaid = (float) $directPaidQuery->sum('nfp.amount');
-        $directPaymentCount = (int) $directPaidQuery->count('nfp.id');
-        
-        // Get Retail Non Food
-        $retailNonFoodQuery = DB::table('retail_non_food as rnf')
-            ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
-            ->where('rnf.status', 'approved');
-        
-        if ($outletId) {
-            $retailNonFoodQuery->where('rnf.outlet_id', $outletId);
-        }
-        
-        $totalRetailNonFood = (float) $retailNonFoodQuery->sum('rnf.total_amount');
-        $retailNonFoodCount = (int) $retailNonFoodQuery->count('rnf.id');
-        
-        // Get unpaid PRs
-        $unpaidQuery = DB::table('purchase_requisitions as pr')
-            ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-            ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-            ->where('pr.is_held', false);
-        
-        if ($outletId) {
-            $unpaidQuery->where('pr.outlet_id', $outletId);
-        }
-        
-        $unpaidPRs = $unpaidQuery->get();
-        
-        // Calculate unpaid amount and count only PRs with unpaid amount > 0
-        $unpaidAmount = 0;
-        $unpaidPRCount = 0;
-        foreach ($unpaidPRs as $pr) {
-            // Get PO total for this PR
-            $poTotal = DB::table('purchase_order_ops_items as poi')
-                ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->where('poi.source_id', $pr->id)
-                ->where('poo.status', 'approved')
-                ->sum('poi.total');
-            
-            // Get paid amount for this PR
-            $paidAmount = 0;
-            if ($poTotal > 0) {
-                $poIds = DB::table('purchase_order_ops_items as poi')
-                    ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->where('poi.source_id', $pr->id)
-                    ->where('poo.status', 'approved')
-                    ->pluck('poi.purchase_order_ops_id')
-                    ->toArray();
-                
-                $paidAmount = DB::table('non_food_payments')
-                    ->whereIn('purchase_order_ops_id', $poIds)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
-            } else {
-                // Direct payment (without PO)
-                $paidAmount = DB::table('non_food_payments')
-                    ->where('purchase_requisition_id', $pr->id)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
-            }
-            
-            $prAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-            $prUnpaidAmount = max(0, $prAmount - $paidAmount);
-            
-            if ($prUnpaidAmount > 0) {
-                $unpaidAmount += $prUnpaidAmount;
-                $unpaidPRCount++;
-            }
-        }
-        
-        // Get Food Expenses (Floor Order GR + Retail Food)
-        $foodExpenses = $this->getFoodExpenses($dateFrom, $dateTo, $outletId);
-        $totalFood = $foodExpenses['total'];
-        $foodCount = $foodExpenses['count'];
-        
-        $totalOpex = $totalPaid + $totalDirectPaid + $totalRetailNonFood + $totalFood;
-        
-        return [
-            'total_paid' => $totalPaid + $totalDirectPaid,
-            'total_retail_non_food' => $totalRetailNonFood,
-            'total_food' => $totalFood,
-            'total_unpaid' => $unpaidAmount,
-            'total_opex' => $totalOpex,
-            'payment_count' => $paymentCount + $directPaymentCount,
-            'retail_non_food_count' => $retailNonFoodCount,
-            'food_count' => $foodCount,
-            'unpaid_pr_count' => $unpaidPRCount
-        ];
+        return $this->opexService->getOverview(
+            $outletId ? (int) $outletId : null,
+            $dateFrom,
+            $dateTo
+        );
     }
     
     private function getFoodExpenses($dateFrom, $dateTo, $outletId = null)
     {
-        // Get Floor Order GR (Good Receives yang sudah di-GR)
-        $floorOrderGRQuery = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
-            // Join untuk RO Supplier GR
-            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
-            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
-            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
-            ->leftJoin('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->where(function($q) {
-                         $q->whereColumn('fo.floor_order_id', 'do.floor_order_id')
-                           ->orWhereColumn('fo.floor_order_id', 'ffo_ro.id');
-                     });
-            })
-            ->whereBetween('gr.receive_date', [$dateFrom, $dateTo])
-            ->whereNull('gr.deleted_at');
-        
-        if ($outletId) {
-            $floorOrderGRQuery->where('gr.outlet_id', $outletId);
-        }
-        
-        $floorOrderGRTotal = (float) $floorOrderGRQuery->sum(DB::raw('i.received_qty * COALESCE(fo.price, 0)'));
-        $floorOrderGRCount = (int) DB::table('outlet_food_good_receives as gr')
-            ->whereBetween('gr.receive_date', [$dateFrom, $dateTo])
-            ->whereNull('gr.deleted_at')
-            ->when($outletId, function($q) use ($outletId) {
-                return $q->where('gr.outlet_id', $outletId);
-            })
-            ->distinct('gr.id')
-            ->count('gr.id');
-        
-        // Get Retail Food
-        $retailFoodQuery = DB::table('retail_food as rf')
-            ->whereBetween('rf.transaction_date', [$dateFrom, $dateTo])
-            ->where('rf.status', 'approved')
-            ->whereNull('rf.deleted_at');
-        
-        if ($outletId) {
-            $retailFoodQuery->where('rf.outlet_id', $outletId);
-        }
-        
-        $retailFoodTotal = (float) $retailFoodQuery->sum('rf.total_amount');
-        $retailFoodCount = (int) $retailFoodQuery->count('rf.id');
-        
+        $food = $this->opexService->sumFoodReceive(
+            $outletId ? (int) $outletId : null,
+            $dateFrom,
+            $dateTo
+        );
+
         return [
-            'total' => $floorOrderGRTotal + $retailFoodTotal,
-            'count' => $floorOrderGRCount + $retailFoodCount,
-            'floor_order_gr_total' => $floorOrderGRTotal,
-            'floor_order_gr_count' => $floorOrderGRCount,
-            'retail_food_total' => $retailFoodTotal,
-            'retail_food_count' => $retailFoodCount
+            'total' => $food['total'],
+            'count' => $food['count'],
+            'floor_order_gr_total' => $food['total'],
+            'floor_order_gr_count' => $food['count'],
+            'retail_food_total' => 0,
+            'retail_food_count' => 0,
         ];
     }
 
     private function getOpexTrend($dateFrom, $dateTo, $outletId = null)
     {
-        // Get all dates in range
-        $dates = [];
-        $current = Carbon::parse($dateFrom);
-        $end = Carbon::parse($dateTo);
-        
-        while ($current <= $end) {
-            $dates[] = $current->format('Y-m-d');
-            $current->addDay();
-        }
-        
-        $result = [];
-        foreach ($dates as $date) {
-            // Get paid amount for this date
-            $paidQuery = DB::table('non_food_payments as nfp')
-                ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                ->whereDate('nfp.payment_date', $date)
-                ->whereIn('nfp.status', ['paid', 'approved'])
-                ->where('nfp.status', '!=', 'cancelled')
-                ->where('poi.source_type', 'purchase_requisition_ops');
-            
-            if ($outletId) {
-                $paidQuery->where('pr.outlet_id', $outletId);
-            }
-            
-            $paidAmount = (float) $paidQuery->sum('nfp.amount');
-            
-            // Get direct payment
-            $directPaidQuery = DB::table('non_food_payments as nfp')
-                ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-                ->whereDate('nfp.payment_date', $date)
-                ->whereIn('nfp.status', ['paid', 'approved'])
-                ->where('nfp.status', '!=', 'cancelled')
-                ->whereNotNull('nfp.purchase_requisition_id');
-            
-            if ($outletId) {
-                $directPaidQuery->where('pr.outlet_id', $outletId);
-            }
-            
-            $directPaidAmount = (float) $directPaidQuery->sum('nfp.amount');
-            
-            // Get retail non food
-            $retailQuery = DB::table('retail_non_food')
-                ->whereDate('transaction_date', $date)
-                ->where('status', 'approved');
-            
-            if ($outletId) {
-                $retailQuery->where('outlet_id', $outletId);
-            }
-            
-            $retailAmount = (float) $retailQuery->sum('total_amount');
-            
-            // Get food expenses for this date (Floor Order GR + Retail Food)
-            $foodAmount = $this->getFoodExpensesForDate($date, $outletId);
-            
-            $result[] = [
-                'date' => $date,
-                'paid_amount' => $paidAmount + $directPaidAmount,
-                'retail_non_food_amount' => $retailAmount,
-                'food_amount' => $foodAmount
-            ];
-        }
-        
-        return $result;
+        return $this->opexService->getOpexTrend(
+            $outletId ? (int) $outletId : null,
+            $dateFrom,
+            $dateTo
+        );
     }
     
     private function getFoodExpensesForDate($date, $outletId = null)
     {
-        // Get Floor Order GR for this date
-        $floorOrderGRQuery = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
-            // Join untuk RO Supplier GR
-            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
-            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
-            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
-            ->leftJoin('food_floor_order_items as fo', function($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                     ->where(function($q) {
-                         $q->whereColumn('fo.floor_order_id', 'do.floor_order_id')
-                           ->orWhereColumn('fo.floor_order_id', 'ffo_ro.id');
-                     });
-            })
-            ->whereDate('gr.receive_date', $date)
-            ->whereNull('gr.deleted_at');
-        
-        if ($outletId) {
-            $floorOrderGRQuery->where('gr.outlet_id', $outletId);
-        }
-        
-        $floorOrderGRTotal = (float) $floorOrderGRQuery->sum(DB::raw('i.received_qty * COALESCE(fo.price, 0)'));
-        
-        // Get Retail Food for this date
-        $retailFoodQuery = DB::table('retail_food as rf')
-            ->whereDate('rf.transaction_date', $date)
-            ->where('rf.status', 'approved')
-            ->whereNull('rf.deleted_at');
-        
-        if ($outletId) {
-            $retailFoodQuery->where('rf.outlet_id', $outletId);
-        }
-        
-        $retailFoodTotal = (float) $retailFoodQuery->sum('rf.total_amount');
-        
-        return $floorOrderGRTotal + $retailFoodTotal;
+        $map = $this->opexService->foodReceiveByDate(
+            $outletId ? (int) $outletId : null,
+            $date,
+            $date
+        );
+
+        return (float) ($map[$date] ?? 0);
     }
 
     private function getOpexByCategory($dateFrom, $dateTo, $outletId = null)
     {
-        // Get paid amount by category from PRs (via PO)
+        // Get paid amount by category from PRs (via PO) — one row per payment via exists, then join PR category
         $paidByCategory = DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-            ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-            ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+            ->join('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
+            ->join(DB::raw('(
+                SELECT poi.purchase_order_ops_id, MIN(poi.source_id) as source_id
+                FROM purchase_order_ops_items poi
+                WHERE poi.source_type = \'purchase_requisition_ops\'
+                GROUP BY poi.purchase_order_ops_id
+            ) as poi'), 'poo.id', '=', 'poi.purchase_order_ops_id')
+            ->join('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
             ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
             ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
             ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
-            ->whereNotNull('nfp.purchase_order_ops_id')
-            ->where('poi.source_type', 'purchase_requisition_ops');
+            ->whereNotNull('nfp.purchase_order_ops_id');
         
         if ($outletId) {
             $paidByCategory->where('pr.outlet_id', $outletId);
@@ -435,11 +196,13 @@ class OpexOutletDashboardController extends Controller
             ->groupBy('prc.id', 'prc.name', 'prc.division')
             ->get();
         
-        // Get retail non food by category
+        // Get retail non food by category (petty cash — exclude contra_bon)
         $retailByCategory = DB::table('retail_non_food as rnf')
             ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
-            ->where('rnf.status', 'approved');
+            ->where('rnf.status', 'approved')
+            ->where('rnf.payment_method', '!=', 'contra_bon')
+            ->whereNull('rnf.deleted_at');
         
         if ($outletId) {
             $retailByCategory->where('rnf.outlet_id', $outletId);
@@ -451,14 +214,17 @@ class OpexOutletDashboardController extends Controller
         
         // Get uncategorized payments (via PO) - where PR has no category
         $uncategorizedPaidQuery = DB::table('non_food_payments as nfp')
-            ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-            ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-            ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
+            ->join('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
+            ->join(DB::raw('(
+                SELECT poi.purchase_order_ops_id, MIN(poi.source_id) as source_id
+                FROM purchase_order_ops_items poi
+                WHERE poi.source_type = \'purchase_requisition_ops\'
+                GROUP BY poi.purchase_order_ops_id
+            ) as poi'), 'poo.id', '=', 'poi.purchase_order_ops_id')
+            ->join('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
             ->whereBetween('nfp.payment_date', [$dateFrom, $dateTo])
             ->whereIn('nfp.status', ['paid', 'approved'])
-            ->where('nfp.status', '!=', 'cancelled')
             ->whereNotNull('nfp.purchase_order_ops_id')
-            ->where('poi.source_type', 'purchase_requisition_ops')
             ->whereNull('pr.category_id');
         
         if ($outletId) {
@@ -487,6 +253,8 @@ class OpexOutletDashboardController extends Controller
         $uncategorizedRetailQuery = DB::table('retail_non_food as rnf')
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
             ->where('rnf.status', 'approved')
+            ->where('rnf.payment_method', '!=', 'contra_bon')
+            ->whereNull('rnf.deleted_at')
             ->whereNull('rnf.category_budget_id');
         
         if ($outletId) {
@@ -604,92 +372,61 @@ class OpexOutletDashboardController extends Controller
 
     private function getUnpaidPRs($dateFrom, $dateTo, $outletId = null)
     {
-        $query = DB::table('purchase_requisitions as pr')
+        $balances = $this->opexService
+            ->unpaidPrBalances($outletId ? (int) $outletId : null, $dateFrom, $dateTo)
+            ->filter(fn ($row) => $row['unpaid_amount'] > 0)
+            ->sortByDesc('unpaid_amount')
+            ->take(20)
+            ->values();
+
+        if ($balances->isEmpty()) {
+            return [];
+        }
+
+        $prIds = $balances->pluck('id')->all();
+        $prs = DB::table('purchase_requisitions as pr')
             ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
-            ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-            ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-            ->where('pr.is_held', false);
-        
-        if ($outletId) {
-            $query->where('pr.outlet_id', $outletId);
-        }
-        
-        $prs = $query->select(
+            ->whereIn('pr.id', $prIds)
+            ->select(
                 'pr.id',
                 'pr.pr_number',
                 'pr.title',
-                'pr.amount',
                 'pr.status',
                 'pr.created_at',
                 'o.nama_outlet as outlet_name',
                 'prc.name as category_name'
             )
-            ->orderBy('pr.created_at', 'desc')
-            ->limit(20)
-            ->get();
-        
-        // Calculate unpaid amount for each PR
+            ->get()
+            ->keyBy('id');
+
+        $itemsByPr = DB::table('purchase_requisition_items')
+            ->whereIn('purchase_requisition_id', $prIds)
+            ->select('id', 'purchase_requisition_id', 'item_name', 'qty', 'unit', 'unit_price as price', 'subtotal as total')
+            ->get()
+            ->groupBy('purchase_requisition_id');
+
         $result = [];
-        foreach ($prs as $pr) {
-            // Get PO total
-            $poTotal = DB::table('purchase_order_ops_items as poi')
-                ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->where('poi.source_id', $pr->id)
-                ->where('poo.status', 'approved')
-                ->sum('poi.total');
-            
-            // Get paid amount
-            $paidAmount = 0;
-            if ($poTotal > 0) {
-                $poIds = DB::table('purchase_order_ops_items as poi')
-                    ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->where('poi.source_id', $pr->id)
-                    ->where('poo.status', 'approved')
-                    ->pluck('poi.purchase_order_ops_id')
-                    ->toArray();
-                
-                $paidAmount = DB::table('non_food_payments')
-                    ->whereIn('purchase_order_ops_id', $poIds)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
-            } else {
-                $paidAmount = DB::table('non_food_payments')
-                    ->where('purchase_requisition_id', $pr->id)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
+        foreach ($balances as $balance) {
+            $pr = $prs[$balance['id']] ?? null;
+            if (! $pr) {
+                continue;
             }
-            
-            $prAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-            $unpaidAmount = max(0, $prAmount - $paidAmount);
-            
-            if ($unpaidAmount > 0) {
-                // Get PR items
-                $items = DB::table('purchase_requisition_items')
-                    ->where('purchase_requisition_id', $pr->id)
-                    ->select('id', 'item_name', 'qty', 'unit', 'unit_price as price', 'subtotal as total')
-                    ->get();
-                
-                $result[] = [
-                    'id' => $pr->id,
-                    'pr_number' => $pr->pr_number,
-                    'title' => $pr->title,
-                    'amount' => (float) $prAmount,
-                    'paid_amount' => (float) $paidAmount,
-                    'unpaid_amount' => (float) $unpaidAmount,
-                    'status' => $pr->status,
-                    'outlet_name' => $pr->outlet_name,
-                    'category_name' => $pr->category_name,
-                    'created_at' => $pr->created_at,
-                    'items' => $items
-                ];
-            }
+            $result[] = [
+                'id' => $pr->id,
+                'pr_number' => $pr->pr_number,
+                'title' => $pr->title,
+                'amount' => (float) $balance['pr_amount'],
+                'paid_amount' => (float) $balance['paid_amount'],
+                'unpaid_amount' => (float) $balance['unpaid_amount'],
+                'status' => $pr->status,
+                'outlet_name' => $pr->outlet_name,
+                'category_name' => $pr->category_name,
+                'created_at' => $pr->created_at,
+                'items' => ($itemsByPr[$pr->id] ?? collect())->values(),
+            ];
         }
-        
+
         return $result;
     }
 
@@ -800,7 +537,9 @@ class OpexOutletDashboardController extends Controller
             ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
             ->leftJoin('users as creator', 'rnf.created_by', '=', 'creator.id')
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
-            ->where('rnf.status', 'approved');
+            ->where('rnf.status', 'approved')
+            ->where('rnf.payment_method', '!=', 'contra_bon')
+            ->whereNull('rnf.deleted_at');
         
         if ($outletId) {
             $query->where('rnf.outlet_id', $outletId);
@@ -930,10 +669,12 @@ class OpexOutletDashboardController extends Controller
             
             $directPaidAmount = (float) $directPaidQuery->sum('nfp.amount');
             
-            // Get retail non food
+            // Get retail non food (petty cash portion of category)
             $retailQuery = DB::table('retail_non_food')
                 ->whereDate('transaction_date', $date)
                 ->where('status', 'approved')
+                ->where('payment_method', '!=', 'contra_bon')
+                ->whereNull('deleted_at')
                 ->where('category_budget_id', $categoryId);
             
             if ($outletId) {
@@ -1015,11 +756,13 @@ class OpexOutletDashboardController extends Controller
             )
             ->get();
 
-        // Get retail non food
+        // Get retail non food (petty cash)
         $retailQuery = DB::table('retail_non_food as rnf')
             ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
             ->where('rnf.status', 'approved')
+            ->where('rnf.payment_method', '!=', 'contra_bon')
+            ->whereNull('rnf.deleted_at')
             ->where('rnf.category_budget_id', $categoryId);
         
         if ($outletId) {
@@ -1077,7 +820,7 @@ class OpexOutletDashboardController extends Controller
         $user = auth()->user();
         $userOutletId = $user->id_outlet;
         
-        $type = $request->get('type'); // total_paid, retail_non_food, unpaid_pr, total_opex
+        $type = $request->get('type'); // total_paid, petty_cash, food, unpaid_pr, total_opex
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
         $modalDateFrom = $request->get('modal_date_from');
@@ -1108,17 +851,17 @@ class OpexOutletDashboardController extends Controller
         $transactions = [];
         if ($type === 'total_paid') {
             $transactions = $this->getAllPayments($filterDateFrom, $filterDateTo, $outletId);
-        } elseif ($type === 'retail_non_food') {
-            $transactions = $this->getAllRetailNonFood($filterDateFrom, $filterDateTo, $outletId);
-        } elseif ($type === 'food') {
+        } elseif ($type === 'petty_cash' || $type === 'retail_non_food') {
+            $transactions = $this->getAllPettyCashTransactions($filterDateFrom, $filterDateTo, $outletId);
+        } elseif ($type === 'food' || $type === 'food_receive') {
             $transactions = $this->getAllFoodTransactions($filterDateFrom, $filterDateTo, $outletId);
         } elseif ($type === 'unpaid_pr') {
             $transactions = $this->getAllUnpaidPRs($filterDateFrom, $filterDateTo, $outletId);
         } elseif ($type === 'total_opex') {
             $payments = $this->getAllPayments($filterDateFrom, $filterDateTo, $outletId);
-            $retail = $this->getAllRetailNonFood($filterDateFrom, $filterDateTo, $outletId);
+            $petty = $this->getAllPettyCashTransactions($filterDateFrom, $filterDateTo, $outletId);
             $food = $this->getAllFoodTransactions($filterDateFrom, $filterDateTo, $outletId);
-            $transactions = $payments->merge($retail)->merge($food)->sortByDesc(function($item) {
+            $transactions = $payments->merge($petty)->merge($food)->sortByDesc(function($item) {
                 return $item->payment_date ?? $item->transaction_date ?? $item->receive_date ?? $item->created_at;
             })->values();
         }
@@ -1226,6 +969,7 @@ class OpexOutletDashboardController extends Controller
             ->whereBetween('rf.transaction_date', [$dateFrom, $dateTo])
             ->where('rf.status', 'approved')
             ->whereNull('rf.deleted_at');
+        $retailFoodQuery->whereRaw('1 = 0'); // RF moved to Petty Cash
         
         if ($outletId) {
             $retailFoodQuery->where('rf.outlet_id', $outletId);
@@ -1313,6 +1057,7 @@ class OpexOutletDashboardController extends Controller
             }
         }
         
+        $retailFoodData = collect(); // RF moved to Petty Cash — Food chart is GR-only
         foreach ($retailFoodData as $item) {
             $categoryName = $item->category_name ?: 'Other';
             $subCategoryName = $item->sub_category_name;
@@ -1540,7 +1285,7 @@ class OpexOutletDashboardController extends Controller
             ];
         }
         
-        // Get Retail Food items
+        // Get Retail Food items (disabled — RF moved to Petty Cash; Food Receive = GR only)
         $retailFoodQuery = DB::table('retail_food as rf')
             ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
             ->leftJoin('items as it', 'rfi.item_name', '=', 'it.name')
@@ -1550,6 +1295,7 @@ class OpexOutletDashboardController extends Controller
             ->whereBetween('rf.transaction_date', [$dateFrom, $dateTo])
             ->where('rf.status', 'approved')
             ->whereNull('rf.deleted_at')
+            ->whereRaw('1 = 0')
             ->whereRaw("CASE 
                 WHEN w.name IN ('MK1 Hot Kitchen', 'MK2 Cold Kitchen') THEN 'Main Kitchen'
                 WHEN w.name = 'MAIN STORE' AND sc.name = 'Chemical' THEN 'Chemical'
@@ -1629,176 +1375,12 @@ class OpexOutletDashboardController extends Controller
 
     private function getCardTrend($dateFrom, $dateTo, $type, $outletId = null)
     {
-        $dates = [];
-        $current = Carbon::parse($dateFrom);
-        $end = Carbon::parse($dateTo);
-        
-        while ($current <= $end) {
-            $dates[] = $current->format('Y-m-d');
-            $current->addDay();
-        }
-        
-        $result = [];
-        foreach ($dates as $date) {
-            $amount = 0;
-            
-            if ($type === 'total_paid' || $type === 'total_opex') {
-                // Get paid amount
-                $paidQuery = DB::table('non_food_payments as nfp')
-                    ->leftJoin('purchase_order_ops as poo', 'nfp.purchase_order_ops_id', '=', 'poo.id')
-                    ->leftJoin('purchase_order_ops_items as poi', 'poo.id', '=', 'poi.purchase_order_ops_id')
-                    ->leftJoin('purchase_requisitions as pr', 'poi.source_id', '=', 'pr.id')
-                    ->whereDate('nfp.payment_date', $date)
-                    ->whereIn('nfp.status', ['paid', 'approved'])
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->where('poi.source_type', 'purchase_requisition_ops');
-                
-                if ($outletId) {
-                    $paidQuery->where('pr.outlet_id', $outletId);
-                }
-                
-                $paidAmount = (float) $paidQuery->sum('nfp.amount');
-                
-                // Get direct payment
-                $directPaidQuery = DB::table('non_food_payments as nfp')
-                    ->leftJoin('purchase_requisitions as pr', 'nfp.purchase_requisition_id', '=', 'pr.id')
-                    ->whereDate('nfp.payment_date', $date)
-                    ->whereIn('nfp.status', ['paid', 'approved'])
-                    ->where('nfp.status', '!=', 'cancelled')
-                    ->whereNotNull('nfp.purchase_requisition_id');
-                
-                if ($outletId) {
-                    $directPaidQuery->where('pr.outlet_id', $outletId);
-                }
-                
-                $directPaidAmount = (float) $directPaidQuery->sum('nfp.amount');
-                $amount = $paidAmount + $directPaidAmount;
-            }
-            
-            if ($type === 'retail_non_food' || $type === 'total_opex') {
-                $retailQuery = DB::table('retail_non_food')
-                    ->whereDate('transaction_date', $date)
-                    ->where('status', 'approved');
-                
-                if ($outletId) {
-                    $retailQuery->where('outlet_id', $outletId);
-                }
-                
-                $retailAmount = (float) $retailQuery->sum('total_amount');
-                
-                if ($type === 'retail_non_food') {
-                    $amount = $retailAmount;
-                } else {
-                    $amount += $retailAmount;
-                }
-            }
-            
-            if ($type === 'food' || $type === 'total_opex') {
-                // Get Floor Order GR amount for this date
-                $floorOrderGRQuery = DB::table('outlet_food_good_receives as gr')
-                    ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-                    ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                    ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
-                    // Join untuk RO Supplier GR
-                    ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
-                    ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
-                    ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
-                    ->leftJoin('food_floor_order_items as fo', function($join) {
-                        $join->on('i.item_id', '=', 'fo.item_id')
-                             ->where(function($q) {
-                                 $q->whereColumn('fo.floor_order_id', 'do.floor_order_id')
-                                   ->orWhereColumn('fo.floor_order_id', 'ffo_ro.id');
-                             });
-                    })
-                    ->whereDate('gr.receive_date', $date)
-                    ->whereNull('gr.deleted_at');
-                
-                if ($outletId) {
-                    $floorOrderGRQuery->where('gr.outlet_id', $outletId);
-                }
-                
-                $floorOrderAmount = (float) $floorOrderGRQuery->sum(DB::raw('i.received_qty * COALESCE(fo.price, 0)'));
-                
-                // Get Retail Food amount for this date
-                $retailFoodQuery = DB::table('retail_food')
-                    ->whereDate('transaction_date', $date)
-                    ->where('status', 'approved')
-                    ->whereNull('deleted_at');
-                
-                if ($outletId) {
-                    $retailFoodQuery->where('outlet_id', $outletId);
-                }
-                
-                $retailFoodAmount = (float) $retailFoodQuery->sum('total_amount');
-                
-                if ($type === 'food') {
-                    $amount = $floorOrderAmount + $retailFoodAmount;
-                } else {
-                    $amount += $floorOrderAmount + $retailFoodAmount;
-                }
-            }
-            
-            if ($type === 'unpaid_pr') {
-                // Get unpaid PRs created on or before this date
-                $unpaidQuery = DB::table('purchase_requisitions as pr')
-                    ->whereDate('pr.created_at', '<=', $date)
-                    ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-                    ->where('pr.is_held', false);
-                
-                if ($outletId) {
-                    $unpaidQuery->where('pr.outlet_id', $outletId);
-                }
-                
-                $prs = $unpaidQuery->get();
-                $unpaidAmount = 0;
-                
-                foreach ($prs as $pr) {
-                    $poTotal = DB::table('purchase_order_ops_items as poi')
-                        ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                        ->where('poi.source_type', 'purchase_requisition_ops')
-                        ->where('poi.source_id', $pr->id)
-                        ->where('poo.status', 'approved')
-                        ->sum('poi.total');
-                    
-                    $paidAmount = 0;
-                    if ($poTotal > 0) {
-                        $poIds = DB::table('purchase_order_ops_items as poi')
-                            ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                            ->where('poi.source_type', 'purchase_requisition_ops')
-                            ->where('poi.source_id', $pr->id)
-                            ->where('poo.status', 'approved')
-                            ->pluck('poi.purchase_order_ops_id')
-                            ->toArray();
-                        
-                        $paidAmount = DB::table('non_food_payments')
-                            ->whereIn('purchase_order_ops_id', $poIds)
-                            ->whereIn('status', ['paid', 'approved'])
-                            ->where('status', '!=', 'cancelled')
-                            ->whereDate('payment_date', '<=', $date)
-                            ->sum('amount');
-                    } else {
-                        $paidAmount = DB::table('non_food_payments')
-                            ->where('purchase_requisition_id', $pr->id)
-                            ->whereIn('status', ['paid', 'approved'])
-                            ->where('status', '!=', 'cancelled')
-                            ->whereDate('payment_date', '<=', $date)
-                            ->sum('amount');
-                    }
-                    
-                    $prAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-                    $unpaidAmount += max(0, $prAmount - $paidAmount);
-                }
-                
-                $amount = $unpaidAmount;
-            }
-            
-            $result[] = [
-                'date' => $date,
-                'amount' => $amount
-            ];
-        }
-        
-        return $result;
+        return $this->opexService->getCardTrend(
+            $outletId ? (int) $outletId : null,
+            $dateFrom,
+            $dateTo,
+            (string) $type
+        );
     }
 
     private function getAllPayments($dateFrom, $dateTo, $outletId = null)
@@ -1902,7 +1484,9 @@ class OpexOutletDashboardController extends Controller
             ->leftJoin('tbl_data_outlet as o', 'rnf.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('purchase_requisition_categories as prc', 'rnf.category_budget_id', '=', 'prc.id')
             ->whereBetween('rnf.transaction_date', [$dateFrom, $dateTo])
-            ->where('rnf.status', 'approved');
+            ->where('rnf.status', 'approved')
+            ->where('rnf.payment_method', '!=', 'contra_bon')
+            ->whereNull('rnf.deleted_at');
         
         if ($outletId) {
             $query->where('rnf.outlet_id', $outletId);
@@ -1939,25 +1523,74 @@ class OpexOutletDashboardController extends Controller
         return $data;
     }
 
+    private function getAllPettyCashTransactions($dateFrom, $dateTo, $outletId = null)
+    {
+        $rnf = $this->getAllRetailNonFood($dateFrom, $dateTo, $outletId);
+
+        $rfQuery = DB::table('retail_food as rf')
+            ->leftJoin('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('users as creator', 'rf.created_by', '=', 'creator.id')
+            ->leftJoin('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->whereBetween('rf.transaction_date', [$dateFrom, $dateTo])
+            ->where('rf.status', 'approved')
+            ->where('rf.payment_method', '!=', 'contra_bon')
+            ->whereNull('rf.deleted_at');
+
+        if ($outletId) {
+            $rfQuery->where('rf.outlet_id', $outletId);
+        }
+
+        $rf = $rfQuery->select(
+                'rf.id',
+                'rf.retail_number',
+                'rf.transaction_date',
+                'rf.total_amount as amount',
+                'rf.transaction_date as payment_date',
+                DB::raw("'Retail Food' as payment_method"),
+                DB::raw('NULL as pr_number'),
+                'o.nama_outlet as outlet_name',
+                'creator.nama_lengkap as creator_name',
+                DB::raw('NULL as category_division'),
+                DB::raw('COALESCE(s.name, "Tanpa Supplier") as category_name'),
+                DB::raw("'retail_food' as type")
+            )
+            ->orderBy('rf.transaction_date', 'desc')
+            ->get();
+
+        foreach ($rf as $row) {
+            $row->items = DB::table('retail_food_items')
+                ->where('retail_food_id', $row->id)
+                ->select('id', 'item_name', 'qty', 'unit', 'price', 'subtotal')
+                ->get();
+            $row->id = 'rf_' . $row->id;
+            $row->number = $row->retail_number;
+        }
+
+        return $rnf->concat($rf)->sortByDesc(function ($item) {
+            return $item->payment_date ?? $item->transaction_date ?? null;
+        })->values();
+    }
     private function getAllUnpaidPRs($dateFrom, $dateTo, $outletId = null)
     {
-        $query = DB::table('purchase_requisitions as pr')
+        $balances = $this->opexService
+            ->unpaidPrBalances($outletId ? (int) $outletId : null, $dateFrom, $dateTo)
+            ->filter(fn ($row) => $row['unpaid_amount'] > 0)
+            ->keyBy('id');
+
+        if ($balances->isEmpty()) {
+            return collect();
+        }
+
+        $prIds = $balances->keys()->all();
+        $prs = DB::table('purchase_requisitions as pr')
             ->leftJoin('tbl_data_outlet as o', 'pr.outlet_id', '=', 'o.id_outlet')
             ->leftJoin('purchase_requisition_categories as prc', 'pr.category_id', '=', 'prc.id')
-            ->whereBetween('pr.created_at', [$dateFrom, $dateTo])
-            ->whereIn('pr.status', ['SUBMITTED', 'APPROVED', 'PROCESSED', 'COMPLETED'])
-            ->where('pr.is_held', false);
-        
-        if ($outletId) {
-            $query->where('pr.outlet_id', $outletId);
-        }
-        
-        $prs = $query->leftJoin('users as creator', 'pr.created_by', '=', 'creator.id')
+            ->leftJoin('users as creator', 'pr.created_by', '=', 'creator.id')
+            ->whereIn('pr.id', $prIds)
             ->select(
                 'pr.id',
                 'pr.pr_number',
                 'pr.title',
-                'pr.amount',
                 'pr.status',
                 'pr.created_at',
                 'o.nama_outlet as outlet_name',
@@ -1966,68 +1599,41 @@ class OpexOutletDashboardController extends Controller
             )
             ->orderBy('pr.created_at', 'desc')
             ->get();
-        
+
+        $itemsByPr = DB::table('purchase_requisition_items')
+            ->whereIn('purchase_requisition_id', $prIds)
+            ->select('id', 'purchase_requisition_id', 'item_name', 'qty', 'unit', 'unit_price as price', 'subtotal as total')
+            ->get()
+            ->groupBy('purchase_requisition_id');
+
         $result = [];
         foreach ($prs as $pr) {
-            $poTotal = DB::table('purchase_order_ops_items as poi')
-                ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                ->where('poi.source_type', 'purchase_requisition_ops')
-                ->where('poi.source_id', $pr->id)
-                ->where('poo.status', 'approved')
-                ->sum('poi.total');
-            
-            $paidAmount = 0;
-            if ($poTotal > 0) {
-                $poIds = DB::table('purchase_order_ops_items as poi')
-                    ->leftJoin('purchase_order_ops as poo', 'poi.purchase_order_ops_id', '=', 'poo.id')
-                    ->where('poi.source_type', 'purchase_requisition_ops')
-                    ->where('poi.source_id', $pr->id)
-                    ->where('poo.status', 'approved')
-                    ->pluck('poi.purchase_order_ops_id')
-                    ->toArray();
-                
-                $paidAmount = DB::table('non_food_payments')
-                    ->whereIn('purchase_order_ops_id', $poIds)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
-            } else {
-                $paidAmount = DB::table('non_food_payments')
-                    ->where('purchase_requisition_id', $pr->id)
-                    ->whereIn('status', ['paid', 'approved'])
-                    ->where('status', '!=', 'cancelled')
-                    ->sum('amount');
+            $balance = $balances[$pr->id] ?? null;
+            if (! $balance) {
+                continue;
             }
-            
-            $prAmount = $poTotal > 0 ? $poTotal : $pr->amount;
-            $unpaidAmount = max(0, $prAmount - $paidAmount);
-            
-            if ($unpaidAmount > 0) {
-                $items = DB::table('purchase_requisition_items')
-                    ->where('purchase_requisition_id', $pr->id)
-                    ->select('id', 'item_name', 'qty', 'unit', 'unit_price as price', 'subtotal as total')
-                    ->get();
-                
-                $result[] = (object)[
-                    'id' => $pr->id,
-                    'pr_number' => $pr->pr_number,
-                    'title' => $pr->title,
-                    'amount' => (float) $unpaidAmount,
-                    'unpaid_amount' => (float) $unpaidAmount,
-                    'creator_name' => $pr->creator_name,
-                    'payment_date' => $pr->created_at,
-                    'created_at' => $pr->created_at,
-                    'outlet_name' => $pr->outlet_name,
-                    'category_name' => $pr->category_name,
-                    'type' => 'unpaid_pr',
-                    'items' => $items
-                ];
-            }
+            $result[] = (object) [
+                'id' => $pr->id,
+                'pr_number' => $pr->pr_number,
+                'title' => $pr->title,
+                'number' => $pr->pr_number,
+                'amount' => (float) $balance['unpaid_amount'],
+                'pr_amount' => (float) $balance['pr_amount'],
+                'paid_amount' => (float) $balance['paid_amount'],
+                'unpaid_amount' => (float) $balance['unpaid_amount'],
+                'status' => $pr->status,
+                'created_at' => $pr->created_at,
+                'payment_date' => $pr->created_at,
+                'outlet_name' => $pr->outlet_name,
+                'category_name' => $pr->category_name,
+                'creator_name' => $pr->creator_name,
+                'type' => 'unpaid_pr',
+                'items' => ($itemsByPr[$pr->id] ?? collect())->values(),
+            ];
         }
-        
+
         return collect($result);
     }
-    
     private function getAllFoodTransactions($dateFrom, $dateTo, $outletId = null)
     {
         $result = [];
@@ -2152,51 +1758,6 @@ class OpexOutletDashboardController extends Controller
                 'outlet_name' => $gr->outlet_name,
                 'creator_name' => $gr->creator_name,
                 'type' => 'floor_order_gr',
-                'items' => $items
-            ];
-        }
-        
-        // Get Retail Food transactions
-        $retailFoodQuery = DB::table('retail_food as rf')
-            ->leftJoin('tbl_data_outlet as o', 'rf.outlet_id', '=', 'o.id_outlet')
-            ->leftJoin('users as creator', 'rf.created_by', '=', 'creator.id')
-            ->whereBetween('rf.transaction_date', [$dateFrom, $dateTo])
-            ->where('rf.status', 'approved')
-            ->whereNull('rf.deleted_at');
-        
-        if ($outletId) {
-            $retailFoodQuery->where('rf.outlet_id', $outletId);
-        }
-        
-        $retailFoods = $retailFoodQuery->select(
-                'rf.id',
-                'rf.retail_number',
-                'rf.transaction_date',
-                'rf.total_amount as amount',
-                'o.nama_outlet as outlet_name',
-                'creator.nama_lengkap as creator_name',
-                DB::raw("'retail_food' as type")
-            )
-            ->orderBy('rf.transaction_date', 'desc')
-            ->orderBy('rf.created_at', 'desc')
-            ->get();
-        
-        foreach ($retailFoods as $rf) {
-            // Get items for this retail food
-            $items = DB::table('retail_food_items')
-                ->where('retail_food_id', $rf->id)
-                ->select('id', 'item_name', 'qty', 'unit', 'price', 'subtotal as total')
-                ->get();
-            
-            $result[] = (object)[
-                'id' => 'rf_' . $rf->id,
-                'number' => $rf->retail_number,
-                'amount' => (float) $rf->amount,
-                'payment_date' => $rf->transaction_date,
-                'transaction_date' => $rf->transaction_date,
-                'outlet_name' => $rf->outlet_name,
-                'creator_name' => $rf->creator_name,
-                'type' => 'retail_food',
                 'items' => $items
             ];
         }

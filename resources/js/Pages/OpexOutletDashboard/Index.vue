@@ -77,6 +77,42 @@
         </div>
       </div>
 
+      <!-- Quick links + Revenue KPI -->
+      <div v-if="!canSelectOutlet || filters.outlet_id" class="mb-6 flex flex-col lg:flex-row gap-4">
+        <div class="flex-1 rounded-xl bg-slate-900 text-white p-4 sm:p-5 shadow-lg">
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">Opex vs MTD Revenue</div>
+          <div class="mt-2 flex flex-wrap items-end gap-3">
+            <div class="text-2xl font-bold text-violet-300">
+              {{ revenueKpi?.opex_ratio_percent != null ? revenueKpi.opex_ratio_percent.toFixed(2) + '%' : '—' }}
+            </div>
+            <div class="text-sm text-slate-400 pb-0.5">
+              Opex {{ formatCurrency(dashboardData.overview?.total_opex || 0) }}
+              · MTD Rev {{ formatCurrency(revenueKpi?.mtd_revenue || 0) }}
+            </div>
+          </div>
+        </div>
+        <div class="flex flex-wrap gap-2 items-stretch lg:items-center">
+          <a
+            :href="pettyCashLink"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-emerald-200 text-emerald-800 hover:bg-emerald-50 text-sm font-medium shadow-sm"
+          >
+            <i class="fa-solid fa-wallet"></i> Petty Cash Report
+          </a>
+          <a
+            href="/report-receiving-sheet"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-amber-200 text-amber-800 hover:bg-amber-50 text-sm font-medium shadow-sm"
+          >
+            <i class="fa-solid fa-receipt"></i> Receiving Sheet
+          </a>
+          <a
+            href="/report-daily-outlet-revenue"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-white border border-sky-200 text-sky-800 hover:bg-sky-50 text-sm font-medium shadow-sm"
+          >
+            <i class="fa-solid fa-chart-bar"></i> Daily Revenue
+          </a>
+        </div>
+      </div>
+
       <!-- Overview Cards -->
       <div v-if="!canSelectOutlet || filters.outlet_id" class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-6">
         <div 
@@ -94,16 +130,18 @@
         </div>
 
         <div 
-          @click="openCardModal('retail_non_food')"
+          @click="openCardModal('petty_cash')"
           class="bg-white rounded-xl shadow-lg p-6 border-l-4 border-green-500 cursor-pointer hover:shadow-xl transition-shadow"
         >
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-gray-600">Retail Non Food</p>
-              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_retail_non_food || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.retail_non_food_count || 0 }} transactions</p>
+              <p class="text-sm font-medium text-gray-600">Petty Cash</p>
+              <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_petty_cash || 0) }}</p>
+              <p class="text-xs text-gray-500 mt-1">
+                {{ dashboardData.overview?.petty_cash_count || 0 }} txn · RF+RNF non contra
+              </p>
             </div>
-            <i class="fa-solid fa-shopping-bag text-4xl text-green-300"></i>
+            <i class="fa-solid fa-wallet text-4xl text-green-300"></i>
           </div>
         </div>
 
@@ -113,11 +151,11 @@
         >
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-sm font-medium text-gray-600">Food Expenses</p>
+              <p class="text-sm font-medium text-gray-600">Food Receive</p>
               <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_food || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.food_count || 0 }} transactions</p>
+              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.food_count || 0 }} GR</p>
             </div>
-            <i class="fa-solid fa-utensils text-4xl text-yellow-300"></i>
+            <i class="fa-solid fa-truck-ramp-box text-4xl text-yellow-300"></i>
           </div>
         </div>
 
@@ -129,7 +167,7 @@
             <div>
               <p class="text-sm font-medium text-gray-600">Unpaid PR</p>
               <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_unpaid || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.unpaid_pr_count || 0 }} PRs</p>
+              <p class="text-xs text-gray-500 mt-1">{{ dashboardData.overview?.unpaid_pr_count || 0 }} PRs · alert only</p>
             </div>
             <i class="fa-solid fa-exclamation-triangle text-4xl text-orange-300"></i>
           </div>
@@ -143,7 +181,7 @@
             <div>
               <p class="text-sm font-medium text-gray-600">Total Opex</p>
               <p class="text-2xl font-bold text-gray-900">{{ formatCurrency(dashboardData.overview?.total_opex || 0) }}</p>
-              <p class="text-xs text-gray-500 mt-1">Paid + RNF + Food</p>
+              <p class="text-xs text-gray-500 mt-1">Paid + Petty + Food GR</p>
             </div>
             <i class="fa-solid fa-chart-pie text-4xl text-purple-300"></i>
           </div>
@@ -174,7 +212,7 @@
 
       <!-- Food by Category Chart -->
       <div v-if="!canSelectOutlet || filters.outlet_id" class="bg-white rounded-xl shadow-lg p-6 mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-4">Food Expenses by Category Item</h2>
+        <h2 class="text-xl font-bold text-gray-800 mb-4">Food Receive by Category Item</h2>
         <apexchart
           type="bar"
           height="400"
@@ -768,7 +806,7 @@ function getTransactionTypeClass(type) {
 function getTransactionTypeLabel(type) {
   if (type === 'payment') return 'Payment';
   if (type === 'retail_non_food') return 'Retail Non Food';
-  if (type === 'floor_order_gr') return 'Floor Order GR';
+  if (type === 'floor_order_gr') return 'Food Receive GR';
   if (type === 'retail_food') return 'Retail Food';
   if (type === 'unpaid_pr') return 'Unpaid PR';
   return type;
@@ -780,12 +818,23 @@ function getAmountClass(type) {
 }
 
 const cardModalTitle = computed(() => {
-  if (cardModalType.value === 'total_paid') return 'Total Paid';
-  if (cardModalType.value === 'retail_non_food') return 'Retail Non Food';
-  if (cardModalType.value === 'food') return 'Food Expenses';
+  if (cardModalType.value === 'total_paid') return 'Total Paid PR';
+  if (cardModalType.value === 'petty_cash' || cardModalType.value === 'retail_non_food') return 'Petty Cash (RF + RNF)';
+  if (cardModalType.value === 'food' || cardModalType.value === 'food_receive') return 'Food Receive (GR)';
   if (cardModalType.value === 'unpaid_pr') return 'Unpaid PR';
   if (cardModalType.value === 'total_opex') return 'Total Opex';
   return '';
+});
+
+const revenueKpi = computed(() => dashboardData.value?.revenueKpi || null);
+
+const pettyCashLink = computed(() => {
+  const params = new URLSearchParams();
+  if (filters.value.outlet_id) params.set('outlet', String(filters.value.outlet_id));
+  if (filters.value.date_from) params.set('date_from', filters.value.date_from);
+  if (filters.value.date_to) params.set('date_to', filters.value.date_to);
+  const q = params.toString();
+  return q ? `/report-petty-cash?${q}` : '/report-petty-cash';
 });
 
 async function openCardModal(type) {
@@ -996,17 +1045,17 @@ const opexTrendSeries = computed(() => {
   
   return [
     {
-      name: 'Paid Amount',
+      name: 'Paid PR',
       type: 'line',
       data: dashboardData.value.opexTrend.map(item => parseFloat(item.paid_amount || 0))
     },
     {
-      name: 'Retail Non Food',
+      name: 'Petty Cash',
       type: 'line',
-      data: dashboardData.value.opexTrend.map(item => parseFloat(item.retail_non_food_amount || 0))
+      data: dashboardData.value.opexTrend.map(item => parseFloat(item.petty_cash_amount ?? item.retail_non_food_amount ?? 0))
     },
     {
-      name: 'Food Expenses',
+      name: 'Food Receive',
       type: 'line',
       data: dashboardData.value.opexTrend.map(item => parseFloat(item.food_amount || 0))
     }
@@ -1171,7 +1220,7 @@ const categoryTrendSeries = computed(() => {
       data: categoryDetail.value.trend.map(item => parseFloat(item.paid_amount || 0))
     },
     {
-      name: 'Retail Non Food',
+      name: 'Petty Cash (RNF)',
       type: 'line',
       data: categoryDetail.value.trend.map(item => parseFloat(item.retail_non_food_amount || 0))
     }
