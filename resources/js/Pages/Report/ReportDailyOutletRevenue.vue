@@ -203,7 +203,8 @@ const fetchReport = async () => {
     showReport.value = true;
   } catch (error) {
     console.error('Error fetching report:', error);
-    alert('Terjadi kesalahan saat mengambil data report');
+    const serverMsg = error?.response?.data?.error;
+    alert(serverMsg || 'Terjadi kesalahan saat mengambil data report');
   } finally {
     loading.value = false;
   }
