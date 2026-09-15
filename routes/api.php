@@ -1779,15 +1779,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::delete('/investors/{id}', [InvestorController::class, 'destroy']);
 });
 
-// Report routes
-Route::middleware(['auth:web'])->group(function () {
-    Route::get('/report/daily-outlet-revenue', [\App\Http\Controllers\ReportDailyOutletRevenueController::class, 'index']);
-    Route::get('/report/weekly-outlet-fb-revenue', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'index']);
-    Route::post('/report/weekly-outlet-fb-revenue/budget', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'storeBudget']);
-    Route::get('/report/daily-revenue-forecast', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'index']);
-    Route::post('/report/daily-revenue-forecast/settings', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'storeForecastSettings']);
-    Route::get('/report/monthly-fb-revenue-performance', [\App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController::class, 'index']);
-});
+// Report JSON APIs moved to routes/web.php (session auth for SPA).
+// Keeping these here would 401 because api middleware has no web session by default.
 
 // Investor outlet routes (must be before /outlet routes)
 Route::get('/outlets/investor', [InvestorController::class, 'outlets'])->middleware(['auth:sanctum']);

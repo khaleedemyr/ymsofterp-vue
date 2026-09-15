@@ -2552,6 +2552,16 @@ Route::get('/report-monthly-fb-revenue-performance', function () {
     return Inertia::render('Report/ReportMonthlyFbRevenuePerformance');
 })->middleware(['auth']);
 
+// Report JSON APIs must live on web routes (session auth). api.php auth:web returns 401 for SPA.
+Route::middleware(['auth'])->group(function () {
+    Route::get('/api/report/daily-outlet-revenue', [\App\Http\Controllers\ReportDailyOutletRevenueController::class, 'index']);
+    Route::get('/api/report/weekly-outlet-fb-revenue', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'index']);
+    Route::post('/api/report/weekly-outlet-fb-revenue/budget', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'storeBudget']);
+    Route::get('/api/report/daily-revenue-forecast', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'index']);
+    Route::post('/api/report/daily-revenue-forecast/settings', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'storeForecastSettings']);
+    Route::get('/api/report/monthly-fb-revenue-performance', [\App\Http\Controllers\ReportMonthlyFbRevenuePerformanceController::class, 'index']);
+});
+
 Route::get('/api/report/sales-simple', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesSimple']);
 Route::get('/api/outlet-expenses', [App\Http\Controllers\Report\EngineeringReportController::class, 'apiOutletExpenses']);
 Route::get('/api/reservations/dp-summary', [\App\Http\Controllers\ReservationController::class, 'apiDpSummary']);
