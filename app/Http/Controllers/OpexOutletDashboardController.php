@@ -152,6 +152,7 @@ class OpexOutletDashboardController extends Controller
             'rws' => $this->listRws($outletId, $dateFrom, $dateTo),
             'retail_food' => $this->listRetailFood($outletId, $dateFrom, $dateTo),
             'retail_non_food' => $this->listRetailNonFood($outletId, $dateFrom, $dateTo),
+            'petty_cash' => $this->listPettyCash($outletId, $dateFrom, $dateTo),
             'total_spend' => $this->listGsrRo($outletId, $dateFrom, $dateTo)
                 ->concat($this->listRws($outletId, $dateFrom, $dateTo))
                 ->concat($this->listRetailFood($outletId, $dateFrom, $dateTo))
@@ -480,12 +481,14 @@ class OpexOutletDashboardController extends Controller
                 'rf.retail_number as number',
                 'rf.transaction_date as date',
                 'rf.total_amount as amount',
+                'rf.payment_method',
                 's.name as supplier_name',
                 'u.nama_lengkap as creator_name',
             ])
             ->map(function ($row) {
+                $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
                 $row->type = 'retail_food';
-                $row->source = 'Retail Food';
+                $row->source = 'Retail Food · '.$method;
 
                 return $row;
             });
@@ -508,15 +511,74 @@ class OpexOutletDashboardController extends Controller
                 'rnf.retail_number as number',
                 'rnf.transaction_date as date',
                 'rnf.total_amount as amount',
+                'rnf.payment_method',
                 'cat.name as category_name',
                 'u.nama_lengkap as creator_name',
             ])
             ->map(function ($row) {
+                $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
                 $row->type = 'retail_non_food';
-                $row->source = 'Retail Non Food';
-                $row->supplier_name = $row->category_name;
+                $row->source = 'Retail Non Food · '.$method;
+                $row->supplier_name = $row->category_name ?? null;
 
                 return $row;
             });
+    }
+
+    private function listPettyCash(int $outletId, string $dateFrom, string $dateTo)
+    {
+        $rf = DB::table('retail_food as rf')
+            ->leftJoin('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->leftJoin('users as u', 'rf.created_by', '=', 'u.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->where('rf.payment_method', 'cash')
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->orderByDesc('rf.transaction_date')
+            ->limit(300)
+            ->get([
+                'rf.id',
+                'rf.retail_number as number',
+                'rf.transaction_date as date',
+                'rf.total_amount as amount',
+                's.name as supplier_name',
+                'u.nama_lengkap as creator_name',
+            ])
+            ->map(function ($row) {
+                $row->type = 'petty_cash';
+                $row->source = 'RF Cash';
+
+                return $row;
+            });
+
+        $rnf = DB::table('retail_non_food as rnf')
+            ->leftJoin('purchase_requisition_categories as cat', 'rnf.category_budget_id', '=', 'cat.id')
+            ->leftJoin('users as u', 'rnf.created_by', '=', 'u.id')
+            ->where('rnf.outlet_id', $outletId)
+            ->where('rnf.status', 'approved')
+            ->whereNull('rnf.deleted_at')
+            ->where('rnf.payment_method', 'cash')
+            ->whereDate('rnf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rnf.transaction_date', '<=', $dateTo)
+            ->orderByDesc('rnf.transaction_date')
+            ->limit(300)
+            ->get([
+                'rnf.id',
+                'rnf.retail_number as number',
+                'rnf.transaction_date as date',
+                'rnf.total_amount as amount',
+                'cat.name as supplier_name',
+                'u.nama_lengkap as creator_name',
+            ])
+            ->map(function ($row) {
+                $row->type = 'petty_cash';
+                $row->source = 'RNF Cash';
+
+                return $row;
+            });
+
+        return $rf->concat($rnf)->sortByDesc(fn ($r) => $r->date ?? '')->values();
     }
 }

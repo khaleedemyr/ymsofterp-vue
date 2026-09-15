@@ -181,6 +181,7 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Revenue</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.revenue) }}</p>
                 <p class="mt-2 text-sm text-slate-500">{{ ov.revenue_count || 0 }} orders</p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.revenue)">{{ vsLabel(vs.revenue) }}</p>
               </div>
               <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center">
                 <i class="fa-solid fa-chart-line text-xl"></i>
@@ -200,6 +201,7 @@
                 <p class="mt-2 text-sm text-slate-500">
                   {{ ov.spend_ratio_percent != null ? ov.spend_ratio_percent + '% dari revenue' : '—' }}
                 </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.total_spend, true)">{{ vsLabel(vs.total_spend) }}</p>
               </div>
               <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
                 <i class="fa-solid fa-cart-shopping text-xl"></i>
@@ -218,7 +220,7 @@
                 :style="{ width: Math.min(100, ov.spend_ratio_percent || 0) + '%' }"
               ></div>
             </div>
-            <p class="mt-2 text-xs text-slate-500">Spend ratio bar vs revenue</p>
+            <p class="mt-2 text-xs font-medium" :class="vsClass(vs.net)">{{ vsLabel(vs.net) }}</p>
           </div>
         </div>
 
@@ -228,6 +230,7 @@
             <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Cover / Pax</p>
             <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.cover) }}</p>
             <p class="mt-1 text-xs text-slate-500">Total tamu periode filter</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cover)">{{ vsLabel(vs.cover) }}</p>
           </div>
           <div class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-violet-600">Average Pax</p>
@@ -235,6 +238,7 @@
               {{ ov.avg_pax != null ? formatDecimal(ov.avg_pax) : '—' }}
             </p>
             <p class="mt-1 text-xs text-slate-500">Rata-rata pax per bill</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.avg_pax)">{{ vsLabel(vs.avg_pax) }}</p>
           </div>
           <div class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Avg Check</p>
@@ -242,6 +246,7 @@
               {{ ov.avg_check != null ? formatCurrency(ov.avg_check) : '—' }}
             </p>
             <p class="mt-1 text-xs text-slate-500">Revenue ÷ cover</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.avg_check)">{{ vsLabel(vs.avg_check) }}</p>
           </div>
           <button
             type="button"
@@ -256,6 +261,7 @@
                   {{ ov.discount_count || 0 }} bill
                   <span v-if="ov.discount_ratio_percent != null"> · {{ ov.discount_ratio_percent }}% sales</span>
                 </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.discount, true)">{{ vsLabel(vs.discount) }}</p>
               </div>
               <span class="text-amber-400 text-xs mt-1">Detail →</span>
             </div>
@@ -274,6 +280,7 @@
             <p class="mt-1 text-xs text-slate-500">
               Revenue member {{ formatCurrency(ov.member_revenue) }}
             </p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_bills)">{{ vsLabel(vsMember.member_bills) }}</p>
           </div>
           <button
             type="button"
@@ -290,6 +297,7 @@
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.member_top_up_count || 0 }} trx · dari bill {{ formatCurrency(ov.member_top_up) }}
                 </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_top_up_points)">{{ vsLabel(vsMember.member_top_up_points) }}</p>
               </div>
               <span class="text-teal-400 text-xs mt-1">Detail →</span>
             </div>
@@ -307,6 +315,7 @@
                   {{ ov.member_redeem_count || 0 }} trx
                   <span v-if="ov.member_redeem_points"> · {{ formatNumber(ov.member_redeem_points) }} pts</span>
                 </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_redeem)">{{ vsLabel(vsMember.member_redeem) }}</p>
               </div>
               <span class="text-rose-400 text-xs mt-1">Detail →</span>
             </div>
@@ -314,7 +323,7 @@
         </div>
 
         <!-- Source cards -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
           <button
             v-for="card in sourceCards"
             :key="card.key"
@@ -331,6 +340,11 @@
             </div>
             <p class="text-2xl font-bold text-slate-900">{{ formatCurrency(card.amount) }}</p>
             <p class="text-xs text-slate-500 mt-1">{{ card.hint }}</p>
+            <p v-if="card.revenuePct != null" class="text-xs font-semibold text-slate-600 mt-1">
+              {{ card.revenuePct }}% dari revenue
+            </p>
+            <p v-if="card.paymentHint" class="text-xs text-slate-500 mt-1">{{ card.paymentHint }}</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(card.vs, true)">{{ vsLabel(card.vs) }}</p>
             <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
               <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
             </div>
@@ -586,6 +600,8 @@ const emptyDashboard = () => ({
 
 const dashboardData = ref({ ...emptyDashboard(), ...(props.dashboardData || {}) })
 const ov = computed(() => dashboardData.value.overview || {})
+const vs = computed(() => ov.value.vs_last_month || {})
+const vsMember = computed(() => ov.value.vs_last_month_member || {})
 const trendRows = computed(() => dashboardData.value.trend || [])
 const roForecast = computed(() => dashboardData.value.ro_forecast || null)
 
@@ -736,6 +752,9 @@ const sourceCards = computed(() => [
     label: 'GSR / RO',
     amount: ov.value.gsr_ro || 0,
     hint: `GR ${formatCurrency(ov.value.gsr_ro_gr || 0)} · GSR ${formatCurrency(ov.value.gsr_ro_gsr || 0)}`,
+    revenuePct: null,
+    paymentHint: null,
+    vs: vs.value.gsr_ro,
     icon: 'fa-solid fa-truck',
     tone: 'text-amber-600',
     iconBg: 'bg-amber-50',
@@ -747,6 +766,9 @@ const sourceCards = computed(() => [
     label: 'RWS',
     amount: ov.value.rws || 0,
     hint: `${ov.value.rws_count || 0} transaksi warehouse`,
+    revenuePct: null,
+    paymentHint: null,
+    vs: vs.value.rws,
     icon: 'fa-solid fa-warehouse',
     tone: 'text-violet-600',
     iconBg: 'bg-violet-50',
@@ -758,6 +780,9 @@ const sourceCards = computed(() => [
     label: 'Retail Food',
     amount: ov.value.retail_food || 0,
     hint: `${ov.value.retail_food_count || 0} transaksi`,
+    revenuePct: ov.value.retail_food_revenue_pct,
+    paymentHint: `Cash ${ov.value.retail_food_cash_count || 0} · Contra Bon ${ov.value.retail_food_contra_bon_count || 0}`,
+    vs: vs.value.retail_food,
     icon: 'fa-solid fa-utensils',
     tone: 'text-emerald-600',
     iconBg: 'bg-emerald-50',
@@ -769,11 +794,28 @@ const sourceCards = computed(() => [
     label: 'Retail Non Food',
     amount: ov.value.retail_non_food || 0,
     hint: `${ov.value.retail_non_food_count || 0} transaksi`,
+    revenuePct: ov.value.retail_non_food_revenue_pct,
+    paymentHint: `Cash ${ov.value.retail_non_food_cash_count || 0} · Contra Bon ${ov.value.retail_non_food_contra_bon_count || 0}`,
+    vs: vs.value.retail_non_food,
     icon: 'fa-solid fa-bag-shopping',
     tone: 'text-orange-600',
     iconBg: 'bg-orange-50',
     border: 'border-orange-100',
     bar: 'bg-orange-400',
+  },
+  {
+    key: 'petty_cash',
+    label: 'Petty Cash',
+    amount: ov.value.petty_cash || 0,
+    hint: `RF cash ${formatCurrency(ov.value.petty_cash_rf || 0)} · RNF cash ${formatCurrency(ov.value.petty_cash_rnf || 0)}`,
+    revenuePct: ov.value.petty_cash_revenue_pct,
+    paymentHint: `${ov.value.petty_cash_count || 0} trx cash (RF+RNF)`,
+    vs: vs.value.petty_cash,
+    icon: 'fa-solid fa-wallet',
+    tone: 'text-cyan-600',
+    iconBg: 'bg-cyan-50',
+    border: 'border-cyan-100',
+    bar: 'bg-cyan-400',
   },
 ])
 
@@ -901,6 +943,7 @@ const modalTitle = computed(() => {
     rws: 'RWS',
     retail_food: 'Retail Food',
     retail_non_food: 'Retail Non Food',
+    petty_cash: 'Petty Cash',
     total_spend: 'Total Spend',
   }
   return map[modalType.value] || 'Detail'
@@ -916,6 +959,7 @@ const modalPartyColumn = computed(() => {
     rws: 'User / Supplier',
     retail_food: 'User / Supplier',
     retail_non_food: 'User / Supplier',
+    petty_cash: 'User / Supplier',
     total_spend: 'User / Supplier',
   }
   return map[modalType.value] || 'Keterangan'
@@ -995,6 +1039,23 @@ const formatDecimal = (value) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(Number(value) || 0)
+
+const vsLabel = (metric) => {
+  if (!metric || metric.pct == null) return 'vs last month —'
+  const pct = Number(metric.pct)
+  const sign = pct > 0 ? '+' : ''
+  return `${sign}${pct}% vs last month`
+}
+
+/** invert=true: naik = buruk (spend/discount) */
+const vsClass = (metric, invert = false) => {
+  if (!metric || metric.pct == null) return 'text-slate-400'
+  const pct = Number(metric.pct)
+  if (pct === 0) return 'text-slate-500'
+  const up = pct > 0
+  const good = invert ? !up : up
+  return good ? 'text-emerald-600' : 'text-rose-600'
+}
 
 const formatRemaining = (value) => {
   const n = Number(value) || 0

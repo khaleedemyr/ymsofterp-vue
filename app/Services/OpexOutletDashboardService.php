@@ -96,7 +96,37 @@ class OpexOutletDashboardService
             ->where('id_outlet', $outletId)
             ->first(['qr_code', 'nama_outlet']);
 
-        $revenue = $this->sumRevenue($outlet?->qr_code, $dateFrom, $dateTo);
+        $current = $this->buildOverviewMetrics($outletId, $outlet?->qr_code, $dateFrom, $dateTo);
+        [$prevFrom, $prevTo] = $this->previousMonthRange($dateFrom, $dateTo);
+        $previous = $this->buildOverviewMetrics($outletId, $outlet?->qr_code, $prevFrom, $prevTo);
+
+        $current['vs_last_month'] = [
+            'period_from' => $prevFrom,
+            'period_to' => $prevTo,
+            'label' => Carbon::parse($prevFrom)->locale('id')->translatedFormat('M Y'),
+            'revenue' => $this->vsMetric($current['revenue'], $previous['revenue']),
+            'total_spend' => $this->vsMetric($current['total_spend'], $previous['total_spend']),
+            'net' => $this->vsMetric($current['net'], $previous['net']),
+            'cover' => $this->vsMetric($current['cover'], $previous['cover']),
+            'avg_pax' => $this->vsMetric($current['avg_pax'], $previous['avg_pax']),
+            'avg_check' => $this->vsMetric($current['avg_check'], $previous['avg_check']),
+            'discount' => $this->vsMetric($current['discount'], $previous['discount']),
+            'gsr_ro' => $this->vsMetric($current['gsr_ro'], $previous['gsr_ro']),
+            'rws' => $this->vsMetric($current['rws'], $previous['rws']),
+            'retail_food' => $this->vsMetric($current['retail_food'], $previous['retail_food']),
+            'retail_non_food' => $this->vsMetric($current['retail_non_food'], $previous['retail_non_food']),
+            'petty_cash' => $this->vsMetric($current['petty_cash'], $previous['petty_cash']),
+        ];
+
+        return ['overview' => $current];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildOverviewMetrics(int $outletId, ?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $revenue = $this->sumRevenue($qrCode, $dateFrom, $dateTo);
         $gsrRo = $this->sumGsrRo($outletId, $dateFrom, $dateTo);
         $rws = $this->sumRws($outletId, $dateFrom, $dateTo);
         $rf = $this->sumRetailFood($outletId, $dateFrom, $dateTo);
@@ -108,30 +138,49 @@ class OpexOutletDashboardService
             ? round(($revenue['discount'] / $revenue['gross_before_discount']) * 100, 2)
             : null;
 
+        $pettyCash = round($rf['cash_total'] + $rnf['cash_total'], 2);
+        $pettyCashCount = $rf['cash_count'] + $rnf['cash_count'];
+        $pctOfRevenue = static function (float $amount) use ($revenue): ?float {
+            return $revenue['total'] > 0 ? round(($amount / $revenue['total']) * 100, 2) : null;
+        };
+
         return [
-            'overview' => [
-                'revenue' => $revenue['total'],
-                'revenue_count' => $revenue['count'],
-                'cover' => $revenue['cover'],
-                'avg_pax' => $revenue['avg_pax'],
-                'avg_check' => $revenue['avg_check'],
-                'discount' => $revenue['discount'],
-                'discount_count' => $revenue['discount_count'],
-                'discount_ratio_percent' => $discountRatio,
-                'gsr_ro' => $gsrRo['total'],
-                'gsr_ro_count' => $gsrRo['count'],
-                'gsr_ro_gr' => $gsrRo['gr_total'],
-                'gsr_ro_gsr' => $gsrRo['gsr_total'],
-                'rws' => $rws['total'],
-                'rws_count' => $rws['count'],
-                'retail_food' => $rf['total'],
-                'retail_food_count' => $rf['count'],
-                'retail_non_food' => $rnf['total'],
-                'retail_non_food_count' => $rnf['count'],
-                'total_spend' => $totalSpend,
-                'spend_ratio_percent' => $spendRatio,
-                'net' => round($revenue['total'] - $totalSpend, 2),
-            ],
+            'revenue' => $revenue['total'],
+            'revenue_count' => $revenue['count'],
+            'cover' => $revenue['cover'],
+            'avg_pax' => $revenue['avg_pax'],
+            'avg_check' => $revenue['avg_check'],
+            'discount' => $revenue['discount'],
+            'discount_count' => $revenue['discount_count'],
+            'discount_ratio_percent' => $discountRatio,
+            'gsr_ro' => $gsrRo['total'],
+            'gsr_ro_count' => $gsrRo['count'],
+            'gsr_ro_gr' => $gsrRo['gr_total'],
+            'gsr_ro_gsr' => $gsrRo['gsr_total'],
+            'rws' => $rws['total'],
+            'rws_count' => $rws['count'],
+            'retail_food' => $rf['total'],
+            'retail_food_count' => $rf['count'],
+            'retail_food_cash_total' => $rf['cash_total'],
+            'retail_food_cash_count' => $rf['cash_count'],
+            'retail_food_contra_bon_total' => $rf['contra_bon_total'],
+            'retail_food_contra_bon_count' => $rf['contra_bon_count'],
+            'retail_food_revenue_pct' => $pctOfRevenue($rf['total']),
+            'retail_non_food' => $rnf['total'],
+            'retail_non_food_count' => $rnf['count'],
+            'retail_non_food_cash_total' => $rnf['cash_total'],
+            'retail_non_food_cash_count' => $rnf['cash_count'],
+            'retail_non_food_contra_bon_total' => $rnf['contra_bon_total'],
+            'retail_non_food_contra_bon_count' => $rnf['contra_bon_count'],
+            'retail_non_food_revenue_pct' => $pctOfRevenue($rnf['total']),
+            'petty_cash' => $pettyCash,
+            'petty_cash_count' => $pettyCashCount,
+            'petty_cash_rf' => $rf['cash_total'],
+            'petty_cash_rnf' => $rnf['cash_total'],
+            'petty_cash_revenue_pct' => $pctOfRevenue($pettyCash),
+            'total_spend' => $totalSpend,
+            'spend_ratio_percent' => $spendRatio,
+            'net' => round($revenue['total'] - $totalSpend, 2),
         ];
     }
 
@@ -145,6 +194,8 @@ class OpexOutletDashboardService
             ->first(['qr_code', 'nama_outlet']);
 
         $member = $this->sumMemberActivity($outlet?->qr_code, $outlet?->nama_outlet, $dateFrom, $dateTo);
+        [$prevFrom, $prevTo] = $this->previousMonthRange($dateFrom, $dateTo);
+        $prevMember = $this->sumMemberActivity($outlet?->qr_code, $outlet?->nama_outlet, $prevFrom, $prevTo);
 
         return [
             'overview' => [
@@ -157,7 +208,55 @@ class OpexOutletDashboardService
                 'member_redeem_count' => $member['redeem_count'],
                 'member_redeem_points' => $member['redeem_points'],
                 'member_source' => $member['source'],
+                'vs_last_month_member' => [
+                    'period_from' => $prevFrom,
+                    'period_to' => $prevTo,
+                    'label' => Carbon::parse($prevFrom)->locale('id')->translatedFormat('M Y'),
+                    'member_bills' => $this->vsMetric($member['member_bills'], $prevMember['member_bills']),
+                    'member_revenue' => $this->vsMetric($member['member_revenue'], $prevMember['member_revenue']),
+                    'member_top_up_points' => $this->vsMetric($member['top_up_points'], $prevMember['top_up_points']),
+                    'member_redeem' => $this->vsMetric($member['redeem_value'], $prevMember['redeem_value']),
+                ],
             ],
+        ];
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function previousMonthRange(string $dateFrom, string $dateTo): array
+    {
+        return [
+            Carbon::parse($dateFrom)->subMonthNoOverflow()->format('Y-m-d'),
+            Carbon::parse($dateTo)->subMonthNoOverflow()->format('Y-m-d'),
+        ];
+    }
+
+    /**
+     * @return array{previous: float|null, diff: float|null, pct: float|null}
+     */
+    private function vsMetric(float|int|null $current, float|int|null $previous): array
+    {
+        $curr = $current === null ? null : (float) $current;
+        $prev = $previous === null ? null : (float) $previous;
+        if ($curr === null || $prev === null) {
+            return ['previous' => $prev, 'diff' => null, 'pct' => null];
+        }
+
+        $diff = round($curr - $prev, 2);
+        $pct = null;
+        if ($prev != 0.0) {
+            $pct = round(($diff / abs($prev)) * 100, 1);
+        } elseif ($curr == 0.0) {
+            $pct = 0.0;
+        } else {
+            $pct = 100.0;
+        }
+
+        return [
+            'previous' => round($prev, 2),
+            'diff' => $diff,
+            'pct' => $pct,
         ];
     }
 
@@ -939,39 +1038,103 @@ class OpexOutletDashboardService
     }
 
     /**
-     * @return array{total: float, count: int}
+     * @return array{
+     *   total: float,
+     *   count: int,
+     *   cash_total: float,
+     *   cash_count: int,
+     *   contra_bon_total: float,
+     *   contra_bon_count: int
+     * }
      */
     public function sumRetailFood(int $outletId, string $dateFrom, string $dateTo): array
     {
-        $q = DB::table('retail_food')
+        return $this->sumRetailByPaymentMethod('retail_food', $outletId, $dateFrom, $dateTo);
+    }
+
+    /**
+     * @return array{
+     *   total: float,
+     *   count: int,
+     *   cash_total: float,
+     *   cash_count: int,
+     *   contra_bon_total: float,
+     *   contra_bon_count: int
+     * }
+     */
+    public function sumRetailNonFood(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        return $this->sumRetailByPaymentMethod('retail_non_food', $outletId, $dateFrom, $dateTo);
+    }
+
+    /**
+     * @return array{
+     *   total: float,
+     *   count: int,
+     *   cash_total: float,
+     *   cash_count: int,
+     *   contra_bon_total: float,
+     *   contra_bon_count: int
+     * }
+     */
+    private function sumRetailByPaymentMethod(string $table, int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $row = DB::table($table)
             ->where('outlet_id', $outletId)
             ->where('status', 'approved')
             ->whereNull('deleted_at')
             ->whereDate('transaction_date', '>=', $dateFrom)
-            ->whereDate('transaction_date', '<=', $dateTo);
+            ->whereDate('transaction_date', '<=', $dateTo)
+            ->selectRaw("
+                COALESCE(SUM(total_amount), 0) as total,
+                COUNT(*) as cnt,
+                COALESCE(SUM(CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END), 0) as cash_total,
+                SUM(CASE WHEN payment_method = 'cash' THEN 1 ELSE 0 END) as cash_count,
+                COALESCE(SUM(CASE WHEN payment_method = 'contra_bon' THEN total_amount ELSE 0 END), 0) as contra_bon_total,
+                SUM(CASE WHEN payment_method = 'contra_bon' THEN 1 ELSE 0 END) as contra_bon_count
+            ")
+            ->first();
 
         return [
-            'total' => round((float) (clone $q)->sum('total_amount'), 2),
-            'count' => (int) (clone $q)->count('id'),
+            'total' => round((float) ($row->total ?? 0), 2),
+            'count' => (int) ($row->cnt ?? 0),
+            'cash_total' => round((float) ($row->cash_total ?? 0), 2),
+            'cash_count' => (int) ($row->cash_count ?? 0),
+            'contra_bon_total' => round((float) ($row->contra_bon_total ?? 0), 2),
+            'contra_bon_count' => (int) ($row->contra_bon_count ?? 0),
         ];
     }
 
     /**
-     * @return array{total: float, count: int}
+     * Petty cash = RF cash + RNF cash.
+     *
+     * @return array<string, float>
      */
-    public function sumRetailNonFood(int $outletId, string $dateFrom, string $dateTo): array
+    public function pettyCashByDate(int $outletId, string $dateFrom, string $dateTo): array
     {
-        $q = DB::table('retail_non_food')
+        return $this->mergeDateMaps(
+            $this->retailCashByDate('retail_food', $outletId, $dateFrom, $dateTo),
+            $this->retailCashByDate('retail_non_food', $outletId, $dateFrom, $dateTo)
+        );
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    private function retailCashByDate(string $table, int $outletId, string $dateFrom, string $dateTo): array
+    {
+        return DB::table($table)
             ->where('outlet_id', $outletId)
             ->where('status', 'approved')
             ->whereNull('deleted_at')
+            ->where('payment_method', 'cash')
             ->whereDate('transaction_date', '>=', $dateFrom)
-            ->whereDate('transaction_date', '<=', $dateTo);
-
-        return [
-            'total' => round((float) (clone $q)->sum('total_amount'), 2),
-            'count' => (int) (clone $q)->count('id'),
-        ];
+            ->whereDate('transaction_date', '<=', $dateTo)
+            ->selectRaw('DATE(transaction_date) as d, SUM(total_amount) as total')
+            ->groupBy(DB::raw('DATE(transaction_date)'))
+            ->pluck('total', 'd')
+            ->map(fn ($v) => (float) $v)
+            ->all();
     }
 
     /**
@@ -1166,6 +1329,7 @@ class OpexOutletDashboardService
             'rws' => $this->rwsByDate($outletId, $dateFrom, $dateTo),
             'retail_food' => $this->retailFoodByDate($outletId, $dateFrom, $dateTo),
             'retail_non_food' => $this->retailNonFoodByDate($outletId, $dateFrom, $dateTo),
+            'petty_cash' => $this->pettyCashByDate($outletId, $dateFrom, $dateTo),
             'total_spend' => $this->mergeDateMaps(
                 $this->foodGrByDate($outletId, $dateFrom, $dateTo),
                 $this->gsrByDate($outletId, $dateFrom, $dateTo),
