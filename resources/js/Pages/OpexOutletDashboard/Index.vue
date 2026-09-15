@@ -182,10 +182,10 @@
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.revenue) }}</p>
                 <p class="mt-2 text-sm text-slate-500">{{ ov.revenue_count || 0 }} orders</p>
                 <template v-if="ov.revenue_monthly_budget != null">
-                  <p class="mt-2 text-xs text-slate-500">
-                    Budget {{ formatCurrency(ov.revenue_monthly_budget) }}
+                  <p class="mt-3 text-sm font-semibold text-slate-700">
+                    Budget <span class="text-base text-slate-900">{{ formatCurrency(ov.revenue_monthly_budget) }}</span>
                   </p>
-                  <div class="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden max-w-[220px]">
+                  <div class="mt-2 h-2.5 rounded-full bg-slate-100 overflow-hidden max-w-[260px]">
                     <div
                       class="h-full rounded-full transition-all"
                       :class="(ov.revenue_budget_perf_percent || 0) >= 100 ? 'bg-emerald-500' : 'bg-sky-500'"
@@ -193,11 +193,11 @@
                     ></div>
                   </div>
                   <p
-                    class="mt-1 text-xs font-semibold"
+                    class="mt-1.5 text-sm font-bold"
                     :class="(ov.revenue_budget_perf_percent || 0) >= 100 ? 'text-emerald-600' : 'text-sky-700'"
                   >
                     Performa {{ ov.revenue_budget_perf_percent }}%
-                    <span v-if="ov.revenue_budget_variance != null" class="font-medium text-slate-500">
+                    <span v-if="ov.revenue_budget_variance != null" class="font-semibold text-slate-500">
                       · {{ ov.revenue_budget_variance >= 0 ? '+' : '' }}{{ formatCurrency(ov.revenue_budget_variance) }}
                     </span>
                   </p>

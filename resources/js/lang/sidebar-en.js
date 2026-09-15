@@ -193,7 +193,7 @@ export default {
     "outlet_wip_production": "Outlet WIP Production",
     "laporan_outlet_wip": "Laporan Outlet WIP",
     "sales_report": "Sales Report",
-    "opex_outlet_dashboard": "Opex Outlet Dashboard",
+    "opex_outlet_dashboard": "Revenue & Spend Dashboard",
     "daily_outlet_revenue": "Daily Outlet Revenue",
     "weekly_outlet_fb_revenue": "Weekly Outlet FB Revenue",
     "daily_revenue_forecast": "Daily Revenue Forecast",
