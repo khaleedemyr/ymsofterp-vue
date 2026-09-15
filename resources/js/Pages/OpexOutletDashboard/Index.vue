@@ -341,6 +341,23 @@
               <span class="text-indigo-400 text-xs mt-1">Detail →</span>
             </div>
           </button>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-lime-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('outlet_city_ledger')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-lime-700">Outlet City Ledger</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.outlet_city_ledger) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ ov.outlet_city_ledger_count || 0 }} pembayaran OUTLET_CITY_LEDGER
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_city_ledger, true)">{{ vsLabel(vs.outlet_city_ledger) }}</p>
+              </div>
+              <span class="text-lime-500 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
         </div>
         </template>
 
@@ -426,8 +443,8 @@
           </button>
         </div>
 
-        <!-- Stock Cut & Category Cost -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <!-- Stock Cut, Category Cost, MCS Purchase -->
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
           <button
             type="button"
             class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition"
@@ -476,6 +493,37 @@
               </div>
               <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-trash text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('mcs_purchase')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembelian MCS</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
+                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi GR/GSR</p>
+                <p v-if="ov.mcs_purchase_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                  {{ ov.mcs_purchase_revenue_pct }}% dari revenue
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.mcs_purchase, true)">{{ vsLabel(vs.mcs_purchase) }}</p>
+                <div class="mt-3 grid grid-cols-3 gap-x-3 gap-y-1.5">
+                  <div
+                    v-for="row in mcsPurchaseByCategory"
+                    :key="row.key"
+                    class="min-w-0"
+                  >
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.label }}</p>
+                    <p class="text-xs font-semibold text-slate-700 truncate">{{ formatCurrency(row.amount) }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-box-open text-xl"></i>
               </div>
             </div>
           </button>
@@ -622,7 +670,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="['revenue', 'total_spend', 'category_cost'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -885,6 +933,85 @@
               </div>
               <p class="text-xs text-slate-500">
                 {{ modalPagination.total }} hari · dari Category Cost Outlet (subtotal MAC)
+              </p>
+            </template>
+
+            <!-- MCS Purchase: transaksi + items -->
+            <template v-else-if="modalType === 'mcs_purchase'">
+              <div class="flex flex-wrap gap-2 items-end">
+                <input
+                  v-model="modalSearch"
+                  type="text"
+                  placeholder="Cari nomor / item / category..."
+                  class="flex-1 min-w-[200px] rounded-xl border-slate-200 text-sm"
+                  @keyup.enter="fetchModal"
+                />
+                <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="fetchModal">Cari</button>
+              </div>
+
+              <div class="space-y-3">
+                <div
+                  v-for="txn in modalTxns"
+                  :key="txn.id"
+                  class="rounded-2xl border border-amber-100 overflow-hidden bg-white"
+                >
+                  <button
+                    type="button"
+                    class="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-amber-50/60"
+                    @click="toggleMcsTxn(txn.id)"
+                  >
+                    <div class="min-w-0">
+                      <p class="font-semibold text-slate-900 truncate">{{ txn.number || '-' }}</p>
+                      <p class="text-xs text-slate-500 mt-0.5">
+                        {{ formatShortDate(txn.date) }}
+                        · {{ txn.source || 'GR' }}
+                        · {{ (txn.items || []).length }} item
+                        <span v-if="txn.creator_name"> · {{ txn.creator_name }}</span>
+                      </p>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                      <span class="font-bold text-amber-700">{{ formatCurrency(txn.amount) }}</span>
+                      <i
+                        class="fa-solid text-slate-400"
+                        :class="expandedMcsTxnIds[txn.id] ? 'fa-chevron-up' : 'fa-chevron-down'"
+                      ></i>
+                    </div>
+                  </button>
+                  <div v-if="expandedMcsTxnIds[txn.id]" class="border-t border-amber-100 bg-amber-50/30">
+                    <table class="min-w-full text-xs">
+                      <thead>
+                        <tr class="text-slate-500">
+                          <th class="px-4 py-2 text-left">Item</th>
+                          <th class="px-4 py-2 text-left">Category</th>
+                          <th class="px-4 py-2 text-right">Qty</th>
+                          <th class="px-4 py-2 text-left">Unit</th>
+                          <th class="px-4 py-2 text-right">Price</th>
+                          <th class="px-4 py-2 text-right">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="(item, idx) in (txn.items || [])"
+                          :key="txn.id + '-item-' + idx"
+                          class="border-t border-amber-100/80"
+                        >
+                          <td class="px-4 py-2 font-medium text-slate-800">{{ item.item_name }}</td>
+                          <td class="px-4 py-2 text-slate-600">{{ item.category }}</td>
+                          <td class="px-4 py-2 text-right text-slate-700">{{ formatDecimal(item.qty) }}</td>
+                          <td class="px-4 py-2 text-slate-600">{{ item.unit }}</td>
+                          <td class="px-4 py-2 text-right text-slate-700">{{ formatCurrency(item.price) }}</td>
+                          <td class="px-4 py-2 text-right font-semibold text-slate-900">{{ formatCurrency(item.amount) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div v-if="!modalTxns.length" class="py-10 text-center text-slate-400 text-sm">
+                  Tidak ada transaksi pembelian MCS
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">
+                {{ modalPagination.total }} transaksi · Marketing / Chemical / Stationary
               </p>
             </template>
 
@@ -1207,6 +1334,7 @@ const sourceCards = computed(() => [
 ])
 
 const categoryCostByType = computed(() => ov.value.category_cost_by_type || [])
+const mcsPurchaseByCategory = computed(() => ov.value.mcs_purchase_by_category || [])
 
 const pettyCashHref = computed(() => {
   const p = new URLSearchParams()
@@ -1322,6 +1450,14 @@ const modalTxns = ref([])
 const modalTrend = ref([])
 const modalPagination = ref({ total: 0, total_pages: 1 })
 const modalSheetMeta = ref(null)
+const expandedMcsTxnIds = ref({})
+
+const toggleMcsTxn = (id) => {
+  expandedMcsTxnIds.value = {
+    ...expandedMcsTxnIds.value,
+    [id]: !expandedMcsTxnIds.value[id],
+  }
+}
 
 const modalTitle = computed(() => {
   const map = {
@@ -1339,6 +1475,8 @@ const modalTitle = computed(() => {
     petty_cash: 'Petty Cash',
     stock_cut: 'Stock Cut',
     category_cost: 'Category Cost',
+    mcs_purchase: 'Pembelian MCS',
+    outlet_city_ledger: 'Outlet City Ledger',
     total_spend: 'Total Spend',
   }
   return map[modalType.value] || 'Detail'
@@ -1350,6 +1488,7 @@ const modalPartyColumn = computed(() => {
     discount_compliment: 'Reason',
     discount_guest_satisfaction: 'Reason',
     officer_check: 'Officer',
+    outlet_city_ledger: 'Member / Note',
     member_top_up: 'Member',
     member_redeem: 'Member / Reward',
     revenue: 'Member',
@@ -1364,11 +1503,11 @@ const modalPartyColumn = computed(() => {
 })
 
 const modalShowsBill = computed(() =>
-  ['discount_compliment', 'discount_guest_satisfaction', 'officer_check'].includes(modalType.value)
+  ['discount_compliment', 'discount_guest_satisfaction', 'officer_check', 'outlet_city_ledger'].includes(modalType.value)
 )
 
 const modalAmountLabel = computed(() => {
-  if (modalType.value === 'officer_check') return 'Pembayaran'
+  if (modalType.value === 'officer_check' || modalType.value === 'outlet_city_ledger') return 'Pembayaran'
   if (modalShowsBill.value) return 'Discount'
   return 'Amount'
 })
@@ -1480,6 +1619,7 @@ const openCard = async (type) => {
   modalOpen.value = true
   modalSearch.value = ''
   modalPage.value = 1
+  expandedMcsTxnIds.value = {}
   await fetchModal()
 }
 
@@ -1488,6 +1628,7 @@ const closeModal = () => {
   modalTxns.value = []
   modalTrend.value = []
   modalSheetMeta.value = null
+  expandedMcsTxnIds.value = {}
 }
 
 const fetchModal = async () => {
@@ -1501,7 +1642,7 @@ const fetchModal = async () => {
         date_to: filters.value.date_to,
         search: modalSearch.value,
         page: modalPage.value,
-        per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost'].includes(modalType.value) ? 62 : 20,
+        per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase'].includes(modalType.value) ? 62 : 20,
       },
     })
     modalTrend.value = data.trend || []

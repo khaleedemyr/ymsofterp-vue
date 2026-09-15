@@ -34,6 +34,13 @@ class OpexOutletDashboardService
     /** @var list<string> */
     private const CATEGORY_COST_APPROVAL_TYPES = ['r_and_d', 'marketing', 'wrong_maker', 'training'];
 
+    /** @var array<string, string> */
+    public const MCS_SUB_CATEGORY_LABELS = [
+        'Marketing' => 'Marketing',
+        'Chemical' => 'Chemical',
+        'Stationary' => 'Stationary',
+    ];
+
     /**
      * @return array<string, mixed>
      */
@@ -141,6 +148,8 @@ class OpexOutletDashboardService
             'petty_cash' => $this->vsMetric($current['petty_cash'], $previous['petty_cash']),
             'stock_cut' => $this->vsMetric($current['stock_cut'], $previous['stock_cut']),
             'category_cost' => $this->vsMetric($current['category_cost'], $previous['category_cost']),
+            'mcs_purchase' => $this->vsMetric($current['mcs_purchase'], $previous['mcs_purchase']),
+            'outlet_city_ledger' => $this->vsMetric($current['outlet_city_ledger'], $previous['outlet_city_ledger']),
         ];
 
         return ['overview' => $current];
@@ -170,6 +179,8 @@ class OpexOutletDashboardService
         $officerCheck = $this->sumOfficerCheck($qrCode, $dateFrom, $dateTo);
         $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
         $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
+        $mcsPurchase = $this->sumMcsPurchase($outletId, $dateFrom, $dateTo);
+        $cityLedger = $this->sumOutletCityLedger($qrCode, $dateFrom, $dateTo);
         $monthlyBudget = $this->sumMonthlyRevenueBudget($outletId, $dateFrom, $dateTo);
         $budgetPerf = $monthlyBudget !== null && $monthlyBudget > 0
             ? round(($revenue['total'] / $monthlyBudget) * 100, 1)
@@ -234,6 +245,13 @@ class OpexOutletDashboardService
             'category_cost_count' => $categoryCost['count'],
             'category_cost_by_type' => $categoryCost['by_type'],
             'category_cost_revenue_pct' => $pctOfRevenue($categoryCost['total']),
+            'mcs_purchase' => $mcsPurchase['total'],
+            'mcs_purchase_count' => $mcsPurchase['count'],
+            'mcs_purchase_by_category' => $mcsPurchase['by_category'],
+            'mcs_purchase_revenue_pct' => $pctOfRevenue($mcsPurchase['total']),
+            'outlet_city_ledger' => $cityLedger['amount'],
+            'outlet_city_ledger_count' => $cityLedger['count'],
+            'outlet_city_ledger_bill' => $cityLedger['bill'],
             'total_spend' => $totalSpend,
             'spend_ratio_percent' => $spendRatio,
             'net' => round($revenue['total'] - $totalSpend, 2),
@@ -1509,6 +1527,8 @@ class OpexOutletDashboardService
             'petty_cash' => $this->pettyCashByDate($outletId, $dateFrom, $dateTo),
             'stock_cut' => $this->stockCutByDate($outletId, $dateFrom, $dateTo),
             'category_cost' => $this->categoryCostByDate($outletId, $dateFrom, $dateTo),
+            'mcs_purchase' => $this->mcsPurchaseByDate($outletId, $dateFrom, $dateTo),
+            'outlet_city_ledger' => $this->outletCityLedgerByDate($qrCode, $dateFrom, $dateTo),
             'total_spend' => $this->mergeDateMaps(
                 $this->foodGrByDate($outletId, $dateFrom, $dateTo),
                 $this->gsrByDate($outletId, $dateFrom, $dateTo),
@@ -2144,6 +2164,301 @@ class OpexOutletDashboardService
                             ->where('h.status', 'APPROVED');
                     });
             });
+    }
+
+    /**
+     * Pembelian item sub-category Marketing / Chemical / Stationary (Food GR + Serial GR).
+     *
+     * @return array{
+     *   total: float,
+     *   count: int,
+     *   by_category: list<array{key: string, label: string, amount: float}>
+     * }
+     */
+    public function sumMcsPurchase(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $byCat = [
+            'Marketing' => 0.0,
+            'Chemical' => 0.0,
+            'Stationary' => 0.0,
+        ];
+        $headerIds = [];
+
+        foreach ($this->mcsFoodGrLines($outletId, $dateFrom, $dateTo) as $line) {
+            $cat = $this->normalizeMcsCategory((string) ($line->category ?? ''));
+            if ($cat === null) {
+                continue;
+            }
+            $byCat[$cat] += (float) ($line->amount ?? 0);
+            $headerIds['gr-'.$line->header_id] = true;
+        }
+
+        foreach ($this->mcsSerialGrLines($outletId, $dateFrom, $dateTo) as $line) {
+            $cat = $this->normalizeMcsCategory((string) ($line->category ?? ''));
+            if ($cat === null) {
+                continue;
+            }
+            $byCat[$cat] += (float) ($line->amount ?? 0);
+            $headerIds['gsr-'.$line->header_id] = true;
+        }
+
+        $byCategory = [];
+        $total = 0.0;
+        foreach (self::MCS_SUB_CATEGORY_LABELS as $key => $label) {
+            $amount = round($byCat[$key], 2);
+            $byCategory[] = [
+                'key' => strtolower($key),
+                'label' => $label,
+                'amount' => $amount,
+            ];
+            $total += $amount;
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => count($headerIds),
+            'by_category' => $byCategory,
+        ];
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function mcsPurchaseByDate(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $map = [];
+        foreach (array_merge(
+            $this->mcsFoodGrLines($outletId, $dateFrom, $dateTo)->all(),
+            $this->mcsSerialGrLines($outletId, $dateFrom, $dateTo)->all()
+        ) as $line) {
+            $d = (string) ($line->date ?? '');
+            if ($d === '') {
+                continue;
+            }
+            $map[$d] = ($map[$d] ?? 0) + (float) ($line->amount ?? 0);
+        }
+
+        return array_map(fn ($v) => (float) $v, $map);
+    }
+
+    /**
+     * Transaksi GR/GSR berisi item MCS + item lines untuk modal.
+     *
+     * @return list<object>
+     */
+    public function listMcsPurchaseTransactions(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $grouped = [];
+
+        $pushLine = function (string $prefix, object $line) use (&$grouped): void {
+            $cat = $this->normalizeMcsCategory((string) ($line->category ?? ''));
+            if ($cat === null) {
+                return;
+            }
+            $key = $prefix.$line->header_id;
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = (object) [
+                    'id' => $key,
+                    'number' => (string) ($line->number ?? '-'),
+                    'date' => (string) ($line->date ?? ''),
+                    'source' => $prefix === 'gr-' ? 'GR / RO' : 'GSR',
+                    'type' => 'mcs_purchase',
+                    'creator_name' => (string) ($line->creator_name ?? '-'),
+                    'amount' => 0.0,
+                    'items' => [],
+                ];
+            }
+            $amount = round((float) ($line->amount ?? 0), 2);
+            $grouped[$key]->amount = round((float) $grouped[$key]->amount + $amount, 2);
+            $grouped[$key]->items[] = [
+                'item_name' => (string) ($line->item_name ?? '-'),
+                'category' => $cat,
+                'qty' => round((float) ($line->qty ?? 0), 4),
+                'unit' => (string) ($line->unit_name ?? '-'),
+                'price' => round((float) ($line->price ?? 0), 2),
+                'amount' => $amount,
+            ];
+        };
+
+        foreach ($this->mcsFoodGrLines($outletId, $dateFrom, $dateTo) as $line) {
+            $pushLine('gr-', $line);
+        }
+        foreach ($this->mcsSerialGrLines($outletId, $dateFrom, $dateTo) as $line) {
+            $pushLine('gsr-', $line);
+        }
+
+        $rows = array_values($grouped);
+        usort($rows, function ($a, $b) {
+            $cmp = strcmp((string) $b->date, (string) $a->date);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return strcmp((string) $b->number, (string) $a->number);
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mcsFoodGrLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! Schema::hasTable('outlet_food_good_receive_items')) {
+            return collect();
+        }
+
+        $names = array_keys(self::MCS_SUB_CATEGORY_LABELS);
+
+        return DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('items as it', 'ofgri.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('units as u', 'ofgri.unit_id', '=', 'u.id')
+            ->leftJoin('users as usr', 'ofgr.created_by', '=', 'usr.id')
+            ->leftJoin('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
+                    ->where(function ($q) {
+                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
+                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
+                    });
+            })
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->whereIn('sc.name', $names)
+            ->whereDate('ofgr.receive_date', '>=', $dateFrom)
+            ->whereDate('ofgr.receive_date', '<=', $dateTo)
+            ->select([
+                'ofgr.id as header_id',
+                'ofgr.number',
+                'ofgr.receive_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw('ofgri.received_qty as qty'),
+                DB::raw('COALESCE(ffoi.price, 0) as price'),
+                DB::raw('ofgri.received_qty * COALESCE(ffoi.price, 0) as amount'),
+            ])
+            ->get();
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    private function mcsSerialGrLines(int $outletId, string $dateFrom, string $dateTo)
+    {
+        if (! $this->hasSerialGrTables()) {
+            return collect();
+        }
+
+        $names = array_keys(self::MCS_SUB_CATEGORY_LABELS);
+        $priceSql = $this->serialGrPriceSql('it');
+
+        return DB::table('outlet_serial_receive_items as si')
+            ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->leftJoin('users as usr', 'h.created_by', '=', 'usr.id')
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->where('h.outlet_id', $outletId)
+            ->whereIn('sc.name', $names)
+            ->whereDate('h.receive_date', '>=', $dateFrom)
+            ->whereDate('h.receive_date', '<=', $dateTo)
+            ->select([
+                'h.id as header_id',
+                'h.number',
+                'h.receive_date as date',
+                'sc.name as category',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'usr.nama_lengkap as creator_name',
+                DB::raw('si.qty as qty'),
+                DB::raw("({$priceSql}) as price"),
+                DB::raw("si.qty * ({$priceSql}) as amount"),
+            ])
+            ->get();
+    }
+
+    private function normalizeMcsCategory(string $name): ?string
+    {
+        foreach (array_keys(self::MCS_SUB_CATEGORY_LABELS) as $key) {
+            if (strcasecmp(trim($name), $key) === 0) {
+                return $key;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Pembayaran OUTLET_CITY_LEDGER dari order_payment.
+     *
+     * @return array{amount: float, bill: float, count: int}
+     */
+    public function sumOutletCityLedger(?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $empty = ['amount' => 0.0, 'bill' => 0.0, 'count' => 0];
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return $empty;
+        }
+
+        $row = DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where(function ($q) {
+                $q->where('op.payment_code', 'OUTLET_CITY_LEDGER')
+                    ->orWhere('op.payment_type', 'OUTLET_CITY_LEDGER');
+            })
+            ->selectRaw('
+                COALESCE(SUM(op.amount), 0) as amount,
+                COUNT(*) as cnt
+            ')
+            ->first();
+
+        return [
+            'amount' => round((float) ($row->amount ?? 0), 2),
+            'bill' => round((float) ($row->amount ?? 0), 2),
+            'count' => (int) ($row->cnt ?? 0),
+        ];
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function outletCityLedgerByDate(?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return [];
+        }
+
+        return DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where(function ($q) {
+                $q->where('op.payment_code', 'OUTLET_CITY_LEDGER')
+                    ->orWhere('op.payment_type', 'OUTLET_CITY_LEDGER');
+            })
+            ->selectRaw('DATE(o.created_at) as d, SUM(COALESCE(op.amount, 0)) as total')
+            ->groupBy(DB::raw('DATE(o.created_at)'))
+            ->pluck('total', 'd')
+            ->map(fn ($v) => (float) $v)
+            ->all();
     }
 
     /**

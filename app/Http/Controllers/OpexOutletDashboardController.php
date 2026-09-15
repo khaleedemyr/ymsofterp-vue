@@ -79,8 +79,8 @@ class OpexOutletDashboardController extends Controller
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
         $page = max(1, (int) $request->get('page', 1));
-        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost'], true) ? 62 : 20;
-        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost'], true) ? 93 : 50;
+        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase'], true) ? 62 : 20;
+        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase'], true) ? 93 : 50;
         $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
 
@@ -116,6 +116,14 @@ class OpexOutletDashboardController extends Controller
 
         if ($search !== '') {
             $transactions = $transactions->filter(function ($row) use ($search) {
+                $itemHay = '';
+                if (! empty($row->items) && is_array($row->items)) {
+                    $itemHay = implode(' ', array_map(function ($item) {
+                        return is_array($item)
+                            ? (($item['item_name'] ?? '').' '.($item['category'] ?? ''))
+                            : (($item->item_name ?? '').' '.($item->category ?? ''));
+                    }, $row->items));
+                }
                 $hay = strtolower(implode(' ', array_filter([
                     $row->number ?? null,
                     $row->outlet_name ?? null,
@@ -128,6 +136,7 @@ class OpexOutletDashboardController extends Controller
                     $row->bill_amount ?? null,
                     $row->day_name ?? null,
                     $row->date ?? null,
+                    $itemHay,
                 ])));
 
                 return str_contains($hay, strtolower($search));
@@ -183,6 +192,8 @@ class OpexOutletDashboardController extends Controller
             'petty_cash' => $this->listPettyCash($outletId, $dateFrom, $dateTo),
             'stock_cut' => collect($this->opexService->buildStockCutDaily($outletId, $dateFrom, $dateTo)),
             'category_cost' => collect($this->opexService->buildCategoryCostDaily($outletId, $dateFrom, $dateTo)['rows']),
+            'mcs_purchase' => collect($this->opexService->listMcsPurchaseTransactions($outletId, $dateFrom, $dateTo)),
+            'outlet_city_ledger' => $this->listOutletCityLedger($qrCode, $dateFrom, $dateTo),
             'total_spend' => collect($this->opexService->buildReceivingSheetStyleDaily($outletId, $dateFrom, $dateTo)['rows']),
             default => collect(),
         };
@@ -314,6 +325,48 @@ class OpexOutletDashboardController extends Controller
                 $row->beneficiary_name = $officer;
                 $row->creator_name = $officer;
                 $row->supplier_name = $officer;
+
+                return $row;
+            });
+    }
+
+    private function listOutletCityLedger(?string $qrCode, string $dateFrom, string $dateTo)
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return collect();
+        }
+
+        return DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where(function ($q) {
+                $q->where('op.payment_code', 'OUTLET_CITY_LEDGER')
+                    ->orWhere('op.payment_type', 'OUTLET_CITY_LEDGER');
+            })
+            ->orderByDesc('o.created_at')
+            ->limit(500)
+            ->get([
+                'op.id',
+                DB::raw("COALESCE(o.paid_number, CONCAT('ORD-', o.id)) as number"),
+                'op.amount',
+                DB::raw('COALESCE(o.grand_total, 0) as bill_amount'),
+                'o.created_at as date',
+                'o.member_name',
+                'op.note',
+            ])
+            ->map(function ($row) {
+                $row->type = 'outlet_city_ledger';
+                $row->source = 'Outlet City Ledger';
+                $member = trim((string) ($row->member_name ?? ''));
+                $note = trim((string) ($row->note ?? ''));
+                $label = $member !== '' ? $member : ($note !== '' ? $note : '-');
+                $row->beneficiary_name = $label;
+                $row->creator_name = $label;
+                $row->supplier_name = $label;
 
                 return $row;
             });
