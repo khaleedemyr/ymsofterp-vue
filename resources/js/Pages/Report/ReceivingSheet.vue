@@ -86,13 +86,22 @@
               <th class="px-6 py-3 text-left">No</th>
               <th class="px-6 py-3 text-left">Tanggal</th>
               <th class="px-6 py-3 text-right">Omzet</th>
-              <th class="px-6 py-3 text-right">% Cost</th>
+              <th
+                v-for="wh in warehouseColumns"
+                :key="'wh-'+wh.key"
+                class="px-6 py-3 text-right"
+              >
+                {{ wh.name }}
+              </th>
+              <th
+                v-for="sp in suppliers"
+                :key="'sp-'+sp.id"
+                class="px-6 py-3 text-right"
+              >
+                {{ sp.name }}
+              </th>
               <th class="px-6 py-3 text-right">Cost</th>
-              <th class="px-6 py-3 text-right" title="Pembelanjaan RO gudang Main Store">MS</th>
-              <th class="px-6 py-3 text-right" title="Pembelanjaan RO gudang MK1 + MK2">MK</th>
-              <th v-for="wh in warehouses" :key="'wh-'+wh.id" class="px-6 py-3 text-right">{{ wh.name }}</th>
-              <th class="px-6 py-3 text-right">Retail</th>
-              <th v-for="sp in suppliers" :key="'sp-'+sp.id" class="px-6 py-3 text-right">{{ sp.name }}</th>
+              <th class="px-6 py-3 text-right">% Cost</th>
             </tr>
           </thead>
           <tbody>
@@ -100,6 +109,21 @@
               <td class="px-6 py-4 text-gray-700">{{ index + 1 }}</td>
               <td class="px-6 py-4 text-gray-700 font-medium">{{ formatDate(row.tanggal) }}</td>
               <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.omzet) }}</td>
+              <td
+                v-for="wh in warehouseColumns"
+                :key="'wh-'+wh.key"
+                class="px-6 py-4 text-right text-gray-700 font-medium"
+              >
+                {{ formatCurrency(row[wh.key]) }}
+              </td>
+              <td
+                v-for="sp in suppliers"
+                :key="'sp-'+sp.id"
+                class="px-6 py-4 text-right text-gray-700 font-medium"
+              >
+                {{ formatCurrency(row['supplier_' + sp.id]) }}
+              </td>
+              <td class="px-6 py-4 text-right text-gray-700 font-semibold">{{ formatCurrency(row.cost) }}</td>
               <td class="px-6 py-4 text-right">
                 <span 
                   :class="[
@@ -111,16 +135,6 @@
                 >
                   {{ (Number(row.persentase_cost) || 0).toFixed(2) }}%
                 </span>
-              </td>
-              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.cost) }}</td>
-              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.ms) }}</td>
-              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.mk) }}</td>
-              <td v-for="wh in warehouses" :key="'wh-'+wh.id" class="px-6 py-4 text-right text-gray-700 font-medium">
-                {{ formatCurrency(row['warehouse_' + wh.id]) }}
-              </td>
-              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.retail_food) }}</td>
-              <td v-for="sp in suppliers" :key="'sp-'+sp.id" class="px-6 py-4 text-right text-gray-700 font-medium">
-                {{ formatCurrency(row['supplier_' + sp.id]) }}
               </td>
             </tr>
           </tbody>
@@ -153,9 +167,13 @@ const props = defineProps({
     type: Array,
     default: () => []
   },
-  warehouses: {
+  warehouseColumns: {
     type: Array,
-    default: () => []
+    default: () => [
+      { key: 'main_store', name: 'Main Store' },
+      { key: 'mk1', name: 'MK1 Hot Kitchen' },
+      { key: 'mk2', name: 'MK2 Cold Kitchen' },
+    ]
   },
   suppliers: {
     type: Array,
