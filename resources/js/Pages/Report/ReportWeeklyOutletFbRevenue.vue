@@ -57,21 +57,12 @@
             </div>
             <div>
               <h3 class="font-bold text-blue-800 mb-2">Monthly Budget</h3>
-              <div v-if="report.monthly_budget === null || report.monthly_budget === undefined" class="flex items-center gap-2">
-                <input 
-                  v-model="budgetInput" 
-                  type="number" 
-                  placeholder="Input budget bulanan"
-                  class="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
-                />
-                <button 
-                  @click="saveBudget" 
-                  class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition"
-                >
-                  Simpan
-                </button>
-              </div>
-              <p v-else class="text-lg font-semibold">{{ formatCurrency(report.monthly_budget) }}</p>
+              <p v-if="report.monthly_budget != null" class="text-lg font-semibold">
+                {{ formatCurrency(report.monthly_budget) }}
+              </p>
+              <p v-else class="text-sm text-amber-700">
+                Belum di-set di <strong>Revenue Targets</strong>
+              </p>
             </div>
             <div>
               <h3 class="font-bold text-blue-800 mb-2">MTD Performance</h3>
@@ -172,7 +163,7 @@
         </div>
 
         <!-- MTD Summary -->
-        <div class="bg-[#1e3a8a] text-white p-6 rounded-lg">
+        <div class="bg-[#1e3a8a] text-white p-6 rounded-lg mb-8">
           <h3 class="text-xl font-bold mb-4">MTD Summary</h3>
           <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
             <div>
@@ -195,6 +186,35 @@
             </div>
           </div>
         </div>
+
+        <!-- Charts -->
+        <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-lg">
+          <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+            <div>
+              <h3 class="text-lg font-bold text-slate-800">Daily Trend vs Last 3 Months & Last Year</h3>
+              <p class="text-sm text-slate-500">Revenue / Cover / Avg Check — bandingkan hari ke-hari</p>
+            </div>
+            <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                v-for="tab in chartTabs"
+                :key="tab.id"
+                type="button"
+                class="px-4 py-2 text-sm font-semibold transition"
+                :class="activeChartTab === tab.id ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                @click="activeChartTab = tab.id"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+          </div>
+          <VueApexCharts
+            :key="activeChartTab + '-' + chartCategories.join('-')"
+            type="line"
+            height="380"
+            :options="activeChartOptions"
+            :series="activeChartSeries"
+          />
+        </div>
       </div>
     </div>
   </div>
@@ -206,6 +226,7 @@ defineOptions({ layout: AppLayout });
 import { ref, reactive, onMounted, computed } from 'vue';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
+import VueApexCharts from 'vue3-apexcharts';
 
 const filters = reactive({
   outlet: '',
@@ -221,14 +242,20 @@ const report = reactive({
   monthly_budget: null,
   mtd_performance: 0,
   day_counts: {},
-  outlet_name: ''
+  outlet_name: '',
+  comparison_series: [],
 });
 const loading = ref(false);
 const showReport = ref(false);
 const user = usePage().props.auth?.user || {};
-const budgetInput = ref('');
+const activeChartTab = ref('revenue');
+const chartTabs = [
+  { id: 'revenue', label: 'Revenue' },
+  { id: 'cover', label: 'Cover' },
+  { id: 'avg_check', label: 'Avg Check' },
+];
+const CHART_COMPARE_COLORS = ['#2563eb', '#059669', '#d97706', '#7c3aed', '#dc2626'];
 
-// Generate available years (current year + 5 years back)
 const currentYear = new Date().getFullYear();
 const availableYears = computed(() => {
   const years = [];
@@ -236,6 +263,108 @@ const availableYears = computed(() => {
     years.push(i);
   }
   return years;
+});
+
+const flatDailyRows = computed(() => {
+  const rows = [];
+  Object.keys(report.weekly_data || {})
+    .sort((a, b) => Number(a) - Number(b))
+    .forEach((weekNum) => {
+      (report.weekly_data[weekNum] || []).forEach((day) => rows.push(day));
+    });
+  return rows.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+});
+
+const chartCategories = computed(() => flatDailyRows.value.map((d) => String(new Date(d.date + 'T12:00:00').getDate())));
+
+const currentDailyMetric = (metric) => {
+  return flatDailyRows.value.map((d) => {
+    if (metric === 'revenue') return Number(d.revenue || 0);
+    if (metric === 'cover') return Number(d.cover || 0);
+    return Number(d.avg_check || 0);
+  });
+};
+
+const padSeries = (arr) => {
+  const len = chartCategories.value.length;
+  const out = [];
+  for (let i = 0; i < len; i++) {
+    out.push(Number(arr?.[i] ?? 0));
+  }
+  return out;
+};
+
+const activeChartSeries = computed(() => {
+  const metric = activeChartTab.value;
+  const currentLabel = getMonthName(filters.month) + ' ' + filters.year;
+  const series = [{ name: currentLabel, data: currentDailyMetric(metric) }];
+  const comparisons = Array.isArray(report.comparison_series) ? report.comparison_series : [];
+  comparisons.forEach((item) => {
+    series.push({
+      name: item.label || item.key,
+      data: padSeries(item[metric] || []),
+    });
+  });
+  return series;
+});
+
+const activeChartOptions = computed(() => {
+  const metric = activeChartTab.value;
+  const yTitle = metric === 'revenue' ? 'Revenue (Rp)' : metric === 'cover' ? 'Cover' : 'Avg Check (Rp)';
+  const isMoney = metric !== 'cover';
+  const seriesCount = activeChartSeries.value.length;
+  const colors = CHART_COMPARE_COLORS.slice(0, seriesCount);
+  const widths = Array(seriesCount).fill(2.5);
+  widths[0] = 3.5;
+  const dashes = Array(seriesCount).fill(5);
+  dashes[0] = 0;
+
+  return {
+    chart: {
+      type: 'line',
+      height: 380,
+      toolbar: { show: true },
+      animations: { enabled: true, easing: 'easeinout', speed: 800 },
+      zoom: { enabled: false },
+      fontFamily: 'inherit',
+    },
+    stroke: { width: widths, curve: 'smooth', dashArray: dashes },
+    markers: {
+      size: 3,
+      colors: Array(seriesCount).fill('#fff'),
+      strokeColors: colors.slice(),
+      strokeWidth: 2,
+      hover: { size: 6 },
+    },
+    colors,
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories: chartCategories.value,
+      title: { text: 'Tanggal', style: { fontWeight: 600 } },
+      labels: { rotate: -45, style: { fontSize: '11px', fontWeight: 600 } },
+    },
+    yaxis: {
+      title: { text: yTitle, style: { fontWeight: 600 } },
+      labels: {
+        style: { fontWeight: 600 },
+        formatter: (val) => {
+          if (!isMoney) return Math.round(val).toLocaleString('id-ID');
+          if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + ' jt';
+          if (val >= 1_000) return (val / 1_000).toFixed(0) + ' rb';
+          return Math.round(val).toLocaleString('id-ID');
+        },
+      },
+    },
+    legend: { position: 'top', horizontalAlign: 'left', fontWeight: 600, fontSize: '12px' },
+    grid: { borderColor: '#e5e7eb', strokeDashArray: 4 },
+    tooltip: {
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: (val) => (isMoney ? formatCurrency(val) : formatNumber(Number(val) || 0)),
+      },
+    },
+  };
 });
 
 const fetchOutlets = async () => {
@@ -271,35 +400,15 @@ const fetchReport = async () => {
     
     const res = await axios.get('/api/report/weekly-outlet-fb-revenue', { params });
     Object.assign(report, res.data);
+    if (!Array.isArray(report.comparison_series)) {
+      report.comparison_series = [];
+    }
     showReport.value = true;
   } catch (error) {
     console.error('Error fetching report:', error);
     alert('Terjadi kesalahan saat mengambil data report');
   } finally {
     loading.value = false;
-  }
-};
-
-const saveBudget = async () => {
-  if (!budgetInput.value || budgetInput.value <= 0) {
-    alert('Masukkan budget yang valid');
-    return;
-  }
-
-  try {
-    await axios.post('/api/report/weekly-outlet-fb-revenue/budget', {
-      outlet: filters.outlet,
-      month: filters.month,
-      year: filters.year,
-      budget_amount: budgetInput.value
-    });
-    
-    // Refresh report to show updated budget
-    await fetchReport();
-    budgetInput.value = '';
-  } catch (error) {
-    console.error('Error saving budget:', error);
-    alert('Terjadi kesalahan saat menyimpan budget');
   }
 };
 
@@ -342,10 +451,7 @@ const getPerformanceColor = (performance) => {
   return 'text-red-600';
 };
 
-
-
 onMounted(async () => {
-  // Set default month and year to current
   const now = new Date();
   filters.month = (now.getMonth() + 1).toString();
   filters.year = now.getFullYear().toString();

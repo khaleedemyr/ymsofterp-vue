@@ -25,8 +25,8 @@ class ReportWeeklyOutletFbRevenueController3 extends Controller
             return response()->json(['error' => 'Outlet not found'], 400);
         }
 
-        // Get monthly budget
-        $monthlyBudget = $this->getMonthlyBudget($outlet, $month, $year);
+        // Get monthly budget from Revenue Targets
+        $monthlyBudget = $this->getMonthlyBudgetFromRevenueTarget($outlet, (int) $month, (int) $year);
 
         // Get days in month and holidays
         $daysInMonth = Carbon::create($year, $month, 1)->daysInMonth;
@@ -47,6 +47,9 @@ class ReportWeeklyOutletFbRevenueController3 extends Controller
         $mtdPerformance = $this->calculateMtdPerformance($monthlySummary['total_revenue'], $monthlyBudget);
         $dayCounts = $this->calculateDayCounts($year, $month, $daysInMonth, $holidays);
 
+        $monthStart = Carbon::create((int) $year, (int) $month, 1)->startOfMonth();
+        $comparisonSeries = $this->buildComparisonSeries($outlet, $monthStart, $daysInMonth);
+
         $response = [
             'weekly_data' => $weeklyData,
             'weekly_summaries' => $weeklySummaries,
@@ -54,7 +57,8 @@ class ReportWeeklyOutletFbRevenueController3 extends Controller
             'monthly_budget' => $monthlyBudget,
             'mtd_performance' => $mtdPerformance,
             'day_counts' => $dayCounts,
-            'outlet_name' => $this->getOutletName($outlet)
+            'outlet_name' => $this->getOutletName($outlet),
+            'comparison_series' => $comparisonSeries,
         ];
 
         return response()->json($response);
@@ -76,15 +80,29 @@ class ReportWeeklyOutletFbRevenueController3 extends Controller
         return null;
     }
 
-    private function getMonthlyBudget($outlet, $month, $year)
+    private function getMonthlyBudgetFromRevenueTarget(string $outletQr, int $month, int $year): ?float
     {
-        $budget = DB::table('outlet_monthly_budgets')
-            ->where('outlet_qr_code', $outlet)
-            ->where('month', (int)$month)
-            ->where('year', (int)$year)
-            ->value('budget_amount');
+        $outletId = DB::table('tbl_data_outlet')
+            ->where('qr_code', $outletQr)
+            ->value('id_outlet');
 
-        return $budget !== null ? (float)$budget : null;
+        if (! $outletId) {
+            return null;
+        }
+
+        $targetMonth = Carbon::create($year, $month, 1)->format('Y-m-01');
+        $header = DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->where('target_month', $targetMonth)
+            ->first(['monthly_target']);
+
+        if (! $header || $header->monthly_target === null) {
+            return null;
+        }
+
+        $budget = (float) $header->monthly_target;
+
+        return $budget > 0 ? $budget : null;
     }
 
     private function getHolidays($year, $month)
@@ -94,7 +112,79 @@ class ReportWeeklyOutletFbRevenueController3 extends Controller
             ->whereMonth('tgl_libur', $month)
             ->select('tgl_libur', 'keterangan')
             ->get()
-            ->keyBy('tgl_libur');
+            ->keyBy(fn ($row) => Carbon::parse($row->tgl_libur)->format('Y-m-d'));
+    }
+
+    /**
+     * Last 3 months + last year same month daily series for charts.
+     *
+     * @return list<array{key: string, label: string, revenue: list<float>, cover: list<float>, avg_check: list<float>}>
+     */
+    private function buildComparisonSeries(string $outletQr, Carbon $monthStart, int $daysInMonth): array
+    {
+        $series = [];
+        for ($i = 3; $i >= 1; $i--) {
+            $periodStart = $monthStart->copy()->subMonthsNoOverflow($i)->startOfMonth();
+            $series[] = $this->buildDailySeriesForMonth($outletQr, $periodStart, $daysInMonth);
+        }
+        $lastYearStart = $monthStart->copy()->subYear()->startOfMonth();
+        $series[] = $this->buildDailySeriesForMonth($outletQr, $lastYearStart, $daysInMonth, 'Last Year');
+
+        return $series;
+    }
+
+    /**
+     * @return array{key: string, label: string, revenue: list<float>, cover: list<float>, avg_check: list<float>}
+     */
+    private function buildDailySeriesForMonth(
+        string $outletQr,
+        Carbon $periodStart,
+        int $chartDays,
+        ?string $labelSuffix = null
+    ): array {
+        $periodEndExclusive = $periodStart->copy()->addMonth()->startOfDay();
+        $label = $periodStart->locale('id')->translatedFormat('F Y');
+        if ($labelSuffix) {
+            $label .= ' ('.$labelSuffix.')';
+        }
+
+        $dailyRows = DB::table('orders')
+            ->where('kode_outlet', $outletQr)
+            ->where('created_at', '>=', $periodStart->toDateTimeString())
+            ->where('created_at', '<', $periodEndExclusive->toDateTimeString())
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw('DAY(created_at) as d, SUM(COALESCE(grand_total, 0)) as revenue, SUM(COALESCE(pax, 0)) as cover')
+            ->groupByRaw('DAY(created_at)')
+            ->get()
+            ->keyBy('d');
+
+        $revenue = [];
+        $cover = [];
+        $avgCheck = [];
+        $daysAvailable = $periodStart->daysInMonth;
+        for ($d = 1; $d <= $chartDays; $d++) {
+            if ($d > $daysAvailable) {
+                $revenue[] = 0.0;
+                $cover[] = 0.0;
+                $avgCheck[] = 0.0;
+                continue;
+            }
+            $row = $dailyRows->get($d);
+            $rev = (float) ($row->revenue ?? 0);
+            $cov = (float) ($row->cover ?? 0);
+            $revenue[] = $rev;
+            $cover[] = $cov;
+            $avgCheck[] = $cov > 0 ? (float) round($rev / $cov) : 0.0;
+        }
+
+        return [
+            'key' => $periodStart->format('Y-m'),
+            'label' => $label,
+            'revenue' => $revenue,
+            'cover' => $cover,
+            'avg_check' => $avgCheck,
+        ];
     }
 
     private function generateWeeklyData($year, $month, $daysInMonth, $holidays)
