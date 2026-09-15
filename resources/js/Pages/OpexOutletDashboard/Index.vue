@@ -181,6 +181,28 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Revenue</p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.revenue) }}</p>
                 <p class="mt-2 text-sm text-slate-500">{{ ov.revenue_count || 0 }} orders</p>
+                <template v-if="ov.revenue_monthly_budget != null">
+                  <p class="mt-2 text-xs text-slate-500">
+                    Budget {{ formatCurrency(ov.revenue_monthly_budget) }}
+                  </p>
+                  <div class="mt-1.5 h-1.5 rounded-full bg-slate-100 overflow-hidden max-w-[220px]">
+                    <div
+                      class="h-full rounded-full transition-all"
+                      :class="(ov.revenue_budget_perf_percent || 0) >= 100 ? 'bg-emerald-500' : 'bg-sky-500'"
+                      :style="{ width: Math.min(100, ov.revenue_budget_perf_percent || 0) + '%' }"
+                    ></div>
+                  </div>
+                  <p
+                    class="mt-1 text-xs font-semibold"
+                    :class="(ov.revenue_budget_perf_percent || 0) >= 100 ? 'text-emerald-600' : 'text-sky-700'"
+                  >
+                    Performa {{ ov.revenue_budget_perf_percent }}%
+                    <span v-if="ov.revenue_budget_variance != null" class="font-medium text-slate-500">
+                      · {{ ov.revenue_budget_variance >= 0 ? '+' : '' }}{{ formatCurrency(ov.revenue_budget_variance) }}
+                    </span>
+                  </p>
+                </template>
+                <p v-else class="mt-2 text-xs text-slate-400">Belum ada revenue target</p>
                 <p class="mt-1 text-xs font-medium" :class="vsClass(vs.revenue)">{{ vsLabel(vs.revenue) }}</p>
               </div>
               <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center">
@@ -1012,7 +1034,7 @@ const modalPartyColumn = computed(() => {
     discount: 'Member / Promo',
     discount_compliment: 'Reason',
     discount_guest_satisfaction: 'Reason',
-    officer_check: 'Menikmati OC',
+    officer_check: 'Officer',
     member_top_up: 'Member',
     member_redeem: 'Member / Reward',
     revenue: 'Member',

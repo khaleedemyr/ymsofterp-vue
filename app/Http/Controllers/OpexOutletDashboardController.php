@@ -262,12 +262,8 @@ class OpexOutletDashboardController extends Controller
             return collect();
         }
 
-        $hasOcUserName = Schema::hasColumn('officer_checks', 'user_name');
-
-        $query = DB::table('order_payment as op')
+        return DB::table('order_payment as op')
             ->join('orders as o', 'op.order_id', '=', 'o.id')
-            ->leftJoin('officer_checks as oc', 'o.id_oc', '=', 'oc.id')
-            ->leftJoin('users as u', 'oc.user_id', '=', 'u.id')
             ->where('o.kode_outlet', $qrCode)
             ->whereDate('o.created_at', '>=', $dateFrom)
             ->whereDate('o.created_at', '<=', $dateTo)
@@ -277,37 +273,30 @@ class OpexOutletDashboardController extends Controller
                     ->orWhere('op.payment_type', 'OFFICER_CHECK');
             })
             ->orderByDesc('o.created_at')
-            ->limit(500);
+            ->limit(500)
+            ->get([
+                'op.id',
+                DB::raw("COALESCE(o.paid_number, CONCAT('ORD-', o.id)) as number"),
+                'op.amount',
+                DB::raw('COALESCE(o.grand_total, 0) as bill_amount'),
+                'o.created_at as date',
+                'o.manual_discount_reason',
+                'o.member_name',
+                'op.note',
+            ])
+            ->map(function ($row) {
+                $row->type = 'officer_check';
+                $row->source = 'Officer Check';
+                $reason = trim((string) ($row->manual_discount_reason ?? ''));
+                $member = trim((string) ($row->member_name ?? ''));
+                $note = trim((string) ($row->note ?? ''));
+                $officer = $reason !== '' ? $reason : ($member !== '' ? $member : ($note !== '' ? $note : '-'));
+                $row->beneficiary_name = $officer;
+                $row->creator_name = $officer;
+                $row->supplier_name = $officer;
 
-        $select = [
-            'op.id',
-            DB::raw("COALESCE(o.paid_number, CONCAT('ORD-', o.id)) as number"),
-            'op.amount',
-            DB::raw('COALESCE(o.grand_total, 0) as bill_amount'),
-            'o.created_at as date',
-            'o.member_name',
-            'o.id_oc',
-            'u.nama_lengkap as oc_user_fullname',
-            'op.note',
-            'op.kasir',
-        ];
-        if ($hasOcUserName) {
-            $select[] = 'oc.user_name as oc_user_name';
-        }
-
-        return $query->get($select)->map(function ($row) use ($hasOcUserName) {
-            $row->type = 'officer_check';
-            $row->source = 'Officer Check';
-            $ocName = trim((string) (($hasOcUserName ? ($row->oc_user_name ?? null) : null) ?: ($row->oc_user_fullname ?? '')));
-            $member = trim((string) ($row->member_name ?? ''));
-            $note = trim((string) ($row->note ?? ''));
-            $beneficiary = $ocName !== '' ? $ocName : ($member !== '' ? $member : ($note !== '' ? $note : '-'));
-            $row->beneficiary_name = $beneficiary;
-            $row->creator_name = $beneficiary;
-            $row->supplier_name = $beneficiary;
-
-            return $row;
-        });
+                return $row;
+            });
     }
 
     private function listMemberTopUp(int $outletId, string $dateFrom, string $dateTo)

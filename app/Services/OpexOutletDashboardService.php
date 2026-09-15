@@ -149,6 +149,13 @@ class OpexOutletDashboardService
         $compliment = $this->sumManualDiscountByType($qrCode, $dateFrom, $dateTo, 'compliment');
         $guestSatisfaction = $this->sumManualDiscountByType($qrCode, $dateFrom, $dateTo, 'guest_satisfaction');
         $officerCheck = $this->sumOfficerCheck($qrCode, $dateFrom, $dateTo);
+        $monthlyBudget = $this->sumMonthlyRevenueBudget($outletId, $dateFrom, $dateTo);
+        $budgetPerf = $monthlyBudget !== null && $monthlyBudget > 0
+            ? round(($revenue['total'] / $monthlyBudget) * 100, 1)
+            : null;
+        $budgetVariance = $monthlyBudget !== null
+            ? round($revenue['total'] - $monthlyBudget, 2)
+            : null;
         $pctOfRevenue = static function (float $amount) use ($revenue): ?float {
             return $revenue['total'] > 0 ? round(($amount / $revenue['total']) * 100, 2) : null;
         };
@@ -156,6 +163,9 @@ class OpexOutletDashboardService
         return [
             'revenue' => $revenue['total'],
             'revenue_count' => $revenue['count'],
+            'revenue_monthly_budget' => $monthlyBudget,
+            'revenue_budget_perf_percent' => $budgetPerf,
+            'revenue_budget_variance' => $budgetVariance,
             'cover' => $revenue['cover'],
             'avg_pax' => $revenue['avg_pax'],
             'avg_check' => $revenue['avg_check'],
@@ -435,6 +445,25 @@ class OpexOutletDashboardService
             ->whereDate('forecast_date', '>=', $dateFrom)
             ->whereDate('forecast_date', '<=', $dateTo)
             ->sum('forecast_revenue'), 2);
+    }
+
+    /**
+     * Monthly budget dari outlet_revenue_target_headers.monthly_target
+     * untuk bulan yang diliputi filter.
+     */
+    private function sumMonthlyRevenueBudget(int $outletId, string $dateFrom, string $dateTo): ?float
+    {
+        $months = $this->monthsCovered($dateFrom, $dateTo);
+        if ($months === []) {
+            return null;
+        }
+
+        $total = (float) DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->whereIn('target_month', $months)
+            ->sum('monthly_target');
+
+        return $total > 0 ? round($total, 2) : null;
     }
 
     /**
