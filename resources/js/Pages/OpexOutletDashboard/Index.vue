@@ -207,7 +207,7 @@
           </div>
         </div>
 
-        <!-- Cover / Pax / Discount -->
+        <!-- Cover / Pax / Discount / Member -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <div class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Cover / Pax</p>
@@ -228,13 +228,68 @@
             </p>
             <p class="mt-1 text-xs text-slate-500">Revenue ÷ cover</p>
           </div>
-          <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
-            <p class="text-xs font-semibold uppercase tracking-wide text-amber-600">Diskon</p>
-            <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount) }}</p>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('discount')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-amber-600">Diskon</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ ov.discount_count || 0 }} bill
+                  <span v-if="ov.discount_ratio_percent != null"> · {{ ov.discount_ratio_percent }}% sales</span>
+                </p>
+              </div>
+              <span class="text-amber-400 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- Member Top Up / Redeem -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-sky-100 shadow-sm p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Member Bills</p>
+            <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.member_bills) }}</p>
             <p class="mt-1 text-xs text-slate-500">
-              {{ ov.discount_ratio_percent != null ? ov.discount_ratio_percent + '% dari sales' : 'Promo + manual discount' }}
+              Revenue member {{ formatCurrency(ov.member_revenue) }}
             </p>
           </div>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('member_top_up')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">Member Top Up</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.member_top_up) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ ov.member_top_up_count || 0 }} trx
+                  <span v-if="ov.member_top_up_points"> · {{ formatNumber(ov.member_top_up_points) }} pts</span>
+                </p>
+              </div>
+              <span class="text-teal-400 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-rose-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('member_redeem')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600">Member Redeem</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.member_redeem) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ ov.member_redeem_count || 0 }} trx
+                  <span v-if="ov.member_redeem_points"> · {{ formatNumber(ov.member_redeem_points) }} pts</span>
+                </p>
+              </div>
+              <span class="text-rose-400 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
         </div>
 
         <!-- Source cards -->
@@ -682,6 +737,9 @@ const modalPagination = ref({ total: 0, total_pages: 1 })
 const modalTitle = computed(() => {
   const map = {
     revenue: 'Revenue',
+    discount: 'Diskon',
+    member_top_up: 'Member Top Up',
+    member_redeem: 'Member Redeem',
     gsr_ro: 'GSR / RO',
     rws: 'RWS',
     retail_food: 'Retail Food',
