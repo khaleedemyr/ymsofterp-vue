@@ -8,6 +8,10 @@
 .env
 .env.backup
 .env.production
+.env.rar
+.env.redis.complete
+.env.redis.config
+.env*.local
 .phpactor.json
 .phpunit.result.cache
 Homestead.json
