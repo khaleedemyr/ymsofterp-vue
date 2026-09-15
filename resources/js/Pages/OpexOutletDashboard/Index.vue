@@ -224,13 +224,13 @@
           </div>
         </div>
 
-        <!-- Cover / Pax / Discount / Member -->
+        <!-- Cover / Pax / Discount / Compliment / GS / OC -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <div class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Cover / Pax</p>
             <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.cover) }}</p>
             <p class="mt-1 text-xs text-slate-500">Total tamu periode filter</p>
-            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cover)">{{ vsLabel(vs.cover) }}</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cover)">{{ vsLabel(vs.cover, 'number') }}</p>
           </div>
           <div class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-violet-600">Average Pax</p>
@@ -238,7 +238,7 @@
               {{ ov.avg_pax != null ? formatDecimal(ov.avg_pax) : '—' }}
             </p>
             <p class="mt-1 text-xs text-slate-500">Rata-rata pax per bill</p>
-            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.avg_pax)">{{ vsLabel(vs.avg_pax) }}</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vs.avg_pax)">{{ vsLabel(vs.avg_pax, 'decimal') }}</p>
           </div>
           <div class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Avg Check</p>
@@ -266,6 +266,59 @@
               <span class="text-amber-400 text-xs mt-1">Detail →</span>
             </div>
           </button>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('discount_compliment')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Compliment</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount_compliment) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  Bill {{ formatCurrency(ov.discount_compliment_bill) }}
+                  · {{ ov.discount_compliment_count || 0 }} trx
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.discount_compliment, true)">{{ vsLabel(vs.discount_compliment) }}</p>
+              </div>
+              <span class="text-fuchsia-400 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('discount_guest_satisfaction')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-orange-600">Guest Satisfaction</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount_guest_satisfaction) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  Bill {{ formatCurrency(ov.discount_guest_satisfaction_bill) }}
+                  · {{ ov.discount_guest_satisfaction_count || 0 }} trx
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.discount_guest_satisfaction, true)">{{ vsLabel(vs.discount_guest_satisfaction) }}</p>
+              </div>
+              <span class="text-orange-400 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('officer_check')"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Officer Check</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.officer_check) }}</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ ov.officer_check_count || 0 }} pembayaran OFFICER_CHECK
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.officer_check, true)">{{ vsLabel(vs.officer_check) }}</p>
+              </div>
+              <span class="text-indigo-400 text-xs mt-1">Detail →</span>
+            </div>
+          </button>
         </div>
         </template>
 
@@ -280,7 +333,7 @@
             <p class="mt-1 text-xs text-slate-500">
               Revenue member {{ formatCurrency(ov.member_revenue) }}
             </p>
-            <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_bills)">{{ vsLabel(vsMember.member_bills) }}</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_bills)">{{ vsLabel(vsMember.member_bills, 'number') }}</p>
           </div>
           <button
             type="button"
@@ -297,7 +350,7 @@
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.member_top_up_count || 0 }} trx · dari bill {{ formatCurrency(ov.member_top_up) }}
                 </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_top_up_points)">{{ vsLabel(vsMember.member_top_up_points) }}</p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vsMember.member_top_up_points)">{{ vsLabel(vsMember.member_top_up_points, 'points') }}</p>
               </div>
               <span class="text-teal-400 text-xs mt-1">Detail →</span>
             </div>
@@ -525,7 +578,8 @@
                     <th class="px-4 py-3 text-left">Sumber</th>
                     <th class="px-4 py-3 text-left">Nomor</th>
                     <th class="px-4 py-3 text-left">{{ modalPartyColumn }}</th>
-                    <th class="px-4 py-3 text-right">Amount</th>
+                    <th class="px-4 py-3 text-right">{{ modalAmountLabel }}</th>
+                    <th v-if="modalShowsBill" class="px-4 py-3 text-right">Bill</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -535,11 +589,12 @@
                       <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.source || txn.type }}</span>
                     </td>
                     <td class="px-4 py-2.5 font-medium text-slate-800">{{ txn.number || '-' }}</td>
-                    <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || txn.supplier_name || '-' }}</td>
+                    <td class="px-4 py-2.5 text-slate-600">{{ txn.beneficiary_name || txn.creator_name || txn.supplier_name || '-' }}</td>
                     <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(txn.amount) }}</td>
+                    <td v-if="modalShowsBill" class="px-4 py-2.5 text-right font-medium text-slate-700">{{ formatCurrency(txn.bill_amount) }}</td>
                   </tr>
                   <tr v-if="!modalTxns.length">
-                    <td colspan="5" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
+                    <td :colspan="modalShowsBill ? 6 : 5" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
                   </tr>
                 </tbody>
               </table>
@@ -937,6 +992,9 @@ const modalTitle = computed(() => {
   const map = {
     revenue: 'Revenue',
     discount: 'Diskon',
+    discount_compliment: 'Compliment',
+    discount_guest_satisfaction: 'Guest Satisfaction',
+    officer_check: 'Officer Check',
     member_top_up: 'Point Earn',
     member_redeem: 'Point Redeem',
     gsr_ro: 'GSR / RO',
@@ -952,6 +1010,9 @@ const modalTitle = computed(() => {
 const modalPartyColumn = computed(() => {
   const map = {
     discount: 'Member / Promo',
+    discount_compliment: 'Reason',
+    discount_guest_satisfaction: 'Reason',
+    officer_check: 'Menikmati OC',
     member_top_up: 'Member',
     member_redeem: 'Member / Reward',
     revenue: 'Member',
@@ -963,6 +1024,16 @@ const modalPartyColumn = computed(() => {
     total_spend: 'User / Supplier',
   }
   return map[modalType.value] || 'Keterangan'
+})
+
+const modalShowsBill = computed(() =>
+  ['discount_compliment', 'discount_guest_satisfaction', 'officer_check'].includes(modalType.value)
+)
+
+const modalAmountLabel = computed(() => {
+  if (modalType.value === 'officer_check') return 'Pembayaran'
+  if (modalShowsBill.value) return 'Discount'
+  return 'Amount'
 })
 
 const modalTrendSeries = computed(() => [{ name: modalTitle.value, data: modalTrend.value.map((r) => Number(r.amount) || 0) }])
@@ -1040,16 +1111,25 @@ const formatDecimal = (value) =>
     maximumFractionDigits: 2,
   }).format(Number(value) || 0)
 
-const vsLabel = (metric) => {
-  if (!metric || metric.pct == null) return 'vs last month —'
+const vsLabel = (metric, format = 'currency') => {
+  if (!metric || metric.previous == null) return 'vs last month —'
+  const prev = Number(metric.previous)
+  let prevText = ''
+  if (format === 'number') prevText = formatNumber(prev)
+  else if (format === 'decimal') prevText = formatDecimal(prev)
+  else if (format === 'points') prevText = `${formatNumber(prev)} pts`
+  else prevText = formatCurrency(prev)
+
+  if (metric.pct == null) return `LM ${prevText}`
   const pct = Number(metric.pct)
   const sign = pct > 0 ? '+' : ''
-  return `${sign}${pct}% vs last month`
+  return `${sign}${pct}% · LM ${prevText}`
 }
 
 /** invert=true: naik = buruk (spend/discount) */
 const vsClass = (metric, invert = false) => {
-  if (!metric || metric.pct == null) return 'text-slate-400'
+  if (!metric || (metric.pct == null && metric.previous == null)) return 'text-slate-400'
+  if (metric.pct == null) return 'text-slate-500'
   const pct = Number(metric.pct)
   if (pct === 0) return 'text-slate-500'
   const up = pct > 0

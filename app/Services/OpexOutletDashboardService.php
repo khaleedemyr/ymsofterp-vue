@@ -111,6 +111,12 @@ class OpexOutletDashboardService
             'avg_pax' => $this->vsMetric($current['avg_pax'], $previous['avg_pax']),
             'avg_check' => $this->vsMetric($current['avg_check'], $previous['avg_check']),
             'discount' => $this->vsMetric($current['discount'], $previous['discount']),
+            'discount_compliment' => $this->vsMetric($current['discount_compliment'], $previous['discount_compliment']),
+            'discount_guest_satisfaction' => $this->vsMetric(
+                $current['discount_guest_satisfaction'],
+                $previous['discount_guest_satisfaction']
+            ),
+            'officer_check' => $this->vsMetric($current['officer_check'], $previous['officer_check']),
             'gsr_ro' => $this->vsMetric($current['gsr_ro'], $previous['gsr_ro']),
             'rws' => $this->vsMetric($current['rws'], $previous['rws']),
             'retail_food' => $this->vsMetric($current['retail_food'], $previous['retail_food']),
@@ -140,6 +146,9 @@ class OpexOutletDashboardService
 
         $pettyCash = round($rf['cash_total'] + $rnf['cash_total'], 2);
         $pettyCashCount = $rf['cash_count'] + $rnf['cash_count'];
+        $compliment = $this->sumManualDiscountByType($qrCode, $dateFrom, $dateTo, 'compliment');
+        $guestSatisfaction = $this->sumManualDiscountByType($qrCode, $dateFrom, $dateTo, 'guest_satisfaction');
+        $officerCheck = $this->sumOfficerCheck($qrCode, $dateFrom, $dateTo);
         $pctOfRevenue = static function (float $amount) use ($revenue): ?float {
             return $revenue['total'] > 0 ? round(($amount / $revenue['total']) * 100, 2) : null;
         };
@@ -153,6 +162,15 @@ class OpexOutletDashboardService
             'discount' => $revenue['discount'],
             'discount_count' => $revenue['discount_count'],
             'discount_ratio_percent' => $discountRatio,
+            'discount_compliment' => $compliment['discount'],
+            'discount_compliment_bill' => $compliment['bill'],
+            'discount_compliment_count' => $compliment['count'],
+            'discount_guest_satisfaction' => $guestSatisfaction['discount'],
+            'discount_guest_satisfaction_bill' => $guestSatisfaction['bill'],
+            'discount_guest_satisfaction_count' => $guestSatisfaction['count'],
+            'officer_check' => $officerCheck['amount'],
+            'officer_check_bill' => $officerCheck['bill'],
+            'officer_check_count' => $officerCheck['count'],
             'gsr_ro' => $gsrRo['total'],
             'gsr_ro_count' => $gsrRo['count'],
             'gsr_ro_gr' => $gsrRo['gr_total'],
@@ -603,6 +621,105 @@ class OpexOutletDashboardService
             'discount' => $discount,
             'discount_count' => (int) ($row->discount_count ?? 0),
             'gross_before_discount' => $gross,
+        ];
+    }
+
+    /**
+     * Manual discount by reason type (Compliment / Guest Satisfaction).
+     * Bill = orders.total (nilai bill sebelum discount).
+     *
+     * @return array{discount: float, bill: float, count: int}
+     */
+    public function sumManualDiscountByType(?string $qrCode, string $dateFrom, string $dateTo, string $type): array
+    {
+        $empty = ['discount' => 0.0, 'bill' => 0.0, 'count' => 0];
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return $empty;
+        }
+
+        $query = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->whereNotNull('manual_discount_reason')
+            ->where('manual_discount_reason', '!=', '')
+            ->whereRaw('(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) > 0');
+
+        $this->applyManualDiscountReasonFilter($query, $type);
+
+        $row = $query->selectRaw('
+                COALESCE(SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)), 0) as discount,
+                COALESCE(SUM(COALESCE(total, 0)), 0) as bill,
+                COUNT(*) as cnt
+            ')
+            ->first();
+
+        return [
+            'discount' => round((float) ($row->discount ?? 0), 2),
+            'bill' => round((float) ($row->bill ?? 0), 2),
+            'count' => (int) ($row->cnt ?? 0),
+        ];
+    }
+
+    /**
+     * Apply reason filter aligned with Sales Outlet Dashboard categorization.
+     */
+    public function applyManualDiscountReasonFilter($query, string $type): void
+    {
+        if ($type === 'compliment') {
+            $query->whereRaw('LOWER(manual_discount_reason) LIKE ?', ['%compliment%']);
+
+            return;
+        }
+
+        // guest_satisfaction: reason mengandung guest (incl. typo), exclude compliment
+        $query->where(function ($q) {
+            $q->whereRaw('LOWER(manual_discount_reason) LIKE ?', ['%guest satisfaction%'])
+                ->orWhereRaw('LOWER(manual_discount_reason) LIKE ?', ['%guest satic%'])
+                ->orWhereRaw('LOWER(manual_discount_reason) LIKE ?', ['%guest statis%'])
+                ->orWhere(function ($qq) {
+                    $qq->whereRaw('LOWER(manual_discount_reason) LIKE ?', ['%guest%'])
+                        ->whereRaw('LOWER(manual_discount_reason) NOT LIKE ?', ['%compliment%']);
+                });
+        });
+    }
+
+    /**
+     * Pembayaran OFFICER_CHECK dari order_payment.
+     *
+     * @return array{amount: float, bill: float, count: int}
+     */
+    public function sumOfficerCheck(?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $empty = ['amount' => 0.0, 'bill' => 0.0, 'count' => 0];
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return $empty;
+        }
+
+        $row = DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where(function ($q) {
+                $q->where('op.payment_code', 'OFFICER_CHECK')
+                    ->orWhere('op.payment_type', 'OFFICER_CHECK');
+            })
+            ->selectRaw('
+                COALESCE(SUM(op.amount), 0) as amount,
+                COUNT(*) as cnt,
+                COUNT(DISTINCT o.id) as bill_count
+            ')
+            ->first();
+
+        return [
+            'amount' => round((float) ($row->amount ?? 0), 2),
+            'bill' => round((float) ($row->amount ?? 0), 2),
+            'count' => (int) ($row->cnt ?? 0),
         ];
     }
 
@@ -1316,6 +1433,9 @@ class OpexOutletDashboardService
         $map = match ($type) {
             'revenue' => $this->revenueByDate($qrCode, $dateFrom, $dateTo),
             'discount' => $this->discountByDate($qrCode, $dateFrom, $dateTo),
+            'discount_compliment' => $this->manualDiscountByTypeByDate($qrCode, $dateFrom, $dateTo, 'compliment'),
+            'discount_guest_satisfaction' => $this->manualDiscountByTypeByDate($qrCode, $dateFrom, $dateTo, 'guest_satisfaction'),
+            'officer_check' => $this->officerCheckByDate($qrCode, $dateFrom, $dateTo),
             'member_top_up' => $qrCode
                 ? $this->memberAppsEarnByDate((string) $qrCode, $dateFrom, $dateTo)
                 : [],
@@ -1364,6 +1484,62 @@ class OpexOutletDashboardService
             ->where('grand_total', '>', 0)
             ->selectRaw('DATE(created_at) as d, SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as total')
             ->groupBy(DB::raw('DATE(created_at)'))
+            ->pluck('total', 'd')
+            ->map(fn ($v) => (float) $v)
+            ->all();
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function manualDiscountByTypeByDate(?string $qrCode, string $dateFrom, string $dateTo, string $type): array
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return [];
+        }
+
+        $query = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->whereNotNull('manual_discount_reason')
+            ->where('manual_discount_reason', '!=', '')
+            ->whereRaw('(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) > 0');
+
+        $this->applyManualDiscountReasonFilter($query, $type);
+
+        return $query
+            ->selectRaw('DATE(created_at) as d, SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as total')
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->pluck('total', 'd')
+            ->map(fn ($v) => (float) $v)
+            ->all();
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function officerCheckByDate(?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return [];
+        }
+
+        return DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where(function ($q) {
+                $q->where('op.payment_code', 'OFFICER_CHECK')
+                    ->orWhere('op.payment_type', 'OFFICER_CHECK');
+            })
+            ->selectRaw('DATE(o.created_at) as d, SUM(op.amount) as total')
+            ->groupBy(DB::raw('DATE(o.created_at)'))
             ->pluck('total', 'd')
             ->map(fn ($v) => (float) $v)
             ->all();

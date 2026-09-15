@@ -104,6 +104,8 @@ class OpexOutletDashboardController extends Controller
                     $row->supplier_name ?? null,
                     $row->member_name ?? null,
                     $row->manual_discount_reason ?? null,
+                    $row->beneficiary_name ?? null,
+                    $row->bill_amount ?? null,
                 ])));
 
                 return str_contains($hay, strtolower($search));
@@ -146,6 +148,9 @@ class OpexOutletDashboardController extends Controller
         return match ($type) {
             'revenue' => $this->listRevenue($qrCode, $dateFrom, $dateTo),
             'discount' => $this->listDiscount($qrCode, $dateFrom, $dateTo),
+            'discount_compliment' => $this->listManualDiscountByType($qrCode, $dateFrom, $dateTo, 'compliment'),
+            'discount_guest_satisfaction' => $this->listManualDiscountByType($qrCode, $dateFrom, $dateTo, 'guest_satisfaction'),
+            'officer_check' => $this->listOfficerCheck($qrCode, $dateFrom, $dateTo),
             'member_top_up' => $this->listMemberTopUp($outletId, $dateFrom, $dateTo),
             'member_redeem' => $this->listMemberRedeem($outletId, $qrCode, $dateFrom, $dateTo),
             'gsr_ro' => $this->listGsrRo($outletId, $dateFrom, $dateTo),
@@ -203,6 +208,106 @@ class OpexOutletDashboardController extends Controller
 
                 return $row;
             });
+    }
+
+    private function listManualDiscountByType(?string $qrCode, string $dateFrom, string $dateTo, string $type)
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return collect();
+        }
+
+        $query = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->whereNotNull('manual_discount_reason')
+            ->where('manual_discount_reason', '!=', '')
+            ->whereRaw('(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) > 0');
+
+        $this->opexService->applyManualDiscountReasonFilter($query, $type);
+
+        $label = $type === 'compliment' ? 'Compliment' : 'Guest Satisfaction';
+
+        return $query
+            ->orderByDesc('created_at')
+            ->limit(500)
+            ->get([
+                'id',
+                DB::raw("COALESCE(paid_number, CONCAT('ORD-', id)) as number"),
+                DB::raw('(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as amount'),
+                DB::raw('COALESCE(total, 0) as bill_amount'),
+                'created_at as date',
+                'member_name',
+                'manual_discount_reason',
+                'status',
+            ])
+            ->map(function ($row) use ($label, $type) {
+                $row->type = $type === 'compliment' ? 'discount_compliment' : 'discount_guest_satisfaction';
+                $row->source = $label;
+                $reason = trim((string) ($row->manual_discount_reason ?? ''));
+                $member = trim((string) ($row->member_name ?? ''));
+                $row->creator_name = $reason !== '' ? $reason : ($member !== '' ? $member : '-');
+                $row->beneficiary_name = $row->creator_name;
+
+                return $row;
+            });
+    }
+
+    private function listOfficerCheck(?string $qrCode, string $dateFrom, string $dateTo)
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return collect();
+        }
+
+        $hasOcUserName = Schema::hasColumn('officer_checks', 'user_name');
+
+        $query = DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->leftJoin('officer_checks as oc', 'o.id_oc', '=', 'oc.id')
+            ->leftJoin('users as u', 'oc.user_id', '=', 'u.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where(function ($q) {
+                $q->where('op.payment_code', 'OFFICER_CHECK')
+                    ->orWhere('op.payment_type', 'OFFICER_CHECK');
+            })
+            ->orderByDesc('o.created_at')
+            ->limit(500);
+
+        $select = [
+            'op.id',
+            DB::raw("COALESCE(o.paid_number, CONCAT('ORD-', o.id)) as number"),
+            'op.amount',
+            DB::raw('COALESCE(o.grand_total, 0) as bill_amount'),
+            'o.created_at as date',
+            'o.member_name',
+            'o.id_oc',
+            'u.nama_lengkap as oc_user_fullname',
+            'op.note',
+            'op.kasir',
+        ];
+        if ($hasOcUserName) {
+            $select[] = 'oc.user_name as oc_user_name';
+        }
+
+        return $query->get($select)->map(function ($row) use ($hasOcUserName) {
+            $row->type = 'officer_check';
+            $row->source = 'Officer Check';
+            $ocName = trim((string) (($hasOcUserName ? ($row->oc_user_name ?? null) : null) ?: ($row->oc_user_fullname ?? '')));
+            $member = trim((string) ($row->member_name ?? ''));
+            $note = trim((string) ($row->note ?? ''));
+            $beneficiary = $ocName !== '' ? $ocName : ($member !== '' ? $member : ($note !== '' ? $note : '-'));
+            $row->beneficiary_name = $beneficiary;
+            $row->creator_name = $beneficiary;
+            $row->supplier_name = $beneficiary;
+
+            return $row;
+        });
     }
 
     private function listMemberTopUp(int $outletId, string $dateFrom, string $dateTo)
