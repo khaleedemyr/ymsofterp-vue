@@ -27,6 +27,7 @@ class OpexOutletDashboardService
                 'overview' => null,
                 'trend' => [],
                 'spend_mix' => [],
+                'payment_methods' => [],
                 'ro_forecast' => null,
                 'outlet_name' => null,
             ];
@@ -41,13 +42,22 @@ class OpexOutletDashboardService
         $rws = $this->sumRws($outletId, $dateFrom, $dateTo);
         $rf = $this->sumRetailFood($outletId, $dateFrom, $dateTo);
         $rnf = $this->sumRetailNonFood($outletId, $dateFrom, $dateTo);
+        $paymentMethods = $this->sumPaymentMethods($outlet?->qr_code, $dateFrom, $dateTo);
 
         $totalSpend = round($gsrRo['total'] + $rws['total'] + $rf['total'] + $rnf['total'], 2);
         $spendRatio = $revenue['total'] > 0 ? round(($totalSpend / $revenue['total']) * 100, 2) : null;
+        $discountRatio = $revenue['gross_before_discount'] > 0
+            ? round(($revenue['discount'] / $revenue['gross_before_discount']) * 100, 2)
+            : null;
 
         $overview = [
             'revenue' => $revenue['total'],
             'revenue_count' => $revenue['count'],
+            'cover' => $revenue['cover'],
+            'avg_pax' => $revenue['avg_pax'],
+            'avg_check' => $revenue['avg_check'],
+            'discount' => $revenue['discount'],
+            'discount_ratio_percent' => $discountRatio,
             'gsr_ro' => $gsrRo['total'],
             'gsr_ro_count' => $gsrRo['count'],
             'gsr_ro_gr' => $gsrRo['gr_total'],
@@ -72,6 +82,7 @@ class OpexOutletDashboardService
                 ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => $rf['total']],
                 ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => $rnf['total']],
             ],
+            'payment_methods' => $paymentMethods,
             'ro_forecast' => $this->buildRoForecastSummary($outletId, $dateFrom, $dateTo),
             'outlet_name' => $outlet?->nama_outlet,
         ];
@@ -302,13 +313,31 @@ class OpexOutletDashboardService
     }
 
     /**
-     * @return array{total: float, count: int}
+     * @return array{
+     *   total: float,
+     *   count: int,
+     *   cover: float,
+     *   avg_pax: float|null,
+     *   avg_check: float|null,
+     *   discount: float,
+     *   gross_before_discount: float
+     * }
      */
     public function sumRevenue(?string $qrCode, string $dateFrom, string $dateTo): array
     {
+        $empty = [
+            'total' => 0.0,
+            'count' => 0,
+            'cover' => 0.0,
+            'avg_pax' => null,
+            'avg_check' => null,
+            'discount' => 0.0,
+            'gross_before_discount' => 0.0,
+        ];
+
         $qrCode = trim((string) $qrCode);
         if ($qrCode === '') {
-            return ['total' => 0.0, 'count' => 0];
+            return $empty;
         }
 
         $row = DB::table('orders')
@@ -317,13 +346,79 @@ class OpexOutletDashboardService
             ->whereDate('created_at', '<=', $dateTo)
             ->where('status', '!=', 'cancelled')
             ->where('grand_total', '>', 0)
-            ->selectRaw('COALESCE(SUM(grand_total), 0) as total, COUNT(*) as cnt')
+            ->selectRaw('
+                COALESCE(SUM(grand_total), 0) as total,
+                COUNT(*) as cnt,
+                COALESCE(SUM(pax), 0) as cover,
+                COALESCE(SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)), 0) as discount,
+                COALESCE(SUM(COALESCE(total, 0)), 0) as gross_before_discount
+            ')
             ->first();
 
+        $total = round((float) ($row->total ?? 0), 2);
+        $count = (int) ($row->cnt ?? 0);
+        $cover = round((float) ($row->cover ?? 0), 2);
+        $discount = round((float) ($row->discount ?? 0), 2);
+        $gross = round((float) ($row->gross_before_discount ?? 0), 2);
+
         return [
-            'total' => round((float) ($row->total ?? 0), 2),
-            'count' => (int) ($row->cnt ?? 0),
+            'total' => $total,
+            'count' => $count,
+            'cover' => $cover,
+            'avg_pax' => $count > 0 ? round($cover / $count, 2) : null,
+            'avg_check' => $cover > 0 ? round($total / $cover) : null,
+            'discount' => $discount,
+            'gross_before_discount' => $gross,
         ];
+    }
+
+    /**
+     * Metode pembayaran dari order_payment (periode filter).
+     *
+     * @return list<array{payment_code: string, payment_type: string|null, amount: float, count: int, pct: float|null}>
+     */
+    public function sumPaymentMethods(?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '') {
+            return [];
+        }
+
+        $rows = DB::table('order_payment as op')
+            ->join('orders as o', 'op.order_id', '=', 'o.id')
+            ->where('o.kode_outlet', $qrCode)
+            ->whereDate('o.created_at', '>=', $dateFrom)
+            ->whereDate('o.created_at', '<=', $dateTo)
+            ->where('o.status', '!=', 'cancelled')
+            ->where('o.grand_total', '>', 0)
+            ->groupBy('op.payment_code', 'op.payment_type')
+            ->orderByDesc(DB::raw('SUM(op.amount)'))
+            ->selectRaw("
+                COALESCE(NULLIF(TRIM(op.payment_code), ''), 'Other') as payment_code,
+                NULLIF(TRIM(op.payment_type), '') as payment_type,
+                COALESCE(SUM(op.amount), 0) as amount,
+                COUNT(*) as cnt
+            ")
+            ->get();
+
+        $grand = 0.0;
+        foreach ($rows as $row) {
+            $grand += (float) $row->amount;
+        }
+
+        $result = [];
+        foreach ($rows as $row) {
+            $amount = round((float) $row->amount, 2);
+            $result[] = [
+                'payment_code' => (string) $row->payment_code,
+                'payment_type' => $row->payment_type !== null ? (string) $row->payment_type : null,
+                'amount' => $amount,
+                'count' => (int) $row->cnt,
+                'pct' => $grand > 0 ? round(($amount / $grand) * 100, 1) : null,
+            ];
+        }
+
+        return $result;
     }
 
     /**

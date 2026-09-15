@@ -207,6 +207,36 @@
           </div>
         </div>
 
+        <!-- Cover / Pax / Discount -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Cover / Pax</p>
+            <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.cover) }}</p>
+            <p class="mt-1 text-xs text-slate-500">Total tamu periode filter</p>
+          </div>
+          <div class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-violet-600">Average Pax</p>
+            <p class="mt-2 text-3xl font-bold text-slate-900">
+              {{ ov.avg_pax != null ? formatDecimal(ov.avg_pax) : '—' }}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">Rata-rata pax per bill</p>
+          </div>
+          <div class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Avg Check</p>
+            <p class="mt-2 text-3xl font-bold text-slate-900">
+              {{ ov.avg_check != null ? formatCurrency(ov.avg_check) : '—' }}
+            </p>
+            <p class="mt-1 text-xs text-slate-500">Revenue ÷ cover</p>
+          </div>
+          <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-600">Diskon</p>
+            <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount) }}</p>
+            <p class="mt-1 text-xs text-slate-500">
+              {{ ov.discount_ratio_percent != null ? ov.discount_ratio_percent + '% dari sales' : 'Promo + manual discount' }}
+            </p>
+          </div>
+        </div>
+
         <!-- Source cards -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <button
@@ -247,6 +277,58 @@
             <h2 class="text-lg font-bold text-slate-900 mb-1">Spend Mix</h2>
             <p class="text-xs text-slate-500 mb-4">Komposisi pembelanjaan</p>
             <apexchart type="donut" height="320" :options="mixOptions" :series="mixSeries" />
+          </div>
+        </div>
+
+        <!-- Payment methods -->
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+          <div class="xl:col-span-1 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Metode Pembayaran</h2>
+            <p class="text-xs text-slate-500 mb-4">Share amount per payment code</p>
+            <apexchart
+              v-if="paymentMixSeries.length"
+              type="donut"
+              height="300"
+              :options="paymentMixOptions"
+              :series="paymentMixSeries"
+            />
+            <p v-else class="text-sm text-slate-500 py-10 text-center">Belum ada data pembayaran.</p>
+          </div>
+
+          <div class="xl:col-span-2 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Rincian Metode Pembayaran</h2>
+            <p class="text-xs text-slate-500 mb-4">Dari order_payment periode filter</p>
+            <div class="overflow-auto max-h-[320px] rounded-2xl border border-slate-100">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 sticky top-0">
+                  <tr class="text-left text-slate-500">
+                    <th class="px-4 py-3 font-semibold">Payment</th>
+                    <th class="px-4 py-3 font-semibold">Type</th>
+                    <th class="px-4 py-3 font-semibold text-right">Trx</th>
+                    <th class="px-4 py-3 font-semibold text-right">Amount</th>
+                    <th class="px-4 py-3 font-semibold text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-if="!paymentMethods.length">
+                    <td colspan="5" class="px-4 py-8 text-center text-slate-400">Tidak ada data</td>
+                  </tr>
+                  <tr
+                    v-for="(row, idx) in paymentMethods"
+                    :key="row.payment_code + '-' + (row.payment_type || '') + '-' + idx"
+                    class="border-t border-slate-50"
+                  >
+                    <td class="px-4 py-2.5 font-medium text-slate-800">{{ row.payment_code }}</td>
+                    <td class="px-4 py-2.5 text-slate-600">{{ row.payment_type || '—' }}</td>
+                    <td class="px-4 py-2.5 text-right text-slate-700">{{ formatNumber(row.count) }}</td>
+                    <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(row.amount) }}</td>
+                    <td class="px-4 py-2.5 text-right text-slate-600">
+                      {{ row.pct != null ? row.pct + '%' : '—' }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
@@ -543,6 +625,32 @@ const mixOptions = computed(() => ({
   },
 }))
 
+const paymentMethods = computed(() => dashboardData.value.payment_methods || [])
+
+const paymentGrouped = computed(() => {
+  const map = new Map()
+  for (const row of paymentMethods.value) {
+    const code = row.payment_code || 'Other'
+    const prev = map.get(code) || { payment_code: code, amount: 0, count: 0 }
+    prev.amount += Number(row.amount) || 0
+    prev.count += Number(row.count) || 0
+    map.set(code, prev)
+  }
+  return Array.from(map.values()).sort((a, b) => b.amount - a.amount)
+})
+
+const paymentMixSeries = computed(() => paymentGrouped.value.map((i) => Number(i.amount) || 0))
+const paymentMixOptions = computed(() => ({
+  labels: paymentGrouped.value.map((i) => i.payment_code),
+  colors: ['#0ea5e9', '#14b8a6', '#8b5cf6', '#f59e0b', '#f43f5e', '#64748b', '#22c55e', '#eab308'],
+  legend: { position: 'bottom' },
+  dataLabels: { enabled: true, formatter: (val) => `${val.toFixed(0)}%` },
+  plotOptions: { pie: { donut: { size: '60%' } } },
+  tooltip: {
+    y: { formatter: (val) => formatCurrency(val) },
+  },
+}))
+
 const stackSeries = computed(() => [
   { name: 'GSR / RO', data: trendRows.value.map((r) => Number(r.gsr_ro) || 0) },
   { name: 'RWS', data: trendRows.value.map((r) => Number(r.rws) || 0) },
@@ -645,6 +753,17 @@ const formatCurrency = (value) =>
     currency: 'IDR',
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
+  }).format(Number(value) || 0)
+
+const formatNumber = (value) =>
+  new Intl.NumberFormat('id-ID', {
+    maximumFractionDigits: 0,
+  }).format(Number(value) || 0)
+
+const formatDecimal = (value) =>
+  new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(Number(value) || 0)
 
 const formatRemaining = (value) => {
