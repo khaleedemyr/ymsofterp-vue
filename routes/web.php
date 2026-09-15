@@ -2557,6 +2557,7 @@ Route::get('/report-monthly-fb-revenue-performance', function () {
 // Report JSON APIs must live on web routes (session auth). api.php auth:web returns 401 for SPA.
 Route::middleware(['auth'])->group(function () {
     Route::get('/api/report/daily-outlet-revenue', [\App\Http\Controllers\ReportDailyOutletRevenueController::class, 'index']);
+    Route::get('/api/report/daily-outlet-revenue/export', [\App\Http\Controllers\ReportDailyOutletRevenueController::class, 'exportExcel']);
     Route::get('/api/report/weekly-outlet-fb-revenue', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'index']);
     Route::post('/api/report/weekly-outlet-fb-revenue/budget', [\App\Http\Controllers\ReportWeeklyOutletFbRevenueController3::class, 'storeBudget']);
     Route::get('/api/report/daily-revenue-forecast', [\App\Http\Controllers\ReportDailyRevenueForecastController::class, 'index']);

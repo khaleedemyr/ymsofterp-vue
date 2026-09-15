@@ -4,31 +4,26 @@
       <h1 class="text-2xl font-bold mb-6 text-blue-800 flex items-center gap-2">
         <i class="fa-solid fa-chart-line"></i> Daily Outlet Revenue Report
       </h1>
-      
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 items-end">
-        <div v-if="user.id_outlet == 1">
+
+      <div class="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8 items-end">
+        <div v-if="canSelectOutlet">
           <label class="block text-sm font-medium mb-1">Outlet</label>
           <select v-model="filters.outlet" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
             <option value="">Pilih Outlet</option>
             <option v-for="outlet in outlets" :key="outlet.id" :value="outlet.qr_code">{{ outlet.name }}</option>
           </select>
         </div>
+        <div v-else>
+          <label class="block text-sm font-medium mb-1">Outlet</label>
+          <div class="block w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-gray-800 font-medium">
+            {{ lockedOutletName || '—' }}
+          </div>
+        </div>
         <div>
           <label class="block text-sm font-medium mb-1">Bulan</label>
           <select v-model="filters.month" class="block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 px-3 py-2" required>
             <option value="">Pilih Bulan</option>
-            <option value="1">Januari</option>
-            <option value="2">Februari</option>
-            <option value="3">Maret</option>
-            <option value="4">April</option>
-            <option value="5">Mei</option>
-            <option value="6">Juni</option>
-            <option value="7">Juli</option>
-            <option value="8">Agustus</option>
-            <option value="9">September</option>
-            <option value="10">Oktober</option>
-            <option value="11">November</option>
-            <option value="12">Desember</option>
+            <option v-for="m in monthOptions" :key="m.value" :value="m.value">{{ m.label }}</option>
           </select>
         </div>
         <div>
@@ -38,8 +33,17 @@
             <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
           </select>
         </div>
-        <div class="flex items-end h-full">
-          <button @click="fetchReport" class="w-full bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition">Tampilkan</button>
+        <div class="flex items-end h-full gap-2 md:col-span-2">
+          <button @click="fetchReport" class="flex-1 bg-blue-600 text-white px-4 py-2 rounded-lg shadow hover:bg-blue-700 transition">
+            Tampilkan
+          </button>
+          <button
+            v-if="showReport"
+            @click="exportExcel"
+            class="flex-1 bg-emerald-600 text-white px-4 py-2 rounded-lg shadow hover:bg-emerald-700 transition inline-flex items-center justify-center gap-2"
+          >
+            <i class="fa-solid fa-file-excel"></i> Export Excel
+          </button>
         </div>
       </div>
 
@@ -48,78 +52,126 @@
       </div>
 
       <div v-else-if="showReport">
+        <!-- Performance / Outlet Info -->
+        <div class="mb-8 rounded-2xl overflow-hidden shadow-lg border border-slate-700">
+          <div class="bg-slate-900 px-5 py-3 flex items-center justify-between">
+            <h3 class="text-white font-bold tracking-wide uppercase text-sm">Outlet Info — {{ getMonthName(filters.month) }} (Current)</h3>
+            <span class="text-slate-400 text-xs">{{ reportMeta.outlet_name }}</span>
+          </div>
+          <div class="overflow-x-auto bg-slate-800">
+            <table class="min-w-full text-sm text-white">
+              <thead>
+                <tr class="bg-slate-700/80 text-xs uppercase tracking-wider">
+                  <th class="px-4 py-3 text-left w-12">No</th>
+                  <th class="px-4 py-3 text-left">Outlet Name</th>
+                  <th class="px-4 py-3 text-right">MTD Revenue</th>
+                  <th class="px-4 py-3 text-right">Budget</th>
+                  <th class="px-4 py-3 text-center w-28">Perf%</th>
+                  <th class="px-4 py-3 text-right">Var</th>
+                  <th class="px-4 py-3 text-right">%</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-t border-slate-700">
+                  <td class="px-4 py-4">1</td>
+                  <td class="px-4 py-4 font-semibold">{{ reportMeta.outlet_name }}</td>
+                  <td class="px-4 py-4 text-right text-sky-300 font-semibold">{{ formatCurrency(performance.mtd_revenue) }}</td>
+                  <td class="px-4 py-4 text-right text-slate-300 italic">
+                    {{ performance.budget != null ? formatCurrency(performance.budget) : '—' }}
+                  </td>
+                  <td class="px-4 py-4 text-center">
+                    <span
+                      class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md font-bold text-white text-sm"
+                      :class="perfBadgeClass"
+                    >
+                      <i v-if="performance.perf_percent != null" :class="performance.perf_percent >= 100 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+                      {{ performance.perf_percent != null ? performance.perf_percent + '%' : '—' }}
+                    </span>
+                  </td>
+                  <td class="px-4 py-4 text-right font-medium" :class="varianceClass">{{ formatVariance(performance.variance) }}</td>
+                  <td class="px-4 py-4 text-right font-medium" :class="varianceClass">
+                    {{ performance.variance_percent != null ? performance.variance_percent + '%' : '—' }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="performance.budget == null" class="text-xs text-amber-700 bg-amber-50 px-4 py-2 border-t border-amber-100">
+            Budget belum di-set di menu <strong>Revenue Targets</strong> untuk bulan ini.
+          </p>
+        </div>
+
         <h2 class="font-semibold mb-2 text-lg text-gray-700">Daily Outlet Revenue Report - {{ getMonthName(filters.month) }} {{ filters.year }}</h2>
         <div class="overflow-x-auto mb-8">
-          <table class="min-w-full rounded-2xl overflow-hidden shadow-lg">
+          <table class="min-w-full rounded-2xl overflow-hidden shadow-lg border border-gray-200">
             <thead>
-              <tr class="bg-[#2563eb] text-white font-bold text-sm">
-                <th class="px-3 py-3 text-center border-r border-blue-400">DATE</th>
-                <th class="px-3 py-3 text-center border-r border-blue-400">DAY</th>
-                <th class="px-3 py-3 text-center border-r border-blue-400" colspan="4">LUNCH</th>
-                <th class="px-3 py-3 text-center border-r border-blue-400" colspan="4">DINNER</th>
-                <th class="px-3 py-3 text-center" colspan="4">TOTAL FB REVENUE</th>
+              <tr class="text-white font-bold text-sm">
+                <th class="px-3 py-3 text-center border-r border-white/30 bg-[#2563eb]" rowspan="2">DATE</th>
+                <th class="px-3 py-3 text-center border-r border-white/30 bg-[#2563eb]" rowspan="2">DAY</th>
+                <th class="px-3 py-3 text-center border-r border-white/30 bg-emerald-600" colspan="4">LUNCH</th>
+                <th class="px-3 py-3 text-center border-r border-white/30 bg-amber-600" colspan="4">DINNER</th>
+                <th class="px-3 py-3 text-center bg-indigo-600" colspan="4">TOTAL FB REVENUE</th>
               </tr>
-              <tr class="bg-[#1e40af] text-white font-bold text-xs">
-                <th class="px-3 py-2 text-center border-r border-blue-400"></th>
-                <th class="px-3 py-2 text-center border-r border-blue-400"></th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">COVER</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">REVENUE</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">A/C</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">DISC</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">COVER</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">REVENUE</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">A/C</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">DISC</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">COVER</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">REVENUE</th>
-                <th class="px-3 py-2 text-center border-r border-blue-400">A/C</th>
-                <th class="px-3 py-2 text-center">DISC</th>
+              <tr class="text-white font-bold text-xs">
+                <th v-for="(h, idx) in subHeaders" :key="idx" class="px-3 py-2 text-center border-r border-white/20" :class="subHeaderClass(idx)">{{ h }}</th>
               </tr>
             </thead>
             <tbody>
-              <template v-for="(dayData, date) in report.daily_data" :key="date">
-                <tr :class="getRowClass(dayData.day_name)" class="border-b last:border-b-0">
-                  <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200">{{ formatDate(date) }}</td>
-                  <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200">{{ dayData.day_name }}</td>
-                  
-                  <!-- Lunch Data -->
-                  <td class="px-3 py-3 text-center border-r border-gray-200">{{ dayData.lunch.cover || 0 }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200">{{ formatNumber(dayData.lunch.revenue || 0) }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200">{{ formatNumber(dayData.lunch.avg_check || 0) }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200">{{ formatNumber(dayData.lunch.disc || 0) }}</td>
-                  
-                  <!-- Dinner Data -->
-                  <td class="px-3 py-3 text-center border-r border-gray-200">{{ dayData.dinner.cover || 0 }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200">{{ formatNumber(dayData.dinner.revenue || 0) }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200">{{ formatNumber(dayData.dinner.avg_check || 0) }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200">{{ formatNumber(dayData.dinner.disc || 0) }}</td>
-                  
-                  <!-- Total FB Revenue -->
-                  <td class="px-3 py-3 text-center border-r border-gray-200 font-semibold">{{ dayData.total.cover || 0 }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold">{{ formatNumber(dayData.total.revenue || 0) }}</td>
-                  <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold">{{ formatNumber(dayData.total.avg_check || 0) }}</td>
-                  <td class="px-3 py-3 text-right font-semibold">{{ formatNumber(dayData.total.disc || 0) }}</td>
-                </tr>
-              </template>
-              
-              <!-- Month to Date Summary -->
+              <tr
+                v-for="(dayData, date) in report.daily_data"
+                :key="date"
+                class="border-b border-gray-200 last:border-b-0"
+              >
+                <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200" :class="rowHighlightClass(dayData)">{{ formatDate(date) }}</td>
+                <td class="px-3 py-3 text-center font-semibold text-gray-800 border-r border-gray-200" :class="rowHighlightClass(dayData)">
+                  {{ dayData.day_name }}
+                  <span v-if="dayData.is_holiday" class="block text-[10px] text-red-600 font-normal">{{ dayData.holiday_description }}</span>
+                </td>
+
+                <td class="px-3 py-3 text-center border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ dayData.lunch.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ formatNumber(dayData.lunch.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ formatNumber(dayData.lunch.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'lunch')">{{ formatNumber(dayData.lunch.disc || 0) }}</td>
+
+                <td class="px-3 py-3 text-center border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ dayData.dinner.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ formatNumber(dayData.dinner.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ formatNumber(dayData.dinner.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200" :class="cellClass(dayData, 'dinner')">{{ formatNumber(dayData.dinner.disc || 0) }}</td>
+
+                <td class="px-3 py-3 text-center border-r border-gray-200 font-semibold" :class="cellClass(dayData, 'total')">{{ dayData.total.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold" :class="cellClass(dayData, 'total')">{{ formatNumber(dayData.total.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-gray-200 font-semibold" :class="cellClass(dayData, 'total')">{{ formatNumber(dayData.total.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right font-semibold" :class="cellClass(dayData, 'total')">{{ formatNumber(dayData.total.disc || 0) }}</td>
+              </tr>
+
               <tr class="bg-[#1e3a8a] text-white font-bold">
                 <td class="px-3 py-3 text-center border-r border-blue-400" colspan="2">MONTH TO DATE</td>
-                <td class="px-3 py-3 text-center border-r border-blue-400">{{ report.summary.lunch.cover || 0 }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.lunch.revenue || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.lunch.avg_check || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.lunch.disc || 0) }}</td>
-                <td class="px-3 py-3 text-center border-r border-blue-400">{{ report.summary.dinner.cover || 0 }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.dinner.revenue || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.dinner.avg_check || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.dinner.disc || 0) }}</td>
-                <td class="px-3 py-3 text-center border-r border-blue-400">{{ report.summary.total.cover || 0 }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.total.revenue || 0) }}</td>
-                <td class="px-3 py-3 text-right border-r border-blue-400">{{ formatNumber(report.summary.total.avg_check || 0) }}</td>
-                <td class="px-3 py-3 text-right">{{ formatNumber(report.summary.total.disc || 0) }}</td>
+                <td class="px-3 py-3 text-center border-r border-emerald-400/50 bg-emerald-800/40">{{ report.summary.lunch.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-emerald-400/50 bg-emerald-800/40">{{ formatNumber(report.summary.lunch.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-emerald-400/50 bg-emerald-800/40">{{ formatNumber(report.summary.lunch.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-emerald-400/50 bg-emerald-800/40">{{ formatNumber(report.summary.lunch.disc || 0) }}</td>
+                <td class="px-3 py-3 text-center border-r border-amber-400/50 bg-amber-800/40">{{ report.summary.dinner.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-amber-400/50 bg-amber-800/40">{{ formatNumber(report.summary.dinner.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-amber-400/50 bg-amber-800/40">{{ formatNumber(report.summary.dinner.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-amber-400/50 bg-amber-800/40">{{ formatNumber(report.summary.dinner.disc || 0) }}</td>
+                <td class="px-3 py-3 text-center border-r border-indigo-400/50 bg-indigo-800/40">{{ report.summary.total.cover || 0 }}</td>
+                <td class="px-3 py-3 text-right border-r border-indigo-400/50 bg-indigo-800/40">{{ formatNumber(report.summary.total.revenue || 0) }}</td>
+                <td class="px-3 py-3 text-right border-r border-indigo-400/50 bg-indigo-800/40">{{ formatNumber(report.summary.total.avg_check || 0) }}</td>
+                <td class="px-3 py-3 text-right bg-indigo-800/40">{{ formatNumber(report.summary.total.disc || 0) }}</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- 3D-style chart -->
+        <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-6 shadow-lg">
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+            <div>
+              <h3 class="text-lg font-bold text-slate-800">Daily Revenue Trend</h3>
+              <p class="text-sm text-slate-500">Lunch vs Dinner vs Total — tampilan 3D modern</p>
+            </div>
+          </div>
+          <VueApexCharts type="bar" height="420" :options="chartOptions" :series="chartSeries" />
         </div>
       </div>
     </div>
@@ -132,6 +184,7 @@ defineOptions({ layout: AppLayout });
 import { ref, reactive, onMounted, computed } from 'vue';
 import axios from 'axios';
 import { usePage } from '@inertiajs/vue3';
+import VueApexCharts from 'vue3-apexcharts';
 
 const filters = reactive({
   outlet: '',
@@ -139,20 +192,49 @@ const filters = reactive({
   year: '',
 });
 
+const monthOptions = [
+  { value: '1', label: 'Januari' },
+  { value: '2', label: 'Februari' },
+  { value: '3', label: 'Maret' },
+  { value: '4', label: 'April' },
+  { value: '5', label: 'Mei' },
+  { value: '6', label: 'Juni' },
+  { value: '7', label: 'Juli' },
+  { value: '8', label: 'Agustus' },
+  { value: '9', label: 'September' },
+  { value: '10', label: 'Oktober' },
+  { value: '11', label: 'November' },
+  { value: '12', label: 'Desember' },
+];
+
+const subHeaders = ['COVER', 'REVENUE', 'A/C', 'DISC', 'COVER', 'REVENUE', 'A/C', 'DISC', 'COVER', 'REVENUE', 'A/C', 'DISC'];
+
 const outlets = ref([]);
+const lockedOutletName = ref('');
 const report = reactive({
   summary: {
     lunch: { cover: 0, revenue: 0, avg_check: 0, disc: 0 },
     dinner: { cover: 0, revenue: 0, avg_check: 0, disc: 0 },
-    total: { cover: 0, revenue: 0, avg_check: 0, disc: 0 }
+    total: { cover: 0, revenue: 0, avg_check: 0, disc: 0 },
   },
   daily_data: {},
+});
+const reportMeta = reactive({
+  outlet_name: '',
+});
+const performance = reactive({
+  mtd_revenue: 0,
+  budget: null,
+  perf_percent: null,
+  variance: null,
+  variance_percent: null,
 });
 const loading = ref(false);
 const showReport = ref(false);
 const user = usePage().props.auth?.user || {};
 
-// Generate available years (current year + 5 years back)
+const canSelectOutlet = computed(() => Number(user.id_outlet) === 1);
+
 const currentYear = new Date().getFullYear();
 const availableYears = computed(() => {
   const years = [];
@@ -161,6 +243,91 @@ const availableYears = computed(() => {
   }
   return years;
 });
+
+const perfBadgeClass = computed(() => {
+  if (performance.perf_percent == null) return 'bg-slate-500';
+  if (performance.perf_percent >= 100) return 'bg-emerald-600';
+  if (performance.perf_percent >= 80) return 'bg-amber-500';
+  return 'bg-red-600';
+});
+
+const varianceClass = computed(() => {
+  if (performance.variance == null) return 'text-slate-300';
+  return performance.variance >= 0 ? 'text-emerald-400' : 'text-red-400';
+});
+
+const chartCategories = computed(() => {
+  return Object.keys(report.daily_data).map((date) => {
+    const d = new Date(date + 'T12:00:00');
+    return d.getDate().toString();
+  });
+});
+
+const chartSeries = computed(() => {
+  const days = Object.values(report.daily_data);
+  return [
+    { name: 'Lunch', data: days.map((d) => Number(d.lunch?.revenue || 0)) },
+    { name: 'Dinner', data: days.map((d) => Number(d.dinner?.revenue || 0)) },
+    { name: 'Total FB', data: days.map((d) => Number(d.total?.revenue || 0)) },
+  ];
+});
+
+const chartOptions = computed(() => ({
+  chart: {
+    type: 'bar',
+    stacked: false,
+    toolbar: { show: true, tools: { download: true } },
+    animations: { enabled: true, easing: 'easeinout', speed: 800 },
+    dropShadow: { enabled: true, top: 6, left: 2, blur: 8, opacity: 0.25 },
+    background: 'transparent',
+  },
+  theme: { mode: 'light' },
+  plotOptions: {
+    bar: {
+      horizontal: false,
+      columnWidth: '62%',
+      borderRadius: 8,
+      borderRadiusApplication: 'end',
+      dataLabels: { position: 'top' },
+    },
+  },
+  colors: ['#059669', '#D97706', '#4F46E5'],
+  fill: {
+    type: 'gradient',
+    gradient: {
+      shade: 'dark',
+      type: 'vertical',
+      shadeIntensity: 0.35,
+      opacityFrom: 1,
+      opacityTo: 0.85,
+      stops: [0, 90, 100],
+    },
+  },
+  dataLabels: { enabled: false },
+  stroke: { show: true, width: 2, colors: ['transparent'] },
+  xaxis: {
+    categories: chartCategories.value,
+    title: { text: 'Tanggal', style: { fontWeight: 600 } },
+    labels: { rotate: -45, style: { fontSize: '11px' } },
+  },
+  yaxis: {
+    title: { text: 'Revenue (Rp)', style: { fontWeight: 600 } },
+    labels: {
+      formatter: (val) => {
+        if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + ' jt';
+        if (val >= 1_000) return (val / 1_000).toFixed(0) + ' rb';
+        return Math.round(val).toString();
+      },
+    },
+  },
+  legend: { position: 'top', horizontalAlign: 'right', fontWeight: 600 },
+  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
+  tooltip: {
+    shared: true,
+    intersect: false,
+    y: { formatter: (val) => formatCurrency(val) },
+  },
+}));
 
 const fetchOutlets = async () => {
   const res = await axios.get('/api/outlets/report');
@@ -172,6 +339,20 @@ const fetchMyOutletQr = async () => {
   if (res.data.qr_code) {
     filters.outlet = res.data.qr_code;
   }
+  if (res.data.outlet_name) {
+    lockedOutletName.value = res.data.outlet_name;
+  }
+};
+
+const buildRequestParams = () => {
+  const params = {
+    month: filters.month,
+    year: filters.year,
+  };
+  if (canSelectOutlet.value && filters.outlet) {
+    params.outlet = filters.outlet;
+  }
+  return params;
 };
 
 const fetchReport = async () => {
@@ -179,27 +360,19 @@ const fetchReport = async () => {
     alert('Pilih bulan dan tahun terlebih dahulu');
     return;
   }
-  
-  if (user.id_outlet == 1 && !filters.outlet) {
+
+  if (canSelectOutlet.value && !filters.outlet) {
     alert('Pilih outlet terlebih dahulu');
     return;
   }
 
   loading.value = true;
   try {
-    const params = {
-      month: filters.month,
-      year: filters.year,
-      ...(user.id_outlet == 1 && { outlet: filters.outlet })
-    };
-    
-    const res = await axios.get('/api/report/daily-outlet-revenue', { params });
+    const res = await axios.get('/api/report/daily-outlet-revenue', { params: buildRequestParams() });
     report.daily_data = res.data.daily_data || {};
-    report.summary = res.data.summary || {
-      lunch: { cover: 0, revenue: 0, avg_check: 0, disc: 0 },
-      dinner: { cover: 0, revenue: 0, avg_check: 0, disc: 0 },
-      total: { cover: 0, revenue: 0, avg_check: 0, disc: 0 }
-    };
+    report.summary = res.data.summary || report.summary;
+    reportMeta.outlet_name = res.data.outlet_name || lockedOutletName.value || '';
+    Object.assign(performance, res.data.performance || {});
     showReport.value = true;
   } catch (error) {
     console.error('Error fetching report:', error);
@@ -210,8 +383,13 @@ const fetchReport = async () => {
   }
 };
 
+const exportExcel = () => {
+  const params = new URLSearchParams(buildRequestParams());
+  window.open(`/api/report/daily-outlet-revenue/export?${params.toString()}`, '_blank');
+};
+
 const formatDate = (dateStr) => {
-  const date = new Date(dateStr);
+  const date = new Date(dateStr + 'T12:00:00');
   const day = date.getDate();
   const month = date.toLocaleDateString('en-US', { month: 'short' });
   const year = date.getFullYear().toString().slice(-2);
@@ -223,36 +401,54 @@ const formatNumber = (num) => {
   return num.toLocaleString('id-ID');
 };
 
-const getMonthName = (month) => {
-  const months = [
-    '', 'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
-    'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember'
-  ];
-  return months[parseInt(month)] || '';
+const formatCurrency = (num) => {
+  const n = Number(num) || 0;
+  return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(n);
 };
 
-const getRowClass = (dayName) => {
-  const lowerDay = dayName.toLowerCase();
-  if (lowerDay === 'sabtu' || lowerDay === 'minggu') {
-    return 'bg-orange-100 hover:bg-orange-200';
+const formatVariance = (num) => {
+  if (num == null) return '—';
+  const prefix = num > 0 ? '+' : '';
+  return prefix + formatNumber(Math.round(num));
+};
+
+const getMonthName = (month) => {
+  const m = monthOptions.find((o) => o.value === String(month));
+  return m?.label || '';
+};
+
+const isSpecialDay = (dayData) => {
+  return dayData.is_weekend || dayData.is_holiday;
+};
+
+const rowHighlightClass = (dayData) => {
+  return isSpecialDay(dayData) ? 'bg-orange-100' : 'bg-white';
+};
+
+const cellClass = (dayData, section) => {
+  if (isSpecialDay(dayData)) {
+    return 'bg-orange-100';
   }
-  return 'bg-white hover:bg-blue-50';
+  if (section === 'lunch') return 'bg-emerald-50/80';
+  if (section === 'dinner') return 'bg-amber-50/80';
+  return 'bg-indigo-50/80';
+};
+
+const subHeaderClass = (idx) => {
+  if (idx < 4) return 'bg-emerald-700';
+  if (idx < 8) return 'bg-amber-700';
+  return 'bg-indigo-700';
 };
 
 onMounted(async () => {
-  // Set default month and year to current
   const now = new Date();
   filters.month = (now.getMonth() + 1).toString();
   filters.year = now.getFullYear().toString();
-  
-  if (user.id_outlet == 1) {
+
+  if (canSelectOutlet.value) {
     await fetchOutlets();
   } else {
     await fetchMyOutletQr();
   }
 });
 </script>
-
-<style scoped>
-/* Additional styles if needed */
-</style> 
