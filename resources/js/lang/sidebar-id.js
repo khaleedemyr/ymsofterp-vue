@@ -199,6 +199,7 @@ export default {
     "daily_revenue_forecast": "Forecast Pendapatan Harian",
     "monthly_fb_revenue_performance": "Kinerja Pendapatan FB Bulanan",
     "receiving_sheet": "Lembar Penerimaan",
+    "petty_cash_report": "Laporan Petty Cash",
     "item_engineering": "Item Engineering",
     "product_sales_pivot": "Product Sales by Outlet",
     "jurnal": "Jurnal",

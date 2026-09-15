@@ -337,6 +337,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.monthly_fb_revenue_performance'), icon: 'fa-solid fa-chart-bar', route: '/report-monthly-fb-revenue-performance', code: 'monthly_fb_revenue_performance' },
          
             { name: () => t('sidebar.menus.receiving_sheet'), icon: 'fa-solid fa-receipt', route: '/report-receiving-sheet', code: 'receiving_sheet' },
+            { name: () => t('sidebar.menus.petty_cash_report'), icon: 'fa-solid fa-wallet', route: '/report-petty-cash', code: 'petty_cash_report' },
             { name: () => t('sidebar.menus.item_engineering'), icon: 'fa-solid fa-cogs', route: '/item-engineering', code: 'item_engineering' },
         ],
     },

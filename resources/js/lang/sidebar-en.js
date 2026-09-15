@@ -199,6 +199,7 @@ export default {
     "daily_revenue_forecast": "Daily Revenue Forecast",
     "monthly_fb_revenue_performance": "Monthly FB Revenue Performance",
     "receiving_sheet": "Receiving Sheet",
+    "petty_cash_report": "Petty Cash Report",
     "item_engineering": "Item Engineering",
     "product_sales_pivot": "Product Sales by Outlet",
     "jurnal": "Jurnal",
