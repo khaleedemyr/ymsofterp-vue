@@ -109,11 +109,27 @@ class ReportDailyRevenueForecastController extends Controller
 
     private function getMonthlyBudget($outlet, $month, $year)
     {
-        return DB::table('outlet_monthly_budgets')
-            ->where('outlet_qr_code', $outlet)
-            ->where('month', (int)$month)
-            ->where('year', (int)$year)
-            ->value('budget_amount') ?? 0;
+        $outletId = DB::table('tbl_data_outlet')
+            ->where('qr_code', $outlet)
+            ->value('id_outlet');
+
+        if (! $outletId) {
+            return 0;
+        }
+
+        $targetMonth = Carbon::create((int) $year, (int) $month, 1)->format('Y-m-01');
+        $monthlyTarget = DB::table('outlet_revenue_target_headers')
+            ->where('outlet_id', $outletId)
+            ->where('target_month', $targetMonth)
+            ->value('monthly_target');
+
+        if ($monthlyTarget === null) {
+            return 0;
+        }
+
+        $budget = (float) $monthlyTarget;
+
+        return $budget > 0 ? $budget : 0;
     }
 
     private function getMtdData($outlet, $year, $month)
