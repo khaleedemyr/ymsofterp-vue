@@ -189,8 +189,18 @@ class ReportDailyOutletRevenueController extends Controller
 
         $monthlyBudget = $this->getMonthlyBudgetFromRevenueTarget($outletId, $monthStart);
         $mtdRevenue = (float) $summary['total']['revenue'];
-        $lastMonthComparison = $this->getLastMonthComparison($outlet, $monthStart, $mtdCutoff, $mtdRevenue);
-        $performance = $this->buildPerformanceMetrics($mtdRevenue, $monthlyBudget, $lastMonthComparison);
+        $mtdCover = (float) $summary['total']['cover'];
+        $mtdAvgCheck = $mtdCover > 0 ? (float) round($mtdRevenue / $mtdCover) : 0.0;
+        $lastMonthComparison = $this->getLastMonthComparison(
+            $outlet,
+            $monthStart,
+            $mtdCutoff,
+            $mtdRevenue,
+            $mtdCover,
+            $mtdAvgCheck,
+            $daysInMonth
+        );
+        $performance = $this->buildPerformanceMetrics($mtdRevenue, $mtdCover, $mtdAvgCheck, $monthlyBudget, $lastMonthComparison);
 
         return [
             'daily_data' => $dailyData,
@@ -253,59 +263,108 @@ class ReportDailyOutletRevenueController extends Controller
     }
 
     /**
-     * Last month MTD (same calendar day) + last month full, with growth vs current MTD.
+     * Last month MTD (same calendar day) + last month full + daily series for charts.
      *
-     * @return array{
-     *   last_month_label: string,
-     *   last_month_mtd_to_date: float,
-     *   last_month_full: float,
-     *   compare_day: int,
-     *   vs_last_mtd_var: float|null,
-     *   vs_last_mtd_percent: float|null,
-     *   vs_last_full_var: float|null,
-     *   vs_last_full_percent: float|null
-     * }
+     * @return array<string, mixed>
      */
-    private function getLastMonthComparison(string $outletQr, Carbon $monthStart, Carbon $mtdCutoff, float $mtdRevenue): array
-    {
+    private function getLastMonthComparison(
+        string $outletQr,
+        Carbon $monthStart,
+        Carbon $mtdCutoff,
+        float $mtdRevenue,
+        float $mtdCover,
+        float $mtdAvgCheck,
+        int $daysInMonth
+    ): array {
         $prevMonthStart = $monthStart->copy()->subMonthNoOverflow()->startOfMonth();
         $prevMonthEndExclusive = $prevMonthStart->copy()->addMonth()->startOfDay();
         $daysInPrevMonth = $prevMonthStart->daysInMonth;
 
-        // Same day-of-month as current MTD cutoff (capped to prev month length).
         $compareDay = min(max(1, $mtdCutoff->day), $daysInPrevMonth);
         $prevMtdEndExclusive = $prevMonthStart->copy()->day($compareDay)->addDay()->startOfDay();
 
-        $lastMonthFull = (float) DB::table('orders')
+        $agg = fn (string $from, string $to) => DB::table('orders')
+            ->where('kode_outlet', $outletQr)
+            ->where('created_at', '>=', $from)
+            ->where('created_at', '<', $to)
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw('SUM(COALESCE(grand_total, 0)) as revenue, SUM(COALESCE(pax, 0)) as cover')
+            ->first();
+
+        $full = $agg($prevMonthStart->toDateTimeString(), $prevMonthEndExclusive->toDateTimeString());
+        $mtd = $agg($prevMonthStart->toDateTimeString(), $prevMtdEndExclusive->toDateTimeString());
+
+        $lastMonthFullRevenue = (float) ($full->revenue ?? 0);
+        $lastMonthFullCover = (float) ($full->cover ?? 0);
+        $lastMonthFullAvg = $lastMonthFullCover > 0 ? (float) round($lastMonthFullRevenue / $lastMonthFullCover) : 0.0;
+
+        $lastMonthMtdRevenue = (float) ($mtd->revenue ?? 0);
+        $lastMonthMtdCover = (float) ($mtd->cover ?? 0);
+        $lastMonthMtdAvg = $lastMonthMtdCover > 0 ? (float) round($lastMonthMtdRevenue / $lastMonthMtdCover) : 0.0;
+
+        $pct = static function (float $current, float $previous): ?float {
+            if ($previous <= 0) {
+                return null;
+            }
+
+            return round((($current - $previous) / $previous) * 100, 1);
+        };
+
+        $dailyRows = DB::table('orders')
             ->where('kode_outlet', $outletQr)
             ->where('created_at', '>=', $prevMonthStart->toDateTimeString())
             ->where('created_at', '<', $prevMonthEndExclusive->toDateTimeString())
             ->where('status', '!=', 'cancelled')
             ->where('grand_total', '>', 0)
-            ->sum(DB::raw('COALESCE(grand_total, 0)'));
+            ->selectRaw('DAY(created_at) as d, SUM(COALESCE(grand_total, 0)) as revenue, SUM(COALESCE(pax, 0)) as cover')
+            ->groupByRaw('DAY(created_at)')
+            ->get()
+            ->keyBy('d');
 
-        $lastMonthMtd = (float) DB::table('orders')
-            ->where('kode_outlet', $outletQr)
-            ->where('created_at', '>=', $prevMonthStart->toDateTimeString())
-            ->where('created_at', '<', $prevMtdEndExclusive->toDateTimeString())
-            ->where('status', '!=', 'cancelled')
-            ->where('grand_total', '>', 0)
-            ->sum(DB::raw('COALESCE(grand_total, 0)'));
-
-        $vsLastMtdVar = $lastMonthMtd > 0 || $mtdRevenue > 0 ? $mtdRevenue - $lastMonthMtd : null;
-        $vsLastMtdPct = $lastMonthMtd > 0 ? round((($mtdRevenue - $lastMonthMtd) / $lastMonthMtd) * 100, 1) : null;
-        $vsLastFullVar = $lastMonthFull > 0 || $mtdRevenue > 0 ? $mtdRevenue - $lastMonthFull : null;
-        $vsLastFullPct = $lastMonthFull > 0 ? round((($mtdRevenue - $lastMonthFull) / $lastMonthFull) * 100, 1) : null;
+        $chartDays = min($daysInMonth, $daysInPrevMonth);
+        $lmDailyRevenue = [];
+        $lmDailyCover = [];
+        $lmDailyAvgCheck = [];
+        for ($d = 1; $d <= $chartDays; $d++) {
+            $row = $dailyRows->get($d);
+            $rev = (float) ($row->revenue ?? 0);
+            $cov = (float) ($row->cover ?? 0);
+            $lmDailyRevenue[] = $rev;
+            $lmDailyCover[] = $cov;
+            $lmDailyAvgCheck[] = $cov > 0 ? (float) round($rev / $cov) : 0;
+        }
 
         return [
             'last_month_label' => $prevMonthStart->locale('id')->translatedFormat('F Y'),
-            'last_month_mtd_to_date' => $lastMonthMtd,
-            'last_month_full' => $lastMonthFull,
             'compare_day' => $compareDay,
-            'vs_last_mtd_var' => $vsLastMtdVar,
-            'vs_last_mtd_percent' => $vsLastMtdPct,
-            'vs_last_full_var' => $vsLastFullVar,
-            'vs_last_full_percent' => $vsLastFullPct,
+
+            'last_month_mtd_to_date' => $lastMonthMtdRevenue,
+            'last_month_full' => $lastMonthFullRevenue,
+            'vs_last_mtd_var' => $mtdRevenue - $lastMonthMtdRevenue,
+            'vs_last_mtd_percent' => $pct($mtdRevenue, $lastMonthMtdRevenue),
+            'vs_last_full_var' => $mtdRevenue - $lastMonthFullRevenue,
+            'vs_last_full_percent' => $pct($mtdRevenue, $lastMonthFullRevenue),
+
+            'last_month_mtd_cover' => $lastMonthMtdCover,
+            'last_month_full_cover' => $lastMonthFullCover,
+            'vs_last_mtd_cover_var' => $mtdCover - $lastMonthMtdCover,
+            'vs_last_mtd_cover_percent' => $pct($mtdCover, $lastMonthMtdCover),
+            'vs_last_full_cover_var' => $mtdCover - $lastMonthFullCover,
+            'vs_last_full_cover_percent' => $pct($mtdCover, $lastMonthFullCover),
+
+            'last_month_mtd_avg_check' => $lastMonthMtdAvg,
+            'last_month_full_avg_check' => $lastMonthFullAvg,
+            'vs_last_mtd_avg_var' => $mtdAvgCheck - $lastMonthMtdAvg,
+            'vs_last_mtd_avg_percent' => $pct($mtdAvgCheck, $lastMonthMtdAvg),
+            'vs_last_full_avg_var' => $mtdAvgCheck - $lastMonthFullAvg,
+            'vs_last_full_avg_percent' => $pct($mtdAvgCheck, $lastMonthFullAvg),
+
+            'last_month_daily' => [
+                'revenue' => $lmDailyRevenue,
+                'cover' => $lmDailyCover,
+                'avg_check' => $lmDailyAvgCheck,
+            ],
         ];
     }
 
@@ -313,10 +372,17 @@ class ReportDailyOutletRevenueController extends Controller
      * @param  array<string, mixed>  $lastMonthComparison
      * @return array<string, mixed>
      */
-    private function buildPerformanceMetrics(float $mtdRevenue, ?float $monthlyBudget, array $lastMonthComparison = []): array
-    {
+    private function buildPerformanceMetrics(
+        float $mtdRevenue,
+        float $mtdCover,
+        float $mtdAvgCheck,
+        ?float $monthlyBudget,
+        array $lastMonthComparison = []
+    ): array {
         $base = [
             'mtd_revenue' => $mtdRevenue,
+            'mtd_cover' => $mtdCover,
+            'mtd_avg_check' => $mtdAvgCheck,
             'budget' => null,
             'perf_percent' => null,
             'variance' => null,

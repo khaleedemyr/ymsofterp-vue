@@ -52,92 +52,131 @@
       </div>
 
       <div v-else-if="showReport">
-        <!-- Performance / Outlet Info -->
-        <div class="mb-8 rounded-2xl overflow-hidden shadow-lg border border-slate-700">
-          <div class="bg-slate-900 px-5 py-3 flex items-center justify-between gap-3 flex-wrap">
-            <h3 class="text-white font-bold tracking-wide uppercase text-sm">Outlet Info — {{ getMonthName(filters.month) }} (Current)</h3>
-            <span class="text-slate-400 text-xs">
-              {{ reportMeta.outlet_name }}
-              <span v-if="performance.last_month_label" class="ml-2 text-slate-500">
-                · vs {{ performance.last_month_label }} (tgl {{ performance.compare_day }})
-              </span>
-            </span>
+        <!-- Performance cards (readable layout) -->
+        <div class="mb-8 rounded-2xl border border-slate-200 bg-white shadow-lg overflow-hidden">
+          <div class="bg-slate-900 px-5 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <h3 class="text-white font-bold tracking-wide uppercase text-sm">Outlet Info</h3>
+              <p class="text-slate-300 text-sm mt-0.5">{{ reportMeta.outlet_name }} · {{ getMonthName(filters.month) }} {{ filters.year }}</p>
+            </div>
+            <p v-if="performance.last_month_label" class="text-xs text-slate-400">
+              Bandingkan vs {{ performance.last_month_label }} (s/d tgl {{ performance.compare_day }})
+            </p>
           </div>
-          <div class="overflow-x-auto bg-slate-800">
-            <table class="min-w-full text-sm text-white">
-              <thead>
-                <tr class="bg-slate-700/80 text-xs uppercase tracking-wider">
-                  <th class="px-4 py-3 text-left w-12">No</th>
-                  <th class="px-4 py-3 text-left">Outlet Name</th>
-                  <th class="px-4 py-3 text-right">MTD Revenue</th>
-                  <th class="px-4 py-3 text-right">
-                    LM MTD
-                    <span class="block normal-case font-normal text-[10px] text-slate-400">s/d tgl {{ performance.compare_day || '—' }}</span>
-                  </th>
-                  <th class="px-4 py-3 text-center">vs LM MTD</th>
-                  <th class="px-4 py-3 text-right">
-                    LM Full
-                    <span class="block normal-case font-normal text-[10px] text-slate-400">bulan lalu full</span>
-                  </th>
-                  <th class="px-4 py-3 text-center">vs LM Full</th>
-                  <th class="px-4 py-3 text-right">Budget</th>
-                  <th class="px-4 py-3 text-center w-28">Perf%</th>
-                  <th class="px-4 py-3 text-right">Var</th>
-                  <th class="px-4 py-3 text-right">%</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr class="border-t border-slate-700">
-                  <td class="px-4 py-4">1</td>
-                  <td class="px-4 py-4 font-semibold">{{ reportMeta.outlet_name }}</td>
-                  <td class="px-4 py-4 text-right text-sky-300 font-semibold">{{ formatCurrency(performance.mtd_revenue) }}</td>
-                  <td class="px-4 py-4 text-right text-cyan-200/90">{{ formatCurrency(performance.last_month_mtd_to_date) }}</td>
-                  <td class="px-4 py-4 text-center">
-                    <span
-                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-white text-xs"
-                      :class="growthBadgeClass(performance.vs_last_mtd_percent)"
-                    >
-                      <i v-if="performance.vs_last_mtd_percent != null" :class="performance.vs_last_mtd_percent >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-                      {{ formatGrowthPercent(performance.vs_last_mtd_percent) }}
-                    </span>
-                    <div class="text-[10px] mt-1" :class="growthTextClass(performance.vs_last_mtd_var)">
-                      {{ formatVariance(performance.vs_last_mtd_var) }}
-                    </div>
-                  </td>
-                  <td class="px-4 py-4 text-right text-slate-300">{{ formatCurrency(performance.last_month_full) }}</td>
-                  <td class="px-4 py-4 text-center">
-                    <span
-                      class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-white text-xs"
-                      :class="growthBadgeClass(performance.vs_last_full_percent)"
-                    >
-                      <i v-if="performance.vs_last_full_percent != null" :class="performance.vs_last_full_percent >= 0 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-                      {{ formatGrowthPercent(performance.vs_last_full_percent) }}
-                    </span>
-                    <div class="text-[10px] mt-1" :class="growthTextClass(performance.vs_last_full_var)">
-                      {{ formatVariance(performance.vs_last_full_var) }}
-                    </div>
-                  </td>
-                  <td class="px-4 py-4 text-right text-slate-300 italic">
-                    {{ performance.budget != null ? formatCurrency(performance.budget) : '—' }}
-                  </td>
-                  <td class="px-4 py-4 text-center">
-                    <span
-                      class="inline-flex items-center gap-1 px-3 py-1.5 rounded-md font-bold text-white text-sm"
-                      :class="perfBadgeClass"
-                    >
-                      <i v-if="performance.perf_percent != null" :class="performance.perf_percent >= 100 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
-                      {{ performance.perf_percent != null ? performance.perf_percent + '%' : '—' }}
-                    </span>
-                  </td>
-                  <td class="px-4 py-4 text-right font-medium" :class="varianceClass">{{ formatVariance(performance.variance) }}</td>
-                  <td class="px-4 py-4 text-right font-medium" :class="varianceClass">
+
+          <div class="p-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <!-- MTD Revenue -->
+            <div class="rounded-xl border border-sky-100 bg-sky-50/70 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-sky-700">MTD Revenue</div>
+              <div class="mt-1 text-xl font-bold text-sky-900">{{ formatCurrency(performance.mtd_revenue) }}</div>
+              <div class="mt-3 space-y-1.5 text-xs">
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">LM MTD</span>
+                  <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_mtd_to_date) }}</span>
+                </div>
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">vs LM MTD</span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_mtd_percent)">
+                    {{ formatGrowthPercent(performance.vs_last_mtd_percent) }}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">LM Full</span>
+                  <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_full) }}</span>
+                </div>
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">vs LM Full</span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_full_percent)">
+                    {{ formatGrowthPercent(performance.vs_last_full_percent) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Cover -->
+            <div class="rounded-xl border border-emerald-100 bg-emerald-50/70 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-emerald-700">MTD Cover</div>
+              <div class="mt-1 text-xl font-bold text-emerald-900">{{ formatNumber(performance.mtd_cover || 0) }}</div>
+              <div class="mt-3 space-y-1.5 text-xs">
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">LM MTD</span>
+                  <span class="font-medium text-slate-700">{{ formatNumber(performance.last_month_mtd_cover || 0) }}</span>
+                </div>
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">vs LM MTD</span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_mtd_cover_percent)">
+                    {{ formatGrowthPercent(performance.vs_last_mtd_cover_percent) }}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">LM Full</span>
+                  <span class="font-medium text-slate-700">{{ formatNumber(performance.last_month_full_cover || 0) }}</span>
+                </div>
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">vs LM Full</span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_full_cover_percent)">
+                    {{ formatGrowthPercent(performance.vs_last_full_cover_percent) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Average Check -->
+            <div class="rounded-xl border border-amber-100 bg-amber-50/70 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-amber-700">MTD Avg Check</div>
+              <div class="mt-1 text-xl font-bold text-amber-900">{{ formatCurrency(performance.mtd_avg_check) }}</div>
+              <div class="mt-3 space-y-1.5 text-xs">
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">LM MTD</span>
+                  <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_mtd_avg_check) }}</span>
+                </div>
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">vs LM MTD</span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_mtd_avg_percent)">
+                    {{ formatGrowthPercent(performance.vs_last_mtd_avg_percent) }}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">LM Full</span>
+                  <span class="font-medium text-slate-700">{{ formatCurrency(performance.last_month_full_avg_check) }}</span>
+                </div>
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">vs LM Full</span>
+                  <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded font-bold text-white text-[11px]" :class="growthBadgeClass(performance.vs_last_full_avg_percent)">
+                    {{ formatGrowthPercent(performance.vs_last_full_avg_percent) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Budget / Perf -->
+            <div class="rounded-xl border border-indigo-100 bg-indigo-50/70 p-4">
+              <div class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Budget vs Actual</div>
+              <div class="mt-1 text-xl font-bold text-indigo-900">
+                {{ performance.budget != null ? formatCurrency(performance.budget) : '—' }}
+              </div>
+              <div class="mt-3 space-y-2 text-xs">
+                <div class="flex justify-between gap-2 items-center">
+                  <span class="text-slate-500">Perf%</span>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-white text-sm" :class="perfBadgeClass">
+                    <i v-if="performance.perf_percent != null" :class="performance.perf_percent >= 100 ? 'fa-solid fa-arrow-up' : 'fa-solid fa-arrow-down'"></i>
+                    {{ performance.perf_percent != null ? performance.perf_percent + '%' : '—' }}
+                  </span>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">Variance</span>
+                  <span class="font-semibold" :class="varianceClassLight">{{ formatVariance(performance.variance) }}</span>
+                </div>
+                <div class="flex justify-between gap-2">
+                  <span class="text-slate-500">Var %</span>
+                  <span class="font-semibold" :class="varianceClassLight">
                     {{ performance.variance_percent != null ? performance.variance_percent + '%' : '—' }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                  </span>
+                </div>
+              </div>
+            </div>
           </div>
-          <p v-if="performance.budget == null" class="text-xs text-amber-700 bg-amber-50 px-4 py-2 border-t border-amber-100">
+          <p v-if="performance.budget == null" class="text-xs text-amber-700 bg-amber-50 px-5 py-2 border-t border-amber-100">
             Budget belum di-set di menu <strong>Revenue Targets</strong> untuk bulan ini.
           </p>
         </div>
@@ -207,15 +246,35 @@
           </table>
         </div>
 
-        <!-- Line chart -->
-        <div class="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-6 shadow-lg">
-          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-4">
+        <!-- Charts: Revenue / Cover / Avg Check vs last month -->
+        <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-lg space-y-6">
+          <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div>
-              <h3 class="text-lg font-bold text-slate-800">Daily Revenue Trend</h3>
-              <p class="text-sm text-slate-500">Lunch vs Dinner vs Total — line chart</p>
+              <h3 class="text-lg font-bold text-slate-800">Daily Trend vs Last Month</h3>
+              <p class="text-sm text-slate-500">
+                Line chart seperti Sales Outlet Dashboard — bandingkan hari ke-hari dengan {{ performance.last_month_label || 'bulan lalu' }}
+              </p>
+            </div>
+            <div class="inline-flex rounded-lg border border-slate-200 overflow-hidden">
+              <button
+                v-for="tab in chartTabs"
+                :key="tab.id"
+                type="button"
+                class="px-4 py-2 text-sm font-semibold transition"
+                :class="activeChartTab === tab.id ? 'bg-blue-600 text-white' : 'bg-white text-slate-600 hover:bg-slate-50'"
+                @click="activeChartTab = tab.id"
+              >
+                {{ tab.label }}
+              </button>
             </div>
           </div>
-          <VueApexCharts type="line" height="420" :options="chartOptions" :series="chartSeries" />
+          <VueApexCharts
+            :key="activeChartTab + '-' + chartCategories.join('-')"
+            type="line"
+            height="380"
+            :options="activeChartOptions"
+            :series="activeChartSeries"
+          />
         </div>
       </div>
     </div>
@@ -268,6 +327,8 @@ const reportMeta = reactive({
 });
 const performance = reactive({
   mtd_revenue: 0,
+  mtd_cover: 0,
+  mtd_avg_check: 0,
   budget: null,
   perf_percent: null,
   variance: null,
@@ -280,11 +341,30 @@ const performance = reactive({
   vs_last_mtd_percent: null,
   vs_last_full_var: null,
   vs_last_full_percent: null,
+  last_month_mtd_cover: 0,
+  last_month_full_cover: 0,
+  vs_last_mtd_cover_var: null,
+  vs_last_mtd_cover_percent: null,
+  vs_last_full_cover_var: null,
+  vs_last_full_cover_percent: null,
+  last_month_mtd_avg_check: 0,
+  last_month_full_avg_check: 0,
+  vs_last_mtd_avg_var: null,
+  vs_last_mtd_avg_percent: null,
+  vs_last_full_avg_var: null,
+  vs_last_full_avg_percent: null,
+  last_month_daily: { revenue: [], cover: [], avg_check: [] },
 });
 const loading = ref(false);
 const showReport = ref(false);
 const selectedDate = ref(null);
 const hoveredDate = ref(null);
+const activeChartTab = ref('revenue');
+const chartTabs = [
+  { id: 'revenue', label: 'Revenue' },
+  { id: 'cover', label: 'Cover' },
+  { id: 'avg_check', label: 'Avg Check' },
+];
 const user = usePage().props.auth?.user || {};
 
 const canSelectOutlet = computed(() => Number(user.id_outlet) === 1);
@@ -310,6 +390,11 @@ const varianceClass = computed(() => {
   return performance.variance >= 0 ? 'text-emerald-400' : 'text-red-400';
 });
 
+const varianceClassLight = computed(() => {
+  if (performance.variance == null) return 'text-slate-500';
+  return performance.variance >= 0 ? 'text-emerald-600' : 'text-red-600';
+});
+
 const growthBadgeClass = (pct) => {
   if (pct == null) return 'bg-slate-500';
   if (pct >= 0) return 'bg-emerald-600';
@@ -328,65 +413,98 @@ const formatGrowthPercent = (pct) => {
 };
 
 const chartCategories = computed(() => {
-  return Object.keys(report.daily_data).map((date) => {
-    const d = new Date(date + 'T12:00:00');
-    return d.getDate().toString();
-  });
+  return Object.keys(report.daily_data).map((_, idx) => String(idx + 1));
 });
 
-const chartSeries = computed(() => {
-  const days = Object.values(report.daily_data);
+const currentDailyMetric = (metric) => {
+  return Object.values(report.daily_data).map((d) => {
+    if (metric === 'revenue') return Number(d.total?.revenue || 0);
+    if (metric === 'cover') return Number(d.total?.cover || 0);
+    return Number(d.total?.avg_check || 0);
+  });
+};
+
+const lastMonthDailyMetric = (metric) => {
+  const arr = performance.last_month_daily?.[metric] || [];
+  const len = chartCategories.value.length;
+  const out = [];
+  for (let i = 0; i < len; i++) {
+    out.push(Number(arr[i] ?? 0));
+  }
+  return out;
+};
+
+const activeChartSeries = computed(() => {
+  const metric = activeChartTab.value;
+  const currentLabel = getMonthName(filters.month) + ' ' + filters.year;
+  const lastLabel = performance.last_month_label || 'Bulan Lalu';
   return [
-    { name: 'Lunch', data: days.map((d) => Number(d.lunch?.revenue || 0)) },
-    { name: 'Dinner', data: days.map((d) => Number(d.dinner?.revenue || 0)) },
-    { name: 'Total FB', data: days.map((d) => Number(d.total?.revenue || 0)) },
+    { name: currentLabel, data: currentDailyMetric(metric) },
+    { name: lastLabel, data: lastMonthDailyMetric(metric) },
   ];
 });
 
-const chartOptions = computed(() => ({
-  chart: {
-    type: 'line',
-    toolbar: { show: true, tools: { download: true } },
-    animations: { enabled: true, easing: 'easeinout', speed: 700 },
-    background: 'transparent',
-    zoom: { enabled: true },
-  },
-  colors: ['#059669', '#D97706', '#4F46E5'],
-  stroke: {
-    curve: 'smooth',
-    width: [3, 3, 3.5],
-  },
-  markers: {
-    size: 4,
-    strokeWidth: 2,
-    strokeColors: '#fff',
-    hover: { size: 6 },
-  },
-  dataLabels: { enabled: false },
-  fill: { type: 'solid', opacity: 0 },
-  xaxis: {
-    categories: chartCategories.value,
-    title: { text: 'Tanggal', style: { fontWeight: 600 } },
-    labels: { rotate: -45, style: { fontSize: '11px' } },
-  },
-  yaxis: {
-    title: { text: 'Revenue (Rp)', style: { fontWeight: 600 } },
-    labels: {
-      formatter: (val) => {
-        if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + ' jt';
-        if (val >= 1_000) return (val / 1_000).toFixed(0) + ' rb';
-        return Math.round(val).toString();
+const activeChartOptions = computed(() => {
+  const metric = activeChartTab.value;
+  const yTitle = metric === 'revenue' ? 'Revenue (Rp)' : metric === 'cover' ? 'Cover' : 'Avg Check (Rp)';
+  const isMoney = metric !== 'cover';
+
+  return {
+    chart: {
+      type: 'line',
+      height: 380,
+      toolbar: { show: true },
+      animations: { enabled: true, easing: 'easeinout', speed: 800 },
+      zoom: { enabled: false },
+      fontFamily: 'inherit',
+    },
+    stroke: {
+      width: [3, 3],
+      curve: 'smooth',
+      dashArray: [0, 6],
+    },
+    markers: {
+      size: 4,
+      colors: ['#fff', '#fff'],
+      strokeColors: ['#2563eb', '#94a3b8'],
+      strokeWidth: 3,
+      hover: { size: 7 },
+    },
+    colors: ['#2563eb', '#94a3b8'],
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories: chartCategories.value,
+      title: { text: 'Tanggal', style: { fontWeight: 600 } },
+      labels: { rotate: -45, style: { fontSize: '11px', fontWeight: 600 } },
+    },
+    yaxis: {
+      title: { text: yTitle, style: { fontWeight: 600 } },
+      labels: {
+        style: { fontWeight: 600 },
+        formatter: (val) => {
+          if (!isMoney) return Math.round(val).toLocaleString('id-ID');
+          if (val >= 1_000_000) return (val / 1_000_000).toFixed(1) + ' jt';
+          if (val >= 1_000) return (val / 1_000).toFixed(0) + ' rb';
+          return Math.round(val).toLocaleString('id-ID');
+        },
       },
     },
-  },
-  legend: { position: 'top', horizontalAlign: 'right', fontWeight: 600 },
-  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
-  tooltip: {
-    shared: true,
-    intersect: false,
-    y: { formatter: (val) => formatCurrency(val) },
-  },
-}));
+    legend: {
+      position: 'top',
+      horizontalAlign: 'left',
+      fontWeight: 600,
+      offsetY: 0,
+    },
+    grid: { borderColor: '#e5e7eb', strokeDashArray: 4 },
+    tooltip: {
+      shared: true,
+      intersect: false,
+      y: {
+        formatter: (val) => (isMoney ? formatCurrency(val) : formatNumber(Number(val) || 0)),
+      },
+    },
+  };
+});
 
 const fetchOutlets = async () => {
   const res = await axios.get('/api/outlets/report');
