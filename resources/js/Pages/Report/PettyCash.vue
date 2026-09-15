@@ -44,27 +44,102 @@
       </div>
 
       <template v-else>
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div class="rounded-xl bg-amber-50 border border-amber-100 p-4">
-            <div class="text-xs font-semibold uppercase text-amber-700">Retail Non Food</div>
-            <div class="text-xl font-bold text-amber-900 mt-1">{{ formatCurrency(totals.retail_non_food) }}</div>
-          </div>
-          <div class="rounded-xl bg-emerald-50 border border-emerald-100 p-4">
-            <div class="text-xs font-semibold uppercase text-emerald-700">Retail Food</div>
-            <div class="text-xl font-bold text-emerald-900 mt-1">{{ formatCurrency(totals.retail_food) }}</div>
-          </div>
-          <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-4">
-            <div class="text-xs font-semibold uppercase text-indigo-700">Grand Total</div>
-            <div class="text-xl font-bold text-indigo-900 mt-1">{{ formatCurrency(totals.grand_total) }}</div>
-          </div>
-          <div class="rounded-xl bg-slate-50 border border-slate-200 p-4">
-            <div class="text-xs font-semibold uppercase text-slate-600">Petty Cash Lock Budget</div>
-            <div class="text-xl font-bold text-slate-900 mt-1">
-              {{ petty_cash_budget?.lock_budget != null ? formatCurrency(petty_cash_budget.lock_budget) : '—' }}
+        <!-- KPI Summary Cards -->
+        <div
+          v-if="kpi"
+          class="mb-8 rounded-2xl bg-slate-900 p-4 sm:p-5 shadow-xl"
+        >
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <!-- Total Pengeluaran -->
+            <div class="rounded-xl bg-slate-800/90 border border-slate-700/80 p-4 sm:p-5">
+              <div class="flex items-start justify-between gap-3">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                  Total Pengeluaran Bulan Ini
+                </div>
+                <div class="w-9 h-9 rounded-full bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-coins"></i>
+                </div>
+              </div>
+              <div class="mt-3 text-2xl sm:text-3xl font-bold text-amber-400 tracking-tight">
+                {{ formatCurrency(kpi.period_total) }}
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-700/80 flex items-center justify-between gap-2 text-xs text-slate-400">
+                <span class="inline-flex items-center gap-1.5">
+                  <i class="fa-regular fa-calendar"></i>
+                  {{ kpi.period_label }}
+                </span>
+                <span>{{ kpi.period_days }} Hari Periode</span>
+              </div>
             </div>
-            <p v-if="petty_cash_budget" class="text-[11px] text-slate-500 mt-1">
-              dari Revenue Target bulan {{ filters.date_from?.slice(0, 7) }}
-            </p>
+
+            <!-- Ratio vs MTD -->
+            <div class="rounded-xl bg-slate-800/90 border border-slate-700/80 p-4 sm:p-5">
+              <div class="flex items-start justify-between gap-3">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                  Ratio vs MTD Revenue
+                </div>
+                <div class="w-9 h-9 rounded-full bg-violet-500/20 text-violet-400 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-percent"></i>
+                </div>
+              </div>
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <span class="text-2xl sm:text-3xl font-bold text-violet-300 tracking-tight">
+                  {{ kpi.ratio_percent != null ? kpi.ratio_percent.toFixed(2) + '%' : '—' }}
+                </span>
+                <span
+                  v-if="kpi.ratio_status"
+                  class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide"
+                  :class="kpi.ratio_status === 'OPTIMAL'
+                    ? 'bg-emerald-500 text-white'
+                    : 'bg-rose-500 text-white'"
+                >
+                  {{ kpi.ratio_status }}
+                </span>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-700/80 text-xs text-slate-400">
+                MTD Rev: {{ formatCurrency(kpi.mtd_revenue) }}
+                <span v-if="kpi.ratio_threshold != null" class="text-slate-500">
+                  · threshold {{ kpi.ratio_threshold }}%
+                </span>
+              </div>
+            </div>
+
+            <!-- Compare Bulan Lalu -->
+            <div class="rounded-xl bg-slate-800/90 border border-slate-700/80 p-4 sm:p-5">
+              <div class="flex items-start justify-between gap-3">
+                <div class="text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+                  Compare Bulan Lalu (Variance)
+                </div>
+                <div class="w-9 h-9 rounded-full bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-scale-balanced"></i>
+                </div>
+              </div>
+              <div class="mt-3 flex items-center gap-2">
+                <i
+                  class="text-xl"
+                  :class="kpi.variance >= 0
+                    ? 'fa-solid fa-arrow-trend-up text-rose-400'
+                    : 'fa-solid fa-arrow-trend-down text-emerald-400'"
+                ></i>
+                <span
+                  class="text-2xl sm:text-3xl font-bold tracking-tight"
+                  :class="kpi.variance >= 0 ? 'text-rose-400' : 'text-emerald-400'"
+                >
+                  {{ formatSignedCurrency(kpi.variance) }}
+                </span>
+              </div>
+              <div class="mt-4 pt-3 border-t border-slate-700/80 flex items-center justify-between gap-2 text-xs">
+                <span class="text-slate-400">
+                  {{ kpi.last_month_label }}: {{ formatCurrency(kpi.last_month_total) }}
+                </span>
+                <span
+                  class="font-semibold"
+                  :class="kpi.variance >= 0 ? 'text-rose-400' : 'text-emerald-400'"
+                >
+                  {{ formatSignedPercent(kpi.variance_percent) }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -271,8 +346,8 @@ const props = defineProps({
   retail_non_food_by_category: { type: Array, default: () => [] },
   retail_food_by_supplier: { type: Array, default: () => [] },
   totals: { type: Object, default: () => ({ retail_non_food: 0, retail_food: 0, grand_total: 0 }) },
-  petty_cash_budget: { type: Object, default: null },
   outlet_name: { type: String, default: null },
+  kpi: { type: Object, default: null },
 })
 
 const filters = ref({
@@ -342,6 +417,24 @@ const formatCurrency = (value) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
   }).format(num)
+}
+
+const formatSignedCurrency = (value) => {
+  const num = Number(value) || 0
+  const formatted = new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Math.abs(num))
+  if (num > 0) return `+${formatted}`
+  if (num < 0) return `-${formatted}`
+  return formatted
+}
+
+const formatSignedPercent = (value) => {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  const num = Number(value)
+  const sign = num > 0 ? '+' : ''
+  return `${sign}${num.toFixed(1)}%`
 }
 
 const formatDate = (dateString) => {

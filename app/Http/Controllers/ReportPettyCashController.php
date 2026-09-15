@@ -55,6 +55,7 @@ class ReportPettyCashController extends Controller
             ],
             'petty_cash_budget' => null,
             'outlet_name' => null,
+            'kpi' => null,
         ];
 
         if ($outletId) {
@@ -63,18 +64,28 @@ class ReportPettyCashController extends Controller
 
             $rnfTotal = collect($payload['retail_non_food_by_category'])->sum('total');
             $rfTotal = collect($payload['retail_food_by_supplier'])->sum('total');
+            $grandTotal = round($rnfTotal + $rfTotal, 2);
             $payload['totals'] = [
                 'retail_non_food' => round($rnfTotal, 2),
                 'retail_food' => round($rfTotal, 2),
-                'grand_total' => round($rnfTotal + $rfTotal, 2),
+                'grand_total' => $grandTotal,
             ];
 
-            $payload['outlet_name'] = DB::table('tbl_data_outlet')
+            $outlet = DB::table('tbl_data_outlet')
                 ->where('id_outlet', $outletId)
-                ->value('nama_outlet');
+                ->first(['nama_outlet', 'qr_code']);
+            $payload['outlet_name'] = $outlet?->nama_outlet;
 
             $monthStart = Carbon::parse($dateFrom)->startOfMonth()->format('Y-m-01');
             $payload['petty_cash_budget'] = $this->pettyCashLockBudget->resolveForOutlet($outletId, $monthStart);
+            $payload['kpi'] = $this->buildKpiSummary(
+                $outletId,
+                (string) ($outlet?->qr_code ?? ''),
+                $dateFrom,
+                $dateTo,
+                $grandTotal,
+                $payload['petty_cash_budget']
+            );
         }
 
         return Inertia::render('Report/PettyCash', $payload);
@@ -105,6 +116,103 @@ class ReportPettyCashController extends Controller
         }
 
         return response()->json($this->detailFoodSupplier($outletId, $key, $dateFrom, $dateTo));
+    }
+
+    /**
+     * @param  array{monthly_target: float, usable_after_reserve: float, lock_budget: float, petty_cash_ratio_percent: float}|null  $budget
+     * @return array<string, mixed>
+     */
+    private function buildKpiSummary(
+        int $outletId,
+        string $qrCode,
+        string $dateFrom,
+        string $dateTo,
+        float $periodTotal,
+        ?array $budget
+    ): array {
+        $from = Carbon::parse($dateFrom)->startOfDay();
+        $to = Carbon::parse($dateTo)->startOfDay();
+        $periodDays = max(1, $from->diffInDays($to) + 1);
+
+        $mtdFrom = $from->copy()->startOfMonth()->toDateString();
+        $mtdTo = $to->toDateString();
+        $mtdRevenue = $this->sumOutletRevenue($qrCode, $mtdFrom, $mtdTo);
+
+        $ratioPercent = $mtdRevenue > 0
+            ? round(($periodTotal / $mtdRevenue) * 100, 2)
+            : null;
+
+        $threshold = $budget['petty_cash_ratio_percent']
+            ?? $this->pettyCashLockBudget->resolvePettyCashRatioPercent($outletId);
+        $ratioStatus = null;
+        if ($ratioPercent !== null) {
+            $ratioStatus = $ratioPercent <= $threshold ? 'OPTIMAL' : 'HIGH';
+        }
+
+        $lmFrom = $from->copy()->subMonthNoOverflow();
+        $lmTo = $to->copy()->subMonthNoOverflow();
+        // Keep last-month end within that month if day overflowed differently
+        if ($lmTo->lt($lmFrom)) {
+            $lmTo = $lmFrom->copy()->endOfMonth()->startOfDay();
+        }
+        $lastMonthTotal = $this->sumPettyCashTotal($outletId, $lmFrom->toDateString(), $lmTo->toDateString());
+        $variance = round($periodTotal - $lastMonthTotal, 2);
+        $variancePercent = $lastMonthTotal > 0
+            ? round(($variance / $lastMonthTotal) * 100, 1)
+            : ($periodTotal > 0 ? 100.0 : 0.0);
+
+        return [
+            'period_total' => $periodTotal,
+            'period_label' => $from->locale('id')->translatedFormat('F Y'),
+            'period_days' => $periodDays,
+            'mtd_revenue' => round($mtdRevenue, 2),
+            'ratio_percent' => $ratioPercent,
+            'ratio_status' => $ratioStatus,
+            'ratio_threshold' => $threshold,
+            'last_month_total' => round($lastMonthTotal, 2),
+            'last_month_label' => $lmFrom->locale('id')->translatedFormat('F'),
+            'variance' => $variance,
+            'variance_percent' => $variancePercent,
+        ];
+    }
+
+    private function sumPettyCashTotal(int $outletId, string $dateFrom, string $dateTo): float
+    {
+        $rnf = (float) DB::table('retail_non_food')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'approved')
+            ->where('payment_method', '!=', 'contra_bon')
+            ->whereNull('deleted_at')
+            ->whereDate('transaction_date', '>=', $dateFrom)
+            ->whereDate('transaction_date', '<=', $dateTo)
+            ->sum('total_amount');
+
+        $rf = (float) DB::table('retail_food')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'approved')
+            ->where('payment_method', '!=', 'contra_bon')
+            ->whereNull('deleted_at')
+            ->whereDate('transaction_date', '>=', $dateFrom)
+            ->whereDate('transaction_date', '<=', $dateTo)
+            ->sum('total_amount');
+
+        return round($rnf + $rf, 2);
+    }
+
+    private function sumOutletRevenue(string $qrCode, string $dateFrom, string $dateTo): float
+    {
+        $qrCode = trim($qrCode);
+        if ($qrCode === '') {
+            return 0.0;
+        }
+
+        return round((float) DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', '>=', $dateFrom)
+            ->whereDate('created_at', '<=', $dateTo)
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->sum('grand_total'), 2);
     }
 
     /**
