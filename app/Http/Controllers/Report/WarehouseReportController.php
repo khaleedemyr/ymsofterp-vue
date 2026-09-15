@@ -489,6 +489,304 @@ class WarehouseReportController extends Controller
     }
 
     /**
+     * Detail lazy-load Receiving Sheet (warehouse / supplier Retail Food).
+     */
+    public function receivingSheetDetail(Request $request)
+    {
+        $request->validate([
+            'date' => 'required|date',
+            'type' => 'required|in:warehouse,supplier',
+            'key' => 'required|string',
+            'outlet' => 'nullable',
+        ]);
+
+        $user = auth()->user();
+        $outlet = $request->input('outlet');
+        if ($user->id_outlet != 1) {
+            $outlet = $user->id_outlet;
+        }
+        if (! $outlet) {
+            return response()->json(['error' => 'Outlet wajib dipilih'], 422);
+        }
+
+        $date = $request->input('date');
+        $type = $request->input('type');
+        $key = $request->input('key');
+
+        if ($type === 'supplier') {
+            return response()->json($this->receivingSheetSupplierDetail((int) $outlet, $date, (int) $key));
+        }
+
+        if (! in_array($key, ['main_store', 'mk1', 'mk2'], true)) {
+            return response()->json(['error' => 'Warehouse key tidak valid'], 422);
+        }
+
+        return response()->json($this->receivingSheetWarehouseDetail((int) $outlet, $date, $key));
+    }
+
+    private function receivingSheetWarehouseDetail(int $outletId, string $date, string $bucket): array
+    {
+        $labels = [
+            'main_store' => 'Main Store',
+            'mk1' => 'MK1 Hot Kitchen',
+            'mk2' => 'MK2 Cold Kitchen',
+        ];
+        $transactions = [];
+
+        // GR Food
+        $grRows = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                $join->on('ffoi.floor_order_id', '=', 'ffo.id')
+                    ->on('ffoi.item_id', '=', 'ofgri.item_id');
+            })
+            ->leftJoin('warehouse_division as wd', 'fpl.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('items as it', 'ofgri.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'ofgri.unit_id', '=', 'u.id')
+            ->leftJoin('users as usr', 'ffo.user_id', '=', 'usr.id')
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->whereDate('ofgr.receive_date', $date)
+            ->whereNotNull('w.name')
+            ->select(
+                'ofgr.id as txn_id',
+                'ofgr.number as txn_number',
+                'ffo.order_number as ro_number',
+                'usr.nama_lengkap as ordered_by',
+                'it.name as item_name',
+                'u.name as unit_name',
+                'ofgri.received_qty as qty',
+                DB::raw('COALESCE(ffoi.price, 0) as price'),
+                DB::raw('(ofgri.received_qty * COALESCE(ffoi.price, 0)) as subtotal'),
+                'w.name as warehouse_name'
+            )
+            ->orderBy('ofgr.number')
+            ->orderBy('it.name')
+            ->get()
+            ->filter(fn ($row) => $this->receivingSheetWarehouseBucket($row->warehouse_name) === $bucket);
+
+        foreach ($grRows->groupBy('txn_id') as $txnId => $items) {
+            $first = $items->first();
+            $transactions[] = [
+                'source' => 'GR',
+                'number' => $first->txn_number,
+                'ro_number' => $first->ro_number,
+                'ordered_by' => $first->ordered_by ?: '-',
+                'total' => round($items->sum('subtotal'), 2),
+                'items' => $items->map(fn ($i) => [
+                    'name' => $i->item_name,
+                    'qty' => (float) $i->qty,
+                    'unit' => $i->unit_name ?: '-',
+                    'price' => (float) $i->price,
+                    'subtotal' => (float) $i->subtotal,
+                ])->values(),
+            ];
+        }
+
+        // GSR
+        if ($this->rekapFjHasSerialGrTables()) {
+            $gsrPriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+            $gsrRows = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+                ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+                ->leftJoin('users as usr', 'h.created_by', '=', 'usr.id')
+                ->leftJoin('delivery_orders as do', 'si.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->where('h.outlet_id', $outletId)
+                ->whereDate('h.receive_date', $date)
+                ->whereNotNull('w.name')
+                ->select(
+                    'h.id as txn_id',
+                    'h.number as txn_number',
+                    'ffo.order_number as ro_number',
+                    'usr.nama_lengkap as ordered_by',
+                    'it.name as item_name',
+                    'u.name as unit_name',
+                    DB::raw('SUM(si.qty) as qty'),
+                    DB::raw("CASE WHEN SUM(si.qty) > 0 THEN SUM(si.qty * ({$gsrPriceExpr})) / SUM(si.qty) ELSE MAX({$gsrPriceExpr}) END as price"),
+                    DB::raw("SUM(si.qty * ({$gsrPriceExpr})) as subtotal"),
+                    'w.name as warehouse_name'
+                )
+                ->groupBy(
+                    'h.id',
+                    'h.number',
+                    'ffo.order_number',
+                    'usr.nama_lengkap',
+                    'it.name',
+                    'u.name',
+                    'w.name',
+                    'it.warehouse_division_id',
+                    'si.item_id',
+                    'si.unit_id'
+                )
+                ->get()
+                ->filter(fn ($row) => $this->receivingSheetWarehouseBucket($row->warehouse_name) === $bucket);
+
+            foreach ($gsrRows->groupBy('txn_id') as $txnId => $items) {
+                $first = $items->first();
+                $transactions[] = [
+                    'source' => 'GSR',
+                    'number' => $first->txn_number,
+                    'ro_number' => $first->ro_number,
+                    'ordered_by' => $first->ordered_by ?: '-',
+                    'total' => round($items->sum('subtotal'), 2),
+                    'items' => $items->map(fn ($i) => [
+                        'name' => $i->item_name,
+                        'qty' => (float) $i->qty,
+                        'unit' => $i->unit_name ?: '-',
+                        'price' => (float) $i->price,
+                        'subtotal' => (float) $i->subtotal,
+                    ])->values(),
+                ];
+            }
+        }
+
+        // RWS
+        $rwsHeaders = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', function ($join) {
+                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+            })
+            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereDate('rws.sale_date', $date)
+            ->whereNotNull('w.name')
+            ->select(
+                'rws.id as txn_id',
+                'rws.number as txn_number',
+                'usr.nama_lengkap as ordered_by',
+                'w.name as warehouse_name',
+                'rws.total_amount'
+            )
+            ->get()
+            ->filter(fn ($row) => $this->receivingSheetWarehouseBucket($row->warehouse_name) === $bucket);
+
+        if ($rwsHeaders->isNotEmpty()) {
+            $rwsIds = $rwsHeaders->pluck('txn_id')->unique()->values();
+            $rwsItems = DB::table('retail_warehouse_sale_items as rwsi')
+                ->join('items as i', 'rwsi.item_id', '=', 'i.id')
+                ->whereIn('rwsi.retail_warehouse_sale_id', $rwsIds)
+                ->select(
+                    'rwsi.retail_warehouse_sale_id as txn_id',
+                    'i.name as item_name',
+                    'rwsi.qty',
+                    'rwsi.unit as unit_name',
+                    'rwsi.price',
+                    'rwsi.subtotal'
+                )
+                ->get()
+                ->groupBy('txn_id');
+
+            foreach ($rwsHeaders as $header) {
+                $items = $rwsItems->get($header->txn_id, collect());
+                $transactions[] = [
+                    'source' => 'RWS',
+                    'number' => $header->txn_number,
+                    'ro_number' => null,
+                    'ordered_by' => $header->ordered_by ?: '-',
+                    'total' => round((float) ($items->sum('subtotal') ?: $header->total_amount), 2),
+                    'items' => $items->map(fn ($i) => [
+                        'name' => $i->item_name,
+                        'qty' => (float) $i->qty,
+                        'unit' => $i->unit_name ?: '-',
+                        'price' => (float) $i->price,
+                        'subtotal' => (float) $i->subtotal,
+                    ])->values(),
+                ];
+            }
+        }
+
+        usort($transactions, fn ($a, $b) => strcmp((string) $a['number'], (string) $b['number']));
+
+        return [
+            'title' => ($labels[$bucket] ?? $bucket).' — '.$date,
+            'type' => 'warehouse',
+            'key' => $bucket,
+            'date' => $date,
+            'transactions' => array_values($transactions),
+            'grand_total' => round(collect($transactions)->sum('total'), 2),
+        ];
+    }
+
+    private function receivingSheetSupplierDetail(int $outletId, string $date, int $supplierId): array
+    {
+        $supplierName = DB::table('suppliers')->where('id', $supplierId)->value('name') ?: 'Supplier';
+
+        $headers = DB::table('retail_food as rf')
+            ->leftJoin('users as usr', 'rf.created_by', '=', 'usr.id')
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.supplier_id', $supplierId)
+            ->whereDate('rf.transaction_date', $date)
+            ->select(
+                'rf.id as txn_id',
+                'rf.retail_number as txn_number',
+                'usr.nama_lengkap as ordered_by',
+                'rf.total_amount'
+            )
+            ->orderBy('rf.retail_number')
+            ->get();
+
+        $itemsByTxn = collect();
+        if ($headers->isNotEmpty()) {
+            $itemsByTxn = DB::table('retail_food_items as rfi')
+                ->whereIn('rfi.retail_food_id', $headers->pluck('txn_id'))
+                ->select(
+                    'rfi.retail_food_id as txn_id',
+                    'rfi.item_name as item_name',
+                    'rfi.qty',
+                    'rfi.unit as unit_name',
+                    'rfi.price',
+                    'rfi.subtotal'
+                )
+                ->orderBy('rfi.item_name')
+                ->get()
+                ->groupBy('txn_id');
+        }
+
+        $transactions = [];
+        foreach ($headers as $header) {
+            $items = $itemsByTxn->get($header->txn_id, collect());
+            $transactions[] = [
+                'source' => 'Retail Food',
+                'number' => $header->txn_number,
+                'ro_number' => null,
+                'ordered_by' => $header->ordered_by ?: '-',
+                'total' => round((float) ($items->sum('subtotal') ?: $header->total_amount), 2),
+                'items' => $items->map(fn ($i) => [
+                    'name' => $i->item_name,
+                    'qty' => (float) $i->qty,
+                    'unit' => $i->unit_name ?: '-',
+                    'price' => (float) $i->price,
+                    'subtotal' => (float) $i->subtotal,
+                ])->values(),
+            ];
+        }
+
+        return [
+            'title' => $supplierName.' — '.$date,
+            'type' => 'supplier',
+            'key' => (string) $supplierId,
+            'date' => $date,
+            'transactions' => $transactions,
+            'grand_total' => round(collect($transactions)->sum('total'), 2),
+        ];
+    }
+
+    /**
      * FJ Detail - Food & Juice Distribution Detail
      * 
      * CRITICAL COMPLEX FUNCTION - Returns detailed FJ distribution items

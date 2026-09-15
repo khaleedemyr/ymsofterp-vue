@@ -8,7 +8,6 @@
       <!-- Filters -->
       <div class="bg-gray-50 rounded-xl p-6 mb-8">
         <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <!-- Outlet Filter -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Outlet</label>
             <select 
@@ -23,8 +22,6 @@
               </option>
             </select>
           </div>
-
-          <!-- Date From -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Dari Tanggal</label>
             <input 
@@ -34,8 +31,6 @@
               @change="loadReport"
             >
           </div>
-
-          <!-- Date To -->
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-2">Sampai Tanggal</label>
             <input 
@@ -45,8 +40,6 @@
               @change="loadReport"
             >
           </div>
-
-          <!-- Search Button -->
           <div class="flex items-end">
             <button 
               @click="loadReport"
@@ -80,51 +73,75 @@
 
       <!-- Report Table -->
       <div class="overflow-x-auto">
-        <table class="min-w-full rounded-2xl overflow-hidden shadow-lg">
+        <table class="min-w-full rounded-2xl overflow-hidden shadow-lg text-sm">
           <thead>
-            <tr class="bg-[#2563eb] text-white font-bold text-base">
-              <th class="px-6 py-3 text-left">No</th>
-              <th class="px-6 py-3 text-left">Tanggal</th>
-              <th class="px-6 py-3 text-right">Omzet</th>
+            <tr class="font-bold">
+              <th class="px-4 py-3 text-left bg-slate-600 text-white">No</th>
+              <th class="px-4 py-3 text-left bg-sky-600 text-white">Tanggal</th>
+              <th class="px-4 py-3 text-right bg-emerald-600 text-white">Omzet</th>
               <th
                 v-for="wh in warehouseColumns"
                 :key="'wh-'+wh.key"
-                class="px-6 py-3 text-right"
+                class="px-4 py-3 text-right bg-indigo-600 text-white"
               >
                 {{ wh.name }}
               </th>
               <th
                 v-for="sp in suppliers"
                 :key="'sp-'+sp.id"
-                class="px-6 py-3 text-right"
+                class="px-4 py-3 text-right bg-amber-600 text-white"
               >
                 {{ sp.name }}
               </th>
-              <th class="px-6 py-3 text-right">Cost</th>
-              <th class="px-6 py-3 text-right">% Cost</th>
+              <th class="px-4 py-3 text-right bg-rose-600 text-white">Cost</th>
+              <th class="px-4 py-3 text-right bg-violet-600 text-white">% Cost</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(row, index) in report" :key="row.tanggal" class="bg-white border-b last:border-b-0 hover:bg-blue-50">
-              <td class="px-6 py-4 text-gray-700">{{ index + 1 }}</td>
-              <td class="px-6 py-4 text-gray-700 font-medium">{{ formatDate(row.tanggal) }}</td>
-              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.omzet) }}</td>
+            <tr
+              v-for="(row, index) in report"
+              :key="row.tanggal"
+              class="border-b last:border-b-0 hover:bg-blue-50/60"
+            >
+              <td class="px-4 py-3 bg-slate-50 text-slate-700">{{ index + 1 }}</td>
+              <td class="px-4 py-3 bg-sky-50 text-sky-900 font-medium">{{ formatDate(row.tanggal) }}</td>
+              <td class="px-4 py-3 bg-emerald-50 text-emerald-900 text-right font-medium">
+                {{ formatCurrency(row.omzet) }}
+              </td>
               <td
                 v-for="wh in warehouseColumns"
                 :key="'wh-'+wh.key"
-                class="px-6 py-4 text-right text-gray-700 font-medium"
+                class="px-4 py-3 bg-indigo-50 text-indigo-900 text-right font-medium"
               >
-                {{ formatCurrency(row[wh.key]) }}
+                <button
+                  v-if="Number(row[wh.key]) > 0"
+                  type="button"
+                  class="underline decoration-dotted underline-offset-2 hover:text-indigo-700"
+                  @click="openDetail('warehouse', wh.key, wh.name, row.tanggal, row[wh.key])"
+                >
+                  {{ formatCurrency(row[wh.key]) }}
+                </button>
+                <span v-else>{{ formatCurrency(0) }}</span>
               </td>
               <td
                 v-for="sp in suppliers"
                 :key="'sp-'+sp.id"
-                class="px-6 py-4 text-right text-gray-700 font-medium"
+                class="px-4 py-3 bg-amber-50 text-amber-900 text-right font-medium"
               >
-                {{ formatCurrency(row['supplier_' + sp.id]) }}
+                <button
+                  v-if="Number(row['supplier_' + sp.id]) > 0"
+                  type="button"
+                  class="underline decoration-dotted underline-offset-2 hover:text-amber-700"
+                  @click="openDetail('supplier', String(sp.id), sp.name, row.tanggal, row['supplier_' + sp.id])"
+                >
+                  {{ formatCurrency(row['supplier_' + sp.id]) }}
+                </button>
+                <span v-else>{{ formatCurrency(0) }}</span>
               </td>
-              <td class="px-6 py-4 text-right text-gray-700 font-semibold">{{ formatCurrency(row.cost) }}</td>
-              <td class="px-6 py-4 text-right">
+              <td class="px-4 py-3 bg-rose-50 text-rose-900 text-right font-semibold">
+                {{ formatCurrency(row.cost) }}
+              </td>
+              <td class="px-4 py-3 bg-violet-50 text-right">
                 <span 
                   :class="[
                     'font-bold px-2 py-1 rounded text-sm',
@@ -141,11 +158,94 @@
         </table>
       </div>
 
-      <!-- Empty State -->
       <div v-if="report.length === 0" class="text-center py-12">
         <div class="text-gray-400 text-lg">
           <i class="fa-solid fa-inbox text-4xl mb-4"></i>
           <p>Tidak ada data untuk ditampilkan</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Detail Modal (lazy load) -->
+    <div
+      v-if="detailOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      @click.self="closeDetail"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-gray-900">{{ detailMeta.title }}</h2>
+            <p class="text-sm text-gray-500 mt-1">
+              {{ formatDate(detailMeta.date) }}
+              <span v-if="detailMeta.amount != null"> · {{ formatCurrency(detailMeta.amount) }}</span>
+            </p>
+          </div>
+          <button type="button" class="text-gray-400 hover:text-gray-700 text-xl" @click="closeDetail">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="detailLoading" class="py-12 text-center text-gray-500">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat detail...
+          </div>
+          <div v-else-if="detailError" class="py-8 text-center text-red-600">
+            {{ detailError }}
+          </div>
+          <div v-else-if="!detailData?.transactions?.length" class="py-8 text-center text-gray-500">
+            Tidak ada transaksi.
+          </div>
+          <div v-else class="space-y-5">
+            <div
+              v-for="(txn, idx) in detailData.transactions"
+              :key="idx"
+              class="border border-gray-200 rounded-xl overflow-hidden"
+            >
+              <div class="bg-gray-50 px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                <div><span class="text-gray-500">Tipe:</span> <strong>{{ txn.source }}</strong></div>
+                <div><span class="text-gray-500">No. Transaksi:</span> <strong>{{ txn.number || '-' }}</strong></div>
+                <div v-if="txn.ro_number"><span class="text-gray-500">No. RO/FO:</span> <strong>{{ txn.ro_number }}</strong></div>
+                <div><span class="text-gray-500">Order/Belanja oleh:</span> <strong>{{ txn.ordered_by || '-' }}</strong></div>
+                <div class="ml-auto"><span class="text-gray-500">Total:</span> <strong>{{ formatCurrency(txn.total) }}</strong></div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="bg-white border-b text-gray-600">
+                      <th class="px-4 py-2 text-left">Item</th>
+                      <th class="px-4 py-2 text-right">Qty</th>
+                      <th class="px-4 py-2 text-left">Unit</th>
+                      <th class="px-4 py-2 text-right">Harga</th>
+                      <th class="px-4 py-2 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(item, i) in txn.items" :key="i" class="border-b last:border-b-0">
+                      <td class="px-4 py-2">{{ item.name }}</td>
+                      <td class="px-4 py-2 text-right">{{ item.qty }}</td>
+                      <td class="px-4 py-2">{{ item.unit }}</td>
+                      <td class="px-4 py-2 text-right">{{ formatCurrency(item.price) }}</td>
+                      <td class="px-4 py-2 text-right font-medium">{{ formatCurrency(item.subtotal) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-3 border-t bg-gray-50 flex justify-between items-center">
+          <div class="text-sm text-gray-600">
+            Grand total: <strong>{{ formatCurrency(detailData?.grand_total || 0) }}</strong>
+          </div>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-gray-800 text-white hover:bg-black"
+            @click="closeDetail"
+          >
+            Tutup
+          </button>
         </div>
       </div>
     </div>
@@ -157,6 +257,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 defineOptions({ layout: AppLayout })
 import { ref, computed } from 'vue'
 import { router } from '@inertiajs/vue3'
+import axios from 'axios'
 
 const props = defineProps({
   report: {
@@ -212,11 +313,60 @@ const summary = computed(() => {
   }
 })
 
+const detailOpen = ref(false)
+const detailLoading = ref(false)
+const detailError = ref('')
+const detailData = ref(null)
+const detailMeta = ref({ title: '', date: '', amount: null })
+
 const loadReport = () => {
   router.get('/report-receiving-sheet', filters.value, {
     preserveState: true,
     preserveScroll: true
   })
+}
+
+const openDetail = async (type, key, label, date, amount) => {
+  if (!filters.value.outlet) {
+    alert('Pilih outlet terlebih dahulu')
+    return
+  }
+
+  detailOpen.value = true
+  detailLoading.value = true
+  detailError.value = ''
+  detailData.value = null
+  detailMeta.value = {
+    title: label,
+    date,
+    amount,
+  }
+
+  try {
+    const res = await axios.get('/api/report/receiving-sheet-detail', {
+      params: {
+        type,
+        key,
+        date,
+        outlet: filters.value.outlet,
+      },
+    })
+    detailData.value = res.data
+    if (res.data?.title) {
+      detailMeta.value.title = res.data.title
+    }
+  } catch (e) {
+    detailError.value = e?.response?.data?.error || e?.message || 'Gagal memuat detail'
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+const closeDetail = () => {
+  detailOpen.value = false
+  detailLoading.value = false
+  detailError.value = ''
+  detailData.value = null
 }
 
 const formatCurrency = (value) => {
@@ -287,4 +437,4 @@ const formatDate = (dateString) => {
   @apply text-white text-2xl font-bold;
   text-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
-</style> 
+</style>
