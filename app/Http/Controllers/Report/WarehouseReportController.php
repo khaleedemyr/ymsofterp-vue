@@ -336,16 +336,19 @@ class WarehouseReportController extends Controller
             ->keyBy('tanggal');
 
         // Query pembelanjaan per warehouse per tanggal
+        // Catatan: gudang sumber RO = warehouse item (warehouse_division), bukan warehouse_outlet_id GR.
         $warehouseSpendQuery = DB::table('outlet_food_good_receive_items as ofgri')
             ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
             ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
             ->join('food_packing_lists as fpl', 'do.packing_list_id', '=', 'fpl.id')
             ->join('food_floor_orders as ffo', 'fpl.food_floor_order_id', '=', 'ffo.id')
-            ->join('food_floor_order_items as ffoi', function($join) {
+            ->join('food_floor_order_items as ffoi', function ($join) {
                 $join->on('ffoi.floor_order_id', '=', 'ffo.id')
-                     ->on('ffoi.item_id', '=', 'ofgri.item_id');
+                    ->on('ffoi.item_id', '=', 'ofgri.item_id');
             })
-            ->join('warehouses as w', 'ofgr.warehouse_outlet_id', '=', 'w.id')
+            ->join('items as it', 'ofgri.item_id', '=', 'it.id')
+            ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->select(
                 'ofgr.receive_date as tanggal',
                 'w.id as warehouse_id',
@@ -363,24 +366,42 @@ class WarehouseReportController extends Controller
         }
         $warehouseSpendData = $warehouseSpendQuery
             ->whereNull('ofgr.deleted_at')
+            ->whereNotNull('w.id')
             ->groupBy('ofgr.receive_date', 'w.id', 'w.name')
             ->get();
 
         // Ambil daftar warehouse yang muncul di data
-        $warehouses = $warehouseSpendData->map(function($row) {
+        $warehouses = $warehouseSpendData->map(function ($row) {
             return [
                 'id' => $row->warehouse_id,
-                'name' => $row->warehouse_name
+                'name' => $row->warehouse_name,
             ];
         })->unique('id')->values();
 
-        // Index warehouse spend per tanggal per warehouse_id
+        // Index warehouse spend per tanggal per warehouse_id + aggregate MS / MK
         $warehouseSpendByDate = [];
+        $msByDate = [];
+        $mkByDate = [];
         foreach ($warehouseSpendData as $row) {
             $date = $row->tanggal;
             $wid = $row->warehouse_id;
-            if (!isset($warehouseSpendByDate[$date])) $warehouseSpendByDate[$date] = [];
-            $warehouseSpendByDate[$date][$wid] = $row->total;
+            $total = (float) $row->total;
+            if (! isset($warehouseSpendByDate[$date])) {
+                $warehouseSpendByDate[$date] = [];
+            }
+            $warehouseSpendByDate[$date][$wid] = $total;
+
+            $whName = strtoupper(trim((string) $row->warehouse_name));
+            if ($whName === 'MAIN STORE' || str_contains($whName, 'MAIN STORE')) {
+                $msByDate[$date] = ($msByDate[$date] ?? 0) + $total;
+            }
+            if (
+                in_array($whName, ['MK1 HOT KITCHEN', 'MK2 COLD KITCHEN'], true)
+                || str_starts_with($whName, 'MK1')
+                || str_starts_with($whName, 'MK2')
+            ) {
+                $mkByDate[$date] = ($mkByDate[$date] ?? 0) + $total;
+            }
         }
 
         // Query pembelanjaan per supplier per tanggal
@@ -402,10 +423,10 @@ class WarehouseReportController extends Controller
             ->get();
 
         // Ambil daftar supplier yang muncul di data
-        $suppliers = $supplierSpendData->map(function($row) {
+        $suppliers = $supplierSpendData->map(function ($row) {
             return [
                 'id' => $row->supplier_id,
-                'name' => $row->supplier_name
+                'name' => $row->supplier_name,
             ];
         })->unique('id')->values();
 
@@ -414,7 +435,9 @@ class WarehouseReportController extends Controller
         foreach ($supplierSpendData as $row) {
             $date = $row->tanggal;
             $sid = $row->supplier_id;
-            if (!isset($supplierSpendByDate[$date])) $supplierSpendByDate[$date] = [];
+            if (! isset($supplierSpendByDate[$date])) {
+                $supplierSpendByDate[$date] = [];
+            }
             $supplierSpendByDate[$date][$sid] = $row->total;
         }
 
@@ -426,6 +449,8 @@ class WarehouseReportController extends Controller
             ->merge($supplierDirectData->keys())
             ->merge(collect($warehouseSpendByDate)->keys())
             ->merge(collect($supplierSpendByDate)->keys())
+            ->merge(collect($msByDate)->keys())
+            ->merge(collect($mkByDate)->keys())
             ->unique()->sort();
 
         foreach ($allDates as $date) {
@@ -439,16 +464,18 @@ class WarehouseReportController extends Controller
                 'omzet' => $omzet,
                 'persentase_cost' => round($persentase, 2),
                 'cost' => $cost,
+                'ms' => $msByDate[$date] ?? 0,
+                'mk' => $mkByDate[$date] ?? 0,
                 'retail_food' => $retailFoodData->get($date)?->retail_cost ?? 0,
                 'supplier_direct' => $supplierDirectData->get($date)?->supplier_cost ?? 0,
             ];
             // Tambahkan pembelanjaan per warehouse
             foreach ($warehouses as $wh) {
-                $row['warehouse_' . $wh['id']] = $warehouseSpendByDate[$date][$wh['id']] ?? 0;
+                $row['warehouse_'.$wh['id']] = $warehouseSpendByDate[$date][$wh['id']] ?? 0;
             }
             // Tambahkan pembelanjaan per supplier
             foreach ($suppliers as $sp) {
-                $row['supplier_' . $sp['id']] = $supplierSpendByDate[$date][$sp['id']] ?? 0;
+                $row['supplier_'.$sp['id']] = $supplierSpendByDate[$date][$sp['id']] ?? 0;
             }
             $report[] = $row;
         }

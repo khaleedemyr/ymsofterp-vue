@@ -88,6 +88,8 @@
               <th class="px-6 py-3 text-right">Omzet</th>
               <th class="px-6 py-3 text-right">% Cost</th>
               <th class="px-6 py-3 text-right">Cost</th>
+              <th class="px-6 py-3 text-right" title="Pembelanjaan RO gudang Main Store">MS</th>
+              <th class="px-6 py-3 text-right" title="Pembelanjaan RO gudang MK1 + MK2">MK</th>
               <th v-for="wh in warehouses" :key="'wh-'+wh.id" class="px-6 py-3 text-right">{{ wh.name }}</th>
               <th class="px-6 py-3 text-right">Retail</th>
               <th v-for="sp in suppliers" :key="'sp-'+sp.id" class="px-6 py-3 text-right">{{ sp.name }}</th>
@@ -111,6 +113,8 @@
                 </span>
               </td>
               <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.cost) }}</td>
+              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.ms) }}</td>
+              <td class="px-6 py-4 text-right text-gray-700 font-medium">{{ formatCurrency(row.mk) }}</td>
               <td v-for="wh in warehouses" :key="'wh-'+wh.id" class="px-6 py-4 text-right text-gray-700 font-medium">
                 {{ formatCurrency(row['warehouse_' + wh.id]) }}
               </td>
