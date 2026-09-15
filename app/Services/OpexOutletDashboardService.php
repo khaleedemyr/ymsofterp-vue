@@ -2289,17 +2289,20 @@ class OpexOutletDashboardService
             }
             $amount = round((float) ($line->amount ?? 0), 2);
             $grouped[$key]->amount = round((float) $grouped[$key]->amount + $amount, 2);
-            $grouped[$key]->items[] = [
+            $this->accumulatePurchaseItem($grouped[$key]->items, [
                 'item_name' => (string) ($line->item_name ?? '-'),
                 'category' => $cat,
-                'qty' => round((float) ($line->qty ?? 0), 4),
+                'qty' => (float) ($line->qty ?? 0),
                 'unit' => (string) ($line->unit_name ?? '-'),
                 'price' => round((float) ($line->price ?? 0), 2),
                 'amount' => $amount,
-            ];
+            ]);
         }
 
         $rows = array_values($grouped);
+        foreach ($rows as $row) {
+            $row->items = array_values($row->items);
+        }
         usort($rows, function ($a, $b) {
             $cmp = strcmp((string) $b->date, (string) $a->date);
             if ($cmp !== 0) {
@@ -2585,17 +2588,20 @@ class OpexOutletDashboardService
             }
             $amount = round((float) ($line->amount ?? 0), 2);
             $grouped[$key]->amount = round((float) $grouped[$key]->amount + $amount, 2);
-            $grouped[$key]->items[] = [
+            $this->accumulatePurchaseItem($grouped[$key]->items, [
                 'item_name' => (string) ($line->item_name ?? '-'),
                 'category' => $cat,
-                'qty' => round((float) ($line->qty ?? 0), 4),
+                'qty' => (float) ($line->qty ?? 0),
                 'unit' => (string) ($line->unit_name ?? '-'),
                 'price' => round((float) ($line->price ?? 0), 2),
                 'amount' => $amount,
-            ];
+            ]);
         }
 
         $rows = array_values($grouped);
+        foreach ($rows as $row) {
+            $row->items = array_values($row->items);
+        }
         usort($rows, function ($a, $b) {
             $cmp = strcmp((string) $b->date, (string) $a->date);
             if ($cmp !== 0) {
@@ -2606,6 +2612,39 @@ class OpexOutletDashboardService
         });
 
         return $rows;
+    }
+
+    /**
+     * Gabungkan baris item yang sama (nama+category+unit+price) agar GSR serial
+     * yang tersimpan per unit tidak tampil berulang di modal.
+     *
+     * @param  array<string, array{item_name: string, category: string, qty: float, unit: string, price: float, amount: float}>  $items
+     * @param  array{item_name: string, category: string, qty: float, unit: string, price: float, amount: float}  $item
+     */
+    private function accumulatePurchaseItem(array &$items, array $item): void
+    {
+        $key = strtolower(implode('|', [
+            $item['item_name'],
+            $item['category'],
+            $item['unit'],
+            number_format((float) $item['price'], 4, '.', ''),
+        ]));
+
+        if (! isset($items[$key])) {
+            $items[$key] = [
+                'item_name' => $item['item_name'],
+                'category' => $item['category'],
+                'qty' => round((float) $item['qty'], 4),
+                'unit' => $item['unit'],
+                'price' => round((float) $item['price'], 2),
+                'amount' => round((float) $item['amount'], 2),
+            ];
+
+            return;
+        }
+
+        $items[$key]['qty'] = round((float) $items[$key]['qty'] + (float) $item['qty'], 4);
+        $items[$key]['amount'] = round((float) $items[$key]['amount'] + (float) $item['amount'], 2);
     }
 
     /**
