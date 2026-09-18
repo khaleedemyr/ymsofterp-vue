@@ -672,20 +672,47 @@
         </div>
         </section>
 
-        <!-- ========== Group: Stock & Category Cost ========== -->
+        <!-- ========== Group: Inventory ========== -->
         <section class="mb-8">
           <div class="flex items-center gap-3 mb-3">
             <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-fuchsia-100 text-fuchsia-700">
               <i class="fa-solid fa-warehouse text-sm"></i>
             </span>
             <div>
-              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-fuchsia-700">Stock Cut &amp; Category Cost</h2>
-              <p class="text-xs text-slate-500">Potong stok dan biaya kategori outlet</p>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-fuchsia-700">Inventory</h2>
+              <p class="text-xs text-slate-500">Begin inventory, stock cut, dan category cost</p>
             </div>
           </div>
 
-        <!-- Stock Cut, Category Cost -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <!-- Begin Inventory, Stock Cut, Category Cost -->
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('begin_inventory')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 inline-flex items-center gap-1">
+                  Begin Inventory
+                  <CardHelpTip :text="cardHelps.begin_inventory" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.begin_inventory) }}</p>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.begin_inventory_count || 0 }} item · Total MAC</p>
+                <p v-if="ov.begin_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                  {{ ov.begin_inventory_revenue_pct }}% dari revenue
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.begin_inventory, true)">{{ vsLabel(vs.begin_inventory) }}</p>
+                <p class="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
+                  Sumber: {{ ov.begin_inventory_source === 'initial_balance' ? 'Saldo awal (tgl 1)' : 'Stok sistem' }}
+                </p>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-boxes-stacked text-xl"></i>
+              </div>
+            </div>
+          </button>
+
           <button
             type="button"
             class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition"
@@ -1012,7 +1039,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -1029,10 +1056,94 @@
             <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
           </div>
           <template v-else>
-            <apexchart type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+            <apexchart v-if="modalType !== 'begin_inventory'" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+
+            <!-- Begin Inventory: group by category, expand/collapse + search -->
+            <template v-if="modalType === 'begin_inventory'">
+              <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div class="relative flex-1">
+                  <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                  <input
+                    v-model="modalSearch"
+                    type="search"
+                    placeholder="Cari item, SKU, kategori, gudang..."
+                    class="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-200"
+                    @input="queueBeginInventorySearch"
+                  />
+                </div>
+                <div class="flex items-center gap-2 text-xs">
+                  <button type="button" class="px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" @click="expandAllBeginCategories">
+                    Expand all
+                  </button>
+                  <button type="button" class="px-3 py-2 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50" @click="collapseAllBeginCategories">
+                    Collapse all
+                  </button>
+                </div>
+              </div>
+              <p class="text-xs text-slate-500">
+                Total MAC: <span class="font-semibold text-slate-700">{{ formatCurrency(modalSheetMeta?.total_value) }}</span>
+                · {{ beginInventoryGroupCount }} kategori · {{ beginInventoryItemCount }} baris
+                · Sumber: {{ modalSheetMeta?.source === 'initial_balance' ? 'Saldo awal tgl 1' : 'Stok sistem' }}
+              </p>
+
+              <div v-if="!(modalSheetMeta?.groups || []).length" class="py-12 text-center text-slate-400 text-sm">
+                Tidak ada item begin inventory.
+              </div>
+              <div v-else class="space-y-2">
+                <div
+                  v-for="group in (modalSheetMeta?.groups || [])"
+                  :key="group.category"
+                  class="rounded-2xl border border-slate-200 overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    class="w-full flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 hover:bg-slate-100 text-left"
+                    @click="toggleBeginCategory(group.category)"
+                  >
+                    <div class="min-w-0 flex items-center gap-2">
+                      <i
+                        class="fa-solid text-slate-400 text-xs"
+                        :class="expandedBeginCategories[group.category] ? 'fa-chevron-down' : 'fa-chevron-right'"
+                      ></i>
+                      <span class="font-semibold text-slate-800 truncate">{{ group.category }}</span>
+                      <span class="text-xs text-slate-500 shrink-0">{{ group.item_count }} item</span>
+                    </div>
+                    <span class="font-semibold text-indigo-700 shrink-0">{{ formatCurrency(group.total_value) }}</span>
+                  </button>
+                  <div v-if="expandedBeginCategories[group.category]" class="overflow-x-auto border-t border-slate-100">
+                    <table class="min-w-full text-sm">
+                      <thead class="bg-white">
+                        <tr class="text-left text-slate-500 text-xs uppercase tracking-wide">
+                          <th class="px-4 py-2.5 font-semibold">Item</th>
+                          <th class="px-4 py-2.5 font-semibold">SKU</th>
+                          <th class="px-4 py-2.5 font-semibold">Gudang</th>
+                          <th class="px-4 py-2.5 font-semibold text-right">Qty</th>
+                          <th class="px-4 py-2.5 font-semibold text-right">MAC</th>
+                          <th class="px-4 py-2.5 font-semibold text-right">Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="(item, idx) in group.items"
+                          :key="group.category + '-' + idx"
+                          class="border-t border-slate-50"
+                        >
+                          <td class="px-4 py-2 font-medium text-slate-800">{{ item.item_name }}</td>
+                          <td class="px-4 py-2 text-slate-500">{{ item.item_sku || '—' }}</td>
+                          <td class="px-4 py-2 text-slate-600">{{ item.warehouse_name || '—' }}</td>
+                          <td class="px-4 py-2 text-right text-slate-700">{{ formatDecimal(item.qty) }}</td>
+                          <td class="px-4 py-2 text-right text-slate-700">{{ formatCurrency(item.mac) }}</td>
+                          <td class="px-4 py-2 text-right font-semibold text-slate-900">{{ formatCurrency(item.value) }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </template>
 
             <!-- Revenue: daily list seperti Daily Outlet Revenue -->
-            <template v-if="modalType === 'revenue'">
+            <template v-else-if="modalType === 'revenue'">
               <div class="overflow-x-auto rounded-2xl border border-slate-200">
                 <table class="min-w-full text-xs">
                   <thead>
@@ -1942,6 +2053,8 @@ const cardHelps = {
     'Nilai stock cut dari menu Stock Cut (value_out, status success).\n\nModal detail harian: kolom Food, Beverage, Total.\nKlik nilai → list item (qty, MAC, subtotal).',
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.',
+  begin_inventory:
+    'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance.\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).',
   employee_overtime:
     'OT Submission = jam & nilai dari Overtime Submission approved.\nOT Real = jam lembur aktual (absensi + Extra Off OT, dikurangi 1+1) seperti Attendance Report per outlet.\nRata-rata / karyawan = total ÷ jumlah karyawan yang punya absensi di periode 26–25.\nKlik card → per karyawan. Klik nama → per tanggal.',
   late_absen:
@@ -2450,13 +2563,47 @@ const modalTrend = ref([])
 const modalPagination = ref({ total: 0, total_pages: 1 })
 const modalSheetMeta = ref(null)
 const expandedMcsTxnIds = ref({})
+const expandedBeginCategories = ref({})
 const mcsCategoryFilter = ref('')
+let beginInventorySearchTimer = null
 
 const spendDetailOpen = ref(false)
 const spendDetailLoading = ref(false)
 const spendDetailError = ref('')
 const spendDetailData = ref(null)
 const spendDetailMeta = ref({ title: '', date: '', amount: null })
+
+const beginInventoryGroupCount = computed(() => (modalSheetMeta.value?.groups || []).length)
+const beginInventoryItemCount = computed(() =>
+  (modalSheetMeta.value?.groups || []).reduce((acc, g) => acc + (Number(g.item_count) || 0), 0)
+)
+
+const toggleBeginCategory = (category) => {
+  expandedBeginCategories.value = {
+    ...expandedBeginCategories.value,
+    [category]: !expandedBeginCategories.value[category],
+  }
+}
+
+const expandAllBeginCategories = () => {
+  const next = {}
+  for (const g of modalSheetMeta.value?.groups || []) {
+    next[g.category] = true
+  }
+  expandedBeginCategories.value = next
+}
+
+const collapseAllBeginCategories = () => {
+  expandedBeginCategories.value = {}
+}
+
+const queueBeginInventorySearch = () => {
+  if (beginInventorySearchTimer) window.clearTimeout(beginInventorySearchTimer)
+  beginInventorySearchTimer = window.setTimeout(() => {
+    modalPage.value = 1
+    fetchModal()
+  }, 300)
+}
 
 const toggleMcsTxn = (id) => {
   expandedMcsTxnIds.value = {
@@ -2481,6 +2628,7 @@ const modalTitle = computed(() => {
     petty_cash: 'Petty Cash',
     stock_cut: 'Stock Cut',
     category_cost: 'Category Cost',
+    begin_inventory: 'Begin Inventory',
     mcs_purchase: mcsCategoryFilter.value
       ? `Pembelian MCS · ${mcsCategoryFilter.value}`
       : 'Pembelian MCS',
@@ -2656,6 +2804,7 @@ const openCard = async (type) => {
   modalSearch.value = ''
   modalPage.value = 1
   expandedMcsTxnIds.value = {}
+  expandedBeginCategories.value = {}
   if (type !== 'mcs_purchase' && type !== 'purchase_category') {
     mcsCategoryFilter.value = ''
   }
@@ -2673,6 +2822,7 @@ const closeModal = () => {
   modalTrend.value = []
   modalSheetMeta.value = null
   expandedMcsTxnIds.value = {}
+  expandedBeginCategories.value = {}
   mcsCategoryFilter.value = ''
   closeSpendCellDetail()
 }
@@ -2918,7 +3068,7 @@ const fetchModal = async () => {
       ...filterParams(),
       search: modalSearch.value,
       page: modalPage.value,
-      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'].includes(modalType.value) ? 62 : 20,
+      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'].includes(modalType.value) ? 62 : 20,
     }
     if (['mcs_purchase', 'purchase_category'].includes(modalType.value) && mcsCategoryFilter.value) {
       params.category = mcsCategoryFilter.value
@@ -2928,6 +3078,15 @@ const fetchModal = async () => {
     modalTxns.value = data.transactions || []
     modalSheetMeta.value = data.sheet_meta || null
     modalPagination.value = data.pagination || { total: 0, total_pages: 1 }
+
+    if (modalType.value === 'begin_inventory') {
+      // Saat search aktif: expand semua hasil. Saat pertama buka: collapse.
+      if (String(modalSearch.value || '').trim() !== '') {
+        expandAllBeginCategories()
+      } else if (Object.keys(expandedBeginCategories.value).length === 0) {
+        // biarkan collapse by default
+      }
+    }
   } catch (e) {
     console.error(e)
     alert('Gagal memuat detail')

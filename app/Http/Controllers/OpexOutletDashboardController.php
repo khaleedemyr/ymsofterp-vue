@@ -93,8 +93,8 @@ class OpexOutletDashboardController extends Controller
         $dateFrom = $period['date_from'];
         $dateTo = $period['date_to'];
         $page = max(1, (int) $request->get('page', 1));
-        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'], true) ? 62 : 20;
-        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'], true) ? 93 : 50;
+        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'], true) ? 62 : 20;
+        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'], true) ? 93 : 50;
         $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
         $category = trim((string) $request->get('category', ''));
@@ -108,6 +108,28 @@ class OpexOutletDashboardController extends Controller
         }
 
         $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first(['qr_code']);
+
+        if ($type === 'begin_inventory') {
+            $detail = $this->opexService->buildBeginInventoryDetail($outletId, $dateFrom, $search);
+
+            return response()->json([
+                'trend' => [],
+                'transactions' => [],
+                'sheet_meta' => [
+                    'source' => $detail['source'],
+                    'initial_balance_date' => $detail['initial_balance_date'],
+                    'total_value' => $detail['total_value'],
+                    'groups' => $detail['groups'],
+                ],
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page' => count($detail['groups']),
+                    'total' => count($detail['groups']),
+                    'total_pages' => 1,
+                ],
+            ]);
+        }
+
         $trend = $this->opexService->cardTrend($outletId, $outlet?->qr_code, $dateFrom, $dateTo, $type);
         $sheetMeta = null;
         if ($type === 'total_spend') {

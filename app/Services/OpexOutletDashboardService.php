@@ -169,6 +169,7 @@ class OpexOutletDashboardService
             'petty_cash' => $this->vsMetric($current['petty_cash'], $previous['petty_cash']),
             'stock_cut' => $this->vsMetric($current['stock_cut'], $previous['stock_cut']),
             'category_cost' => $this->vsMetric($current['category_cost'], $previous['category_cost']),
+            'begin_inventory' => $this->vsMetric($current['begin_inventory'], $previous['begin_inventory']),
             'mcs_purchase' => $this->vsMetric($current['mcs_purchase'], $previous['mcs_purchase']),
             'outlet_city_ledger' => $this->vsMetric($current['outlet_city_ledger'], $previous['outlet_city_ledger']),
         ];
@@ -200,6 +201,7 @@ class OpexOutletDashboardService
         $officerCheck = $this->sumOfficerCheck($qrCode, $dateFrom, $dateTo);
         $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
         $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
+        $beginInventory = $this->sumBeginInventory($outletId, $dateFrom);
         $mcsPurchase = $this->sumMcsPurchase($outletId, $dateFrom, $dateTo);
         $cityLedger = $this->sumOutletCityLedger($qrCode, $dateFrom, $dateTo);
         $monthlyBudget = $this->sumMonthlyRevenueBudget($outletId, $dateFrom, $dateTo);
@@ -266,6 +268,10 @@ class OpexOutletDashboardService
             'category_cost_count' => $categoryCost['count'],
             'category_cost_by_type' => $categoryCost['by_type'],
             'category_cost_revenue_pct' => $pctOfRevenue($categoryCost['total']),
+            'begin_inventory' => $beginInventory['total'],
+            'begin_inventory_count' => $beginInventory['count'],
+            'begin_inventory_source' => $beginInventory['source'],
+            'begin_inventory_revenue_pct' => $pctOfRevenue($beginInventory['total']),
             'mcs_purchase' => $mcsPurchase['total'],
             'mcs_purchase_count' => $mcsPurchase['count'],
             'mcs_purchase_by_category' => $mcsPurchase['by_category'],
@@ -2238,6 +2244,224 @@ class OpexOutletDashboardService
             WHEN si.unit_id = {$itemAlias}.medium_unit_id THEN {$costSmall} * {$smallConv}
             ELSE {$costSmall}
         END)";
+    }
+
+    /**
+     * Begin Inventory (Total MAC) — sama formula Cost Report kolom Begin Inventory.
+     * Basis bulan dari $dateFrom (Y-m-01).
+     *
+     * @return array{total: float, count: int, source: string}
+     */
+    public function sumBeginInventory(int $outletId, string $dateFrom): array
+    {
+        $bulan = Carbon::parse($dateFrom)->format('Y-m');
+        $bulanCarbon = Carbon::parse($bulan.'-01');
+        $bulanSebelumnya = $bulanCarbon->copy()->subMonth();
+        $tanggalAkhirBulanSebelumnya = $bulanSebelumnya->format('Y-m-t');
+        $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
+
+        $warehouseOutletIds = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+
+        if ($warehouseOutletIds === []) {
+            return ['total' => 0.0, 'count' => 0, 'source' => 'none'];
+        }
+
+        /** @var CostReportDataService $costReport */
+        $costReport = app(CostReportDataService::class);
+        $stockRows = $costReport->loadOutletWarehouseStockRows([$outletId], $warehouseOutletIds);
+        $beginMacByWarehouse = $costReport->computeBeginInventoryTotalMacByWarehouse(
+            $stockRows,
+            [$outletId],
+            $warehouseOutletIds,
+            $bulanSebelumnya,
+            $tanggalAkhirBulanSebelumnya,
+            $tanggal1BulanIni
+        );
+
+        $total = round(array_sum($beginMacByWarehouse), 2);
+
+        $hasInitialBalance = DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $warehouseOutletIds)
+            ->where('reference_type', 'initial_balance')
+            ->whereDate('date', $tanggal1BulanIni)
+            ->exists();
+
+        $count = $this->countBeginInventoryItems($outletId, $tanggal1BulanIni, $hasInitialBalance);
+
+        return [
+            'total' => $total,
+            'count' => $count,
+            'source' => $hasInitialBalance ? 'initial_balance' : 'current_stock',
+        ];
+    }
+
+    /**
+     * Detail Begin Inventory: item + qty + MAC, dikelompokkan per category.
+     * Logic item sama Cost Report begin-inventory-detail.
+     *
+     * @return array{
+     *   source: string,
+     *   initial_balance_date: string,
+     *   total_value: float,
+     *   groups: list<array{category: string, item_count: int, total_value: float, items: list<array<string, mixed>>}>
+     * }
+     */
+    public function buildBeginInventoryDetail(int $outletId, string $dateFrom, string $search = ''): array
+    {
+        $bulan = Carbon::parse($dateFrom)->format('Y-m');
+        $reportMonth = Carbon::parse($bulan.'-01');
+        $initialBalanceDate = $reportMonth->format('Y-m-01');
+        $search = trim($search);
+
+        $stockBase = DB::table('outlet_food_inventory_stocks as s')
+            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->where('s.id_outlet', $outletId)
+            ->where('wo.status', 'active');
+
+        $hasInitialBalance = (clone $stockBase)
+            ->join('outlet_food_inventory_cards as card', function ($join) use ($initialBalanceDate) {
+                $join->on('card.inventory_item_id', '=', 's.inventory_item_id')
+                    ->on('card.id_outlet', '=', 's.id_outlet')
+                    ->on('card.warehouse_outlet_id', '=', 's.warehouse_outlet_id')
+                    ->where('card.reference_type', '=', 'initial_balance')
+                    ->whereDate('card.date', '=', $initialBalanceDate);
+            })
+            ->exists();
+
+        if ($hasInitialBalance) {
+            $latestInitialBalance = DB::table('outlet_food_inventory_cards as card')
+                ->where('card.id_outlet', $outletId)
+                ->where('card.reference_type', 'initial_balance')
+                ->whereDate('card.date', $initialBalanceDate)
+                ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
+                ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
+
+            $query = $stockBase
+                ->joinSub($latestInitialBalance, 'latest_card', function ($join) {
+                    $join->on('latest_card.inventory_item_id', '=', 's.inventory_item_id')
+                        ->on('latest_card.warehouse_outlet_id', '=', 's.warehouse_outlet_id');
+                })
+                ->join('outlet_food_inventory_cards as card', function ($join) {
+                    $join->on('card.inventory_item_id', '=', 'latest_card.inventory_item_id')
+                        ->on('card.warehouse_outlet_id', '=', 'latest_card.warehouse_outlet_id')
+                        ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key");
+                })
+                ->selectRaw("
+                    COALESCE(c.name, 'Tanpa Kategori') as category_name,
+                    i.name as item_name,
+                    i.sku as item_sku,
+                    wo.name as warehouse_name,
+                    COALESCE(card.saldo_qty_small, 0) as qty,
+                    COALESCE(card.cost_per_small, 0) as mac,
+                    COALESCE(card.saldo_value, 0) as value
+                ");
+        } else {
+            $query = $stockBase->selectRaw("
+                COALESCE(c.name, 'Tanpa Kategori') as category_name,
+                i.name as item_name,
+                i.sku as item_sku,
+                wo.name as warehouse_name,
+                COALESCE(s.qty_small, 0) as qty,
+                COALESCE(s.last_cost_small, 0) as mac,
+                COALESCE(s.qty_small, 0) * COALESCE(s.last_cost_small, 0) as value
+            ");
+        }
+
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('i.name', 'like', '%'.$search.'%')
+                    ->orWhere('i.sku', 'like', '%'.$search.'%')
+                    ->orWhere('c.name', 'like', '%'.$search.'%')
+                    ->orWhere('wo.name', 'like', '%'.$search.'%');
+            });
+        }
+
+        $rows = $query
+            ->orderBy('category_name')
+            ->orderBy('item_name')
+            ->get();
+
+        $groupsMap = [];
+        $totalValue = 0.0;
+        foreach ($rows as $row) {
+            $value = round((float) ($row->value ?? 0), 2);
+            $qty = round((float) ($row->qty ?? 0), 4);
+            $mac = round((float) ($row->mac ?? 0), 4);
+            // Skip baris kosong agar modal tidak penuh item 0
+            if (abs($value) < 0.0001 && abs($qty) < 0.0001) {
+                continue;
+            }
+
+            $category = (string) ($row->category_name ?: 'Tanpa Kategori');
+            if (! isset($groupsMap[$category])) {
+                $groupsMap[$category] = [
+                    'category' => $category,
+                    'item_count' => 0,
+                    'total_value' => 0.0,
+                    'items' => [],
+                ];
+            }
+
+            $groupsMap[$category]['items'][] = [
+                'item_name' => $row->item_name,
+                'item_sku' => $row->item_sku,
+                'warehouse_name' => $row->warehouse_name,
+                'qty' => $qty,
+                'mac' => $mac,
+                'value' => $value,
+            ];
+            $groupsMap[$category]['item_count']++;
+            $groupsMap[$category]['total_value'] = round($groupsMap[$category]['total_value'] + $value, 2);
+            $totalValue = round($totalValue + $value, 2);
+        }
+
+        // Sort groups by total_value desc
+        $groups = array_values($groupsMap);
+        usort($groups, fn ($a, $b) => $b['total_value'] <=> $a['total_value']);
+
+        return [
+            'source' => $hasInitialBalance ? 'initial_balance' : 'current_stock',
+            'initial_balance_date' => $initialBalanceDate,
+            'total_value' => $totalValue,
+            'groups' => $groups,
+        ];
+    }
+
+    private function countBeginInventoryItems(int $outletId, string $initialBalanceDate, bool $hasInitialBalance): int
+    {
+        if ($hasInitialBalance) {
+            return (int) DB::table('outlet_food_inventory_cards as card')
+                ->join('warehouse_outlets as wo', 'card.warehouse_outlet_id', '=', 'wo.id')
+                ->where('card.id_outlet', $outletId)
+                ->where('wo.status', 'active')
+                ->where('card.reference_type', 'initial_balance')
+                ->whereDate('card.date', $initialBalanceDate)
+                ->where(function ($q) {
+                    $q->where('card.saldo_value', '!=', 0)
+                        ->orWhere('card.saldo_qty_small', '!=', 0);
+                })
+                ->selectRaw('COUNT(DISTINCT CONCAT(card.inventory_item_id, "-", card.warehouse_outlet_id)) as cnt')
+                ->value('cnt');
+        }
+
+        return (int) DB::table('outlet_food_inventory_stocks as s')
+            ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->where('s.id_outlet', $outletId)
+            ->where('wo.status', 'active')
+            ->where(function ($q) {
+                $q->whereRaw('COALESCE(s.qty_small, 0) * COALESCE(s.last_cost_small, 0) != 0')
+                    ->orWhere('s.qty_small', '!=', 0);
+            })
+            ->count('s.id');
     }
 
     /**
