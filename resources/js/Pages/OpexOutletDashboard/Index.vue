@@ -1,13 +1,13 @@
 <template>
   <AppLayout>
-    <Head title="Outlet Spend Dashboard" />
+    <Head title="Outlet Dashboard" />
 
     <div class="w-full min-h-screen bg-gradient-to-b from-slate-50 via-white to-sky-50/40 px-4 sm:px-6 lg:px-8 py-6">
       <!-- Header -->
       <div class="flex flex-col xl:flex-row xl:items-end xl:justify-between gap-4 mb-6">
         <div>
           <p class="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600 mb-1">Outlet Operations</p>
-          <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Revenue & Spend Dashboard</h1>
+          <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Outlet Dashboard</h1>
           <p class="text-slate-500 mt-1 text-sm">
             Ringkasan revenue, GSR/RO, RWS, Retail Food & Non Food
             <span v-if="dashboardData.outlet_name"> · {{ dashboardData.outlet_name }}</span>
@@ -704,13 +704,22 @@
                     <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Submission</p>
                     <p class="text-lg font-bold text-teal-700">{{ formatDecimal(att.overtime?.submission_hours) }} jam</p>
                     <p class="text-xs font-semibold text-teal-800">{{ formatCurrency(att.overtime?.submission_amount) }}</p>
+                    <p class="mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">Rata-rata / karyawan</p>
+                    <p class="text-sm font-semibold text-teal-700">{{ formatDecimal(att.overtime?.avg_submission_hours) }} jam</p>
+                    <p class="text-[11px] font-medium text-teal-800">{{ formatCurrency(att.overtime?.avg_submission_amount) }}</p>
                   </div>
                   <div>
                     <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Real</p>
                     <p class="text-lg font-bold text-violet-700">{{ formatNumber(att.overtime?.real_hours) }} jam</p>
                     <p class="text-xs font-semibold text-violet-800">{{ formatCurrency(att.overtime?.real_amount) }}</p>
+                    <p class="mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">Rata-rata / karyawan</p>
+                    <p class="text-sm font-semibold text-violet-700">{{ formatDecimal(att.overtime?.avg_real_hours) }} jam</p>
+                    <p class="text-[11px] font-medium text-violet-800">{{ formatCurrency(att.overtime?.avg_real_amount) }}</p>
                   </div>
                 </div>
+                <p class="mt-2 text-[11px] text-slate-400">
+                  {{ att.overtime?.employee_count || 0 }} karyawan
+                </p>
               </div>
               <span class="text-violet-400 text-xs mt-1 shrink-0">Detail →</span>
             </div>
@@ -1833,7 +1842,7 @@ const cardHelps = {
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.',
   employee_overtime:
-    'OT Submission = jam & nilai dari Overtime Submission approved.\nOT Real = jam lembur aktual (absensi + Extra Off OT, dikurangi 1+1) seperti Attendance Report per outlet.\nKlik card → per karyawan. Klik nama → per tanggal.',
+    'OT Submission = jam & nilai dari Overtime Submission approved.\nOT Real = jam lembur aktual (absensi + Extra Off OT, dikurangi 1+1) seperti Attendance Report per outlet.\nRata-rata / karyawan = total ÷ jumlah karyawan yang punya absensi di periode 26–25.\nKlik card → per karyawan. Klik nama → per tanggal.',
   late_absen:
     'Total menit keterlambatan (hari non-off) seperti Attendance Report per outlet.\nKlik card → per karyawan. Klik nama → tanggal & menit telat.',
   leave:

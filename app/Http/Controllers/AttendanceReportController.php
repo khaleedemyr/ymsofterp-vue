@@ -4251,6 +4251,11 @@ class AttendanceReportController extends Controller
                 'submission_amount' => 0,
                 'real_hours' => 0,
                 'real_amount' => 0,
+                'employee_count' => 0,
+                'avg_submission_hours' => 0.0,
+                'avg_submission_amount' => 0,
+                'avg_real_hours' => 0.0,
+                'avg_real_amount' => 0,
                 'employees' => [],
             ],
             'late' => [
@@ -4509,12 +4514,24 @@ class AttendanceReportController extends Controller
 
         $leave = $this->buildOpexLeaveBundle($outletId, $start, $end, $employmentScope);
 
+        // Rata-rata per karyawan: sama Outlet Summary (bagi semua karyawan yang punya absensi di periode).
+        $employeeCount = count($userMeta);
+        $avgSubmissionHours = $employeeCount > 0 ? round($totalSubmissionHours / $employeeCount, 2) : 0.0;
+        $avgRealHours = $employeeCount > 0 ? round($totalRealHours / $employeeCount, 2) : 0.0;
+        $avgSubmissionAmount = $employeeCount > 0 ? (int) round($totalSubmissionAmount / $employeeCount) : 0;
+        $avgRealAmount = $employeeCount > 0 ? (int) round($totalRealAmount / $employeeCount) : 0;
+
         return [
             'overtime' => [
                 'submission_hours' => $totalSubmissionHours,
                 'submission_amount' => $totalSubmissionAmount,
                 'real_hours' => $totalRealHours,
                 'real_amount' => $totalRealAmount,
+                'employee_count' => $employeeCount,
+                'avg_submission_hours' => $avgSubmissionHours,
+                'avg_submission_amount' => $avgSubmissionAmount,
+                'avg_real_hours' => $avgRealHours,
+                'avg_real_amount' => $avgRealAmount,
                 'employees' => $overtimeEmployees,
             ],
             'late' => [

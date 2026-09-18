@@ -193,7 +193,7 @@ export default {
     "outlet_wip_production": "Produksi WIP Outlet",
     "laporan_outlet_wip": "Laporan WIP Outlet",
     "sales_report": "Laporan Penjualan",
-    "opex_outlet_dashboard": "Revenue & Spend Dashboard",
+    "opex_outlet_dashboard": "Outlet Dashboard",
     "daily_outlet_revenue": "Pendapatan Harian Outlet",
     "weekly_outlet_fb_revenue": "Pendapatan FB Mingguan Outlet",
     "daily_revenue_forecast": "Forecast Pendapatan Harian",
