@@ -102,6 +102,7 @@ class OpexOutletDashboardController extends Controller
             $sheetMeta = [
                 'warehouse_columns' => $sheet['warehouse_columns'],
                 'suppliers' => $sheet['suppliers'],
+                'retail_non_food_transactions' => $this->listRetailNonFood($outletId, $dateFrom, $dateTo)->values()->all(),
             ];
         } elseif ($type === 'stock_cut') {
             $transactions = collect($this->opexService->buildStockCutDaily($outletId, $dateFrom, $dateTo));
@@ -138,7 +139,7 @@ class OpexOutletDashboardController extends Controller
         }
 
         if ($search !== '') {
-            $transactions = $transactions->filter(function ($row) use ($search) {
+            $matchesSearch = function ($row) use ($search) {
                 $itemHay = '';
                 if (! empty($row->items) && is_array($row->items)) {
                     $itemHay = implode(' ', array_map(function ($item) {
@@ -165,7 +166,16 @@ class OpexOutletDashboardController extends Controller
                 ])));
 
                 return str_contains($hay, strtolower($search));
-            })->values();
+            };
+
+            $transactions = $transactions->filter($matchesSearch)->values();
+
+            if ($type === 'total_spend' && is_array($sheetMeta['retail_non_food_transactions'] ?? null)) {
+                $sheetMeta['retail_non_food_transactions'] = collect($sheetMeta['retail_non_food_transactions'])
+                    ->filter($matchesSearch)
+                    ->values()
+                    ->all();
+            }
         }
 
         $total = $transactions->count();

@@ -255,10 +255,27 @@
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
                 <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · RWS · Retail Food</p>
-                <p v-if="ov.mcs_purchase_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
-                  {{ ov.mcs_purchase_revenue_pct }}% dari revenue
-                </p>
                 <p class="mt-1 text-xs font-medium" :class="vsClass(vs.mcs_purchase, true)">{{ vsLabel(vs.mcs_purchase) }}</p>
+                <div class="mt-3 max-w-md space-y-2">
+                  <div>
+                    <div class="flex items-center justify-between gap-2 mb-0.5">
+                      <span class="text-[10px] font-medium uppercase tracking-wide text-slate-400">vs Total Spend</span>
+                      <span class="text-[10px] font-semibold text-slate-600">{{ spendShare(ov.mcs_purchase) }}%</span>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div class="h-full rounded-full bg-amber-400" :style="{ width: spendShare(ov.mcs_purchase) + '%' }"></div>
+                    </div>
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between gap-2 mb-0.5">
+                      <span class="text-[10px] font-medium uppercase tracking-wide text-slate-400">vs Revenue</span>
+                      <span class="text-[10px] font-semibold text-slate-600">{{ revenueShare(ov.mcs_purchase) }}%</span>
+                    </div>
+                    <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div class="h-full rounded-full bg-amber-400 opacity-80" :style="{ width: Math.min(100, revenueShare(ov.mcs_purchase)) + '%' }"></div>
+                    </div>
+                  </div>
+                </div>
                 <div class="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-x-3 gap-y-1.5">
                   <div
                     v-for="row in mcsPurchaseByCategory"
@@ -982,6 +999,48 @@
               <p class="text-xs text-slate-500">
                 {{ modalPagination.total }} hari · klik nilai untuk melihat transaksi &amp; detail item
               </p>
+
+              <div class="pt-2">
+                <h3 class="text-sm font-semibold text-slate-800 mb-2">Retail Non Food</h3>
+                <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table class="min-w-full text-sm">
+                    <thead class="bg-orange-50 text-orange-800">
+                      <tr>
+                        <th class="px-4 py-3 text-left">Tanggal</th>
+                        <th class="px-4 py-3 text-left">Sumber</th>
+                        <th class="px-4 py-3 text-left">Nomor</th>
+                        <th class="px-4 py-3 text-left">User</th>
+                        <th class="px-4 py-3 text-left">Category</th>
+                        <th class="px-4 py-3 text-right">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="txn in spendRetailNonFoodTxns"
+                        :key="'rnf-' + txn.id"
+                        class="border-t border-slate-100"
+                      >
+                        <td class="px-4 py-2.5">{{ formatShortDate(txn.date) }}</td>
+                        <td class="px-4 py-2.5">
+                          <span class="px-2 py-0.5 rounded-lg bg-orange-50 text-orange-700 text-xs font-medium">{{ txn.source || 'Retail Non Food' }}</span>
+                        </td>
+                        <td class="px-4 py-2.5 font-medium text-slate-800">{{ txn.number || '-' }}</td>
+                        <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || '-' }}</td>
+                        <td class="px-4 py-2.5 text-slate-600">{{ txn.category_name || '-' }}</td>
+                        <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(txn.amount) }}</td>
+                      </tr>
+                      <tr v-if="spendRetailNonFoodTxns.length" class="bg-orange-900 text-white font-semibold border-t border-orange-700">
+                        <td class="px-4 py-2.5" colspan="5">TOTAL</td>
+                        <td class="px-4 py-2.5 text-right">{{ formatCurrency(spendRetailNonFoodTotal) }}</td>
+                      </tr>
+                      <tr v-if="!spendRetailNonFoodTxns.length">
+                        <td colspan="6" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi Retail Non Food</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+                <p class="text-xs text-slate-500 mt-2">{{ spendRetailNonFoodTxns.length }} transaksi Retail Non Food</p>
+              </div>
             </template>
 
             <!-- Stock Cut: nilai harian -->
@@ -1380,13 +1439,13 @@ const cardHelps = {
   petty_cash:
     'Subset cash dari Retail Food + Retail Non Food (payment_method = cash).\nBukan tambahan di luar RF/RNF — hanya ringkasan cash spend.\n\nDua bar: vs Total Spend & vs Revenue.',
   mcs_purchase:
-    'Pembelian item kategori MCS (Marketing, Chemical, Stationary, dll) dari GSR + RWS + Retail Food.\n\nBreakdown per category di bawah nilai total.\n% dari revenue = MCS ÷ Revenue.',
+    'Pembelian item kategori MCS (Marketing, Chemical, Stationary, dll) dari GSR + RWS + Retail Food.\n\nBreakdown per category di bawah nilai total.\nDua bar: vs Total Spend & vs Revenue.',
   purchase_category:
     'Pie chart komposisi pembelian semua category item dari GSR + RWS + Retail Food.\nKlik slice untuk buka detail transaksi.',
   revenue:
     'Total penjualan outlet (orders) pada periode filter.\nBudget & performa dibanding Revenue Target bulanan (jika ada).',
   total_spend:
-    'Total belanja outlet = GSR/RO + RWS + Retail Food + Retail Non Food.\n\nModal detail menampilkan format harian Receiving Sheet (warehouse + supplier).\n% di bawah = Total Spend ÷ Revenue.',
+    'Total belanja outlet = GSR/RO + RWS + Retail Food + Retail Non Food.\n\nModal detail:\n• tabel harian Receiving Sheet (warehouse + supplier RF)\n• list transaksi Retail Non Food (User + Category) di bawahnya\n% di bawah = Total Spend ÷ Revenue.',
   net:
     'Net = Revenue − Total Spend.\nBar menunjukkan rasio spend terhadap revenue.',
   cover:
@@ -1945,6 +2004,12 @@ const spendWarehouseColumns = computed(() =>
 )
 
 const spendSuppliers = computed(() => modalSheetMeta.value?.suppliers || [])
+
+const spendRetailNonFoodTxns = computed(() => modalSheetMeta.value?.retail_non_food_transactions || [])
+
+const spendRetailNonFoodTotal = computed(() =>
+  (spendRetailNonFoodTxns.value || []).reduce((acc, r) => acc + (Number(r.amount) || 0), 0)
+)
 
 const spendModalTotals = computed(() => {
   const rows = modalTxns.value || []
