@@ -88,14 +88,20 @@
 
           <div v-else class="grid grid-cols-1 xl:grid-cols-12 gap-4">
             <div class="xl:col-span-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
-              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Forecast</p>
+              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 inline-flex items-center gap-1">
+                Forecast
+                <CardHelpTip :text="cardHelps.forecast" />
+              </p>
               <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(roForecast.forecast) }}</p>
               <p class="mt-1 text-xs text-slate-500">Total forecast revenue 1 bulan penuh</p>
             </div>
 
             <div class="xl:col-span-4 rounded-2xl border border-teal-100 bg-teal-50/40 p-4">
               <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">F &amp; B Purchase</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700 inline-flex items-center gap-1">
+                  F &amp; B Purchase
+                  <CardHelpTip :text="cardHelps.fb_purchase" />
+                </p>
                 <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">Budget {{ roForecast.fb?.budget_ratio_pct || 40 }}%</span>
               </div>
               <div class="mt-3">
@@ -140,7 +146,10 @@
 
             <div class="xl:col-span-5 rounded-2xl border border-cyan-100 bg-cyan-50/40 p-4">
               <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Service Purchase</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
+                  Service Purchase
+                  <CardHelpTip :text="cardHelps.service_purchase" />
+                </p>
                 <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">Budget {{ roForecast.service?.budget_ratio_pct || 5 }}%</span>
               </div>
               <div class="mt-3">
@@ -196,7 +205,10 @@
             @click="openCard(card.key)"
           >
             <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-semibold uppercase tracking-wide" :class="card.tone">{{ card.label }}</span>
+              <span class="text-xs font-semibold uppercase tracking-wide inline-flex items-center gap-1" :class="card.tone">
+                {{ card.label }}
+                <CardHelpTip :text="card.help" />
+              </span>
               <span class="w-10 h-10 rounded-xl flex items-center justify-center" :class="card.iconBg">
                 <i :class="[card.icon, card.tone]"></i>
               </span>
@@ -208,7 +220,7 @@
             </p>
             <p v-if="card.paymentHint" class="text-xs text-slate-500 mt-1">{{ card.paymentHint }}</p>
             <p class="mt-1 text-xs font-medium" :class="vsClass(card.vs, true)">{{ vsLabel(card.vs) }}</p>
-            <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+            <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden" :title="cardHelps.spend_bar">
               <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
             </div>
           </button>
@@ -223,7 +235,10 @@
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembelian MCS</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 inline-flex items-center gap-1">
+                  Pembelian MCS
+                  <CardHelpTip :text="cardHelps.mcs_purchase" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
                 <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · RWS · Retail Food</p>
                 <p v-if="ov.mcs_purchase_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
@@ -257,7 +272,10 @@
         </div>
         <div v-else class="mb-6">
           <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
-            <h2 class="text-lg font-bold text-slate-900 mb-1">Pembelian per Category</h2>
+            <h2 class="text-lg font-bold text-slate-900 mb-1 inline-flex items-center gap-1.5">
+              Pembelian per Category
+              <CardHelpTip :text="cardHelps.purchase_category" />
+            </h2>
             <p class="text-xs text-slate-500 mb-4">Semua category · GSR · RWS · Retail Food — klik slice untuk detail</p>
             <div class="max-w-xl mx-auto">
               <apexchart
@@ -285,7 +303,10 @@
           >
             <div class="flex items-start justify-between">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Revenue</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-sky-600 inline-flex items-center gap-1">
+                  Revenue
+                  <CardHelpTip :text="cardHelps.revenue" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.revenue) }}</p>
                 <p class="mt-2 text-sm text-slate-500">{{ ov.revenue_count || 0 }} orders</p>
                 <template v-if="ov.revenue_monthly_budget != null">
@@ -325,7 +346,10 @@
           >
             <div class="flex items-start justify-between">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600">Total Spend</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600 inline-flex items-center gap-1">
+                  Total Spend
+                  <CardHelpTip :text="cardHelps.total_spend" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.total_spend) }}</p>
                 <p class="mt-2 text-sm text-slate-500">
                   {{ ov.spend_ratio_percent != null ? ov.spend_ratio_percent + '% dari revenue' : '—' }}
@@ -339,7 +363,10 @@
           </button>
 
           <div class="lg:col-span-4 rounded-3xl bg-white border border-emerald-100 shadow-sm p-6">
-            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600">Net (Rev − Spend)</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-emerald-600 inline-flex items-center gap-1">
+              Net (Rev − Spend)
+              <CardHelpTip :text="cardHelps.net" />
+            </p>
             <p class="mt-2 text-3xl font-bold" :class="(ov.net || 0) >= 0 ? 'text-emerald-700' : 'text-rose-600'">
               {{ formatCurrency(ov.net) }}
             </p>
@@ -356,13 +383,19 @@
         <!-- Cover / Pax / Discount / Compliment / GS / OC -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <div class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5">
-            <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Cover / Pax</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 inline-flex items-center gap-1">
+              Cover / Pax
+              <CardHelpTip :text="cardHelps.cover" />
+            </p>
             <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.cover) }}</p>
             <p class="mt-1 text-xs text-slate-500">Total tamu periode filter</p>
             <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cover)">{{ vsLabel(vs.cover, 'number') }}</p>
           </div>
           <div class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5">
-            <p class="text-xs font-semibold uppercase tracking-wide text-violet-600">Average Pax</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-violet-600 inline-flex items-center gap-1">
+              Average Pax
+              <CardHelpTip :text="cardHelps.avg_pax" />
+            </p>
             <p class="mt-2 text-3xl font-bold text-slate-900">
               {{ ov.avg_pax != null ? formatDecimal(ov.avg_pax) : '—' }}
             </p>
@@ -370,7 +403,10 @@
             <p class="mt-1 text-xs font-medium" :class="vsClass(vs.avg_pax)">{{ vsLabel(vs.avg_pax, 'decimal') }}</p>
           </div>
           <div class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5">
-            <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Avg Check</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600 inline-flex items-center gap-1">
+              Avg Check
+              <CardHelpTip :text="cardHelps.avg_check" />
+            </p>
             <p class="mt-2 text-3xl font-bold text-slate-900">
               {{ ov.avg_check != null ? formatCurrency(ov.avg_check) : '—' }}
             </p>
@@ -384,7 +420,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-amber-600">Diskon</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-amber-600 inline-flex items-center gap-1">
+                  Diskon
+                  <CardHelpTip :text="cardHelps.discount" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.discount_count || 0 }} bill
@@ -402,7 +441,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Compliment</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600 inline-flex items-center gap-1">
+                  Compliment
+                  <CardHelpTip :text="cardHelps.discount_compliment" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount_compliment) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   Bill {{ formatCurrency(ov.discount_compliment_bill) }}
@@ -420,7 +462,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-orange-600">Guest Satisfaction</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-orange-600 inline-flex items-center gap-1">
+                  Guest Satisfaction
+                  <CardHelpTip :text="cardHelps.discount_guest_satisfaction" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.discount_guest_satisfaction) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   Bill {{ formatCurrency(ov.discount_guest_satisfaction_bill) }}
@@ -438,7 +483,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Officer Check</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 inline-flex items-center gap-1">
+                  Officer Check
+                  <CardHelpTip :text="cardHelps.officer_check" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.officer_check) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.officer_check_count || 0 }} pembayaran OFFICER_CHECK
@@ -455,7 +503,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-lime-700">Outlet City Ledger</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-lime-700 inline-flex items-center gap-1">
+                  Outlet City Ledger
+                  <CardHelpTip :text="cardHelps.outlet_city_ledger" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.outlet_city_ledger) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.outlet_city_ledger_count || 0 }} pembayaran OUTLET_CITY_LEDGER
@@ -474,7 +525,10 @@
         </div>
         <div v-else-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
           <div class="rounded-3xl bg-white border border-sky-100 shadow-sm p-5">
-            <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Member Bills</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-sky-600 inline-flex items-center gap-1">
+              Member Bills
+              <CardHelpTip :text="cardHelps.member_bills" />
+            </p>
             <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(ov.member_bills) }}</p>
             <p class="mt-1 text-xs text-slate-500">
               Revenue member {{ formatCurrency(ov.member_revenue) }}
@@ -488,7 +542,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">Point Earn</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600 inline-flex items-center gap-1">
+                  Point Earn
+                  <CardHelpTip :text="cardHelps.member_top_up" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">
                   {{ formatNumber(ov.member_top_up_points) }}
                   <span class="text-base font-semibold text-slate-500">pts</span>
@@ -508,7 +565,10 @@
           >
             <div class="flex items-start justify-between gap-2">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600">Point Redeem</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-600 inline-flex items-center gap-1">
+                  Point Redeem
+                  <CardHelpTip :text="cardHelps.member_redeem" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.member_redeem) }}</p>
                 <p class="mt-1 text-xs text-slate-500">
                   {{ ov.member_redeem_count || 0 }} trx
@@ -530,7 +590,10 @@
           >
             <div class="flex items-start justify-between">
               <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600">Stock Cut</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600 inline-flex items-center gap-1">
+                  Stock Cut
+                  <CardHelpTip :text="cardHelps.stock_cut" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.stock_cut) }}</p>
                 <p class="mt-2 text-sm text-slate-500">{{ ov.stock_cut_count || 0 }} potong stok</p>
                 <p v-if="ov.stock_cut_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
@@ -551,7 +614,10 @@
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">Category Cost</p>
+                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600 inline-flex items-center gap-1">
+                  Category Cost
+                  <CardHelpTip :text="cardHelps.category_cost" />
+                </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.category_cost) }}</p>
                 <p class="mt-1 text-sm text-slate-500">{{ ov.category_cost_count || 0 }} dokumen</p>
                 <p v-if="ov.category_cost_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
@@ -1278,8 +1344,66 @@
 <script setup>
 import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import CardHelpTip from '@/Components/CardHelpTip.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
+
+const cardHelps = {
+  forecast:
+    'Total forecast revenue 1 bulan penuh dari Revenue Target outlet.\n\nDipakai sebagai dasar budget F&B (40%) dan Service (5%). Periode selalu full calendar month, bukan MTD filter.',
+  fb_purchase:
+    'Purchased F&B = nilai diterima untuk warehouse Kitchen + Bar:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS (biasanya Main Store / MK → F&B)\n\nBudget = 40% × Forecast.\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
+  service_purchase:
+    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 5% × Forecast.\nRO Outstanding / sisa budget sama logikanya dengan F&B.',
+  gsr_ro:
+    'Nilai penerimaan outlet pada periode filter:\n• GR = Outlet Food Good Receive × harga RO\n• GSR = Serial Goods Receive × cost (cost_small, dikonversi unit)\n\nProgress bar = share terhadap Total Spend (bukan % revenue).',
+  rws:
+    'Retail Warehouse Sales ke customer tipe branch (outlet ini).\nStatus completed, dijumlah dari total_amount.\n\nIkut ke Purchased F&B (kecuali gudang service).\nProgress bar = share terhadap Total Spend.',
+  retail_food:
+    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nIkut ke Purchased F&B/Service menurut warehouse_outlet (Kitchen/Bar/Service).\n% dari revenue = nilai card ÷ Revenue.\nProgress bar = share terhadap Total Spend.',
+  retail_non_food:
+    'Transaksi Retail Non Food status approved (Cash + Contra Bon).\n\nMasuk Total Spend, tetapi tidak masuk Purchased F&B/Service.\n% dari revenue = nilai card ÷ Revenue.\nProgress bar = share terhadap Total Spend.',
+  petty_cash:
+    'Subset cash dari Retail Food + Retail Non Food (payment_method = cash).\nBukan tambahan di luar RF/RNF — hanya ringkasan cash spend.\n\nProgress bar = share terhadap Total Spend.',
+  mcs_purchase:
+    'Pembelian item kategori MCS (Marketing, Chemical, Stationary, dll) dari GSR + RWS + Retail Food.\n\nBreakdown per category di bawah nilai total.\n% dari revenue = MCS ÷ Revenue.',
+  purchase_category:
+    'Pie chart komposisi pembelian semua category item dari GSR + RWS + Retail Food.\nKlik slice untuk buka detail transaksi.',
+  revenue:
+    'Total penjualan outlet (orders) pada periode filter.\nBudget & performa dibanding Revenue Target bulanan (jika ada).',
+  total_spend:
+    'Total belanja outlet = GSR/RO + RWS + Retail Food + Retail Non Food.\n\nModal detail menampilkan format harian Receiving Sheet (warehouse + supplier).\n% di bawah = Total Spend ÷ Revenue.',
+  net:
+    'Net = Revenue − Total Spend.\nBar menunjukkan rasio spend terhadap revenue.',
+  cover:
+    'Total cover / pax (jumlah tamu) dari transaksi penjualan periode filter.',
+  avg_pax:
+    'Average Pax = Cover ÷ jumlah bill.',
+  avg_check:
+    'Avg Check = Revenue ÷ Cover.',
+  discount:
+    'Total diskon pada bill penjualan periode filter.',
+  discount_compliment:
+    'Diskon tipe Compliment (nilai diskon & nilai bill terkait).',
+  discount_guest_satisfaction:
+    'Diskon tipe Guest Satisfaction.',
+  officer_check:
+    'Pembayaran / transaksi Officer Check pada periode filter.',
+  outlet_city_ledger:
+    'Outlet City Ledger (piutang/ledger antar outlet) pada periode filter.',
+  member_bills:
+    'Jumlah bill member pada periode filter.',
+  member_top_up:
+    'Point earn / top-up member.',
+  member_redeem:
+    'Point redeem member.',
+  stock_cut:
+    'Nilai stock cut dari menu Stock Cut (value_out, status success) pada periode filter.',
+  category_cost:
+    'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.',
+  spend_bar:
+    'Progress bar = (nilai card ÷ Total Spend) × 100.\nBukan persentase dari revenue.',
+}
 
 const props = defineProps({
   dashboardData: { type: Object, default: () => ({}) },
@@ -1468,6 +1592,7 @@ const sourceCards = computed(() => [
     revenuePct: null,
     paymentHint: null,
     vs: vs.value.gsr_ro,
+    help: cardHelps.gsr_ro,
     icon: 'fa-solid fa-truck',
     tone: 'text-amber-600',
     iconBg: 'bg-amber-50',
@@ -1482,6 +1607,7 @@ const sourceCards = computed(() => [
     revenuePct: null,
     paymentHint: null,
     vs: vs.value.rws,
+    help: cardHelps.rws,
     icon: 'fa-solid fa-warehouse',
     tone: 'text-violet-600',
     iconBg: 'bg-violet-50',
@@ -1496,6 +1622,7 @@ const sourceCards = computed(() => [
     revenuePct: ov.value.retail_food_revenue_pct,
     paymentHint: `Cash ${ov.value.retail_food_cash_count || 0} · Contra Bon ${ov.value.retail_food_contra_bon_count || 0}`,
     vs: vs.value.retail_food,
+    help: cardHelps.retail_food,
     icon: 'fa-solid fa-utensils',
     tone: 'text-emerald-600',
     iconBg: 'bg-emerald-50',
@@ -1510,6 +1637,7 @@ const sourceCards = computed(() => [
     revenuePct: ov.value.retail_non_food_revenue_pct,
     paymentHint: `Cash ${ov.value.retail_non_food_cash_count || 0} · Contra Bon ${ov.value.retail_non_food_contra_bon_count || 0}`,
     vs: vs.value.retail_non_food,
+    help: cardHelps.retail_non_food,
     icon: 'fa-solid fa-bag-shopping',
     tone: 'text-orange-600',
     iconBg: 'bg-orange-50',
@@ -1524,6 +1652,7 @@ const sourceCards = computed(() => [
     revenuePct: ov.value.petty_cash_revenue_pct,
     paymentHint: `${ov.value.petty_cash_count || 0} trx cash (RF+RNF)`,
     vs: vs.value.petty_cash,
+    help: cardHelps.petty_cash,
     icon: 'fa-solid fa-wallet',
     tone: 'text-cyan-600',
     iconBg: 'bg-cyan-50',
