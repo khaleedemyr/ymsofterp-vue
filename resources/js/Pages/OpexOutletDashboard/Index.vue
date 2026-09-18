@@ -1018,13 +1018,14 @@
                       <tr
                         v-for="txn in spendRetailNonFoodTxns"
                         :key="'rnf-' + txn.id"
-                        class="border-t border-slate-100"
+                        class="border-t border-slate-100 cursor-pointer hover:bg-orange-50/70"
+                        @click="openRetailNonFoodDetail(txn)"
                       >
                         <td class="px-4 py-2.5">{{ formatShortDate(txn.date) }}</td>
                         <td class="px-4 py-2.5">
                           <span class="px-2 py-0.5 rounded-lg bg-orange-50 text-orange-700 text-xs font-medium">{{ txn.source || 'Retail Non Food' }}</span>
                         </td>
-                        <td class="px-4 py-2.5 font-medium text-slate-800">{{ txn.number || '-' }}</td>
+                        <td class="px-4 py-2.5 font-medium text-slate-800 underline decoration-dotted underline-offset-2">{{ txn.number || '-' }}</td>
                         <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || '-' }}</td>
                         <td class="px-4 py-2.5 text-slate-600">{{ txn.category_name || '-' }}</td>
                         <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(txn.amount) }}</td>
@@ -1039,7 +1040,7 @@
                     </tbody>
                   </table>
                 </div>
-                <p class="text-xs text-slate-500 mt-2">{{ spendRetailNonFoodTxns.length }} transaksi Retail Non Food</p>
+                <p class="text-xs text-slate-500 mt-2">{{ spendRetailNonFoodTxns.length }} transaksi · klik baris untuk melihat item yang dibeli</p>
               </div>
             </template>
 
@@ -1266,12 +1267,20 @@
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="txn in modalTxns" :key="txn.id + '-' + (txn.source || '')" class="border-t border-slate-100">
+                  <tr
+                    v-for="txn in modalTxns"
+                    :key="txn.id + '-' + (txn.source || '')"
+                    class="border-t border-slate-100"
+                    :class="modalShowsUserCategory ? 'cursor-pointer hover:bg-orange-50/60' : ''"
+                    @click="modalShowsUserCategory ? openRetailNonFoodDetail(txn) : null"
+                  >
                     <td class="px-4 py-2.5">{{ formatShortDate(txn.date) }}</td>
                     <td class="px-4 py-2.5">
                       <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.source || txn.type }}</span>
                     </td>
-                    <td class="px-4 py-2.5 font-medium text-slate-800">{{ txn.number || '-' }}</td>
+                    <td class="px-4 py-2.5 font-medium text-slate-800" :class="modalShowsUserCategory ? 'underline decoration-dotted underline-offset-2' : ''">
+                      {{ txn.number || '-' }}
+                    </td>
                     <template v-if="modalShowsUserSupplier">
                       <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || '-' }}</td>
                       <td class="px-4 py-2.5 text-slate-600">{{ txn.supplier_name || '-' }}</td>
@@ -1363,6 +1372,7 @@
               <div class="bg-slate-50 px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
                 <div><span class="text-slate-500">Tipe:</span> <strong>{{ txn.source }}</strong></div>
                 <div><span class="text-slate-500">No. Transaksi:</span> <strong>{{ txn.number || '-' }}</strong></div>
+                <div v-if="txn.category_name"><span class="text-slate-500">Category:</span> <strong>{{ txn.category_name }}</strong></div>
                 <div v-if="txn.ro_number"><span class="text-slate-500">No. RO/FO:</span> <strong>{{ txn.ro_number }}</strong></div>
                 <template v-if="txn.source === 'GSR' || txn.source === 'GR'">
                   <div><span class="text-slate-500">Pembuat RO:</span> <strong>{{ txn.ro_creator || txn.ordered_by || '-' }}</strong></div>
@@ -2094,6 +2104,39 @@ const closeModal = () => {
   expandedMcsTxnIds.value = {}
   mcsCategoryFilter.value = ''
   closeSpendCellDetail()
+}
+
+const openRetailNonFoodDetail = (txn) => {
+  if (!txn) return
+  const items = (txn.items || []).map((item) => ({
+    name: item.name || item.item_name || '-',
+    qty: item.qty,
+    unit: item.unit || '-',
+    price: item.price,
+    subtotal: item.subtotal ?? item.amount,
+  }))
+  spendDetailOpen.value = true
+  spendDetailLoading.value = false
+  spendDetailError.value = ''
+  spendDetailMeta.value = {
+    title: `Retail Non Food · ${txn.number || '-'}`,
+    date: txn.date,
+    amount: txn.amount,
+  }
+  spendDetailData.value = {
+    title: spendDetailMeta.value.title,
+    transactions: [
+      {
+        source: txn.source || 'Retail Non Food',
+        number: txn.number,
+        category_name: txn.category_name,
+        ordered_by: txn.creator_name,
+        total: Number(txn.amount) || 0,
+        items,
+      },
+    ],
+    grand_total: Number(txn.amount) || 0,
+  }
 }
 
 const openSpendCellDetail = async (type, key, label, date, amount) => {

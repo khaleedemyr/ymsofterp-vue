@@ -144,8 +144,8 @@ class OpexOutletDashboardController extends Controller
                 if (! empty($row->items) && is_array($row->items)) {
                     $itemHay = implode(' ', array_map(function ($item) {
                         return is_array($item)
-                            ? (($item['item_name'] ?? '').' '.($item['category'] ?? ''))
-                            : (($item->item_name ?? '').' '.($item->category ?? ''));
+                            ? (($item['item_name'] ?? '').' '.($item['name'] ?? '').' '.($item['category'] ?? ''))
+                            : (($item->item_name ?? '').' '.($item->name ?? '').' '.($item->category ?? ''));
                     }, $row->items));
                 }
                 $hay = strtolower(implode(' ', array_filter([
@@ -757,7 +757,7 @@ class OpexOutletDashboardController extends Controller
 
     private function listRetailNonFood(int $outletId, string $dateFrom, string $dateTo)
     {
-        return DB::table('retail_non_food as rnf')
+        $rows = DB::table('retail_non_food as rnf')
             ->leftJoin('purchase_requisition_categories as cat', 'rnf.category_budget_id', '=', 'cat.id')
             ->leftJoin('users as u', 'rnf.created_by', '=', 'u.id')
             ->where('rnf.outlet_id', $outletId)
@@ -775,14 +775,32 @@ class OpexOutletDashboardController extends Controller
                 'rnf.payment_method',
                 'cat.name as category_name',
                 'u.nama_lengkap as creator_name',
-            ])
-            ->map(function ($row) {
-                $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
-                $row->type = 'retail_non_food';
-                $row->source = 'Retail Non Food · '.$method;
+            ]);
 
-                return $row;
-            });
+        $ids = $rows->pluck('id')->filter()->values()->all();
+        $itemsByHeader = collect();
+        if ($ids !== []) {
+            $itemsByHeader = DB::table('retail_non_food_items')
+                ->whereIn('retail_non_food_id', $ids)
+                ->orderBy('id')
+                ->get(['retail_non_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal'])
+                ->groupBy('retail_non_food_id');
+        }
+
+        return $rows->map(function ($row) use ($itemsByHeader) {
+            $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
+            $row->type = 'retail_non_food';
+            $row->source = 'Retail Non Food · '.$method;
+            $row->items = ($itemsByHeader->get($row->id) ?? collect())->map(fn ($i) => [
+                'name' => $i->item_name,
+                'qty' => (float) $i->qty,
+                'unit' => $i->unit,
+                'price' => (float) $i->price,
+                'subtotal' => (float) $i->subtotal,
+            ])->values()->all();
+
+            return $row;
+        });
     }
 
     private function listPettyCash(int $outletId, string $dateFrom, string $dateTo)
