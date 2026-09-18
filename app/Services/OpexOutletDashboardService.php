@@ -2252,48 +2252,238 @@ class OpexOutletDashboardService
      */
     public function stockCutByDate(int $outletId, string $dateFrom, string $dateTo): array
     {
-        if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
-            return [];
+        $daily = $this->stockCutDailyBreakdown($outletId, $dateFrom, $dateTo);
+        $out = [];
+        foreach ($daily as $date => $row) {
+            $out[$date] = (float) ($row['amount'] ?? 0);
         }
 
-        return DB::table('stock_cut_details as d')
-            ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
-            ->where('l.outlet_id', $outletId)
-            ->where('l.status', 'success')
-            ->whereDate('l.tanggal', '>=', $dateFrom)
-            ->whereDate('l.tanggal', '<=', $dateTo)
-            ->selectRaw('DATE(l.tanggal) as d, COALESCE(SUM(d.value_out), 0) as total')
-            ->groupBy(DB::raw('DATE(l.tanggal)'))
-            ->pluck('total', 'd')
-            ->map(fn ($v) => (float) $v)
-            ->all();
+        return $out;
     }
 
     /**
-     * Daily Stock Cut rows for modal detail.
+     * Daily Stock Cut rows for modal detail (Food / Beverage / Total).
      *
      * @return list<object>
      */
     public function buildStockCutDaily(int $outletId, string $dateFrom, string $dateTo): array
     {
-        $byDate = $this->stockCutByDate($outletId, $dateFrom, $dateTo);
+        $byDate = $this->stockCutDailyBreakdown($outletId, $dateFrom, $dateTo);
         $rows = [];
         foreach ($this->dateRange($dateFrom, $dateTo) as $date) {
             $carbon = Carbon::parse($date);
-            $amount = round((float) ($byDate[$date] ?? 0), 2);
-            if ($amount == 0.0 && ! isset($byDate[$date])) {
-                // still show all days in range for consistency with revenue modal
-            }
+            $food = round((float) ($byDate[$date]['food'] ?? 0), 2);
+            $beverage = round((float) ($byDate[$date]['beverage'] ?? 0), 2);
+            $amount = round((float) ($byDate[$date]['amount'] ?? ($food + $beverage)), 2);
             $rows[] = (object) [
                 'id' => $date,
                 'date' => $date,
                 'day_name' => $carbon->locale('id')->translatedFormat('l'),
                 'is_weekend' => $carbon->isWeekend(),
+                'food' => $food,
+                'beverage' => $beverage,
                 'amount' => $amount,
             ];
         }
 
         return $rows;
+    }
+
+    /**
+     * Detail item Stock Cut untuk 1 tanggal (opsional filter food/beverage/all).
+     *
+     * @return array{
+     *   title: string,
+     *   type: string,
+     *   date: string,
+     *   transactions: list<array<string, mixed>>,
+     *   grand_total: float
+     * }
+     */
+    public function buildStockCutCellDetail(int $outletId, string $date, string $bucket = 'all'): array
+    {
+        $bucket = strtolower(trim($bucket));
+        if (! in_array($bucket, ['food', 'beverage', 'all'], true)) {
+            $bucket = 'all';
+        }
+
+        $labels = [
+            'food' => 'Food',
+            'beverage' => 'Beverage',
+            'all' => 'Semua',
+        ];
+        $empty = [
+            'title' => 'Stock Cut · '.($labels[$bucket] ?? $bucket).' — '.$date,
+            'type' => $bucket,
+            'date' => $date,
+            'transactions' => [],
+            'grand_total' => 0.0,
+        ];
+
+        if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
+            return $empty;
+        }
+
+        $rows = DB::table('stock_cut_details as d')
+            ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
+            ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'i.small_unit_id', '=', 'u.id')
+            ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
+            ->where('l.outlet_id', $outletId)
+            ->where('l.status', 'success')
+            ->whereDate('l.tanggal', $date)
+            ->orderBy('l.id')
+            ->orderBy('i.name')
+            ->get([
+                'l.id as log_id',
+                'l.type_filter',
+                'l.created_at as cut_at',
+                'wo.name as warehouse_name',
+                'i.name as item_name',
+                'u.name as unit_name',
+                'd.qty_small',
+                'd.cost_per_small',
+                'd.value_out',
+            ]);
+
+        if ($rows->isEmpty()) {
+            return $empty;
+        }
+
+        $grouped = [];
+        $grandTotal = 0.0;
+        foreach ($rows as $row) {
+            $fb = $this->stockCutFoodBeverageBucket(
+                (string) ($row->type_filter ?? ''),
+                (string) ($row->warehouse_name ?? '')
+            );
+            if ($bucket !== 'all' && $fb !== $bucket) {
+                continue;
+            }
+
+            $logId = (int) $row->log_id;
+            if (! isset($grouped[$logId])) {
+                $tf = (string) ($row->type_filter ?? '');
+                $source = match (true) {
+                    $tf === 'food' => 'Food',
+                    $tf === 'beverages', $tf === 'beverage' => 'Beverage',
+                    $bucket === 'food' => 'Food',
+                    $bucket === 'beverage' => 'Beverage',
+                    default => 'Semua Type',
+                };
+
+                $grouped[$logId] = [
+                    'source' => $source,
+                    'number' => 'SC-'.$logId,
+                    'ordered_by' => '-',
+                    'warehouse' => (string) ($row->warehouse_name ?? '-'),
+                    'total' => 0.0,
+                    'items' => [],
+                ];
+            }
+
+            $qty = (float) ($row->qty_small ?? 0);
+            $mac = (float) ($row->cost_per_small ?? 0);
+            $subtotal = (float) ($row->value_out ?? ($qty * $mac));
+            $grouped[$logId]['total'] = round($grouped[$logId]['total'] + $subtotal, 2);
+            $grouped[$logId]['items'][] = [
+                'name' => (string) ($row->item_name ?? '-'),
+                'qty' => $qty,
+                'unit' => (string) ($row->unit_name ?? 'small'),
+                'price' => $mac,
+                'subtotal' => round($subtotal, 2),
+            ];
+            $grandTotal += $subtotal;
+        }
+
+        // When filtering food/beverage on a "Semua" log, split warehouse display
+        $transactions = [];
+        foreach ($grouped as $txn) {
+            if ($txn['items'] === []) {
+                continue;
+            }
+            $transactions[] = $txn;
+        }
+
+        return [
+            'title' => $empty['title'],
+            'type' => $bucket,
+            'date' => $date,
+            'transactions' => array_values($transactions),
+            'grand_total' => round($grandTotal, 2),
+        ];
+    }
+
+    /**
+     * @return array<string, array{food: float, beverage: float, amount: float}>
+     */
+    private function stockCutDailyBreakdown(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
+            return [];
+        }
+
+        $rows = DB::table('stock_cut_details as d')
+            ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
+            ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
+            ->where('l.outlet_id', $outletId)
+            ->where('l.status', 'success')
+            ->whereDate('l.tanggal', '>=', $dateFrom)
+            ->whereDate('l.tanggal', '<=', $dateTo)
+            ->get([
+                DB::raw('DATE(l.tanggal) as d'),
+                'l.type_filter',
+                'wo.name as warehouse_name',
+                'd.value_out',
+            ]);
+
+        $out = [];
+        foreach ($rows as $row) {
+            $date = (string) $row->d;
+            if (! isset($out[$date])) {
+                $out[$date] = ['food' => 0.0, 'beverage' => 0.0, 'amount' => 0.0];
+            }
+            $value = (float) ($row->value_out ?? 0);
+            $bucket = $this->stockCutFoodBeverageBucket(
+                (string) ($row->type_filter ?? ''),
+                (string) ($row->warehouse_name ?? '')
+            );
+            if ($bucket === 'food') {
+                $out[$date]['food'] += $value;
+            } elseif ($bucket === 'beverage') {
+                $out[$date]['beverage'] += $value;
+            }
+            $out[$date]['amount'] += $value;
+        }
+
+        foreach ($out as $date => $row) {
+            $out[$date]['food'] = round($row['food'], 2);
+            $out[$date]['beverage'] = round($row['beverage'], 2);
+            $out[$date]['amount'] = round($row['amount'], 2);
+        }
+
+        return $out;
+    }
+
+    private function stockCutFoodBeverageBucket(string $typeFilter, string $warehouseName): string
+    {
+        $typeFilter = strtolower(trim($typeFilter));
+        if ($typeFilter === 'food') {
+            return 'food';
+        }
+        if ($typeFilter === 'beverages' || $typeFilter === 'beverage') {
+            return 'beverage';
+        }
+
+        $wh = strtolower(trim($warehouseName));
+        if ($wh === 'kitchen' || str_contains($wh, 'kitchen') || str_contains($wh, 'mk')) {
+            return 'food';
+        }
+        if ($wh === 'bar' || str_contains($wh, 'bar')) {
+            return 'beverage';
+        }
+
+        return 'other';
     }
 
     /**
@@ -2421,6 +2611,199 @@ class OpexOutletDashboardService
             'rows' => $rows,
             'type_columns' => $typeColumns,
         ];
+    }
+
+    /**
+     * Detail transaksi + item Category Cost untuk 1 tanggal (opsional filter type).
+     *
+     * @return array{
+     *   title: string,
+     *   type: string,
+     *   date: string,
+     *   transactions: list<array<string, mixed>>,
+     *   grand_total: float
+     * }
+     */
+    public function buildCategoryCostCellDetail(int $outletId, string $date, string $typeKey = 'all'): array
+    {
+        $typeKey = trim($typeKey);
+        if ($typeKey === '') {
+            $typeKey = 'all';
+        }
+
+        $label = $typeKey === 'all'
+            ? 'Semua Type'
+            : (self::CATEGORY_COST_TYPE_LABELS[$typeKey] ?? $typeKey);
+
+        $empty = [
+            'title' => $label.' — '.$date,
+            'type' => $typeKey,
+            'date' => $date,
+            'transactions' => [],
+            'grand_total' => 0.0,
+        ];
+
+        if (! Schema::hasTable('outlet_internal_use_waste_headers')
+            || ! Schema::hasTable('outlet_internal_use_waste_details')) {
+            return $empty;
+        }
+
+        if ($typeKey !== 'all' && ! isset(self::CATEGORY_COST_TYPE_LABELS[$typeKey])) {
+            return $empty;
+        }
+
+        $query = $this->categoryCostHeaderQuery($outletId, $date, $date)
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->select([
+                'h.id',
+                'h.number',
+                'h.date',
+                'h.type',
+                'h.outlet_id',
+                'h.warehouse_outlet_id',
+                DB::raw('COALESCE(h.subtotal_mac, 0) as subtotal_mac'),
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as creator_name',
+            ])
+            ->orderBy('h.number')
+            ->orderBy('h.id');
+
+        if ($typeKey === 'usage') {
+            $query->whereIn('h.type', ['usage', 'stock_cut']);
+        } elseif ($typeKey !== 'all') {
+            $query->where('h.type', $typeKey);
+        }
+
+        $headers = $query->get();
+        if ($headers->isEmpty()) {
+            return $empty;
+        }
+
+        $headersById = $headers->keyBy('id');
+        $headerIds = $headers->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $itemsByHeader = $this->fetchCategoryCostDetailItems($headerIds, $headersById);
+
+        $transactions = [];
+        $grandTotal = 0.0;
+        foreach ($headers as $header) {
+            $rawType = (string) ($header->type ?? '');
+            $mappedType = $rawType === 'stock_cut' ? 'usage' : $rawType;
+            $items = $itemsByHeader[(int) $header->id] ?? [];
+            $amount = round((float) ($header->subtotal_mac ?? 0), 2);
+            if ($amount <= 0 && $items !== []) {
+                $amount = round(array_sum(array_column($items, 'subtotal')), 2);
+            }
+            $grandTotal += $amount;
+
+            $transactions[] = [
+                'source' => self::CATEGORY_COST_TYPE_LABELS[$mappedType] ?? $mappedType,
+                'number' => (string) ($header->number ?? '-'),
+                'ro_number' => null,
+                'ordered_by' => (string) ($header->creator_name ?? '-'),
+                'warehouse' => (string) ($header->warehouse_outlet_name ?? '-'),
+                'total' => $amount,
+                'items' => $items,
+            ];
+        }
+
+        return [
+            'title' => $label.' — '.$date,
+            'type' => $typeKey,
+            'date' => $date,
+            'transactions' => $transactions,
+            'grand_total' => round($grandTotal, 2),
+        ];
+    }
+
+    /**
+     * @param  list<int>  $headerIds
+     * @param  \Illuminate\Support\Collection<int|string, object>  $headersById
+     * @return array<int, list<array{name: string, qty: float, unit: string, price: float, subtotal: float}>>
+     */
+    private function fetchCategoryCostDetailItems(array $headerIds, $headersById): array
+    {
+        if ($headerIds === []) {
+            return [];
+        }
+
+        $details = DB::table('outlet_internal_use_waste_details as d')
+            ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+            ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
+            ->whereIn('d.header_id', $headerIds)
+            ->orderBy('d.id')
+            ->get([
+                'd.header_id',
+                'd.item_id',
+                'd.qty',
+                'd.unit_id',
+                'i.name as item_name',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'i.small_conversion_qty',
+                'i.medium_conversion_qty',
+                'u.name as unit_name',
+            ]);
+
+        $itemIds = $details->pluck('item_id')->unique()->filter()->all();
+        $inventoryItems = [];
+        if ($itemIds !== []) {
+            $inventoryItems = DB::table('outlet_food_inventory_items')
+                ->whereIn('item_id', $itemIds)
+                ->get()
+                ->keyBy('item_id')
+                ->all();
+        }
+
+        $macCache = [];
+        $grouped = [];
+        foreach ($details as $detail) {
+            $header = $headersById->get($detail->header_id);
+            $macConverted = null;
+
+            if ($header && isset($inventoryItems[$detail->item_id])) {
+                $inventoryItem = $inventoryItems[$detail->item_id];
+                $macKey = "{$inventoryItem->id}_{$header->outlet_id}_{$header->warehouse_outlet_id}_{$header->date}";
+                if (! array_key_exists($macKey, $macCache)) {
+                    $macCache[$macKey] = \App\Support\CategoryCostMacResolver::resolveHistoryMacAtDate(
+                        (int) $inventoryItem->id,
+                        (int) $header->outlet_id,
+                        (int) $header->warehouse_outlet_id,
+                        (string) $header->date
+                    );
+                }
+                $mac = $macCache[$macKey];
+                if ($mac !== null) {
+                    $converted = (float) $mac;
+                    if ((int) $detail->unit_id === (int) ($detail->medium_unit_id ?? 0)
+                        && (float) ($detail->small_conversion_qty ?? 0) > 0) {
+                        $converted = (float) $mac * (float) $detail->small_conversion_qty;
+                    } elseif ((int) $detail->unit_id === (int) ($detail->large_unit_id ?? 0)
+                        && (float) ($detail->small_conversion_qty ?? 0) > 0
+                        && (float) ($detail->medium_conversion_qty ?? 0) > 0) {
+                        $converted = (float) $mac
+                            * (float) $detail->small_conversion_qty
+                            * (float) $detail->medium_conversion_qty;
+                    }
+                    $macConverted = $converted;
+                }
+            }
+
+            $qty = (float) ($detail->qty ?? 0);
+            $price = $macConverted !== null ? round($macConverted, 4) : 0.0;
+            $subtotal = $macConverted !== null ? round($macConverted * $qty, 2) : 0.0;
+
+            $grouped[(int) $detail->header_id][] = [
+                'name' => (string) ($detail->item_name ?? '-'),
+                'qty' => $qty,
+                'unit' => (string) ($detail->unit_name ?? '-'),
+                'price' => $price,
+                'subtotal' => $subtotal,
+            ];
+        }
+
+        return $grouped;
     }
 
     /**

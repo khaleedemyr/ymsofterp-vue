@@ -1019,7 +1019,7 @@
                         v-for="txn in spendRetailNonFoodTxns"
                         :key="'rnf-' + txn.id"
                         class="border-t border-slate-100 cursor-pointer hover:bg-orange-50/70"
-                        @click="openRetailNonFoodDetail(txn)"
+                        @click="openSourceTxnDetail(txn)"
                       >
                         <td class="px-4 py-2.5">{{ formatShortDate(txn.date) }}</td>
                         <td class="px-4 py-2.5">
@@ -1053,7 +1053,9 @@
                       <th class="px-4 py-3 text-left">No</th>
                       <th class="px-4 py-3 text-left">Tanggal</th>
                       <th class="px-4 py-3 text-left">Hari</th>
-                      <th class="px-4 py-3 text-right">Nilai Stock Cut</th>
+                      <th class="px-4 py-3 text-right">Food</th>
+                      <th class="px-4 py-3 text-right">Beverage</th>
+                      <th class="px-4 py-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1066,19 +1068,55 @@
                       <td class="px-4 py-2.5 text-slate-600">{{ index + 1 }}</td>
                       <td class="px-4 py-2.5 font-medium text-slate-800">{{ formatShortDate(row.date) }}</td>
                       <td class="px-4 py-2.5 text-slate-600">{{ row.day_name }}</td>
-                      <td class="px-4 py-2.5 text-right font-semibold text-fuchsia-700">{{ formatCurrency(row.amount) }}</td>
+                      <td class="px-4 py-2.5 text-right font-medium text-fuchsia-700">
+                        <button
+                          v-if="Number(row.food) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-fuchsia-900"
+                          @click="openStockCutCellDetail('food', 'Food', row.date, row.food)"
+                        >
+                          {{ formatCurrency(row.food) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
+                      </td>
+                      <td class="px-4 py-2.5 text-right font-medium text-fuchsia-700">
+                        <button
+                          v-if="Number(row.beverage) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-fuchsia-900"
+                          @click="openStockCutCellDetail('beverage', 'Beverage', row.date, row.beverage)"
+                        >
+                          {{ formatCurrency(row.beverage) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
+                      </td>
+                      <td class="px-4 py-2.5 text-right font-semibold text-fuchsia-800">
+                        <button
+                          v-if="Number(row.amount) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-fuchsia-950"
+                          @click="openStockCutCellDetail('all', 'Semua', row.date, row.amount)"
+                        >
+                          {{ formatCurrency(row.amount) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
+                      </td>
                     </tr>
                     <tr v-if="modalTxns.length" class="bg-fuchsia-900 text-white font-semibold border-t border-fuchsia-700">
                       <td class="px-4 py-2.5" colspan="3">TOTAL</td>
-                      <td class="px-4 py-2.5 text-right">{{ formatCurrency(stockCutModalTotal) }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ formatCurrency(stockCutModalTotals.food) }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ formatCurrency(stockCutModalTotals.beverage) }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ formatCurrency(stockCutModalTotals.amount) }}</td>
                     </tr>
                     <tr v-if="!modalTxns.length">
-                      <td colspan="4" class="px-4 py-10 text-center text-slate-400">Tidak ada data stock cut</td>
+                      <td colspan="6" class="px-4 py-10 text-center text-slate-400">Tidak ada data stock cut</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · dari menu Stock Cut (value_out)</p>
+              <p class="text-xs text-slate-500">
+                {{ modalPagination.total }} hari · Food / Beverage dari type_filter &amp; warehouse · klik nilai untuk detail item
+              </p>
             </template>
 
             <!-- Category Cost: harian per type + total -->
@@ -1113,9 +1151,27 @@
                         :key="'cc-' + row.id + '-' + col.key"
                         class="px-3 py-2 text-right text-slate-700"
                       >
-                        {{ formatCurrency(row[col.key]) }}
+                        <button
+                          v-if="Number(row[col.key]) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-teal-700 font-medium"
+                          @click="openCategoryCostCellDetail(col.key, col.label, row.date, row[col.key])"
+                        >
+                          {{ formatCurrency(row[col.key]) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
                       </td>
-                      <td class="px-3 py-2 text-right font-semibold text-teal-800">{{ formatCurrency(row.total) }}</td>
+                      <td class="px-3 py-2 text-right font-semibold text-teal-800">
+                        <button
+                          v-if="Number(row.total) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-teal-900"
+                          @click="openCategoryCostCellDetail('all', 'Semua Type', row.date, row.total)"
+                        >
+                          {{ formatCurrency(row.total) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
+                      </td>
                     </tr>
                     <tr v-if="modalTxns.length" class="bg-teal-900 text-white font-semibold border-t border-teal-700">
                       <td class="px-3 py-2.5 sticky left-0 bg-teal-900 z-10" colspan="2">TOTAL</td>
@@ -1137,7 +1193,7 @@
                 </table>
               </div>
               <p class="text-xs text-slate-500">
-                {{ modalPagination.total }} hari · dari Category Cost Outlet (subtotal MAC)
+                {{ modalPagination.total }} hari · dari Category Cost Outlet (subtotal MAC) · klik nilai untuk detail item
               </p>
             </template>
 
@@ -1271,14 +1327,17 @@
                     v-for="txn in modalTxns"
                     :key="txn.id + '-' + (txn.source || '')"
                     class="border-t border-slate-100"
-                    :class="modalShowsUserCategory ? 'cursor-pointer hover:bg-orange-50/60' : ''"
-                    @click="modalShowsUserCategory ? openRetailNonFoodDetail(txn) : null"
+                    :class="modalTxnClickable ? 'cursor-pointer hover:bg-sky-50/70' : ''"
+                    @click="modalTxnClickable ? openSourceTxnDetail(txn) : null"
                   >
                     <td class="px-4 py-2.5">{{ formatShortDate(txn.date) }}</td>
                     <td class="px-4 py-2.5">
                       <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.source || txn.type }}</span>
                     </td>
-                    <td class="px-4 py-2.5 font-medium text-slate-800" :class="modalShowsUserCategory ? 'underline decoration-dotted underline-offset-2' : ''">
+                    <td
+                      class="px-4 py-2.5 font-medium text-slate-800"
+                      :class="modalTxnClickable ? 'underline decoration-dotted underline-offset-2' : ''"
+                    >
                       {{ txn.number || '-' }}
                     </td>
                     <template v-if="modalShowsUserSupplier">
@@ -1308,6 +1367,8 @@
                 </tbody>
               </table>
             </div>
+
+            <p v-if="modalTxnClickable" class="text-xs text-slate-500">Klik baris transaksi untuk melihat detail item</p>
 
             <div v-if="modalPagination.total_pages > 1" class="flex justify-between items-center text-sm">
               <span class="text-slate-500">{{ modalPagination.total }} transaksi</span>
@@ -1373,11 +1434,13 @@
                 <div><span class="text-slate-500">Tipe:</span> <strong>{{ txn.source }}</strong></div>
                 <div><span class="text-slate-500">No. Transaksi:</span> <strong>{{ txn.number || '-' }}</strong></div>
                 <div v-if="txn.category_name"><span class="text-slate-500">Category:</span> <strong>{{ txn.category_name }}</strong></div>
+                <div v-if="txn.warehouse"><span class="text-slate-500">Warehouse:</span> <strong>{{ txn.warehouse }}</strong></div>
                 <div v-if="txn.ro_number"><span class="text-slate-500">No. RO/FO:</span> <strong>{{ txn.ro_number }}</strong></div>
                 <template v-if="txn.source === 'GSR' || txn.source === 'GR'">
                   <div><span class="text-slate-500">Pembuat RO:</span> <strong>{{ txn.ro_creator || txn.ordered_by || '-' }}</strong></div>
                   <div><span class="text-slate-500">Penerima GR:</span> <strong>{{ txn.received_by || '-' }}</strong></div>
                 </template>
+                <div v-else-if="txn.supplier_name"><span class="text-slate-500">Supplier:</span> <strong>{{ txn.supplier_name }}</strong></div>
                 <div v-else><span class="text-slate-500">User:</span> <strong>{{ txn.ordered_by || '-' }}</strong></div>
                 <div class="ml-auto"><span class="text-slate-500">Total:</span> <strong>{{ formatCurrency(txn.total) }}</strong></div>
               </div>
@@ -1388,7 +1451,7 @@
                       <th class="px-4 py-2 text-left">Item</th>
                       <th class="px-4 py-2 text-right">Qty</th>
                       <th class="px-4 py-2 text-left">Unit</th>
-                      <th class="px-4 py-2 text-right">Harga</th>
+                      <th class="px-4 py-2 text-right">{{ modalType === 'stock_cut' || String(spendDetailMeta.title || '').startsWith('Stock Cut') ? 'MAC' : 'Harga' }}</th>
                       <th class="px-4 py-2 text-right">Subtotal</th>
                     </tr>
                   </thead>
@@ -1481,7 +1544,7 @@ const cardHelps = {
   member_redeem:
     'Point redeem member.',
   stock_cut:
-    'Nilai stock cut dari menu Stock Cut (value_out, status success) pada periode filter.',
+    'Nilai stock cut dari menu Stock Cut (value_out, status success).\n\nModal detail harian: kolom Food, Beverage, Total.\nKlik nilai → list item (qty, MAC, subtotal).',
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.',
 }
@@ -1957,6 +2020,9 @@ const modalShowsBill = computed(() =>
 const modalShowsUserSupplier = computed(() => modalType.value === 'retail_food')
 const modalShowsUserCategory = computed(() => modalType.value === 'retail_non_food')
 const modalShowsPettyParty = computed(() => modalType.value === 'petty_cash')
+const modalTxnClickable = computed(() =>
+  ['gsr_ro', 'rws', 'retail_food', 'retail_non_food', 'petty_cash'].includes(modalType.value)
+)
 
 const modalTxnColspan = computed(() => {
   let cols = 5
@@ -2039,9 +2105,14 @@ const spendModalTotals = computed(() => {
   }
 })
 
-const stockCutModalTotal = computed(() =>
-  (modalTxns.value || []).reduce((acc, r) => acc + (Number(r.amount) || 0), 0)
-)
+const stockCutModalTotals = computed(() => {
+  const rows = modalTxns.value || []
+  return {
+    food: rows.reduce((acc, r) => acc + (Number(r.food) || 0), 0),
+    beverage: rows.reduce((acc, r) => acc + (Number(r.beverage) || 0), 0),
+    amount: rows.reduce((acc, r) => acc + (Number(r.amount) || 0), 0),
+  }
+})
 
 const categoryCostTypeColumns = computed(() =>
   modalSheetMeta.value?.type_columns?.length
@@ -2106,20 +2177,21 @@ const closeModal = () => {
   closeSpendCellDetail()
 }
 
-const openRetailNonFoodDetail = (txn) => {
+const openSourceTxnDetail = (txn) => {
   if (!txn) return
   const items = (txn.items || []).map((item) => ({
     name: item.name || item.item_name || '-',
     qty: item.qty,
-    unit: item.unit || '-',
+    unit: item.unit || item.unit_name || '-',
     price: item.price,
     subtotal: item.subtotal ?? item.amount,
   }))
+  const titlePrefix = modalTitle.value || txn.source || 'Transaksi'
   spendDetailOpen.value = true
   spendDetailLoading.value = false
   spendDetailError.value = ''
   spendDetailMeta.value = {
-    title: `Retail Non Food · ${txn.number || '-'}`,
+    title: `${titlePrefix} · ${txn.number || '-'}`,
     date: txn.date,
     amount: txn.amount,
   }
@@ -2127,9 +2199,13 @@ const openRetailNonFoodDetail = (txn) => {
     title: spendDetailMeta.value.title,
     transactions: [
       {
-        source: txn.source || 'Retail Non Food',
+        source: txn.source || titlePrefix,
         number: txn.number,
+        ro_number: txn.ro_number,
+        ro_creator: txn.ro_creator,
+        received_by: txn.received_by,
         category_name: txn.category_name,
+        supplier_name: txn.supplier_name,
         ordered_by: txn.creator_name,
         total: Number(txn.amount) || 0,
         items,
@@ -2162,6 +2238,76 @@ const openSpendCellDetail = async (type, key, label, date, amount) => {
         key,
         date,
         outlet: filters.value.outlet_id,
+      },
+    })
+    spendDetailData.value = data
+    if (data?.title) {
+      spendDetailMeta.value.title = data.title
+    }
+  } catch (e) {
+    spendDetailError.value = e?.response?.data?.error || e?.message || 'Gagal memuat detail'
+  } finally {
+    spendDetailLoading.value = false
+  }
+}
+
+const openCategoryCostCellDetail = async (typeKey, label, date, amount) => {
+  if (!filters.value.outlet_id) {
+    alert('Pilih outlet terlebih dahulu')
+    return
+  }
+
+  spendDetailOpen.value = true
+  spendDetailLoading.value = true
+  spendDetailError.value = ''
+  spendDetailData.value = null
+  spendDetailMeta.value = {
+    title: `Category Cost · ${label}`,
+    date,
+    amount,
+  }
+
+  try {
+    const { data } = await axios.get('/opex-outlet-dashboard/category-cost-detail', {
+      params: {
+        outlet_id: filters.value.outlet_id,
+        date,
+        type: typeKey,
+      },
+    })
+    spendDetailData.value = data
+    if (data?.title) {
+      spendDetailMeta.value.title = data.title
+    }
+  } catch (e) {
+    spendDetailError.value = e?.response?.data?.error || e?.message || 'Gagal memuat detail'
+  } finally {
+    spendDetailLoading.value = false
+  }
+}
+
+const openStockCutCellDetail = async (typeKey, label, date, amount) => {
+  if (!filters.value.outlet_id) {
+    alert('Pilih outlet terlebih dahulu')
+    return
+  }
+
+  spendDetailOpen.value = true
+  spendDetailLoading.value = true
+  spendDetailError.value = ''
+  spendDetailData.value = null
+  spendDetailMeta.value = {
+    title: `Stock Cut · ${label}`,
+    date,
+    amount,
+  }
+
+  try {
+    const { data } = await axios.get('/opex-outlet-dashboard/stock-cut-detail', {
+      params: {
+        outlet_id: filters.value.outlet_id,
+        date,
+        type: typeKey,
       },
     })
     spendDetailData.value = data

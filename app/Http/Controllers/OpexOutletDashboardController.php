@@ -200,6 +200,46 @@ class OpexOutletDashboardController extends Controller
         return response()->json(['trend' => [], 'transactions' => []]);
     }
 
+    public function getCategoryCostCellDetail(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = (int) $user->id_outlet;
+        $date = (string) $request->get('date', '');
+        $typeKey = (string) $request->get('type', 'all');
+
+        $outletId = $userOutletId === 1
+            ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
+            : $userOutletId;
+
+        if (! $outletId || $date === '') {
+            return response()->json(['error' => 'Outlet and date required'], 400);
+        }
+
+        return response()->json(
+            $this->opexService->buildCategoryCostCellDetail($outletId, $date, $typeKey)
+        );
+    }
+
+    public function getStockCutCellDetail(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = (int) $user->id_outlet;
+        $date = (string) $request->get('date', '');
+        $typeKey = (string) $request->get('type', 'all');
+
+        $outletId = $userOutletId === 1
+            ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
+            : $userOutletId;
+
+        if (! $outletId || $date === '') {
+            return response()->json(['error' => 'Outlet and date required'], 400);
+        }
+
+        return response()->json(
+            $this->opexService->buildStockCutCellDetail($outletId, $date, $typeKey)
+        );
+    }
+
     public function getFoodByCategory()
     {
         return response()->json([]);
@@ -608,6 +648,7 @@ class OpexOutletDashboardController extends Controller
             ->leftJoin('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
             ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
             ->leftJoin('users as u', 'ofgr.created_by', '=', 'u.id')
+            ->leftJoin('users as u_ro', 'ffo.user_id', '=', 'u_ro.id')
             ->whereNull('ofgr.deleted_at')
             ->where('ofgr.outlet_id', $outletId)
             ->whereDate('ofgr.receive_date', '>=', $dateFrom)
@@ -620,10 +661,12 @@ class OpexOutletDashboardController extends Controller
                 'ofgr.receive_date as date',
                 'ffo.order_number as ro_number',
                 'u.nama_lengkap as creator_name',
+                'u_ro.nama_lengkap as ro_creator',
             ]);
 
         $grIds = $gr->pluck('id')->all();
         $grTotals = [];
+        $grItemsByHeader = collect();
         if ($grIds !== []) {
             $grTotals = DB::table('outlet_food_good_receive_items as ofgri')
                 ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
@@ -642,18 +685,47 @@ class OpexOutletDashboardController extends Controller
                 ->groupBy('ofgr.id')
                 ->selectRaw('ofgr.id, SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
                 ->pluck('total', 'id');
+
+            $grItemsByHeader = DB::table('outlet_food_good_receive_items as ofgri')
+                ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+                ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+                ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+                ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
+                ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                    $join->on('ofgri.item_id', '=', 'ffoi.item_id')
+                        ->where(function ($q) {
+                            $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
+                                ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
+                        });
+                })
+                ->leftJoin('items as it', 'ofgri.item_id', '=', 'it.id')
+                ->leftJoin('units as un', 'ofgri.unit_id', '=', 'un.id')
+                ->whereIn('ofgr.id', $grIds)
+                ->orderBy('it.name')
+                ->get([
+                    'ofgr.id as header_id',
+                    'it.name as item_name',
+                    'un.name as unit_name',
+                    'ofgri.received_qty as qty',
+                    DB::raw('COALESCE(ffoi.price, 0) as price'),
+                    DB::raw('(ofgri.received_qty * COALESCE(ffoi.price, 0)) as subtotal'),
+                ])
+                ->groupBy('header_id');
         }
 
-        $rows = $gr->map(function ($row) use ($grTotals) {
+        $rows = $gr->map(function ($row) use ($grTotals, $grItemsByHeader) {
             $row->amount = round((float) ($grTotals[$row->id] ?? 0), 2);
             $row->type = 'gsr_ro';
-            $row->source = 'GR / RO';
+            $row->source = 'GR';
+            $row->received_by = $row->creator_name;
             $row->number = $row->number.($row->ro_number ? ' · RO '.$row->ro_number : '');
+            $row->items = $this->mapDetailItems($grItemsByHeader->get($row->id));
 
             return $row;
         });
 
-        if (Schema::hasTable('outlet_serial_receive_headers')) {
+        if (Schema::hasTable('outlet_serial_receive_headers') && Schema::hasTable('outlet_serial_receive_items')) {
             $gsr = DB::table('outlet_serial_receive_headers as h')
                 ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
                 ->whereNull('h.deleted_at')
@@ -672,6 +744,7 @@ class OpexOutletDashboardController extends Controller
 
             $gsrIds = $gsr->pluck('id')->all();
             $gsrTotals = [];
+            $gsrItemsByHeader = collect();
             if ($gsrIds !== []) {
                 $priceSql = "(CASE
                     WHEN si.unit_id = it.large_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1) * COALESCE(it.medium_conversion_qty, 1)
@@ -684,12 +757,31 @@ class OpexOutletDashboardController extends Controller
                     ->groupBy('si.header_id')
                     ->selectRaw("si.header_id as id, SUM(si.qty * ({$priceSql})) as total")
                     ->pluck('total', 'id');
+
+                $gsrItemsByHeader = DB::table('outlet_serial_receive_items as si')
+                    ->join('items as it', 'si.item_id', '=', 'it.id')
+                    ->leftJoin('units as un', 'si.unit_id', '=', 'un.id')
+                    ->whereIn('si.header_id', $gsrIds)
+                    ->orderBy('it.name')
+                    ->get([
+                        'si.header_id as header_id',
+                        'it.name as item_name',
+                        'un.name as unit_name',
+                        'si.qty as qty',
+                        DB::raw("({$priceSql}) as price"),
+                        DB::raw("(si.qty * ({$priceSql})) as subtotal"),
+                    ])
+                    ->groupBy('header_id');
             }
 
-            $rows = $rows->concat($gsr->map(function ($row) use ($gsrTotals) {
+            $rows = $rows->concat($gsr->map(function ($row) use ($gsrTotals, $gsrItemsByHeader) {
                 $row->amount = round((float) ($gsrTotals[$row->id] ?? 0), 2);
                 $row->type = 'gsr_ro';
                 $row->source = 'GSR';
+                $row->ro_number = null;
+                $row->ro_creator = null;
+                $row->received_by = $row->creator_name;
+                $row->items = $this->mapDetailItems($gsrItemsByHeader->get($row->id));
 
                 return $row;
             }));
@@ -700,7 +792,7 @@ class OpexOutletDashboardController extends Controller
 
     private function listRws(int $outletId, string $dateFrom, string $dateTo)
     {
-        return DB::table('retail_warehouse_sales as rws')
+        $rows = DB::table('retail_warehouse_sales as rws')
             ->join('customers as c', 'rws.customer_id', '=', 'c.id')
             ->leftJoin('users as u', 'rws.created_by', '=', 'u.id')
             ->where('rws.status', 'completed')
@@ -716,18 +808,60 @@ class OpexOutletDashboardController extends Controller
                 'rws.sale_date as date',
                 'rws.total_amount as amount',
                 'u.nama_lengkap as creator_name',
-            ])
-            ->map(function ($row) {
-                $row->type = 'rws';
-                $row->source = 'RWS';
+            ]);
 
-                return $row;
-            });
+        $ids = $rows->pluck('id')->all();
+        $itemsByHeader = collect();
+        if ($ids !== []) {
+            if (Schema::hasTable('retail_warehouse_sale_items')) {
+                $itemsByHeader = DB::table('retail_warehouse_sale_items as rwsi')
+                    ->join('items as i', 'rwsi.item_id', '=', 'i.id')
+                    ->whereIn('rwsi.retail_warehouse_sale_id', $ids)
+                    ->orderBy('i.name')
+                    ->get([
+                        'rwsi.retail_warehouse_sale_id as header_id',
+                        'i.name as item_name',
+                        'rwsi.unit as unit_name',
+                        'rwsi.qty',
+                        'rwsi.price',
+                        'rwsi.subtotal',
+                    ])
+                    ->groupBy('header_id');
+            }
+
+            if (Schema::hasTable('retail_warehouse_sale_serial_items')) {
+                $serialItems = DB::table('retail_warehouse_sale_serial_items as rwss')
+                    ->join('items as i', 'rwss.item_id', '=', 'i.id')
+                    ->whereIn('rwss.retail_warehouse_sale_id', $ids)
+                    ->orderBy('i.name')
+                    ->get([
+                        'rwss.retail_warehouse_sale_id as header_id',
+                        'i.name as item_name',
+                        'rwss.unit_name as unit_name',
+                        'rwss.qty',
+                        'rwss.price',
+                        'rwss.subtotal',
+                    ])
+                    ->groupBy('header_id');
+
+                foreach ($serialItems as $headerId => $items) {
+                    $itemsByHeader[$headerId] = ($itemsByHeader->get($headerId) ?? collect())->concat($items);
+                }
+            }
+        }
+
+        return $rows->map(function ($row) use ($itemsByHeader) {
+            $row->type = 'rws';
+            $row->source = 'RWS';
+            $row->items = $this->mapDetailItems($itemsByHeader->get($row->id));
+
+            return $row;
+        });
     }
 
     private function listRetailFood(int $outletId, string $dateFrom, string $dateTo)
     {
-        return DB::table('retail_food as rf')
+        $rows = DB::table('retail_food as rf')
             ->leftJoin('suppliers as s', 'rf.supplier_id', '=', 's.id')
             ->leftJoin('users as u', 'rf.created_by', '=', 'u.id')
             ->where('rf.outlet_id', $outletId)
@@ -745,14 +879,26 @@ class OpexOutletDashboardController extends Controller
                 'rf.payment_method',
                 's.name as supplier_name',
                 'u.nama_lengkap as creator_name',
-            ])
-            ->map(function ($row) {
-                $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
-                $row->type = 'retail_food';
-                $row->source = 'Retail Food · '.$method;
+            ]);
 
-                return $row;
-            });
+        $ids = $rows->pluck('id')->all();
+        $itemsByHeader = collect();
+        if ($ids !== [] && Schema::hasTable('retail_food_items')) {
+            $itemsByHeader = DB::table('retail_food_items')
+                ->whereIn('retail_food_id', $ids)
+                ->orderBy('item_name')
+                ->get(['retail_food_id as header_id', 'item_name', 'unit as unit_name', 'qty', 'price', 'subtotal'])
+                ->groupBy('header_id');
+        }
+
+        return $rows->map(function ($row) use ($itemsByHeader) {
+            $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
+            $row->type = 'retail_food';
+            $row->source = 'Retail Food · '.$method;
+            $row->items = $this->mapDetailItems($itemsByHeader->get($row->id));
+
+            return $row;
+        });
     }
 
     private function listRetailNonFood(int $outletId, string $dateFrom, string $dateTo)
@@ -783,21 +929,22 @@ class OpexOutletDashboardController extends Controller
             $itemsByHeader = DB::table('retail_non_food_items')
                 ->whereIn('retail_non_food_id', $ids)
                 ->orderBy('id')
-                ->get(['retail_non_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal'])
-                ->groupBy('retail_non_food_id');
+                ->get([
+                    'retail_non_food_id as header_id',
+                    'item_name',
+                    'unit as unit_name',
+                    'qty',
+                    'price',
+                    'subtotal',
+                ])
+                ->groupBy('header_id');
         }
 
         return $rows->map(function ($row) use ($itemsByHeader) {
             $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
             $row->type = 'retail_non_food';
             $row->source = 'Retail Non Food · '.$method;
-            $row->items = ($itemsByHeader->get($row->id) ?? collect())->map(fn ($i) => [
-                'name' => $i->item_name,
-                'qty' => (float) $i->qty,
-                'unit' => $i->unit,
-                'price' => (float) $i->price,
-                'subtotal' => (float) $i->subtotal,
-            ])->values()->all();
+            $row->items = $this->mapDetailItems($itemsByHeader->get($row->id));
 
             return $row;
         });
@@ -823,15 +970,27 @@ class OpexOutletDashboardController extends Controller
                 'rf.total_amount as amount',
                 's.name as supplier_name',
                 'u.nama_lengkap as creator_name',
-            ])
-            ->map(function ($row) {
-                $row->type = 'petty_cash';
-                $row->source = 'RF Cash';
-                $row->category_name = null;
-                $row->party_label = $row->supplier_name;
+            ]);
 
-                return $row;
-            });
+        $rfIds = $rf->pluck('id')->all();
+        $rfItemsByHeader = collect();
+        if ($rfIds !== [] && Schema::hasTable('retail_food_items')) {
+            $rfItemsByHeader = DB::table('retail_food_items')
+                ->whereIn('retail_food_id', $rfIds)
+                ->orderBy('item_name')
+                ->get(['retail_food_id as header_id', 'item_name', 'unit as unit_name', 'qty', 'price', 'subtotal'])
+                ->groupBy('header_id');
+        }
+
+        $rf = $rf->map(function ($row) use ($rfItemsByHeader) {
+            $row->type = 'petty_cash';
+            $row->source = 'RF Cash';
+            $row->category_name = null;
+            $row->party_label = $row->supplier_name;
+            $row->items = $this->mapDetailItems($rfItemsByHeader->get($row->id));
+
+            return $row;
+        });
 
         $rnf = DB::table('retail_non_food as rnf')
             ->leftJoin('purchase_requisition_categories as cat', 'rnf.category_budget_id', '=', 'cat.id')
@@ -851,16 +1010,54 @@ class OpexOutletDashboardController extends Controller
                 'rnf.total_amount as amount',
                 'cat.name as category_name',
                 'u.nama_lengkap as creator_name',
-            ])
-            ->map(function ($row) {
-                $row->type = 'petty_cash';
-                $row->source = 'RNF Cash';
-                $row->supplier_name = null;
-                $row->party_label = $row->category_name;
+            ]);
 
-                return $row;
-            });
+        $rnfIds = $rnf->pluck('id')->all();
+        $rnfItemsByHeader = collect();
+        if ($rnfIds !== []) {
+            $rnfItemsByHeader = DB::table('retail_non_food_items')
+                ->whereIn('retail_non_food_id', $rnfIds)
+                ->orderBy('id')
+                ->get([
+                    'retail_non_food_id as header_id',
+                    'item_name',
+                    'unit as unit_name',
+                    'qty',
+                    'price',
+                    'subtotal',
+                ])
+                ->groupBy('header_id');
+        }
+
+        $rnf = $rnf->map(function ($row) use ($rnfItemsByHeader) {
+            $row->type = 'petty_cash';
+            $row->source = 'RNF Cash';
+            $row->supplier_name = null;
+            $row->party_label = $row->category_name;
+            $row->items = $this->mapDetailItems($rnfItemsByHeader->get($row->id));
+
+            return $row;
+        });
 
         return $rf->concat($rnf)->sortByDesc(fn ($r) => $r->date ?? '')->values();
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>|null  $rows
+     * @return list<array{name: string, qty: float, unit: string, price: float, subtotal: float}>
+     */
+    private function mapDetailItems($rows): array
+    {
+        if (! $rows || $rows->isEmpty()) {
+            return [];
+        }
+
+        return $rows->map(fn ($i) => [
+            'name' => (string) ($i->item_name ?? $i->name ?? '-'),
+            'qty' => (float) ($i->qty ?? 0),
+            'unit' => (string) ($i->unit_name ?? $i->unit ?? '-'),
+            'price' => (float) ($i->price ?? 0),
+            'subtotal' => (float) ($i->subtotal ?? 0),
+        ])->values()->all();
     }
 }
