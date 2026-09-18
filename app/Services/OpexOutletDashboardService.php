@@ -80,6 +80,7 @@ class OpexOutletDashboardService
             'ro_forecast' => $this->buildSectionRoForecast($outletId, $dateFrom, $dateTo),
             'payments' => $this->buildSectionPayments($outletId, $dateFrom, $dateTo),
             'charts' => $this->buildSectionCharts($outletId, $dateFrom, $dateTo),
+            'attendance' => $this->buildSectionAttendance($outletId, $dateFrom, $dateTo),
             default => ['error' => 'Unknown section'],
         };
     }
@@ -98,6 +99,22 @@ class OpexOutletDashboardService
             'payment_methods' => [],
             'ro_forecast' => null,
             'outlet_name' => null,
+            'attendance' => null,
+        ];
+    }
+
+    /**
+     * Kartu OT / Telat / Leave (logika Attendance Report per outlet).
+     *
+     * @return array{attendance: array<string, mixed>}
+     */
+    public function buildSectionAttendance(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        /** @var \App\Http\Controllers\AttendanceReportController $attendance */
+        $attendance = app(\App\Http\Controllers\AttendanceReportController::class);
+
+        return [
+            'attendance' => $attendance->buildOpexAttendanceBundle($outletId, $dateFrom, $dateTo),
         ];
     }
 
@@ -131,7 +148,7 @@ class OpexOutletDashboardService
         $current['vs_last_month'] = [
             'period_from' => $prevFrom,
             'period_to' => $prevTo,
-            'label' => Carbon::parse($prevFrom)->locale('id')->translatedFormat('M Y'),
+            'label' => Carbon::parse($prevTo)->locale('id')->translatedFormat('M Y'),
             'revenue' => $this->vsMetric($current['revenue'], $previous['revenue']),
             'total_spend' => $this->vsMetric($current['total_spend'], $previous['total_spend']),
             'net' => $this->vsMetric($current['net'], $previous['net']),
@@ -289,7 +306,7 @@ class OpexOutletDashboardService
                 'vs_last_month_member' => [
                     'period_from' => $prevFrom,
                     'period_to' => $prevTo,
-                    'label' => Carbon::parse($prevFrom)->locale('id')->translatedFormat('M Y'),
+                    'label' => Carbon::parse($prevTo)->locale('id')->translatedFormat('M Y'),
                     'member_bills' => $this->vsMetric($member['member_bills'], $prevMember['member_bills']),
                     'member_revenue' => $this->vsMetric($member['member_revenue'], $prevMember['member_revenue']),
                     'member_top_up_points' => $this->vsMetric($member['top_up_points'], $prevMember['top_up_points']),
@@ -467,15 +484,17 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Expand filter dates to full calendar month(s): startOfMonth(from) .. endOfMonth(to).
+     * RO Forecast selalu 1 bulan kalender label (bulan dari date_to / periode 26–25).
      *
      * @return array{0: string, 1: string}
      */
     private function fullMonthBounds(string $dateFrom, string $dateTo): array
     {
+        $anchor = Carbon::parse($dateTo);
+
         return [
-            Carbon::parse($dateFrom)->startOfMonth()->format('Y-m-d'),
-            Carbon::parse($dateTo)->endOfMonth()->format('Y-m-d'),
+            $anchor->copy()->startOfMonth()->format('Y-m-d'),
+            $anchor->copy()->endOfMonth()->format('Y-m-d'),
         ];
     }
 
@@ -2327,12 +2346,14 @@ class OpexOutletDashboardService
         $rows = DB::table('stock_cut_details as d')
             ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
             ->leftJoin('items as i', 'd.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
             ->leftJoin('units as u', 'i.small_unit_id', '=', 'u.id')
             ->leftJoin('warehouse_outlets as wo', 'd.warehouse_outlet_id', '=', 'wo.id')
             ->where('l.outlet_id', $outletId)
             ->where('l.status', 'success')
             ->whereDate('l.tanggal', $date)
             ->orderBy('l.id')
+            ->orderByRaw("COALESCE(c.name, 'Tanpa Category')")
             ->orderBy('i.name')
             ->get([
                 'l.id as log_id',
@@ -2340,6 +2361,7 @@ class OpexOutletDashboardService
                 'l.created_at as cut_at',
                 'wo.name as warehouse_name',
                 'i.name as item_name',
+                DB::raw("COALESCE(c.name, 'Tanpa Category') as category_name"),
                 'u.name as unit_name',
                 'd.qty_small',
                 'd.cost_per_small',
@@ -2388,6 +2410,7 @@ class OpexOutletDashboardService
             $grouped[$logId]['total'] = round($grouped[$logId]['total'] + $subtotal, 2);
             $grouped[$logId]['items'][] = [
                 'name' => (string) ($row->item_name ?? '-'),
+                'category' => (string) ($row->category_name ?? 'Tanpa Category'),
                 'qty' => $qty,
                 'unit' => (string) ($row->unit_name ?? 'small'),
                 'price' => $mac,

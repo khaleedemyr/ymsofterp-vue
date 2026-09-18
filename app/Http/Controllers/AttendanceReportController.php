@@ -4232,5 +4232,436 @@ class AttendanceReportController extends Controller
             'resignation_date' => $scope['resignations'][$userId] ?? null,
         ];
     }
+
+    /**
+     * Bundle OT / Telat / Leave untuk Opex Outlet Dashboard (date_from–date_to).
+     * Perhitungan selaras Outlet Summary / Employee Summary Attendance Report.
+     *
+     * @return array{
+     *   overtime: array{submission_hours: float, submission_amount: int, real_hours: int, real_amount: int, employees: list<array<string,mixed>>},
+     *   late: array{total_minutes: int, employee_count: int, employees: list<array<string,mixed>>},
+     *   leave: array{total_days: int, types: list<array{leave_type_id: int, name: string, days: int}>, employees: list<array<string,mixed>>}
+     * }
+     */
+    public function buildOpexAttendanceBundle(int $outletId, string $start, string $end): array
+    {
+        $empty = [
+            'overtime' => [
+                'submission_hours' => 0.0,
+                'submission_amount' => 0,
+                'real_hours' => 0,
+                'real_amount' => 0,
+                'employees' => [],
+            ],
+            'late' => [
+                'total_minutes' => 0,
+                'employee_count' => 0,
+                'employees' => [],
+            ],
+            'leave' => [
+                'total_days' => 0,
+                'types' => [],
+                'employees' => [],
+            ],
+        ];
+
+        if ($outletId <= 0 || $start === '' || $end === '') {
+            return $empty;
+        }
+
+        $bulan = (int) date('n', strtotime($end));
+        $tahun = (int) date('Y', strtotime($end));
+        $employmentScope = $this->resolveOutletEmploymentScope($outletId, $start, $end, $bulan, $tahun);
+
+        $sub = DB::table('att_log as a')
+            ->join('tbl_data_outlet as scan_outlet', 'a.sn', '=', 'scan_outlet.sn')
+            ->join('user_pins as up', function ($q) {
+                $q->on('a.pin', '=', 'up.pin')->on('scan_outlet.id_outlet', '=', 'up.outlet_id');
+            })
+            ->join('users as u', 'up.user_id', '=', 'u.id')
+            ->join('tbl_data_outlet as o', 'u.id_outlet', '=', 'o.id_outlet')
+            ->select(
+                'a.scan_date',
+                'a.inoutmode',
+                'u.id as user_id',
+                'u.nama_lengkap',
+                'u.id_outlet',
+                'u.division_id',
+                'o.nama_outlet'
+            )
+            ->where('a.scan_date', '>=', $start.' 00:00:00')
+            ->where('a.scan_date', '<', AttendancePayrollPeriod::scanQueryEndExclusive($end));
+
+        $this->outletEmploymentScope()->applyAttendanceUserFilter(
+            $sub,
+            $outletId,
+            $employmentScope,
+            true
+        );
+
+        $rawData = $sub->orderBy('a.scan_date')->get();
+
+        $processedData = [];
+        foreach ($rawData as $scan) {
+            $date = date('Y-m-d', strtotime($scan->scan_date));
+            $key = $scan->user_id.'_'.$date;
+            if (! isset($processedData[$key])) {
+                $processedData[$key] = [
+                    'tanggal' => $date,
+                    'user_id' => $scan->user_id,
+                    'nama_lengkap' => $scan->nama_lengkap,
+                    'outlet_id' => $scan->id_outlet,
+                    'nama_outlet' => $scan->nama_outlet,
+                    'division_id' => $scan->division_id,
+                    'scans' => [],
+                ];
+            }
+            $processedData[$key]['scans'][] = [
+                'scan_date' => $scan->scan_date,
+                'inoutmode' => $scan->inoutmode,
+            ];
+        }
+
+        $dataRows = collect();
+        foreach (array_keys($processedData) as $key) {
+            $data = $processedData[$key];
+            $result = $this->processSmartCrossDayAttendance($data, $processedData);
+            if (! AttendanceWorkTimelineService::hasOwnCheckIn($result)) {
+                continue;
+            }
+            $result['outlet_id'] = $data['outlet_id'];
+            $result['nama_outlet'] = $data['nama_outlet'];
+            $result['user_id'] = $data['user_id'];
+            $result['nama_lengkap'] = $data['nama_lengkap'];
+            $result['division_id'] = $data['division_id'];
+            $dataRows->push((object) $result);
+        }
+
+        $dataRows = $this->filterRowsByEmploymentScope($dataRows, $employmentScope, $start, $end);
+
+        $divisiNominalLembur = DB::table('tbl_data_divisi')->pluck('nominal_lembur', 'id');
+
+        $dailyByUser = [];
+        $userMeta = [];
+
+        if ($dataRows->isNotEmpty()) {
+            $userIds = $dataRows->pluck('user_id')->unique()->filter()->values()->all();
+            $tanggalList = $dataRows->pluck('tanggal')->unique()->values()->all();
+
+            $allShiftData = DB::table('user_shifts as us')
+                ->leftJoin('shifts as s', 'us.shift_id', '=', 's.id')
+                ->whereIn('us.user_id', $userIds)
+                ->whereIn('us.tanggal', $tanggalList)
+                ->select('us.user_id', 'us.tanggal', 's.time_start', 's.time_end', 's.shift_name', 'us.shift_id')
+                ->get()
+                ->groupBy(fn ($item) => $item->user_id.'_'.$item->tanggal);
+
+            $extraOffByUserDate = $this->batchExtraOffOvertimeHoursByUserDate($userIds, $start, $end);
+            $requestedByUserDate = $this->batchRequestedOvertimeHoursByUserDate($userIds, $start, $end);
+            $onePlusOneByUserDate = $this->batchOnePlusOneHoursByUserDate($userIds, $start, $end);
+
+            $usersMeta = DB::table('users')
+                ->whereIn('id', $userIds)
+                ->get(['id', 'nama_lengkap', 'division_id'])
+                ->keyBy('id');
+
+            foreach ($dataRows as $row) {
+                $uid = (int) $row->user_id;
+                $userMeta[$uid] = [
+                    'user_id' => $uid,
+                    'nama_lengkap' => $usersMeta->get($uid)?->nama_lengkap ?? ($row->nama_lengkap ?? '-'),
+                    'division_id' => $usersMeta->get($uid)?->division_id ?? ($row->division_id ?? null),
+                ];
+
+                $shiftKey = $row->user_id.'_'.$row->tanggal;
+                $shift = $allShiftData->get($shiftKey, collect())->first();
+                $isOffDay = $this->isShiftOff($shift);
+
+                $telatLembur = $this->calculateDailyTelatLembur($row, $shift, $row->tanggal, $isOffDay);
+                $lemburRegular = (float) $telatLembur['lembur'];
+                if ($lemburRegular > 12) {
+                    $lemburRegular = 0;
+                }
+
+                $overtimeKey = $this->overtimeMapKey($uid, (string) $row->tanggal);
+                $extraOffPerDate = (float) ($extraOffByUserDate[$overtimeKey] ?? 0);
+                $actualTotal = floor($lemburRegular + $extraOffPerDate);
+                $finalTotal = floor($this->resolveFinalOvertimeHours(
+                    $actualTotal,
+                    $requestedByUserDate[$overtimeKey] ?? null,
+                    $onePlusOneByUserDate[$overtimeKey] ?? null
+                ));
+
+                $submissionHours = (float) ($requestedByUserDate[$overtimeKey] ?? 0);
+                $divisionId = $userMeta[$uid]['division_id'];
+
+                $dailyByUser[$uid][] = [
+                    'tanggal' => (string) $row->tanggal,
+                    'is_off' => $isOffDay,
+                    'telat' => (int) $telatLembur['telat'],
+                    'real_hours' => (int) floor($finalTotal),
+                    'submission_hours' => $submissionHours,
+                    'submission_amount' => $this->overtimeAmountFromHours($submissionHours, $divisionId, $divisiNominalLembur),
+                ];
+            }
+
+            // Sertakan tanggal yang punya OT submission tapi tanpa baris absensi (tetap ikut total submission).
+            foreach ($requestedByUserDate as $otKey => $hours) {
+                if (! preg_match('/^(\d+)_(.+)$/', (string) $otKey, $m)) {
+                    continue;
+                }
+                $uid = (int) $m[1];
+                $tanggal = (string) $m[2];
+                if (! isset($userMeta[$uid])) {
+                    continue;
+                }
+                $existing = collect($dailyByUser[$uid] ?? [])->firstWhere('tanggal', $tanggal);
+                if ($existing) {
+                    continue;
+                }
+                $divisionId = $userMeta[$uid]['division_id'];
+                $dailyByUser[$uid][] = [
+                    'tanggal' => $tanggal,
+                    'is_off' => false,
+                    'telat' => 0,
+                    'real_hours' => 0,
+                    'submission_hours' => (float) $hours,
+                    'submission_amount' => $this->overtimeAmountFromHours((float) $hours, $divisionId, $divisiNominalLembur),
+                ];
+            }
+        } else {
+            $requestedByUserDate = [];
+        }
+
+        $overtimeEmployees = [];
+        $lateEmployees = [];
+        $totalSubmissionHours = 0.0;
+        $totalSubmissionAmount = 0;
+        $totalRealHours = 0;
+        $totalRealAmount = 0;
+        $totalTelat = 0;
+
+        foreach ($userMeta as $uid => $meta) {
+            $days = collect($dailyByUser[$uid] ?? [])->sortBy('tanggal')->values();
+            $nonOff = $days->where('is_off', false);
+
+            $otSubmission = $this->overtimeSubmissionTotalsForUser(
+                (int) $uid,
+                $requestedByUserDate,
+                $meta['division_id'],
+                $divisiNominalLembur
+            );
+
+            $realHours = (int) $nonOff->sum('real_hours');
+            $realAmount = $this->overtimeAmountFromHours($realHours, $meta['division_id'], $divisiNominalLembur);
+            $telatMinutes = (int) $nonOff->sum('telat');
+
+            $totalSubmissionHours += $otSubmission['hours'];
+            $totalSubmissionAmount += $otSubmission['amount'];
+            $totalRealHours += $realHours;
+            $totalRealAmount += $realAmount;
+            $totalTelat += $telatMinutes;
+
+            $otDays = $days
+                ->filter(fn ($d) => ((float) $d['submission_hours'] > 0) || ((int) $d['real_hours'] > 0))
+                ->map(fn ($d) => [
+                    'tanggal' => $d['tanggal'],
+                    'submission_hours' => (float) $d['submission_hours'],
+                    'submission_amount' => (int) $d['submission_amount'],
+                    'real_hours' => (int) $d['real_hours'],
+                ])
+                ->values()
+                ->all();
+
+            if ($otSubmission['hours'] > 0 || $realHours > 0) {
+                $overtimeEmployees[] = [
+                    'user_id' => (int) $uid,
+                    'nama_lengkap' => $meta['nama_lengkap'],
+                    'submission_hours' => (float) $otSubmission['hours'],
+                    'submission_amount' => (int) $otSubmission['amount'],
+                    'real_hours' => $realHours,
+                    'real_amount' => $realAmount,
+                    'days' => $otDays,
+                ];
+            }
+
+            $lateDays = $nonOff
+                ->filter(fn ($d) => (int) $d['telat'] > 0)
+                ->map(fn ($d) => [
+                    'tanggal' => $d['tanggal'],
+                    'minutes' => (int) $d['telat'],
+                ])
+                ->values()
+                ->all();
+
+            if ($telatMinutes > 0) {
+                $lateEmployees[] = [
+                    'user_id' => (int) $uid,
+                    'nama_lengkap' => $meta['nama_lengkap'],
+                    'total_minutes' => $telatMinutes,
+                    'days' => $lateDays,
+                ];
+            }
+        }
+
+        usort($overtimeEmployees, fn ($a, $b) => strcmp($a['nama_lengkap'], $b['nama_lengkap']));
+        usort($lateEmployees, fn ($a, $b) => strcmp($a['nama_lengkap'], $b['nama_lengkap']));
+
+        $leave = $this->buildOpexLeaveBundle($outletId, $start, $end, $employmentScope);
+
+        return [
+            'overtime' => [
+                'submission_hours' => $totalSubmissionHours,
+                'submission_amount' => $totalSubmissionAmount,
+                'real_hours' => $totalRealHours,
+                'real_amount' => $totalRealAmount,
+                'employees' => $overtimeEmployees,
+            ],
+            'late' => [
+                'total_minutes' => $totalTelat,
+                'employee_count' => count($lateEmployees),
+                'employees' => $lateEmployees,
+            ],
+            'leave' => $leave,
+        ];
+    }
+
+    /**
+     * Leave approved per outlet (sama sumber calculateLeaveData).
+     *
+     * @param  array<string, mixed>  $employmentScope
+     * @return array{total_days: int, types: list<array{leave_type_id: int, name: string, days: int}>, employees: list<array<string,mixed>>}
+     */
+    private function buildOpexLeaveBundle(int $outletId, string $start, string $end, array $employmentScope): array
+    {
+        $leaveTypes = DB::table('leave_types')
+            ->where('is_active', 1)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $typeTotals = [];
+        foreach ($leaveTypes as $lt) {
+            $typeTotals[(int) $lt->id] = [
+                'leave_type_id' => (int) $lt->id,
+                'name' => (string) $lt->name,
+                'days' => 0,
+            ];
+        }
+
+        $usersQuery = DB::table('users as u')
+            ->select('u.id', 'u.nama_lengkap')
+            ->where(function ($q) use ($outletId, $employmentScope) {
+                $q->where('u.id_outlet', $outletId)->where('u.status', 'A');
+                $extraIds = $employmentScope['include_user_ids'] ?? [];
+                if (! empty($extraIds)) {
+                    $q->orWhereIn('u.id', $extraIds);
+                }
+            });
+
+        $users = $usersQuery->get()->keyBy('id');
+        if ($users->isEmpty()) {
+            return [
+                'total_days' => 0,
+                'types' => array_values($typeTotals),
+                'employees' => [],
+            ];
+        }
+
+        $userIds = $users->keys()->map(fn ($id) => (int) $id)->all();
+
+        $approvedAbsents = DB::table('absent_requests')
+            ->join('leave_types', 'absent_requests.leave_type_id', '=', 'leave_types.id')
+            ->whereIn('absent_requests.user_id', $userIds)
+            ->where('absent_requests.status', 'approved')
+            ->where(function ($query) use ($start, $end) {
+                $query->whereBetween('absent_requests.date_from', [$start, $end])
+                    ->orWhereBetween('absent_requests.date_to', [$start, $end])
+                    ->orWhere(function ($q) use ($start, $end) {
+                        $q->where('absent_requests.date_from', '<=', $start)
+                            ->where('absent_requests.date_to', '>=', $end);
+                    });
+            })
+            ->select([
+                'absent_requests.user_id',
+                'absent_requests.date_from',
+                'absent_requests.date_to',
+                'leave_types.id as leave_type_id',
+                'leave_types.name as leave_type_name',
+            ])
+            ->get();
+
+        $byUser = [];
+        foreach ($approvedAbsents as $absent) {
+            $uid = (int) $absent->user_id;
+            $segment = $this->employmentSegmentForUser($uid, $start, $end, $employmentScope);
+            if ($segment === null && (isset($employmentScope['mutation_map'][$uid]) || isset($employmentScope['resignations'][$uid]))) {
+                continue;
+            }
+
+            $fromDate = new \DateTime($absent->date_from);
+            $toDate = new \DateTime($absent->date_to);
+            $daysCount = $fromDate->diff($toDate)->days + 1;
+            $leaveTypeId = (int) $absent->leave_type_id;
+
+            if (! isset($typeTotals[$leaveTypeId])) {
+                $typeTotals[$leaveTypeId] = [
+                    'leave_type_id' => $leaveTypeId,
+                    'name' => (string) $absent->leave_type_name,
+                    'days' => 0,
+                ];
+            }
+            $typeTotals[$leaveTypeId]['days'] += $daysCount;
+
+            if (! isset($byUser[$uid])) {
+                $byUser[$uid] = [
+                    'user_id' => $uid,
+                    'nama_lengkap' => $users->get($uid)?->nama_lengkap ?? '-',
+                    'total_days' => 0,
+                    'by_type' => [],
+                    'days' => [],
+                ];
+            }
+
+            $byUser[$uid]['total_days'] += $daysCount;
+            $typeName = (string) $absent->leave_type_name;
+            $byUser[$uid]['by_type'][$typeName] = ($byUser[$uid]['by_type'][$typeName] ?? 0) + $daysCount;
+            $byUser[$uid]['days'][] = [
+                'date_from' => (string) $absent->date_from,
+                'date_to' => (string) $absent->date_to,
+                'leave_type' => $typeName,
+                'days' => $daysCount,
+            ];
+        }
+
+        $employees = [];
+        foreach ($byUser as $row) {
+            $byTypeList = [];
+            foreach ($row['by_type'] as $name => $days) {
+                $byTypeList[] = ['name' => $name, 'days' => $days];
+            }
+            usort($byTypeList, fn ($a, $b) => strcmp($a['name'], $b['name']));
+            usort($row['days'], fn ($a, $b) => strcmp($a['date_from'], $b['date_from']));
+
+            $employees[] = [
+                'user_id' => $row['user_id'],
+                'nama_lengkap' => $row['nama_lengkap'],
+                'total_days' => $row['total_days'],
+                'by_type' => $byTypeList,
+                'days' => $row['days'],
+            ];
+        }
+
+        usort($employees, fn ($a, $b) => strcmp($a['nama_lengkap'], $b['nama_lengkap']));
+
+        $types = array_values(array_filter($typeTotals, fn ($t) => $t['days'] > 0));
+        usort($types, fn ($a, $b) => strcmp($a['name'], $b['name']));
+        $totalDays = array_sum(array_column($types, 'days'));
+
+        return [
+            'total_days' => $totalDays,
+            'types' => $types,
+            'employees' => $employees,
+        ];
+    }
 }
 

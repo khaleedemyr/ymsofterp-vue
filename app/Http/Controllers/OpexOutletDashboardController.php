@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\OpexOutletDashboardService;
+use App\Support\AttendancePayrollPeriod;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -21,8 +22,7 @@ class OpexOutletDashboardController extends Controller
         $userOutletId = (int) $user->id_outlet;
         $isHo = $userOutletId === 1;
 
-        $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+        $period = $this->resolvePeriodFilters($request);
 
         $outletId = $isHo
             ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
@@ -41,8 +41,14 @@ class OpexOutletDashboardController extends Controller
             'userOutletId' => $userOutletId,
             'canSelectOutlet' => $isHo,
             'filters' => [
-                'date_from' => $dateFrom,
-                'date_to' => $dateTo,
+                'bulan' => $period['bulan'],
+                'tahun' => $period['tahun'],
+                'date_from' => $period['date_from'],
+                'date_to' => $period['date_to'],
+                'period_label' => $period['period_label'],
+                'attendance_date_from' => $period['attendance_date_from'],
+                'attendance_date_to' => $period['attendance_date_to'],
+                'attendance_period_label' => $period['attendance_period_label'],
                 'outlet_id' => $outletId,
             ],
             'lazy' => true,
@@ -54,17 +60,24 @@ class OpexOutletDashboardController extends Controller
         $user = auth()->user();
         $userOutletId = (int) $user->id_outlet;
         $section = (string) $request->get('section', '');
-        $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+        $period = $this->resolvePeriodFilters($request);
 
         $outletId = $userOutletId === 1
             ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
             : $userOutletId;
 
-        $allowed = ['meta', 'overview', 'member', 'ro_forecast', 'payments', 'charts'];
+        $allowed = ['meta', 'overview', 'member', 'ro_forecast', 'payments', 'charts', 'attendance'];
         if (! $outletId || ! in_array($section, $allowed, true)) {
             return response()->json(['error' => 'Outlet and valid section required'], 400);
         }
+
+        // Revenue/spend = kalender tgl 1–akhir bulan; absensi = payroll 26–25.
+        $dateFrom = $section === 'attendance'
+            ? $period['attendance_date_from']
+            : $period['date_from'];
+        $dateTo = $section === 'attendance'
+            ? $period['attendance_date_to']
+            : $period['date_to'];
 
         return response()->json(
             $this->opexService->buildSection($section, $outletId, $dateFrom, $dateTo)
@@ -76,8 +89,9 @@ class OpexOutletDashboardController extends Controller
         $user = auth()->user();
         $userOutletId = (int) $user->id_outlet;
         $type = (string) $request->get('type');
-        $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
-        $dateTo = $request->get('date_to', Carbon::now()->format('Y-m-d'));
+        $period = $this->resolvePeriodFilters($request);
+        $dateFrom = $period['date_from'];
+        $dateTo = $period['date_to'];
         $page = max(1, (int) $request->get('page', 1));
         $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'], true) ? 62 : 20;
         $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'], true) ? 93 : 50;
@@ -1059,5 +1073,60 @@ class OpexOutletDashboardController extends Controller
             'price' => (float) ($i->price ?? 0),
             'subtotal' => (float) ($i->subtotal ?? 0),
         ])->values()->all();
+    }
+
+    /**
+     * Filter bulan/tahun menghasilkan 2 rentang:
+     * - Revenue/Spend: kalender 1 s/d akhir bulan
+     * - Absensi (OT/Telat/Leave): payroll 26 s/d 25
+     *
+     * @return array{
+     *   bulan: int,
+     *   tahun: int,
+     *   date_from: string,
+     *   date_to: string,
+     *   period_label: string,
+     *   attendance_date_from: string,
+     *   attendance_date_to: string,
+     *   attendance_period_label: string
+     * }
+     */
+    private function resolvePeriodFilters(Request $request): array
+    {
+        $bulan = $request->filled('bulan') ? (int) $request->get('bulan') : null;
+        $tahun = $request->filled('tahun') ? (int) $request->get('tahun') : null;
+
+        if ($bulan === null || $tahun === null) {
+            if ($request->filled('date_to')) {
+                $to = Carbon::parse((string) $request->get('date_to'));
+                $bulan = $bulan ?: (int) $to->format('n');
+                $tahun = $tahun ?: (int) $to->format('Y');
+            }
+        }
+
+        $bulan = $bulan ?: (int) date('n');
+        $tahun = $tahun ?: (int) date('Y');
+
+        $calendarFrom = Carbon::create($tahun, $bulan, 1)->startOfDay();
+        $calendarTo = $calendarFrom->copy()->endOfMonth()->startOfDay();
+        // Bulan berjalan: sampai hari ini (MTD), bukan ke depan.
+        $today = Carbon::today();
+        if ($calendarFrom->isSameMonth($today) && $calendarTo->gt($today)) {
+            $calendarTo = $today->copy();
+        }
+
+        $attendance = AttendancePayrollPeriod::forMonth($bulan, $tahun);
+
+        return [
+            'bulan' => $bulan,
+            'tahun' => $tahun,
+            'date_from' => $calendarFrom->format('Y-m-d'),
+            'date_to' => $calendarTo->format('Y-m-d'),
+            'period_label' => $calendarFrom->locale('id')->translatedFormat('d M Y')
+                .' - '.$calendarTo->locale('id')->translatedFormat('d M Y'),
+            'attendance_date_from' => $attendance['start'],
+            'attendance_date_to' => $attendance['end'],
+            'attendance_period_label' => $attendance['label'],
+        ];
     }
 }

@@ -14,14 +14,19 @@
           </p>
         </div>
 
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 w-full xl:w-auto xl:min-w-[640px]">
+        <div class="w-full xl:w-auto xl:min-w-[640px]">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">Dari</label>
-            <input v-model="filters.date_from" type="date" class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500" />
+            <label class="block text-xs font-medium text-slate-500 mb-1">Bulan</label>
+            <select v-model.number="filters.bulan" class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500">
+              <option v-for="(m, idx) in monthNames" :key="idx + 1" :value="idx + 1">{{ m }}</option>
+            </select>
           </div>
           <div>
-            <label class="block text-xs font-medium text-slate-500 mb-1">Sampai</label>
-            <input v-model="filters.date_to" type="date" class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500" />
+            <label class="block text-xs font-medium text-slate-500 mb-1">Tahun</label>
+            <select v-model.number="filters.tahun" class="w-full rounded-xl border-slate-200 text-sm focus:ring-sky-500 focus:border-sky-500">
+              <option v-for="t in tahunOptions" :key="t" :value="t">{{ t }}</option>
+            </select>
           </div>
           <div>
             <label class="block text-xs font-medium text-slate-500 mb-1">Outlet</label>
@@ -43,6 +48,11 @@
               Tampilkan
             </button>
           </div>
+        </div>
+        <p class="text-xs text-slate-500 mt-2 space-y-0.5">
+          <span class="block">Revenue &amp; Spend: {{ periodLabel }}</span>
+          <span class="block">Absensi (26–25): {{ attendancePeriodLabel }}</span>
+        </p>
         </div>
       </div>
 
@@ -673,6 +683,82 @@
           </button>
         </div>
 
+        <!-- Attendance: Overtime / Late / Leave -->
+        <div v-if="sectionLoading.attendance" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data absensi…
+        </div>
+        <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openAttendanceModal('overtime')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-violet-600 inline-flex items-center gap-1">
+                  Employee Overtime
+                  <CardHelpTip :text="cardHelps.employee_overtime" />
+                </p>
+                <div class="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Submission</p>
+                    <p class="text-lg font-bold text-teal-700">{{ formatDecimal(att.overtime?.submission_hours) }} jam</p>
+                    <p class="text-xs font-semibold text-teal-800">{{ formatCurrency(att.overtime?.submission_amount) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Real</p>
+                    <p class="text-lg font-bold text-violet-700">{{ formatNumber(att.overtime?.real_hours) }} jam</p>
+                    <p class="text-xs font-semibold text-violet-800">{{ formatCurrency(att.overtime?.real_amount) }}</p>
+                  </div>
+                </div>
+              </div>
+              <span class="text-violet-400 text-xs mt-1 shrink-0">Detail →</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openAttendanceModal('late')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-orange-600 inline-flex items-center gap-1">
+                  Telat Absen
+                  <CardHelpTip :text="cardHelps.late_absen" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(att.late?.total_minutes) }}</p>
+                <p class="mt-1 text-sm text-slate-500">menit · {{ att.late?.employee_count || 0 }} karyawan</p>
+              </div>
+              <span class="text-orange-400 text-xs mt-1 shrink-0">Detail →</span>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openAttendanceModal('leave')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-600 inline-flex items-center gap-1">
+                  Leave
+                  <CardHelpTip :text="cardHelps.leave" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(att.leave?.total_days) }}</p>
+                <p class="mt-1 text-sm text-slate-500">hari cuti / izin</p>
+                <div v-if="(att.leave?.types || []).length" class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                  <div v-for="row in att.leave.types" :key="row.leave_type_id" class="min-w-0">
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.name }}</p>
+                    <p class="text-xs font-semibold text-slate-700">{{ formatNumber(row.days) }} hari</p>
+                  </div>
+                </div>
+              </div>
+              <span class="text-cyan-400 text-xs mt-1 shrink-0">Detail →</span>
+            </div>
+          </button>
+        </div>
+
         <!-- Charts -->
         <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-6 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat chart…
@@ -821,7 +907,7 @@
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
             <h3 class="text-xl font-bold text-slate-900">{{ modalTitle }}</h3>
-            <p class="text-sm text-slate-500">{{ filters.date_from }} s/d {{ filters.date_to }}</p>
+            <p class="text-sm text-slate-500">{{ periodLabel || `${filters.date_from} s/d ${filters.date_to}` }}</p>
           </div>
           <button type="button" class="text-slate-400 hover:text-slate-700" @click="closeModal">
             <i class="fa-solid fa-xmark text-xl"></i>
@@ -1451,18 +1537,41 @@
                       <th class="px-4 py-2 text-left">Item</th>
                       <th class="px-4 py-2 text-right">Qty</th>
                       <th class="px-4 py-2 text-left">Unit</th>
-                      <th class="px-4 py-2 text-right">{{ modalType === 'stock_cut' || String(spendDetailMeta.title || '').startsWith('Stock Cut') ? 'MAC' : 'Harga' }}</th>
+                      <th class="px-4 py-2 text-right">{{ isStockCutSpendDetail ? 'MAC' : 'Harga' }}</th>
                       <th class="px-4 py-2 text-right">Subtotal</th>
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="(item, i) in txn.items" :key="i" class="border-b last:border-b-0">
-                      <td class="px-4 py-2">{{ item.name }}</td>
-                      <td class="px-4 py-2 text-right">{{ item.qty }}</td>
-                      <td class="px-4 py-2">{{ item.unit }}</td>
-                      <td class="px-4 py-2 text-right">{{ formatCurrency(item.price) }}</td>
-                      <td class="px-4 py-2 text-right font-medium">{{ formatCurrency(item.subtotal) }}</td>
-                    </tr>
+                    <template v-if="hasItemCategories(txn.items)">
+                      <template v-for="group in groupItemsByCategory(txn.items)" :key="group.category">
+                        <tr class="bg-slate-100/90 border-b border-slate-200">
+                          <td colspan="5" class="px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-700">
+                            {{ group.category }}
+                            <span class="ml-2 font-normal normal-case text-slate-500">{{ group.items.length }} item · {{ formatCurrency(group.subtotal) }}</span>
+                          </td>
+                        </tr>
+                        <tr
+                          v-for="(item, i) in group.items"
+                          :key="group.category + '-' + i"
+                          class="border-b last:border-b-0"
+                        >
+                          <td class="px-4 py-2 pl-6">{{ item.name }}</td>
+                          <td class="px-4 py-2 text-right">{{ item.qty }}</td>
+                          <td class="px-4 py-2">{{ item.unit }}</td>
+                          <td class="px-4 py-2 text-right">{{ formatCurrency(item.price) }}</td>
+                          <td class="px-4 py-2 text-right font-medium">{{ formatCurrency(item.subtotal) }}</td>
+                        </tr>
+                      </template>
+                    </template>
+                    <template v-else>
+                      <tr v-for="(item, i) in txn.items" :key="i" class="border-b last:border-b-0">
+                        <td class="px-4 py-2">{{ item.name }}</td>
+                        <td class="px-4 py-2 text-right">{{ item.qty }}</td>
+                        <td class="px-4 py-2">{{ item.unit }}</td>
+                        <td class="px-4 py-2 text-right">{{ formatCurrency(item.price) }}</td>
+                        <td class="px-4 py-2 text-right font-medium">{{ formatCurrency(item.subtotal) }}</td>
+                      </tr>
+                    </template>
                   </tbody>
                 </table>
               </div>
@@ -1478,6 +1587,182 @@
             type="button"
             class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-black"
             @click="closeSpendCellDetail"
+          >
+            Tutup
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attendance list modal -->
+    <div
+      v-if="attModalOpen"
+      class="fixed inset-0 z-[55] flex items-center justify-center bg-black/40 p-4"
+      @click.self="closeAttendanceModal"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">{{ attModalTitle }}</h2>
+            <p class="text-sm text-slate-500 mt-1">{{ attModalSubtitle }}</p>
+          </div>
+          <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="closeAttendanceModal">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="!(attModalEmployees || []).length" class="py-10 text-center text-slate-400">
+            Tidak ada data.
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="bg-slate-50 text-slate-600 border-b">
+                  <th class="px-3 py-2 text-left">Karyawan</th>
+                  <template v-if="attModalKind === 'overtime'">
+                    <th class="px-3 py-2 text-right">OT Submission</th>
+                    <th class="px-3 py-2 text-right">OT Real</th>
+                  </template>
+                  <template v-else-if="attModalKind === 'late'">
+                    <th class="px-3 py-2 text-right">Telat (menit)</th>
+                  </template>
+                  <template v-else>
+                    <th class="px-3 py-2 text-left">Leave</th>
+                    <th class="px-3 py-2 text-right">Total hari</th>
+                  </template>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="emp in attModalEmployees"
+                  :key="emp.user_id"
+                  class="border-b last:border-b-0 hover:bg-slate-50/80"
+                >
+                  <td class="px-3 py-2.5">
+                    <button
+                      type="button"
+                      class="text-left font-semibold text-sky-700 hover:underline"
+                      @click="openAttendanceEmployeeDetail(emp)"
+                    >
+                      {{ emp.nama_lengkap }}
+                    </button>
+                  </td>
+                  <template v-if="attModalKind === 'overtime'">
+                    <td class="px-3 py-2.5 text-right">
+                      <div class="font-mono text-teal-700 font-semibold">{{ formatDecimal(emp.submission_hours) }} jam</div>
+                      <div class="font-mono text-xs text-teal-800">{{ formatCurrency(emp.submission_amount) }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 text-right">
+                      <div class="font-mono text-violet-700 font-semibold">{{ formatNumber(emp.real_hours) }} jam</div>
+                      <div class="font-mono text-xs text-violet-800">{{ formatCurrency(emp.real_amount) }}</div>
+                    </td>
+                  </template>
+                  <template v-else-if="attModalKind === 'late'">
+                    <td class="px-3 py-2.5 text-right font-mono font-semibold text-orange-700">
+                      {{ formatNumber(emp.total_minutes) }}
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td class="px-3 py-2.5 text-slate-600">
+                      <span v-for="(t, i) in emp.by_type || []" :key="t.name">
+                        {{ t.name }} ({{ t.days }})<span v-if="i < (emp.by_type || []).length - 1">, </span>
+                      </span>
+                    </td>
+                    <td class="px-3 py-2.5 text-right font-mono font-semibold">{{ formatNumber(emp.total_days) }}</td>
+                  </template>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="px-6 py-3 border-t bg-slate-50 flex justify-end">
+          <button type="button" class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-black" @click="closeAttendanceModal">
+            Tutup
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attendance employee day detail (nested) -->
+    <div
+      v-if="attDayOpen"
+      class="fixed inset-0 z-[65] flex items-center justify-center bg-black/40 p-4"
+      @click.self="closeAttendanceEmployeeDetail"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">{{ attDayEmployee?.nama_lengkap || 'Detail' }}</h2>
+            <p class="text-sm text-slate-500 mt-1">{{ attDaySubtitle }}</p>
+          </div>
+          <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="closeAttendanceEmployeeDetail">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="!(attDayRows || []).length" class="py-10 text-center text-slate-400">
+            Tidak ada detail tanggal.
+          </div>
+          <div v-else class="overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="bg-slate-50 text-slate-600 border-b">
+                  <template v-if="attModalKind === 'overtime'">
+                    <th class="px-3 py-2 text-left">Tanggal</th>
+                    <th class="px-3 py-2 text-right">OT Submission</th>
+                    <th class="px-3 py-2 text-right">OT Real</th>
+                  </template>
+                  <template v-else-if="attModalKind === 'late'">
+                    <th class="px-3 py-2 text-left">Tanggal</th>
+                    <th class="px-3 py-2 text-right">Telat (menit)</th>
+                  </template>
+                  <template v-else>
+                    <th class="px-3 py-2 text-left">Tanggal</th>
+                    <th class="px-3 py-2 text-left">Leave</th>
+                    <th class="px-3 py-2 text-right">Hari</th>
+                  </template>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(row, idx) in attDayRows" :key="idx" class="border-b last:border-b-0">
+                  <template v-if="attModalKind === 'overtime'">
+                    <td class="px-3 py-2.5">{{ formatShortDate(row.tanggal) }}</td>
+                    <td class="px-3 py-2.5 text-right">
+                      <div class="font-mono text-teal-700">{{ formatDecimal(row.submission_hours) }} jam</div>
+                      <div class="font-mono text-xs text-teal-800">{{ formatCurrency(row.submission_amount) }}</div>
+                    </td>
+                    <td class="px-3 py-2.5 text-right font-mono text-violet-700 font-semibold">
+                      {{ formatNumber(row.real_hours) }} jam
+                    </td>
+                  </template>
+                  <template v-else-if="attModalKind === 'late'">
+                    <td class="px-3 py-2.5">{{ formatShortDate(row.tanggal) }}</td>
+                    <td class="px-3 py-2.5 text-right font-mono font-semibold text-orange-700">
+                      {{ formatNumber(row.minutes) }}
+                    </td>
+                  </template>
+                  <template v-else>
+                    <td class="px-3 py-2.5">
+                      <span v-if="row.date_from === row.date_to">{{ formatShortDate(row.date_from) }}</span>
+                      <span v-else>{{ formatShortDate(row.date_from) }} – {{ formatShortDate(row.date_to) }}</span>
+                    </td>
+                    <td class="px-3 py-2.5">{{ row.leave_type }}</td>
+                    <td class="px-3 py-2.5 text-right font-mono font-semibold">{{ formatNumber(row.days) }}</td>
+                  </template>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="px-6 py-3 border-t bg-slate-50 flex justify-end">
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-black"
+            @click="closeAttendanceEmployeeDetail"
           >
             Tutup
           </button>
@@ -1547,6 +1832,12 @@ const cardHelps = {
     'Nilai stock cut dari menu Stock Cut (value_out, status success).\n\nModal detail harian: kolom Food, Beverage, Total.\nKlik nilai → list item (qty, MAC, subtotal).',
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.',
+  employee_overtime:
+    'OT Submission = jam & nilai dari Overtime Submission approved.\nOT Real = jam lembur aktual (absensi + Extra Off OT, dikurangi 1+1) seperti Attendance Report per outlet.\nKlik card → per karyawan. Klik nama → per tanggal.',
+  late_absen:
+    'Total menit keterlambatan (hari non-off) seperti Attendance Report per outlet.\nKlik card → per karyawan. Klik nama → tanggal & menit telat.',
+  leave:
+    'Total hari leave/izin approved per tipe (absent_requests), sama sumber Attendance Report.\nKlik card → per karyawan. Klik nama → rentang tanggal, tipe, dan jumlah hari.',
 }
 
 const props = defineProps({
@@ -1571,6 +1862,7 @@ const emptyDashboard = () => ({
   payment_methods: [],
   ro_forecast: null,
   outlet_name: null,
+  attendance: null,
 })
 
 const dashboardData = ref({ ...emptyDashboard(), ...(props.dashboardData || {}) })
@@ -1579,6 +1871,7 @@ const vs = computed(() => ov.value.vs_last_month || {})
 const vsMember = computed(() => ov.value.vs_last_month_member || {})
 const trendRows = computed(() => dashboardData.value.trend || [])
 const roForecast = computed(() => dashboardData.value.ro_forecast || null)
+const att = computed(() => dashboardData.value.attendance || {})
 
 const sectionLoading = ref({
   meta: false,
@@ -1587,6 +1880,7 @@ const sectionLoading = ref({
   ro_forecast: false,
   payments: false,
   charts: false,
+  attendance: false,
 })
 const sectionError = ref({
   meta: false,
@@ -1595,23 +1889,94 @@ const sectionError = ref({
   ro_forecast: false,
   payments: false,
   charts: false,
+  attendance: false,
 })
 
 const bootstrapping = computed(() =>
   Object.values(sectionLoading.value).some(Boolean)
 )
 
+const monthNames = [
+  'Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni',
+  'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember',
+]
+const tahunOptions = Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i)
+
+const pad2 = (n) => String(n).padStart(2, '0')
+const fmtDate = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+
+/** Revenue/Spend: kalender tgl 1 s/d akhir bulan (bulan berjalan = MTD). */
+const calendarPeriodFor = (bulan, tahun) => {
+  const b = Number(bulan) || (new Date().getMonth() + 1)
+  const t = Number(tahun) || new Date().getFullYear()
+  const start = new Date(t, b - 1, 1)
+  let end = new Date(t, b, 0)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  if (start.getFullYear() === today.getFullYear() && start.getMonth() === today.getMonth() && end > today) {
+    end = today
+  }
+  return { bulan: b, tahun: t, date_from: fmtDate(start), date_to: fmtDate(end) }
+}
+
+/** Absensi: payroll 26 bulan sebelumnya – 25 bulan label. */
+const payrollPeriodFor = (bulan, tahun) => {
+  const b = Number(bulan) || (new Date().getMonth() + 1)
+  const t = Number(tahun) || new Date().getFullYear()
+  const end = new Date(t, b - 1, 25)
+  const start = new Date(t, b - 2, 26)
+  return { bulan: b, tahun: t, date_from: fmtDate(start), date_to: fmtDate(end) }
+}
+
+const defaultCalendar = calendarPeriodFor(
+  props.filters?.bulan || new Date().getMonth() + 1,
+  props.filters?.tahun || new Date().getFullYear()
+)
+const defaultPayroll = payrollPeriodFor(defaultCalendar.bulan, defaultCalendar.tahun)
+
 const filters = ref({
-  date_from: props.filters?.date_from || '',
-  date_to: props.filters?.date_to || '',
+  bulan: props.filters?.bulan || defaultCalendar.bulan,
+  tahun: props.filters?.tahun || defaultCalendar.tahun,
+  date_from: props.filters?.date_from || defaultCalendar.date_from,
+  date_to: props.filters?.date_to || defaultCalendar.date_to,
+  period_label: props.filters?.period_label || '',
+  attendance_date_from: props.filters?.attendance_date_from || defaultPayroll.date_from,
+  attendance_date_to: props.filters?.attendance_date_to || defaultPayroll.date_to,
+  attendance_period_label: props.filters?.attendance_period_label || '',
   outlet_id: props.filters?.outlet_id || null,
 })
 
-const filterParams = () => ({
-  outlet_id: filters.value.outlet_id,
-  date_from: filters.value.date_from,
-  date_to: filters.value.date_to,
+const periodLabel = computed(() => {
+  if (filters.value.period_label) return filters.value.period_label
+  const p = calendarPeriodFor(filters.value.bulan, filters.value.tahun)
+  return `${p.date_from} s/d ${p.date_to}`
 })
+
+const attendancePeriodLabel = computed(() => {
+  if (filters.value.attendance_period_label) return filters.value.attendance_period_label
+  const p = payrollPeriodFor(filters.value.bulan, filters.value.tahun)
+  return `${p.date_from} s/d ${p.date_to}`
+})
+
+const syncPeriodDates = () => {
+  const cal = calendarPeriodFor(filters.value.bulan, filters.value.tahun)
+  const pay = payrollPeriodFor(filters.value.bulan, filters.value.tahun)
+  filters.value.date_from = cal.date_from
+  filters.value.date_to = cal.date_to
+  filters.value.attendance_date_from = pay.date_from
+  filters.value.attendance_date_to = pay.date_to
+}
+
+const filterParams = () => {
+  syncPeriodDates()
+  return {
+    outlet_id: filters.value.outlet_id,
+    bulan: filters.value.bulan,
+    tahun: filters.value.tahun,
+    date_from: filters.value.date_from,
+    date_to: filters.value.date_to,
+  }
+}
 
 const mergeSectionPayload = (section, data) => {
   if (!data || typeof data !== 'object') return
@@ -1648,6 +2013,9 @@ const mergeSectionPayload = (section, data) => {
   if (data.purchase_category_mix !== undefined) {
     dashboardData.value.purchase_category_mix = data.purchase_category_mix
   }
+  if (data.attendance !== undefined) {
+    dashboardData.value.attendance = data.attendance
+  }
 }
 
 const fetchSection = async (section) => {
@@ -1683,6 +2051,7 @@ const loadDashboardLazy = async () => {
     fetchSection('ro_forecast'),
     fetchSection('charts'),
     fetchSection('payments'),
+    fetchSection('attendance'),
   ])
 }
 
@@ -1691,8 +2060,13 @@ const applyFilters = () => {
     alert('Pilih outlet terlebih dahulu')
     return
   }
+  syncPeriodDates()
   // Update URL tanpa menunggu query berat di server
-  router.get('/opex-outlet-dashboard', filters.value, {
+  router.get('/opex-outlet-dashboard', {
+    outlet_id: filters.value.outlet_id,
+    bulan: filters.value.bulan,
+    tahun: filters.value.tahun,
+  }, {
     preserveState: true,
     preserveScroll: true,
     only: ['filters', 'outlets', 'canSelectOutlet', 'userOutletId', 'lazy'],
@@ -1709,17 +2083,33 @@ onMounted(() => {
 })
 
 watch(
-  () => [props.filters?.date_from, props.filters?.date_to, props.filters?.outlet_id],
-  ([df, dt, oid]) => {
+  () => [
+    props.filters?.bulan,
+    props.filters?.tahun,
+    props.filters?.date_from,
+    props.filters?.date_to,
+    props.filters?.period_label,
+    props.filters?.attendance_date_from,
+    props.filters?.attendance_date_to,
+    props.filters?.attendance_period_label,
+    props.filters?.outlet_id,
+  ],
+  ([bulan, tahun, df, dt, label, adf, adt, alabel, oid]) => {
+    if (bulan != null) filters.value.bulan = Number(bulan)
+    if (tahun != null) filters.value.tahun = Number(tahun)
     if (df) filters.value.date_from = df
     if (dt) filters.value.date_to = dt
+    if (label !== undefined) filters.value.period_label = label || ''
+    if (adf) filters.value.attendance_date_from = adf
+    if (adt) filters.value.attendance_date_to = adt
+    if (alabel !== undefined) filters.value.attendance_period_label = alabel || ''
     if (oid !== undefined) filters.value.outlet_id = oid
   }
 )
 
 const roForecastHref = computed(() => {
   const outlet = filters.value.outlet_id
-  const month = (filters.value.date_from || '').slice(0, 7)
+  const month = `${filters.value.tahun}-${String(filters.value.bulan).padStart(2, '0')}`
   const p = new URLSearchParams()
   if (outlet) p.set('outlet_id', String(outlet))
   if (month) p.set('month', month)
@@ -2328,14 +2718,94 @@ const closeSpendCellDetail = () => {
   spendDetailData.value = null
 }
 
+const attModalOpen = ref(false)
+const attModalKind = ref('overtime')
+const attModalEmployees = ref([])
+const attDayOpen = ref(false)
+const attDayEmployee = ref(null)
+
+const attModalTitle = computed(() => {
+  if (attModalKind.value === 'overtime') return 'Employee Overtime'
+  if (attModalKind.value === 'late') return 'Telat Absen'
+  return 'Leave'
+})
+
+const attModalSubtitle = computed(() => {
+  if (attModalKind.value === 'overtime') {
+    return `${formatDecimal(att.value.overtime?.submission_hours)} jam submission · ${formatNumber(att.value.overtime?.real_hours)} jam real`
+  }
+  if (attModalKind.value === 'late') {
+    return `${formatNumber(att.value.late?.total_minutes)} menit · ${att.value.late?.employee_count || 0} karyawan`
+  }
+  return `${formatNumber(att.value.leave?.total_days)} hari total`
+})
+
+const attDaySubtitle = computed(() => {
+  if (attModalKind.value === 'overtime') return 'OT Submission & OT Real per tanggal'
+  if (attModalKind.value === 'late') return 'Tanggal & menit keterlambatan'
+  return 'Tanggal, tipe leave, dan jumlah hari'
+})
+
+const attDayRows = computed(() => attDayEmployee.value?.days || [])
+
+const openAttendanceModal = (kind) => {
+  attModalKind.value = kind
+  if (kind === 'overtime') {
+    attModalEmployees.value = att.value.overtime?.employees || []
+  } else if (kind === 'late') {
+    attModalEmployees.value = att.value.late?.employees || []
+  } else {
+    attModalEmployees.value = att.value.leave?.employees || []
+  }
+  attModalOpen.value = true
+}
+
+const closeAttendanceModal = () => {
+  attModalOpen.value = false
+  attDayOpen.value = false
+  attDayEmployee.value = null
+}
+
+const openAttendanceEmployeeDetail = (emp) => {
+  attDayEmployee.value = emp
+  attDayOpen.value = true
+}
+
+const closeAttendanceEmployeeDetail = () => {
+  attDayOpen.value = false
+  attDayEmployee.value = null
+}
+
+const isStockCutSpendDetail = computed(() =>
+  modalType.value === 'stock_cut' || String(spendDetailMeta.value?.title || '').startsWith('Stock Cut')
+)
+
+const hasItemCategories = (items) =>
+  (items || []).some((item) => item?.category || item?.category_name)
+
+const groupItemsByCategory = (items) => {
+  const map = new Map()
+  for (const item of items || []) {
+    const category = String(item.category || item.category_name || 'Tanpa Category')
+    if (!map.has(category)) {
+      map.set(category, { category, items: [], subtotal: 0 })
+    }
+    const group = map.get(category)
+    group.items.push(item)
+    group.subtotal += Number(item.subtotal) || 0
+  }
+  return Array.from(map.values()).map((group) => ({
+    ...group,
+    subtotal: Math.round(group.subtotal * 100) / 100,
+  }))
+}
+
 const fetchModal = async () => {
   modalLoading.value = true
   try {
     const params = {
       type: modalType.value,
-      outlet_id: filters.value.outlet_id,
-      date_from: filters.value.date_from,
-      date_to: filters.value.date_to,
+      ...filterParams(),
       search: modalSearch.value,
       page: modalPage.value,
       per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category'].includes(modalType.value) ? 62 : 20,
