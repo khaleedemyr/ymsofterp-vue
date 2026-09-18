@@ -190,10 +190,7 @@ class OutletRejectionController extends Controller
         $itemMaster = DB::table('items')->where('id', $serial->item_id)->first();
         $inventoryItem = DB::table('food_inventory_items')->where('item_id', $serial->item_id)->first();
         $serialMacSmall = (float) ($serial->cost_small ?? 0);
-        $stockMacSmall = $inventoryItem
-            ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId)
-            : 0.0;
-        $macSmall = $serialMacSmall > 0 ? $serialMacSmall : $stockMacSmall;
+        $macSmall = $this->resolveMacSmallForRejection($serialMacSmall, $inventoryItem, $warehouseId);
         $macLine = $this->convertMacSmallToLineUnit((float) $macSmall, $itemMaster, (int) $scanQty['unit_id']);
         $macLine = $this->sanitizeMacLineForStorage($macLine, $serial, $itemMaster, (int) $scanQty['unit_id'], $warehouseId);
 
@@ -1754,15 +1751,14 @@ class OutletRejectionController extends Controller
     {
         foreach ($items as $item) {
             $inventoryItem = DB::table('food_inventory_items')->where('item_id', $item['item_id'])->first();
-            $macCostSmallUnit = $inventoryItem
-                ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId)
-                : 0.0;
+            $macCostSmallUnit = $this->resolveMacSmallForRejection(0.0, $inventoryItem, $warehouseId);
             $itemData = DB::table('items')->where('id', $item['item_id'])->first();
             $macCostConverted = $this->convertMacSmallToLineUnit(
                 (float) $macCostSmallUnit,
                 $itemData,
                 (int) $item['unit_id']
             );
+            $macCostConverted = $this->clampMacLineToColumn($macCostConverted);
 
             OutletRejectionItem::create([
                 'outlet_rejection_id' => $rejection->id,
@@ -1797,10 +1793,7 @@ class OutletRejectionController extends Controller
             $itemMaster = DB::table('items')->where('id', $row['item_id'])->first();
             $inventoryItem = DB::table('food_inventory_items')->where('item_id', $row['item_id'])->first();
             $serialMacSmall = (float) ($serial->cost_small ?? 0);
-            $stockMacSmall = $inventoryItem
-                ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, (int) $request->warehouse_id)
-                : 0.0;
-            $macSmall = $serialMacSmall > 0 ? $serialMacSmall : $stockMacSmall;
+            $macSmall = $this->resolveMacSmallForRejection($serialMacSmall, $inventoryItem, (int) $request->warehouse_id);
             $macLine = $this->convertMacSmallToLineUnit((float) $macSmall, $itemMaster, (int) $unitId);
             $macLine = $this->sanitizeMacLineForStorage($macLine, $serial, $itemMaster, (int) $unitId, (int) $request->warehouse_id);
 
@@ -2102,23 +2095,31 @@ class OutletRejectionController extends Controller
 
     /**
      * Pastikan mac_cost aman untuk kolom DECIMAL(15,4) dan finite.
+     * Jika hasil konversi unit overflow (sering karena cost_small serial corrupt),
+     * coba ulang dari MAC stok/histori yang masuk akal, lalu clamp.
      */
     private function sanitizeMacLineForStorage(float $macLine, object $serial, ?object $itemMaster, int $unitId, int $warehouseId): float
     {
-        if (! is_finite($macLine) || $macLine <= 0) {
+        $max = $this->maxMacLineStorage();
+
+        if (! is_finite($macLine) || $macLine <= 0 || $macLine > $max) {
+            $inventoryItem = DB::table('food_inventory_items')->where('item_id', $serial->item_id)->first();
             $serialMacSmall = (float) ($serial->cost_small ?? 0);
-            if ($serialMacSmall > 0) {
-                $macLine = $this->convertMacSmallToLineUnit($serialMacSmall, $itemMaster, $unitId);
-            } else {
-                $inventoryItem = DB::table('food_inventory_items')->where('item_id', $serial->item_id)->first();
-                $stockMacSmall = $inventoryItem
-                    ? $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId)
-                    : 0.0;
-                $macLine = $this->convertMacSmallToLineUnit((float) $stockMacSmall, $itemMaster, $unitId);
+            $macSmall = $this->resolveMacSmallForRejection($serialMacSmall, $inventoryItem, $warehouseId);
+            $macLine = $this->convertMacSmallToLineUnit($macSmall, $itemMaster, $unitId);
+
+            if ((! is_finite($macLine) || $macLine <= 0 || $macLine > $max) && $inventoryItem) {
+                $saneSmall = $this->findSaneMacSmallAcrossWarehouses((int) $inventoryItem->id);
+                if ($saneSmall > 0) {
+                    $macLine = $this->convertMacSmallToLineUnit($saneSmall, $itemMaster, $unitId);
+                }
             }
         }
 
-        $max = 99999999999.9999; // DECIMAL(15,4)
+        if (! is_finite($macLine) || $macLine < 0) {
+            $macLine = 0.0;
+        }
+
         if ($macLine > $max) {
             Log::warning('Outlet rejection: mac_cost exceeds DECIMAL(15,4), clamped', [
                 'serial_id' => $serial->id ?? null,
@@ -2131,7 +2132,94 @@ class OutletRejectionController extends Controller
             $macLine = $max;
         }
 
-        return round(max(0.0, $macLine), 4);
+        return round($macLine, 4);
+    }
+
+    private function maxMacLineStorage(): float
+    {
+        return 99999999999.9999; // DECIMAL(15,4)
+    }
+
+    private function clampMacLineToColumn(float $macLine): float
+    {
+        if (! is_finite($macLine) || $macLine < 0) {
+            return 0.0;
+        }
+        $max = $this->maxMacLineStorage();
+        if ($macLine > $max) {
+            return round($max, 4);
+        }
+
+        return round($macLine, 4);
+    }
+
+    /**
+     * Pilih MAC per small yang masuk akal. Serial/stok corrupt sering menyimpan
+     * nilai jutaan–miliaran per gram, yang meledak saat dikali konversi Pack.
+     */
+    private function resolveMacSmallForRejection(float $serialMacSmall, $inventoryItem, int $warehouseId): float
+    {
+        $maxSane = $this->maxReasonableMacPerSmall();
+
+        if ($serialMacSmall > 0 && is_finite($serialMacSmall) && $serialMacSmall <= $maxSane) {
+            return $serialMacSmall;
+        }
+
+        if ($serialMacSmall > $maxSane) {
+            Log::warning('Outlet rejection: serial cost_small absurd, ignoring', [
+                'inventory_item_id' => $inventoryItem->id ?? null,
+                'warehouse_id' => $warehouseId,
+                'serial_cost_small' => $serialMacSmall,
+            ]);
+        }
+
+        if ($inventoryItem) {
+            $baseline = $this->defaultMacSmallFromStockOrHistory((int) $inventoryItem->id, $warehouseId);
+            if ($baseline > 0 && is_finite($baseline) && $baseline <= $maxSane) {
+                return $baseline;
+            }
+
+            $alt = $this->findSaneMacSmallAcrossWarehouses((int) $inventoryItem->id);
+            if ($alt > 0) {
+                return $alt;
+            }
+        }
+
+        return 0.0;
+    }
+
+    private function maxReasonableMacPerSmall(): float
+    {
+        // Batas longgar: di atas ini hampir pasti salah skala / corrupt untuk unit kecil.
+        return 1000000.0;
+    }
+
+    private function findSaneMacSmallAcrossWarehouses(int $inventoryItemId): float
+    {
+        $maxSane = $this->maxReasonableMacPerSmall();
+
+        $stockCost = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('last_cost_small', '>', 0)
+            ->where('last_cost_small', '<=', $maxSane)
+            ->orderByDesc('updated_at')
+            ->value('last_cost_small');
+        if ($stockCost !== null && (float) $stockCost > 0) {
+            return (float) $stockCost;
+        }
+
+        $histMac = DB::table('food_inventory_cost_histories')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('mac', '>', 0)
+            ->where('mac', '<=', $maxSane)
+            ->orderByDesc('date')
+            ->orderByDesc('id')
+            ->value('mac');
+        if ($histMac !== null && (float) $histMac > 0) {
+            return (float) $histMac;
+        }
+
+        return 0.0;
     }
 
     private function convertQtyToSmall(float $qty, int $unitId, ?object $itemMaster): float

@@ -185,6 +185,35 @@
           </div>
         </div>
 
+        <!-- Source cards — di bawah Purchased (GSR/RWS/RF/RNF/Petty) -->
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+          <button
+            v-for="card in sourceCards"
+            :key="card.key"
+            type="button"
+            class="rounded-3xl bg-white border shadow-sm p-5 text-left hover:shadow-md transition group"
+            :class="card.border"
+            @click="openCard(card.key)"
+          >
+            <div class="flex items-center justify-between mb-3">
+              <span class="text-xs font-semibold uppercase tracking-wide" :class="card.tone">{{ card.label }}</span>
+              <span class="w-10 h-10 rounded-xl flex items-center justify-center" :class="card.iconBg">
+                <i :class="[card.icon, card.tone]"></i>
+              </span>
+            </div>
+            <p class="text-2xl font-bold text-slate-900">{{ formatCurrency(card.amount) }}</p>
+            <p class="text-xs text-slate-500 mt-1">{{ card.hint }}</p>
+            <p v-if="card.revenuePct != null" class="text-xs font-semibold text-slate-600 mt-1">
+              {{ card.revenuePct }}% dari revenue
+            </p>
+            <p v-if="card.paymentHint" class="text-xs text-slate-500 mt-1">{{ card.paymentHint }}</p>
+            <p class="mt-1 text-xs font-medium" :class="vsClass(card.vs, true)">{{ vsLabel(card.vs) }}</p>
+            <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+              <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
+            </div>
+          </button>
+        </div>
+
         <!-- Pembelian MCS — langsung di bawah RO Forecast -->
         <div v-if="!sectionLoading.overview" class="mb-6">
           <button
@@ -220,6 +249,27 @@
         </div>
         <div v-else-if="sectionLoading.overview" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat Pembelian MCS…
+        </div>
+
+        <!-- Chart Pembelian per Category — di bawah purchased -->
+        <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-12 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat chart pembelian…
+        </div>
+        <div v-else class="mb-6">
+          <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
+            <h2 class="text-lg font-bold text-slate-900 mb-1">Pembelian per Category</h2>
+            <p class="text-xs text-slate-500 mb-4">Semua category · GSR · RWS · Retail Food — klik slice untuk detail</p>
+            <div class="max-w-xl mx-auto">
+              <apexchart
+                v-if="purchaseCategoryMixSeries.some((v) => v > 0)"
+                type="pie"
+                height="360"
+                :options="purchaseCategoryMixOptions"
+                :series="purchaseCategoryMixSeries"
+              />
+              <p v-else class="text-sm text-slate-500 py-16 text-center">Belum ada pembelian.</p>
+            </div>
+          </div>
         </div>
 
         <!-- Hero metrics -->
@@ -471,35 +521,6 @@
           </button>
         </div>
 
-        <!-- Source cards -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-          <button
-            v-for="card in sourceCards"
-            :key="card.key"
-            type="button"
-            class="rounded-3xl bg-white border shadow-sm p-5 text-left hover:shadow-md transition group"
-            :class="card.border"
-            @click="openCard(card.key)"
-          >
-            <div class="flex items-center justify-between mb-3">
-              <span class="text-xs font-semibold uppercase tracking-wide" :class="card.tone">{{ card.label }}</span>
-              <span class="w-10 h-10 rounded-xl flex items-center justify-center" :class="card.iconBg">
-                <i :class="[card.icon, card.tone]"></i>
-              </span>
-            </div>
-            <p class="text-2xl font-bold text-slate-900">{{ formatCurrency(card.amount) }}</p>
-            <p class="text-xs text-slate-500 mt-1">{{ card.hint }}</p>
-            <p v-if="card.revenuePct != null" class="text-xs font-semibold text-slate-600 mt-1">
-              {{ card.revenuePct }}% dari revenue
-            </p>
-            <p v-if="card.paymentHint" class="text-xs text-slate-500 mt-1">{{ card.paymentHint }}</p>
-            <p class="mt-1 text-xs font-medium" :class="vsClass(card.vs, true)">{{ vsLabel(card.vs) }}</p>
-            <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-              <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
-            </div>
-          </button>
-        </div>
-
         <!-- Stock Cut, Category Cost -->
         <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           <button
@@ -578,21 +599,8 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
-          <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
-            <h2 class="text-lg font-bold text-slate-900 mb-1">Pembelian per Category</h2>
-            <p class="text-xs text-slate-500 mb-4">Semua category · GSR · RWS · Retail Food — klik slice untuk detail</p>
-            <apexchart
-              v-if="purchaseCategoryMixSeries.some((v) => v > 0)"
-              type="pie"
-              height="320"
-              :options="purchaseCategoryMixOptions"
-              :series="purchaseCategoryMixSeries"
-            />
-            <p v-else class="text-sm text-slate-500 py-16 text-center">Belum ada pembelian.</p>
-          </div>
-
-          <div class="xl:col-span-2 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
+        <div class="grid grid-cols-1 gap-4 mb-6">
+          <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
             <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
             <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
             <apexchart type="bar" height="320" :options="stackOptions" :series="stackSeries" />
