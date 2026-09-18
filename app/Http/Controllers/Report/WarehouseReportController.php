@@ -600,7 +600,8 @@ class WarehouseReportController extends Controller
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->leftJoin('items as it', 'ofgri.item_id', '=', 'it.id')
             ->leftJoin('units as u', 'ofgri.unit_id', '=', 'u.id')
-            ->leftJoin('users as usr', 'ffo.user_id', '=', 'usr.id')
+            ->leftJoin('users as usr_ro', 'ffo.user_id', '=', 'usr_ro.id')
+            ->leftJoin('users as usr_recv', 'ofgr.created_by', '=', 'usr_recv.id')
             ->whereNull('ofgr.deleted_at')
             ->where('ofgr.outlet_id', $outletId)
             ->whereDate('ofgr.receive_date', $date)
@@ -609,7 +610,9 @@ class WarehouseReportController extends Controller
                 'ofgr.id as txn_id',
                 'ofgr.number as txn_number',
                 'ffo.order_number as ro_number',
-                'usr.nama_lengkap as ordered_by',
+                'usr_ro.nama_lengkap as ro_creator',
+                'usr_recv.nama_lengkap as received_by',
+                'usr_ro.nama_lengkap as ordered_by',
                 'it.name as item_name',
                 'u.name as unit_name',
                 'ofgri.received_qty as qty',
@@ -629,6 +632,8 @@ class WarehouseReportController extends Controller
                 'number' => $first->txn_number,
                 'ro_number' => $first->ro_number,
                 'ordered_by' => $first->ordered_by ?: '-',
+                'ro_creator' => $first->ro_creator ?: '-',
+                'received_by' => $first->received_by ?: '-',
                 'total' => round($items->sum('subtotal'), 2),
                 'items' => $items->map(fn ($i) => [
                     'name' => $i->item_name,
@@ -649,9 +654,10 @@ class WarehouseReportController extends Controller
                 ->leftJoin('warehouse_division as wd', 'it.warehouse_division_id', '=', 'wd.id')
                 ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
                 ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
-                ->leftJoin('users as usr', 'h.created_by', '=', 'usr.id')
+                ->leftJoin('users as usr_recv', 'h.created_by', '=', 'usr_recv.id')
                 ->leftJoin('delivery_orders as do', 'si.delivery_order_id', '=', 'do.id')
                 ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+                ->leftJoin('users as usr_ro', 'ffo.user_id', '=', 'usr_ro.id')
                 ->whereNull('h.deleted_at')
                 ->where('h.status', 'completed')
                 ->where('h.outlet_id', $outletId)
@@ -661,7 +667,9 @@ class WarehouseReportController extends Controller
                     'h.id as txn_id',
                     'h.number as txn_number',
                     'ffo.order_number as ro_number',
-                    'usr.nama_lengkap as ordered_by',
+                    'usr_ro.nama_lengkap as ro_creator',
+                    'usr_recv.nama_lengkap as received_by',
+                    'usr_recv.nama_lengkap as ordered_by',
                     'it.name as item_name',
                     'u.name as unit_name',
                     DB::raw('SUM(si.qty) as qty'),
@@ -673,7 +681,8 @@ class WarehouseReportController extends Controller
                     'h.id',
                     'h.number',
                     'ffo.order_number',
-                    'usr.nama_lengkap',
+                    'usr_ro.nama_lengkap',
+                    'usr_recv.nama_lengkap',
                     'it.name',
                     'u.name',
                     'w.name',
@@ -691,6 +700,8 @@ class WarehouseReportController extends Controller
                     'number' => $first->txn_number,
                     'ro_number' => $first->ro_number,
                     'ordered_by' => $first->ordered_by ?: '-',
+                    'ro_creator' => $first->ro_creator ?: '-',
+                    'received_by' => $first->received_by ?: '-',
                     'total' => round($items->sum('subtotal'), 2),
                     'items' => $items->map(fn ($i) => [
                         'name' => $i->item_name,

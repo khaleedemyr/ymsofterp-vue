@@ -808,14 +808,30 @@
                         :key="'wh-' + row.id + '-' + wh.key"
                         class="px-4 py-3 bg-indigo-50 text-indigo-900 text-right font-medium"
                       >
-                        {{ formatCurrency(row[wh.key]) }}
+                        <button
+                          v-if="Number(row[wh.key]) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-indigo-700"
+                          @click="openSpendCellDetail('warehouse', wh.key, wh.name, row.date, row[wh.key])"
+                        >
+                          {{ formatCurrency(row[wh.key]) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
                       </td>
                       <td
                         v-for="sp in spendSuppliers"
                         :key="'sp-' + row.id + '-' + sp.id"
                         class="px-4 py-3 bg-amber-50 text-amber-900 text-right font-medium"
                       >
-                        {{ formatCurrency(row['supplier_' + sp.id]) }}
+                        <button
+                          v-if="Number(row['supplier_' + sp.id]) > 0"
+                          type="button"
+                          class="underline decoration-dotted underline-offset-2 hover:text-amber-700"
+                          @click="openSpendCellDetail('supplier', String(sp.id), sp.name, row.date, row['supplier_' + sp.id])"
+                        >
+                          {{ formatCurrency(row['supplier_' + sp.id]) }}
+                        </button>
+                        <span v-else>{{ formatCurrency(0) }}</span>
                       </td>
                       <td class="px-4 py-3 bg-rose-50 text-rose-900 text-right font-semibold">
                         {{ formatCurrency(row.total_spend) }}
@@ -850,7 +866,7 @@
                 </table>
               </div>
               <p class="text-xs text-slate-500">
-                {{ modalPagination.total }} hari · format Receiving Sheet (tanpa omzet)
+                {{ modalPagination.total }} hari · klik nilai untuk melihat transaksi &amp; detail item
               </p>
             </template>
 
@@ -1102,6 +1118,94 @@
             </div>
             </template>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Total Spend cell detail (nested) -->
+    <div
+      v-if="spendDetailOpen"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      @click.self="closeSpendCellDetail"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">{{ spendDetailMeta.title }}</h2>
+            <p class="text-sm text-slate-500 mt-1">
+              {{ formatShortDate(spendDetailMeta.date) }}
+              <span v-if="spendDetailMeta.amount != null"> · {{ formatCurrency(spendDetailMeta.amount) }}</span>
+            </p>
+          </div>
+          <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="closeSpendCellDetail">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="spendDetailLoading" class="py-12 text-center text-slate-500">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat detail...
+          </div>
+          <div v-else-if="spendDetailError" class="py-8 text-center text-rose-600">
+            {{ spendDetailError }}
+          </div>
+          <div v-else-if="!spendDetailData?.transactions?.length" class="py-8 text-center text-slate-500">
+            Tidak ada transaksi.
+          </div>
+          <div v-else class="space-y-5">
+            <div
+              v-for="(txn, idx) in spendDetailData.transactions"
+              :key="idx"
+              class="border border-slate-200 rounded-xl overflow-hidden"
+            >
+              <div class="bg-slate-50 px-4 py-3 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+                <div><span class="text-slate-500">Tipe:</span> <strong>{{ txn.source }}</strong></div>
+                <div><span class="text-slate-500">No. Transaksi:</span> <strong>{{ txn.number || '-' }}</strong></div>
+                <div v-if="txn.ro_number"><span class="text-slate-500">No. RO/FO:</span> <strong>{{ txn.ro_number }}</strong></div>
+                <template v-if="txn.source === 'GSR' || txn.source === 'GR'">
+                  <div><span class="text-slate-500">Pembuat RO:</span> <strong>{{ txn.ro_creator || txn.ordered_by || '-' }}</strong></div>
+                  <div><span class="text-slate-500">Penerima GR:</span> <strong>{{ txn.received_by || '-' }}</strong></div>
+                </template>
+                <div v-else><span class="text-slate-500">User:</span> <strong>{{ txn.ordered_by || '-' }}</strong></div>
+                <div class="ml-auto"><span class="text-slate-500">Total:</span> <strong>{{ formatCurrency(txn.total) }}</strong></div>
+              </div>
+              <div class="overflow-x-auto">
+                <table class="min-w-full text-sm">
+                  <thead>
+                    <tr class="bg-white border-b text-slate-600">
+                      <th class="px-4 py-2 text-left">Item</th>
+                      <th class="px-4 py-2 text-right">Qty</th>
+                      <th class="px-4 py-2 text-left">Unit</th>
+                      <th class="px-4 py-2 text-right">Harga</th>
+                      <th class="px-4 py-2 text-right">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(item, i) in txn.items" :key="i" class="border-b last:border-b-0">
+                      <td class="px-4 py-2">{{ item.name }}</td>
+                      <td class="px-4 py-2 text-right">{{ item.qty }}</td>
+                      <td class="px-4 py-2">{{ item.unit }}</td>
+                      <td class="px-4 py-2 text-right">{{ formatCurrency(item.price) }}</td>
+                      <td class="px-4 py-2 text-right font-medium">{{ formatCurrency(item.subtotal) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="px-6 py-3 border-t bg-slate-50 flex justify-between items-center">
+          <div class="text-sm text-slate-600">
+            Grand total: <strong>{{ formatCurrency(spendDetailData?.grand_total || 0) }}</strong>
+          </div>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-slate-800 text-white hover:bg-black"
+            @click="closeSpendCellDetail"
+          >
+            Tutup
+          </button>
         </div>
       </div>
     </div>
@@ -1511,6 +1615,12 @@ const modalSheetMeta = ref(null)
 const expandedMcsTxnIds = ref({})
 const mcsCategoryFilter = ref('')
 
+const spendDetailOpen = ref(false)
+const spendDetailLoading = ref(false)
+const spendDetailError = ref('')
+const spendDetailData = ref(null)
+const spendDetailMeta = ref({ title: '', date: '', amount: null })
+
 const toggleMcsTxn = (id) => {
   expandedMcsTxnIds.value = {
     ...expandedMcsTxnIds.value,
@@ -1702,6 +1812,50 @@ const closeModal = () => {
   modalSheetMeta.value = null
   expandedMcsTxnIds.value = {}
   mcsCategoryFilter.value = ''
+  closeSpendCellDetail()
+}
+
+const openSpendCellDetail = async (type, key, label, date, amount) => {
+  if (!filters.value.outlet_id) {
+    alert('Pilih outlet terlebih dahulu')
+    return
+  }
+
+  spendDetailOpen.value = true
+  spendDetailLoading.value = true
+  spendDetailError.value = ''
+  spendDetailData.value = null
+  spendDetailMeta.value = {
+    title: label,
+    date,
+    amount,
+  }
+
+  try {
+    const { data } = await axios.get('/api/report/receiving-sheet-detail', {
+      params: {
+        type,
+        key,
+        date,
+        outlet: filters.value.outlet_id,
+      },
+    })
+    spendDetailData.value = data
+    if (data?.title) {
+      spendDetailMeta.value.title = data.title
+    }
+  } catch (e) {
+    spendDetailError.value = e?.response?.data?.error || e?.message || 'Gagal memuat detail'
+  } finally {
+    spendDetailLoading.value = false
+  }
+}
+
+const closeSpendCellDetail = () => {
+  spendDetailOpen.value = false
+  spendDetailLoading.value = false
+  spendDetailError.value = ''
+  spendDetailData.value = null
 }
 
 const fetchModal = async () => {

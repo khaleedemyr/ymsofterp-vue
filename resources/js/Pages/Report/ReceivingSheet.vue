@@ -249,7 +249,11 @@
                 <div><span class="text-gray-500">Tipe:</span> <strong>{{ txn.source }}</strong></div>
                 <div><span class="text-gray-500">No. Transaksi:</span> <strong>{{ txn.number || '-' }}</strong></div>
                 <div v-if="txn.ro_number"><span class="text-gray-500">No. RO/FO:</span> <strong>{{ txn.ro_number }}</strong></div>
-                <div><span class="text-gray-500">Order/Belanja oleh:</span> <strong>{{ txn.ordered_by || '-' }}</strong></div>
+                <template v-if="txn.source === 'GSR' || txn.source === 'GR'">
+                  <div><span class="text-gray-500">Pembuat RO:</span> <strong>{{ txn.ro_creator || txn.ordered_by || '-' }}</strong></div>
+                  <div><span class="text-gray-500">Penerima GR:</span> <strong>{{ txn.received_by || '-' }}</strong></div>
+                </template>
+                <div v-else><span class="text-gray-500">Order/Belanja oleh:</span> <strong>{{ txn.ordered_by || '-' }}</strong></div>
                 <div class="ml-auto"><span class="text-gray-500">Total:</span> <strong>{{ formatCurrency(txn.total) }}</strong></div>
               </div>
               <div class="overflow-x-auto">
