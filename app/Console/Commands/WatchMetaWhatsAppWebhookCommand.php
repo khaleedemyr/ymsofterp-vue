@@ -41,6 +41,10 @@ class WatchMetaWhatsAppWebhookCommand extends Command
             $this->warn('• '.$line);
         }
 
+        foreach ($result['soft_warnings'] ?? [] as $line) {
+            $this->line('~ '.$line);
+        }
+
         if ($result['remediated']) {
             $this->info('Auto-remediate: subscribe WABA dijalankan.');
         }
@@ -49,8 +53,12 @@ class WatchMetaWhatsAppWebhookCommand extends Command
             $this->info('Notifikasi alert dikirim ke admin (META_WHATSAPP_WEBHOOK_ALERT_USER_IDS).');
         } elseif ($dryRun) {
             $this->line('Dry-run: notifikasi & remediate dilewati.');
-        } elseif ($result['anomalies'] !== [] || $result['remediated']) {
+        } elseif (($result['anomalies'] ?? []) !== [] || $result['remediated']) {
             $this->line('Notifikasi tidak dikirim (dedupe cache atau user_id kosong).');
+        }
+
+        if ($result['ok'] && ($result['soft_warnings'] ?? []) !== [] && ($result['anomalies'] ?? []) === []) {
+            $this->info('Webhook aman. Ada soft warning jaringan (bukan hijack).');
         }
 
         return $result['ok'] ? self::SUCCESS : self::FAILURE;

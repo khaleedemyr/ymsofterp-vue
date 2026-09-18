@@ -31,11 +31,30 @@ class MetaWhatsAppWebhookGuardService
         $expectedHost = parse_url($expected, PHP_URL_HOST) ?: 'ymsofterp.com';
         $erpAppId = (string) config('services.meta.app_id', '1302269045204850');
 
-        $config = $this->client->getPhoneWebhookConfiguration();
+        $anomalies = [];
+        $softWarnings = [];
+
+        try {
+            $config = $this->client->getPhoneWebhookConfiguration();
+        } catch (\Throwable $e) {
+            // Timeout Graph API ≠ hijack webhook. Jangan alarm "mencurigakan".
+            Log::warning('Meta WhatsApp webhook guard: gagal baca webhook_configuration', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'ok' => true,
+                'anomalies' => [],
+                'soft_warnings' => ['Gagal baca webhook_configuration (jaringan/timeout): '.$e->getMessage()],
+                'remediated' => false,
+                'notified' => false,
+                'webhook_configuration' => [],
+                'expected_callback' => $expected,
+            ];
+        }
+
         $applicationUrl = (string) ($config['application'] ?? '');
         $overrideUrl = (string) ($config['whatsapp_business_account'] ?? '');
-
-        $anomalies = [];
 
         if ($applicationUrl === '') {
             $anomalies[] = 'Callback application kosong — Webhooks App Dashboard belum terpasang.';
@@ -48,10 +67,16 @@ class MetaWhatsAppWebhookGuardService
         }
 
         $subscribedApps = [];
+        $subscribedAppsLoaded = false;
         try {
             $subscribedApps = $this->client->listSubscribedApps();
+            $subscribedAppsLoaded = true;
         } catch (\Throwable $e) {
-            $anomalies[] = 'Gagal baca subscribed_apps: '.$e->getMessage();
+            // Timeout ke graph.facebook.com sering transient — log saja, jangan notifikasi hijack.
+            $softWarnings[] = 'Gagal baca subscribed_apps (jaringan/timeout, bukan hijack): '.$e->getMessage();
+            Log::warning('Meta WhatsApp webhook guard: gagal baca subscribed_apps', [
+                'error' => $e->getMessage(),
+            ]);
         }
 
         $hasErp = false;
@@ -67,12 +92,11 @@ class MetaWhatsAppWebhookGuardService
             }
         }
 
-        if ($subscribedApps !== [] && ! $hasErp) {
+        if ($subscribedAppsLoaded && $subscribedApps !== [] && ! $hasErp) {
             $anomalies[] = 'App YMSoft ERP tidak ada di subscribed_apps WABA.';
         }
 
         foreach ($foreignApps as $appLabel) {
-            // Sleekflow / n8n / app asing — info saja, tidak selalu berbahaya jika ERP juga subscribed
             if (str_contains($appLabel, '812364635796464')) {
                 $anomalies[] = 'App asing masih subscribe WABA: '.$appLabel;
             }
@@ -80,7 +104,7 @@ class MetaWhatsAppWebhookGuardService
 
         $remediated = false;
         $clearedOverrideUrl = null;
-        if ($autoRemediate && $this->needsRemediate($overrideUrl, $expectedHost, $hasErp, $subscribedApps)) {
+        if ($autoRemediate && $this->needsRemediate($overrideUrl, $expectedHost, $hasErp, $subscribedApps, $subscribedAppsLoaded)) {
             $clearedOverrideUrl = ($overrideUrl !== '' && ! $this->urlLooksTrusted($overrideUrl, $expectedHost))
                 ? $overrideUrl
                 : null;
@@ -131,6 +155,7 @@ class MetaWhatsAppWebhookGuardService
         return [
             'ok' => $ok,
             'anomalies' => $anomalies,
+            'soft_warnings' => $softWarnings,
             'remediated' => $remediated,
             'notified' => $notified,
             'webhook_configuration' => $config,
@@ -172,13 +197,18 @@ class MetaWhatsAppWebhookGuardService
     /**
      * @param  list<array<string, mixed>>  $subscribedApps
      */
-    private function needsRemediate(string $overrideUrl, string $expectedHost, bool $hasErp, array $subscribedApps): bool
-    {
+    private function needsRemediate(
+        string $overrideUrl,
+        string $expectedHost,
+        bool $hasErp,
+        array $subscribedApps,
+        bool $subscribedAppsLoaded
+    ): bool {
         if ($overrideUrl !== '' && ! $this->urlLooksTrusted($overrideUrl, $expectedHost)) {
             return true;
         }
 
-        if ($subscribedApps !== [] && ! $hasErp) {
+        if ($subscribedAppsLoaded && $subscribedApps !== [] && ! $hasErp) {
             return true;
         }
 
