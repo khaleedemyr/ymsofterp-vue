@@ -215,13 +215,27 @@
             </div>
             <p class="text-2xl font-bold text-slate-900">{{ formatCurrency(card.amount) }}</p>
             <p class="text-xs text-slate-500 mt-1">{{ card.hint }}</p>
-            <p v-if="card.revenuePct != null" class="text-xs font-semibold text-slate-600 mt-1">
-              {{ card.revenuePct }}% dari revenue
-            </p>
             <p v-if="card.paymentHint" class="text-xs text-slate-500 mt-1">{{ card.paymentHint }}</p>
             <p class="mt-1 text-xs font-medium" :class="vsClass(card.vs, true)">{{ vsLabel(card.vs) }}</p>
-            <div class="mt-3 h-1.5 rounded-full bg-slate-100 overflow-hidden" :title="cardHelps.spend_bar">
-              <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
+            <div class="mt-3 space-y-2">
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-0.5">
+                  <span class="text-[10px] font-medium uppercase tracking-wide text-slate-400">vs Total Spend</span>
+                  <span class="text-[10px] font-semibold text-slate-600">{{ spendShare(card.amount) }}%</span>
+                </div>
+                <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div class="h-full rounded-full" :class="card.bar" :style="{ width: spendShare(card.amount) + '%' }"></div>
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between gap-2 mb-0.5">
+                  <span class="text-[10px] font-medium uppercase tracking-wide text-slate-400">vs Revenue</span>
+                  <span class="text-[10px] font-semibold text-slate-600">{{ revenueShare(card.amount) }}%</span>
+                </div>
+                <div class="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                  <div class="h-full rounded-full opacity-80" :class="card.bar" :style="{ width: Math.min(100, revenueShare(card.amount)) + '%' }"></div>
+                </div>
+              </div>
             </div>
           </button>
         </div>
@@ -1356,15 +1370,15 @@ const cardHelps = {
   service_purchase:
     'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 5% × Forecast.\nRO Outstanding / sisa budget sama logikanya dengan F&B.',
   gsr_ro:
-    'Nilai penerimaan outlet pada periode filter:\n• GR = Outlet Food Good Receive × harga RO\n• GSR = Serial Goods Receive × cost (cost_small, dikonversi unit)\n\nProgress bar = share terhadap Total Spend (bukan % revenue).',
+    'Nilai penerimaan outlet pada periode filter:\n• GR = Outlet Food Good Receive × harga RO\n• GSR = Serial Goods Receive × cost (cost_small, dikonversi unit)\n\nDua bar:\n• vs Total Spend = nilai ÷ Total Spend\n• vs Revenue = nilai ÷ Revenue',
   rws:
-    'Retail Warehouse Sales ke customer tipe branch (outlet ini).\nStatus completed, dijumlah dari total_amount.\n\nIkut ke Purchased F&B (kecuali gudang service).\nProgress bar = share terhadap Total Spend.',
+    'Retail Warehouse Sales ke customer tipe branch (outlet ini).\nStatus completed, dijumlah dari total_amount.\n\nIkut ke Purchased F&B (kecuali gudang service).\nDua bar: vs Total Spend & vs Revenue.',
   retail_food:
-    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nIkut ke Purchased F&B/Service menurut warehouse_outlet (Kitchen/Bar/Service).\n% dari revenue = nilai card ÷ Revenue.\nProgress bar = share terhadap Total Spend.',
+    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nIkut ke Purchased F&B/Service menurut warehouse_outlet (Kitchen/Bar/Service).\nDua bar: vs Total Spend & vs Revenue.',
   retail_non_food:
-    'Transaksi Retail Non Food status approved (Cash + Contra Bon).\n\nMasuk Total Spend, tetapi tidak masuk Purchased F&B/Service.\n% dari revenue = nilai card ÷ Revenue.\nProgress bar = share terhadap Total Spend.',
+    'Transaksi Retail Non Food status approved (Cash + Contra Bon).\n\nMasuk Total Spend, tetapi tidak masuk Purchased F&B/Service.\nDua bar: vs Total Spend & vs Revenue.',
   petty_cash:
-    'Subset cash dari Retail Food + Retail Non Food (payment_method = cash).\nBukan tambahan di luar RF/RNF — hanya ringkasan cash spend.\n\nProgress bar = share terhadap Total Spend.',
+    'Subset cash dari Retail Food + Retail Non Food (payment_method = cash).\nBukan tambahan di luar RF/RNF — hanya ringkasan cash spend.\n\nDua bar: vs Total Spend & vs Revenue.',
   mcs_purchase:
     'Pembelian item kategori MCS (Marketing, Chemical, Stationary, dll) dari GSR + RWS + Retail Food.\n\nBreakdown per category di bawah nilai total.\n% dari revenue = MCS ÷ Revenue.',
   purchase_category:
@@ -1401,8 +1415,6 @@ const cardHelps = {
     'Nilai stock cut dari menu Stock Cut (value_out, status success) pada periode filter.',
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.',
-  spend_bar:
-    'Progress bar = (nilai card ÷ Total Spend) × 100.\nBukan persentase dari revenue.',
 }
 
 const props = defineProps({
@@ -1589,7 +1601,6 @@ const sourceCards = computed(() => [
     label: 'GSR / RO',
     amount: ov.value.gsr_ro || 0,
     hint: `GR ${formatCurrency(ov.value.gsr_ro_gr || 0)} · GSR ${formatCurrency(ov.value.gsr_ro_gsr || 0)}`,
-    revenuePct: null,
     paymentHint: null,
     vs: vs.value.gsr_ro,
     help: cardHelps.gsr_ro,
@@ -1604,7 +1615,6 @@ const sourceCards = computed(() => [
     label: 'RWS',
     amount: ov.value.rws || 0,
     hint: `${ov.value.rws_count || 0} transaksi warehouse`,
-    revenuePct: null,
     paymentHint: null,
     vs: vs.value.rws,
     help: cardHelps.rws,
@@ -1619,7 +1629,6 @@ const sourceCards = computed(() => [
     label: 'Retail Food',
     amount: ov.value.retail_food || 0,
     hint: `${ov.value.retail_food_count || 0} transaksi`,
-    revenuePct: ov.value.retail_food_revenue_pct,
     paymentHint: `Cash ${ov.value.retail_food_cash_count || 0} · Contra Bon ${ov.value.retail_food_contra_bon_count || 0}`,
     vs: vs.value.retail_food,
     help: cardHelps.retail_food,
@@ -1634,7 +1643,6 @@ const sourceCards = computed(() => [
     label: 'Retail Non Food',
     amount: ov.value.retail_non_food || 0,
     hint: `${ov.value.retail_non_food_count || 0} transaksi`,
-    revenuePct: ov.value.retail_non_food_revenue_pct,
     paymentHint: `Cash ${ov.value.retail_non_food_cash_count || 0} · Contra Bon ${ov.value.retail_non_food_contra_bon_count || 0}`,
     vs: vs.value.retail_non_food,
     help: cardHelps.retail_non_food,
@@ -1649,7 +1657,6 @@ const sourceCards = computed(() => [
     label: 'Petty Cash',
     amount: ov.value.petty_cash || 0,
     hint: `RF cash ${formatCurrency(ov.value.petty_cash_rf || 0)} · RNF cash ${formatCurrency(ov.value.petty_cash_rnf || 0)}`,
-    revenuePct: ov.value.petty_cash_revenue_pct,
     paymentHint: `${ov.value.petty_cash_count || 0} trx cash (RF+RNF)`,
     vs: vs.value.petty_cash,
     help: cardHelps.petty_cash,
@@ -1676,7 +1683,13 @@ const pettyCashHref = computed(() => {
 const spendShare = (amount) => {
   const total = Number(ov.value.total_spend) || 0
   if (total <= 0) return 0
-  return Math.min(100, Math.round((Number(amount) / total) * 100))
+  return Math.min(100, Math.round(((Number(amount) || 0) / total) * 1000) / 10)
+}
+
+const revenueShare = (amount) => {
+  const total = Number(ov.value.revenue) || 0
+  if (total <= 0) return 0
+  return Math.round(((Number(amount) || 0) / total) * 1000) / 10
 }
 
 const categories = computed(() =>
