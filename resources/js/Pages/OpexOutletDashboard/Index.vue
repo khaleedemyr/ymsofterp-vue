@@ -67,8 +67,18 @@
           Memuat data dashboard secara bertahap…
         </div>
 
-        <!-- RO Forecast summary -->
-        <div class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 sm:p-6 mb-6">
+        <!-- ========== Group: RO Forecast ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
+              <i class="fa-solid fa-bullseye text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-teal-700">RO Forecast</h2>
+              <p class="text-xs text-slate-500">Budget vs purchase F&amp;B dan Service</p>
+            </div>
+          </div>
+        <div class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 sm:p-6">
           <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
             <div>
               <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">RO Forecast</p>
@@ -203,9 +213,22 @@
             </div>
           </div>
         </div>
+        </section>
+
+        <!-- ========== Group: Pembelian & Spend Source ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-amber-100 text-amber-700">
+              <i class="fa-solid fa-truck-ramp-box text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-amber-700">Pembelian &amp; Spend Source</h2>
+              <p class="text-xs text-slate-500">GSR · RWS · Retail · Petty Cash · MCS · kategori pembelian</p>
+            </div>
+          </div>
 
         <!-- Source cards — di bawah Purchased (GSR/RWS/RF/RNF/Petty) -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
           <button
             v-for="card in sourceCards"
             :key="card.key"
@@ -251,7 +274,7 @@
         </div>
 
         <!-- Pembelian MCS — langsung di bawah RO Forecast -->
-        <div v-if="!sectionLoading.overview" class="mb-6">
+        <div v-if="!sectionLoading.overview" class="mb-4">
           <button
             type="button"
             class="w-full rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition"
@@ -303,15 +326,15 @@
             </div>
           </button>
         </div>
-        <div v-else-if="sectionLoading.overview" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
+        <div v-else-if="sectionLoading.overview" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-10 mb-4 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat Pembelian MCS…
         </div>
 
         <!-- Chart Pembelian per Category — di bawah purchased -->
-        <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-12 mb-6 text-center text-slate-400 text-sm">
+        <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-12 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat chart pembelian…
         </div>
-        <div v-else class="mb-6">
+        <div v-else>
           <div class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5">
             <h2 class="text-lg font-bold text-slate-900 mb-1 inline-flex items-center gap-1.5">
               Pembelian per Category
@@ -330,13 +353,26 @@
             </div>
           </div>
         </div>
+        </section>
+
+        <!-- ========== Group: Revenue & Sales ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-sky-100 text-sky-700">
+              <i class="fa-solid fa-chart-line text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-sky-700">Revenue &amp; Sales</h2>
+              <p class="text-xs text-slate-500">KPI revenue, spend, cover, diskon, dan payment khusus</p>
+            </div>
+          </div>
 
         <!-- Hero metrics -->
-        <div v-if="sectionLoading.overview" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-6 text-center text-slate-400 text-sm">
+        <div v-if="sectionLoading.overview" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-4 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat KPI…
         </div>
         <template v-else>
-        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
           <button
             type="button"
             class="lg:col-span-4 rounded-3xl bg-white border border-sky-100 shadow-sm p-6 text-left hover:shadow-md transition"
@@ -422,7 +458,7 @@
         </div>
 
         <!-- Cover / Pax / Discount / Compliment / GS / OC -->
-        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 inline-flex items-center gap-1">
               Cover / Pax
@@ -559,12 +595,25 @@
           </button>
         </div>
         </template>
+        </section>
+
+        <!-- ========== Group: Member ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-teal-100 text-teal-700">
+              <i class="fa-solid fa-id-card text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-teal-700">Member</h2>
+              <p class="text-xs text-slate-500">Bill member, point earn, dan redeem</p>
+            </div>
+          </div>
 
         <!-- Member Top Up / Redeem -->
-        <div v-if="sectionLoading.member" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
+        <div v-if="sectionLoading.member" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-10 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data member…
         </div>
-        <div v-else-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div v-else-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div class="rounded-3xl bg-white border border-sky-100 shadow-sm p-5">
             <p class="text-xs font-semibold uppercase tracking-wide text-sky-600 inline-flex items-center gap-1">
               Member Bills
@@ -621,9 +670,22 @@
             </div>
           </button>
         </div>
+        </section>
+
+        <!-- ========== Group: Stock & Category Cost ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-fuchsia-100 text-fuchsia-700">
+              <i class="fa-solid fa-warehouse text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-fuchsia-700">Stock Cut &amp; Category Cost</h2>
+              <p class="text-xs text-slate-500">Potong stok dan biaya kategori outlet</p>
+            </div>
+          </div>
 
         <!-- Stock Cut, Category Cost -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <button
             type="button"
             class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition"
@@ -682,98 +744,26 @@
             </div>
           </button>
         </div>
+        </section>
 
-        <!-- Attendance: Overtime / Late / Leave -->
-        <div v-if="sectionLoading.attendance" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
-          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data absensi…
-        </div>
-        <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openAttendanceModal('overtime')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-violet-600 inline-flex items-center gap-1">
-                  Employee Overtime
-                  <CardHelpTip :text="cardHelps.employee_overtime" />
-                </p>
-                <div class="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Submission</p>
-                    <p class="text-lg font-bold text-teal-700">{{ formatDecimal(att.overtime?.submission_hours) }} jam</p>
-                    <p class="text-xs font-semibold text-teal-800">{{ formatCurrency(att.overtime?.submission_amount) }}</p>
-                    <p class="mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">Rata-rata / karyawan</p>
-                    <p class="text-sm font-semibold text-teal-700">{{ formatDecimal(att.overtime?.avg_submission_hours) }} jam</p>
-                    <p class="text-[11px] font-medium text-teal-800">{{ formatCurrency(att.overtime?.avg_submission_amount) }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Real</p>
-                    <p class="text-lg font-bold text-violet-700">{{ formatNumber(att.overtime?.real_hours) }} jam</p>
-                    <p class="text-xs font-semibold text-violet-800">{{ formatCurrency(att.overtime?.real_amount) }}</p>
-                    <p class="mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">Rata-rata / karyawan</p>
-                    <p class="text-sm font-semibold text-violet-700">{{ formatDecimal(att.overtime?.avg_real_hours) }} jam</p>
-                    <p class="text-[11px] font-medium text-violet-800">{{ formatCurrency(att.overtime?.avg_real_amount) }}</p>
-                  </div>
-                </div>
-                <p class="mt-2 text-[11px] text-slate-400">
-                  {{ att.overtime?.employee_count || 0 }} karyawan
-                </p>
-              </div>
-              <span class="text-violet-400 text-xs mt-1 shrink-0">Detail →</span>
+        <!-- ========== Group: Trend & Analytics ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-indigo-100 text-indigo-700">
+              <i class="fa-solid fa-chart-area text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-indigo-700">Trend &amp; Analytics</h2>
+              <p class="text-xs text-slate-500">Revenue vs spend, mix, dan snapshot harian</p>
             </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openAttendanceModal('late')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div>
-                <p class="text-xs font-semibold uppercase tracking-wide text-orange-600 inline-flex items-center gap-1">
-                  Telat Absen
-                  <CardHelpTip :text="cardHelps.late_absen" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(att.late?.total_minutes) }}</p>
-                <p class="mt-1 text-sm text-slate-500">menit · {{ att.late?.employee_count || 0 }} karyawan</p>
-              </div>
-              <span class="text-orange-400 text-xs mt-1 shrink-0">Detail →</span>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openAttendanceModal('leave')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-600 inline-flex items-center gap-1">
-                  Leave
-                  <CardHelpTip :text="cardHelps.leave" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(att.leave?.total_days) }}</p>
-                <p class="mt-1 text-sm text-slate-500">hari cuti / izin</p>
-                <div v-if="(att.leave?.types || []).length" class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                  <div v-for="row in att.leave.types" :key="row.leave_type_id" class="min-w-0">
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.name }}</p>
-                    <p class="text-xs font-semibold text-slate-700">{{ formatNumber(row.days) }} hari</p>
-                  </div>
-                </div>
-              </div>
-              <span class="text-cyan-400 text-xs mt-1 shrink-0">Detail →</span>
-            </div>
-          </button>
-        </div>
+          </div>
 
         <!-- Charts -->
-        <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-6 text-center text-slate-400 text-sm">
+        <div v-if="sectionLoading.charts" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-4 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat chart…
         </div>
         <template v-else>
-        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-4">
           <div class="xl:col-span-2 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
             <div class="flex items-center justify-between mb-4">
               <div>
@@ -835,12 +825,25 @@
           </div>
         </div>
         </template>
+        </section>
+
+        <!-- ========== Group: Metode Pembayaran ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-200 text-slate-700">
+              <i class="fa-solid fa-credit-card text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-slate-700">Metode Pembayaran</h2>
+              <p class="text-xs text-slate-500">Share dan rincian payment code</p>
+            </div>
+          </div>
 
         <!-- Payment methods -->
-        <div v-if="sectionLoading.payments" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-12 mb-6 text-center text-slate-400 text-sm">
+        <div v-if="sectionLoading.payments" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-12 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat metode pembayaran…
         </div>
-        <div v-else class="grid grid-cols-1 xl:grid-cols-3 gap-4 mb-6">
+        <div v-else class="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div class="xl:col-span-1 rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
             <h2 class="text-lg font-bold text-slate-900 mb-1">Metode Pembayaran</h2>
             <p class="text-xs text-slate-500 mb-4">Share amount per payment code</p>
@@ -890,6 +893,104 @@
             </div>
           </div>
         </div>
+        </section>
+
+        <!-- ========== Group: Absensi (paling bawah) ========== -->
+        <section class="mb-8">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+              <i class="fa-solid fa-user-clock text-sm"></i>
+            </span>
+            <div>
+              <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-violet-700">Absensi</h2>
+              <p class="text-xs text-slate-500">Periode payroll 26–25 · overtime, telat, leave</p>
+            </div>
+          </div>
+
+          <div v-if="sectionLoading.attendance" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-10 text-center text-slate-400 text-sm">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data absensi…
+          </div>
+          <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <button
+              type="button"
+              class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5 text-left hover:shadow-md transition"
+              @click="openAttendanceModal('overtime')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-violet-600 inline-flex items-center gap-1">
+                    Employee Overtime
+                    <CardHelpTip :text="cardHelps.employee_overtime" />
+                  </p>
+                  <div class="mt-3 grid grid-cols-2 gap-3">
+                    <div>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Submission</p>
+                      <p class="text-lg font-bold text-teal-700">{{ formatDecimal(att.overtime?.submission_hours) }} jam</p>
+                      <p class="text-xs font-semibold text-teal-800">{{ formatCurrency(att.overtime?.submission_amount) }}</p>
+                      <p class="mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">Rata-rata / karyawan</p>
+                      <p class="text-sm font-semibold text-teal-700">{{ formatDecimal(att.overtime?.avg_submission_hours) }} jam</p>
+                      <p class="text-[11px] font-medium text-teal-800">{{ formatCurrency(att.overtime?.avg_submission_amount) }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400">OT Real</p>
+                      <p class="text-lg font-bold text-violet-700">{{ formatNumber(att.overtime?.real_hours) }} jam</p>
+                      <p class="text-xs font-semibold text-violet-800">{{ formatCurrency(att.overtime?.real_amount) }}</p>
+                      <p class="mt-1.5 text-[10px] uppercase tracking-wide text-slate-400">Rata-rata / karyawan</p>
+                      <p class="text-sm font-semibold text-violet-700">{{ formatDecimal(att.overtime?.avg_real_hours) }} jam</p>
+                      <p class="text-[11px] font-medium text-violet-800">{{ formatCurrency(att.overtime?.avg_real_amount) }}</p>
+                    </div>
+                  </div>
+                  <p class="mt-2 text-[11px] text-slate-400">
+                    {{ att.overtime?.employee_count || 0 }} karyawan
+                  </p>
+                </div>
+                <span class="text-violet-400 text-xs mt-1 shrink-0">Detail →</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              class="rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition"
+              @click="openAttendanceModal('late')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-orange-600 inline-flex items-center gap-1">
+                    Telat Absen
+                    <CardHelpTip :text="cardHelps.late_absen" />
+                  </p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(att.late?.total_minutes) }}</p>
+                  <p class="mt-1 text-sm text-slate-500">menit · {{ att.late?.employee_count || 0 }} karyawan</p>
+                </div>
+                <span class="text-orange-400 text-xs mt-1 shrink-0">Detail →</span>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              class="rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
+              @click="openAttendanceModal('leave')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-cyan-600 inline-flex items-center gap-1">
+                    Leave
+                    <CardHelpTip :text="cardHelps.leave" />
+                  </p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatNumber(att.leave?.total_days) }}</p>
+                  <p class="mt-1 text-sm text-slate-500">hari cuti / izin</p>
+                  <div v-if="(att.leave?.types || []).length" class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <div v-for="row in att.leave.types" :key="row.leave_type_id" class="min-w-0">
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.name }}</p>
+                      <p class="text-xs font-semibold text-slate-700">{{ formatNumber(row.days) }} hari</p>
+                    </div>
+                  </div>
+                </div>
+                <span class="text-cyan-400 text-xs mt-1 shrink-0">Detail →</span>
+              </div>
+            </button>
+          </div>
+        </section>
 
         <!-- Quick links -->
         <div class="flex flex-wrap gap-3">
