@@ -153,6 +153,8 @@ class OpexOutletDashboardController extends Controller
                     $row->creator_name ?? null,
                     $row->source ?? null,
                     $row->supplier_name ?? null,
+                    $row->category_name ?? null,
+                    $row->party_label ?? null,
                     $row->member_name ?? null,
                     $row->manual_discount_reason ?? null,
                     $row->beneficiary_name ?? null,
@@ -768,7 +770,6 @@ class OpexOutletDashboardController extends Controller
                 $method = $row->payment_method === 'contra_bon' ? 'Contra Bon' : 'Cash';
                 $row->type = 'retail_non_food';
                 $row->source = 'Retail Non Food · '.$method;
-                $row->supplier_name = $row->category_name ?? null;
 
                 return $row;
             });
@@ -798,6 +799,8 @@ class OpexOutletDashboardController extends Controller
             ->map(function ($row) {
                 $row->type = 'petty_cash';
                 $row->source = 'RF Cash';
+                $row->category_name = null;
+                $row->party_label = $row->supplier_name;
 
                 return $row;
             });
@@ -818,12 +821,14 @@ class OpexOutletDashboardController extends Controller
                 'rnf.retail_number as number',
                 'rnf.transaction_date as date',
                 'rnf.total_amount as amount',
-                'cat.name as supplier_name',
+                'cat.name as category_name',
                 'u.nama_lengkap as creator_name',
             ])
             ->map(function ($row) {
                 $row->type = 'petty_cash';
                 $row->source = 'RNF Cash';
+                $row->supplier_name = null;
+                $row->party_label = $row->category_name;
 
                 return $row;
             });

@@ -6,6 +6,7 @@ use App\Exports\FloorOrderVsForecastExport;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 
@@ -672,58 +673,80 @@ class FloorOrderVsForecastReportController extends Controller
                 $sohCursor->addDay();
             }
 
+            /*
+             * Purchased = nilai diterima (GSR + outlet GR) + Retail Food.
+             * Bucket dari warehouse_outlet (Kitchen/Bar vs Service), tanggal = receive_date / transaction_date.
+             */
             $bucketExpr = 'CASE
                 WHEN LOWER(TRIM(wo.name)) IN (\'kitchen\', \'bar\') THEN \'kitchen_bar\'
                 WHEN LOWER(TRIM(wo.name)) = \'service\' THEN \'service\'
                 ELSE \'other\'
             END';
 
-            /*
-             * Nilai RO per baris: jika sudah ada GR completed (Outlet Food Good Receive), pakai
-             * SUM(received_qty) × harga baris RO — sama seperti detail GR di laporan Invoice Outlet.
-             * Jika belum ada penerimaan tercatat di GR, fallback ke subtotal baris FO.
-             */
-            $receivedQtyByRoItem = DB::table('outlet_food_good_receive_items as gri')
-                ->join('outlet_food_good_receives as gr', function ($join) {
-                    $join->on('gri.outlet_food_good_receive_id', '=', 'gr.id')
-                        ->whereNull('gr.deleted_at')
-                        ->where('gr.status', 'completed');
-                })
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->join('food_floor_orders as ffo_r', 'do.floor_order_id', '=', 'ffo_r.id')
-                ->where('ffo_r.id_outlet', $selectedOutletId)
-                ->whereNotNull('ffo_r.arrival_date')
-                ->whereBetween(DB::raw('DATE(ffo_r.arrival_date)'), [$rangeStart, $rangeEnd])
-                ->whereNotIn('ffo_r.status', ['draft', 'rejected'])
-                ->groupBy('do.floor_order_id', 'gri.item_id')
-                ->select(
-                    'do.floor_order_id as floor_order_id',
-                    'gri.item_id as item_id',
-                    DB::raw('SUM(gri.received_qty) as qty_received')
-                );
+            if (Schema::hasTable('outlet_serial_receive_headers') && Schema::hasTable('outlet_serial_receive_items')) {
+                $costSmall = 'COALESCE(si.cost_small, 0)';
+                $smallConv = 'COALESCE(it.small_conversion_qty, 1)';
+                $mediumConv = 'COALESCE(it.medium_conversion_qty, 1)';
+                $gsrPriceSql = "(CASE
+                    WHEN si.unit_id = it.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
+                    WHEN si.unit_id = it.medium_unit_id THEN {$costSmall} * {$smallConv}
+                    ELSE {$costSmall}
+                END)";
 
-            $lineValueSql = '(CASE
-                WHEN recv.qty_received IS NOT NULL AND recv.qty_received > 0
-                THEN recv.qty_received * COALESCE(ffoi.price, 0)
-                ELSE COALESCE(ffoi.subtotal, 0)
-            END)';
+                $gsrAggregates = DB::table('outlet_serial_receive_items as si')
+                    ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                    ->join('items as it', 'si.item_id', '=', 'it.id')
+                    ->join('warehouse_outlets as wo', 'wo.id', '=', 'si.warehouse_outlet_id')
+                    ->whereNull('h.deleted_at')
+                    ->where('h.status', 'completed')
+                    ->where('h.outlet_id', $selectedOutletId)
+                    ->whereBetween(DB::raw('DATE(h.receive_date)'), [$rangeStart, $rangeEnd])
+                    ->selectRaw('DATE(h.receive_date) as d, '.$bucketExpr.' as bucket, SUM(si.qty * ('.$gsrPriceSql.')) as total')
+                    ->groupBy(DB::raw('DATE(h.receive_date)'), DB::raw($bucketExpr))
+                    ->get();
 
-            $aggregates = DB::table('food_floor_orders as ffo')
-                ->join('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
-                ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
-                ->leftJoinSub($receivedQtyByRoItem, 'recv', function ($join) {
-                    $join->on('recv.floor_order_id', '=', 'ffo.id')
-                        ->on('recv.item_id', '=', 'ffoi.item_id');
+                foreach ($gsrAggregates as $row) {
+                    $dateKey = Carbon::parse($row->d)->toDateString();
+                    $total = round((float) $row->total, 2);
+                    if ($row->bucket === 'kitchen_bar') {
+                        $roKitchenBar[$dateKey] = ($roKitchenBar[$dateKey] ?? 0) + $total;
+                    } elseif ($row->bucket === 'service') {
+                        $roService[$dateKey] = ($roService[$dateKey] ?? 0) + $total;
+                    }
+                }
+            }
+
+            $grBucketExpr = 'CASE
+                WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) IN (\'kitchen\', \'bar\') THEN \'kitchen_bar\'
+                WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) = \'service\' THEN \'service\'
+                ELSE \'other\'
+            END';
+
+            $grAggregates = DB::table('outlet_food_good_receive_items as ofgri')
+                ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+                ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+                ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+                ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+                ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+                ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
+                ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                    $join->on('ofgri.item_id', '=', 'ffoi.item_id')
+                        ->where(function ($q) {
+                            $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
+                                ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
+                        });
                 })
-                ->where('ffo.id_outlet', $selectedOutletId)
-                ->whereNotNull('ffo.arrival_date')
-                ->whereBetween(DB::raw('DATE(ffo.arrival_date)'), [$rangeStart, $rangeEnd])
-                ->whereNotIn('ffo.status', ['draft', 'rejected'])
-                ->selectRaw('DATE(ffo.arrival_date) as d, '.$bucketExpr.' as bucket, SUM('.$lineValueSql.') as total')
-                ->groupBy(DB::raw('DATE(ffo.arrival_date)'), DB::raw($bucketExpr))
+                ->leftJoin('warehouse_outlets as wo_ffo', 'wo_ffo.id', '=', 'ffo.warehouse_outlet_id')
+                ->leftJoin('warehouse_outlets as wo_ro', 'wo_ro.id', '=', 'ffo_ro.warehouse_outlet_id')
+                ->whereNull('ofgr.deleted_at')
+                ->where('ofgr.outlet_id', $selectedOutletId)
+                ->whereBetween(DB::raw('DATE(ofgr.receive_date)'), [$rangeStart, $rangeEnd])
+                ->whereRaw('COALESCE(wo_ffo.id, wo_ro.id) IS NOT NULL')
+                ->selectRaw('DATE(ofgr.receive_date) as d, '.$grBucketExpr.' as bucket, SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
+                ->groupBy(DB::raw('DATE(ofgr.receive_date)'), DB::raw($grBucketExpr))
                 ->get();
 
-            foreach ($aggregates as $row) {
+            foreach ($grAggregates as $row) {
                 $dateKey = Carbon::parse($row->d)->toDateString();
                 $total = round((float) $row->total, 2);
                 if ($row->bucket === 'kitchen_bar') {

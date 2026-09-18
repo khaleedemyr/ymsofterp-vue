@@ -410,6 +410,7 @@ class OpexOutletDashboardService
      * Ringkas kolom RO Forecast (Floor Order vs Forecast):
      * Forecast, F&B Purchase (budget 40%), Service Purchase (budget 5%), sisa budget.
      * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
+     * Purchased = GSR + GR (nilai diterima) + Retail Food, bucket Kitchen/Bar vs Service.
      *
      * @return array<string, mixed>
      */
@@ -418,15 +419,20 @@ class OpexOutletDashboardService
         [$monthFrom, $monthTo] = $this->fullMonthBounds($dateFrom, $dateTo);
 
         $forecastTotal = $this->sumForecastRevenue($outletId, $monthFrom, $monthTo);
-        $purchased = $this->sumRoPurchasedByBucket($outletId, $monthFrom, $monthTo);
+        $purchased = $this->sumPurchasedByBucket($outletId, $monthFrom, $monthTo);
+        $outstanding = $this->sumOutstandingRoByBucket($outletId, $monthFrom, $monthTo);
 
         $fbBudget = round($forecastTotal * self::FB_BUDGET_RATIO, 2);
         $svcBudget = round($forecastTotal * self::SERVICE_BUDGET_RATIO, 2);
         $fbPurchased = $purchased['kitchen_bar'];
         $svcPurchased = $purchased['service'];
+        $fbOutstanding = $outstanding['kitchen_bar'];
+        $svcOutstanding = $outstanding['service'];
 
         $fbRemaining = round($fbBudget - $fbPurchased, 2);
         $svcRemaining = round($svcBudget - $svcPurchased, 2);
+        $fbRemainingAfterCommit = round($fbBudget - $fbPurchased - $fbOutstanding, 2);
+        $svcRemainingAfterCommit = round($svcBudget - $svcPurchased - $svcOutstanding, 2);
         $fbPct = $fbBudget > 0 ? round(($fbPurchased / $fbBudget) * 100, 1) : null;
         $svcPct = $svcBudget > 0 ? round(($svcPurchased / $svcBudget) * 100, 1) : null;
 
@@ -440,7 +446,9 @@ class OpexOutletDashboardService
                 'budget_ratio_pct' => (int) round(self::FB_BUDGET_RATIO * 100),
                 'budget' => $fbBudget,
                 'purchased' => $fbPurchased,
+                'ro_outstanding' => $fbOutstanding,
                 'remaining' => $fbRemaining,
+                'remaining_after_commit' => $fbRemainingAfterCommit,
                 'variance' => round($fbPurchased - $fbBudget, 2),
                 'pct' => $fbPct,
             ],
@@ -448,10 +456,13 @@ class OpexOutletDashboardService
                 'budget_ratio_pct' => (int) round(self::SERVICE_BUDGET_RATIO * 100),
                 'budget' => $svcBudget,
                 'purchased' => $svcPurchased,
+                'ro_outstanding' => $svcOutstanding,
                 'remaining' => $svcRemaining,
+                'remaining_after_commit' => $svcRemainingAfterCommit,
                 'variance' => round($svcPurchased - $svcBudget, 2),
                 'pct' => $svcPct,
             ],
+            'ro_outstanding_total' => round($fbOutstanding + $svcOutstanding, 2),
         ];
     }
 
@@ -527,12 +538,13 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Same buckets as Floor Order vs Forecast: kitchen/bar vs service
-     * from food_floor_orders (+ retail_food by warehouse_outlet).
+     * F&B (kitchen/bar) vs Service purchase from received goods + Retail Food.
+     * Received = GSR (serial receive) + outlet GR, by receive_date and warehouse_outlet.
+     * Retail Food remains direct supplier purchase by warehouse_outlet.
      *
      * @return array{kitchen_bar: float, service: float}
      */
-    private function sumRoPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
+    private function sumPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
     {
         $warehouseBucketById = DB::table('warehouse_outlets')
             ->select('id', 'name')
@@ -556,57 +568,73 @@ class OpexOutletDashboardService
             ELSE 'other'
         END";
 
-        $receivedQtyByRoItem = DB::table('outlet_food_good_receive_items as gri')
-            ->join('outlet_food_good_receives as gr', function ($join) {
-                $join->on('gri.outlet_food_good_receive_id', '=', 'gr.id')
-                    ->whereNull('gr.deleted_at')
-                    ->where('gr.status', 'completed');
-            })
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_floor_orders as ffo_r', 'do.floor_order_id', '=', 'ffo_r.id')
-            ->where('ffo_r.id_outlet', $outletId)
-            ->whereNotNull('ffo_r.arrival_date')
-            ->whereBetween(DB::raw('DATE(ffo_r.arrival_date)'), [$dateFrom, $dateTo])
-            ->whereNotIn('ffo_r.status', ['draft', 'rejected'])
-            ->groupBy('do.floor_order_id', 'gri.item_id')
-            ->select(
-                'do.floor_order_id as floor_order_id',
-                'gri.item_id as item_id',
-                DB::raw('SUM(gri.received_qty) as qty_received')
-            );
-
-        $lineValueSql = '(CASE
-            WHEN recv.qty_received IS NOT NULL AND recv.qty_received > 0
-            THEN recv.qty_received * COALESCE(ffoi.price, 0)
-            ELSE COALESCE(ffoi.subtotal, 0)
-        END)';
-
-        $aggregates = DB::table('food_floor_orders as ffo')
-            ->join('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
-            ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
-            ->leftJoinSub($receivedQtyByRoItem, 'recv', function ($join) {
-                $join->on('recv.floor_order_id', '=', 'ffo.id')
-                    ->on('recv.item_id', '=', 'ffoi.item_id');
-            })
-            ->where('ffo.id_outlet', $outletId)
-            ->whereNotNull('ffo.arrival_date')
-            ->whereBetween(DB::raw('DATE(ffo.arrival_date)'), [$dateFrom, $dateTo])
-            ->whereNotIn('ffo.status', ['draft', 'rejected'])
-            ->selectRaw($bucketExpr.' as bucket, SUM('.$lineValueSql.') as total')
-            ->groupBy(DB::raw($bucketExpr))
-            ->get();
-
         $kitchenBar = 0.0;
         $service = 0.0;
-        foreach ($aggregates as $row) {
-            $total = (float) $row->total;
-            if ($row->bucket === 'kitchen_bar') {
+
+        $addBucket = function (string $bucket, float $total) use (&$kitchenBar, &$service): void {
+            if ($bucket === 'kitchen_bar') {
                 $kitchenBar += $total;
-            } elseif ($row->bucket === 'service') {
+            } elseif ($bucket === 'service') {
                 $service += $total;
+            }
+        };
+
+        // GSR — nilai diterima aktual
+        if ($this->hasSerialGrTables()) {
+            $priceSql = $this->serialGrPriceSql('it');
+            $gsrRows = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('warehouse_outlets as wo', 'wo.id', '=', 'si.warehouse_outlet_id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->where('h.outlet_id', $outletId)
+                ->whereBetween(DB::raw('DATE(h.receive_date)'), [$dateFrom, $dateTo])
+                ->selectRaw($bucketExpr.' as bucket, SUM(si.qty * ('.$priceSql.')) as total')
+                ->groupBy(DB::raw($bucketExpr))
+                ->get();
+
+            foreach ($gsrRows as $row) {
+                $addBucket((string) $row->bucket, (float) $row->total);
             }
         }
 
+        // Outlet GR — nilai diterima (jika masih dipakai)
+        $grBucketExpr = "CASE
+            WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) IN ('kitchen', 'bar') THEN 'kitchen_bar'
+            WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) = 'service' THEN 'service'
+            ELSE 'other'
+        END";
+
+        $grRows = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
+                    ->where(function ($q) {
+                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
+                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
+                    });
+            })
+            ->leftJoin('warehouse_outlets as wo_ffo', 'wo_ffo.id', '=', 'ffo.warehouse_outlet_id')
+            ->leftJoin('warehouse_outlets as wo_ro', 'wo_ro.id', '=', 'ffo_ro.warehouse_outlet_id')
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(ofgr.receive_date)'), [$dateFrom, $dateTo])
+            ->whereRaw('COALESCE(wo_ffo.id, wo_ro.id) IS NOT NULL')
+            ->selectRaw($grBucketExpr.' as bucket, SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
+            ->groupBy(DB::raw($grBucketExpr))
+            ->get();
+
+        foreach ($grRows as $row) {
+            $addBucket((string) $row->bucket, (float) $row->total);
+        }
+
+        // Retail Food — pembelian langsung supplier
         $retailFoodRows = DB::table('retail_food as rf')
             ->join('warehouse_outlets as wo', 'wo.id', '=', 'rf.warehouse_outlet_id')
             ->where('rf.outlet_id', $outletId)
@@ -619,11 +647,163 @@ class OpexOutletDashboardService
 
         foreach ($retailFoodRows as $rfRow) {
             $bucket = $warehouseBucketById[(int) $rfRow->warehouse_outlet_id] ?? 'other';
-            $total = (float) $rfRow->total;
+            $addBucket($bucket, (float) $rfRow->total);
+        }
+
+        return [
+            'kitchen_bar' => round($kitchenBar, 2),
+            'service' => round($service, 2),
+        ];
+    }
+
+    /**
+     * RO / Floor Order belum diterima penuh (qty ordered − qty GR − qty GSR), nilai di harga RO.
+     * Filter FO by arrival_date full month; penerimaan GSR/GR dihitung tanpa batasan tanggal
+     * (supaya RO yang sudah diterima belakangan tidak tetap outstanding).
+     *
+     * @return array{kitchen_bar: float, service: float}
+     */
+    private function sumOutstandingRoByBucket(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $foLines = DB::table('food_floor_orders as ffo')
+            ->join('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
+            ->join('food_floor_order_items as ffoi', 'ffoi.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('items as it', 'it.id', '=', 'ffoi.item_id')
+            ->where('ffo.id_outlet', $outletId)
+            ->whereNotNull('ffo.arrival_date')
+            ->whereBetween(DB::raw('DATE(ffo.arrival_date)'), [$dateFrom, $dateTo])
+            ->whereNotIn('ffo.status', ['draft', 'rejected'])
+            ->whereRaw("LOWER(TRIM(wo.name)) IN ('kitchen', 'bar', 'service')")
+            ->select(
+                'ffo.id as floor_order_id',
+                'ffoi.item_id',
+                'ffoi.qty',
+                'ffoi.price',
+                'ffoi.subtotal',
+                'ffoi.unit as fo_unit_name',
+                'wo.name as warehouse_name',
+                'it.large_unit_id',
+                'it.medium_unit_id',
+                'it.small_unit_id',
+                'it.small_conversion_qty',
+                'it.medium_conversion_qty'
+            )
+            ->get();
+
+        if ($foLines->isEmpty()) {
+            return ['kitchen_bar' => 0.0, 'service' => 0.0];
+        }
+
+        $unitIdByName = DB::table('units')
+            ->select('id', 'name')
+            ->get()
+            ->mapWithKeys(fn ($u) => [strtolower(trim((string) $u->name)) => (int) $u->id])
+            ->all();
+
+        foreach ($foLines as $line) {
+            $unitKey = strtolower(trim((string) ($line->fo_unit_name ?? '')));
+            $line->fo_unit_id = $unitIdByName[$unitKey] ?? null;
+        }
+
+        $foIds = $foLines->pluck('floor_order_id')->unique()->values()->all();
+
+        // GR received qty by FO + item (assume same unit as FO line when unit missing)
+        $grByKey = DB::table('outlet_food_good_receive_items as gri')
+            ->join('outlet_food_good_receives as gr', function ($join) {
+                $join->on('gri.outlet_food_good_receive_id', '=', 'gr.id')
+                    ->whereNull('gr.deleted_at')
+                    ->where('gr.status', 'completed');
+            })
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->whereIn('do.floor_order_id', $foIds)
+            ->groupBy('do.floor_order_id', 'gri.item_id')
+            ->select(
+                'do.floor_order_id',
+                'gri.item_id',
+                DB::raw('SUM(gri.received_qty) as qty_received')
+            )
+            ->get()
+            ->mapWithKeys(fn ($r) => [$r->floor_order_id.'|'.$r->item_id => (float) $r->qty_received])
+            ->all();
+
+        // GSR received — convert to small qty first, then to FO unit per line
+        $gsrRows = collect();
+        if ($this->hasSerialGrTables()) {
+            $gsrRows = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('delivery_orders as do', 'si.delivery_order_id', '=', 'do.id')
+                ->leftJoin('items as it', 'it.id', '=', 'si.item_id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->whereIn('do.floor_order_id', $foIds)
+                ->select(
+                    'do.floor_order_id',
+                    'si.item_id',
+                    'si.qty',
+                    'si.unit_id',
+                    'it.large_unit_id',
+                    'it.medium_unit_id',
+                    'it.small_unit_id',
+                    'it.small_conversion_qty',
+                    'it.medium_conversion_qty'
+                )
+                ->get();
+        }
+
+        $gsrSmallByKey = [];
+        foreach ($gsrRows as $row) {
+            $key = $row->floor_order_id.'|'.$row->item_id;
+            $gsrSmallByKey[$key] = ($gsrSmallByKey[$key] ?? 0.0) + $this->qtyToSmall(
+                (float) $row->qty,
+                $row->unit_id !== null ? (int) $row->unit_id : null,
+                $row->large_unit_id !== null ? (int) $row->large_unit_id : null,
+                $row->medium_unit_id !== null ? (int) $row->medium_unit_id : null,
+                (float) ($row->small_conversion_qty ?? 1),
+                (float) ($row->medium_conversion_qty ?? 1)
+            );
+        }
+
+        $kitchenBar = 0.0;
+        $service = 0.0;
+
+        foreach ($foLines as $line) {
+            $bucket = $this->warehouseOutletBucketName($line->warehouse_name);
+            if ($bucket === 'other') {
+                continue;
+            }
+
+            $key = $line->floor_order_id.'|'.$line->item_id;
+            $orderedQty = (float) $line->qty;
+            $price = (float) $line->price;
+            if ($orderedQty <= 0) {
+                continue;
+            }
+
+            $receivedQty = (float) ($grByKey[$key] ?? 0);
+
+            $gsrSmall = (float) ($gsrSmallByKey[$key] ?? 0);
+            if ($gsrSmall > 0) {
+                $receivedQty += $this->qtyFromSmall(
+                    $gsrSmall,
+                    $line->fo_unit_id !== null ? (int) $line->fo_unit_id : null,
+                    $line->large_unit_id !== null ? (int) $line->large_unit_id : null,
+                    $line->medium_unit_id !== null ? (int) $line->medium_unit_id : null,
+                    (float) ($line->small_conversion_qty ?? 1),
+                    (float) ($line->medium_conversion_qty ?? 1)
+                );
+            }
+
+            $outstandingQty = max(0.0, $orderedQty - $receivedQty);
+            if ($outstandingQty <= 0) {
+                continue;
+            }
+
+            // Cap at subtotal to avoid float overshoot
+            $outstandingValue = min((float) $line->subtotal, $outstandingQty * $price);
             if ($bucket === 'kitchen_bar') {
-                $kitchenBar += $total;
-            } elseif ($bucket === 'service') {
-                $service += $total;
+                $kitchenBar += $outstandingValue;
+            } else {
+                $service += $outstandingValue;
             }
         }
 
@@ -631,6 +811,69 @@ class OpexOutletDashboardService
             'kitchen_bar' => round($kitchenBar, 2),
             'service' => round($service, 2),
         ];
+    }
+
+    private function warehouseOutletBucketName(?string $name): string
+    {
+        $n = strtolower(trim((string) $name));
+        if (in_array($n, ['kitchen', 'bar'], true)) {
+            return 'kitchen_bar';
+        }
+        if ($n === 'service') {
+            return 'service';
+        }
+
+        return 'other';
+    }
+
+    private function qtyToSmall(
+        float $qty,
+        ?int $unitId,
+        ?int $largeUnitId,
+        ?int $mediumUnitId,
+        float $smallConv,
+        float $mediumConv
+    ): float {
+        $smallConv = $smallConv > 0 ? $smallConv : 1.0;
+        $mediumConv = $mediumConv > 0 ? $mediumConv : 1.0;
+        if ($unitId !== null && $largeUnitId !== null && $unitId === $largeUnitId) {
+            return $qty * $smallConv * $mediumConv;
+        }
+        if ($unitId !== null && $mediumUnitId !== null && $unitId === $mediumUnitId) {
+            return $qty * $smallConv;
+        }
+
+        return $qty;
+    }
+
+    private function qtyFromSmall(
+        float $qtySmall,
+        ?int $unitId,
+        ?int $largeUnitId,
+        ?int $mediumUnitId,
+        float $smallConv,
+        float $mediumConv
+    ): float {
+        $smallConv = $smallConv > 0 ? $smallConv : 1.0;
+        $mediumConv = $mediumConv > 0 ? $mediumConv : 1.0;
+        if ($unitId !== null && $largeUnitId !== null && $unitId === $largeUnitId) {
+            return $qtySmall / ($smallConv * $mediumConv);
+        }
+        if ($unitId !== null && $mediumUnitId !== null && $unitId === $mediumUnitId) {
+            return $qtySmall / $smallConv;
+        }
+
+        return $qtySmall;
+    }
+
+    /**
+     * @deprecated Use sumPurchasedByBucket()
+     *
+     * @return array{kitchen_bar: float, service: float}
+     */
+    private function sumRoPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        return $this->sumPurchasedByBucket($outletId, $dateFrom, $dateTo);
     }
 
     /**

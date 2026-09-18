@@ -65,7 +65,7 @@
               <h2 class="text-xl font-bold text-slate-900 mt-0.5">Budget vs Purchase</h2>
               <p class="text-xs text-slate-500 mt-1">
                 Full month {{ roForecast?.period_from || '—' }} s/d {{ roForecast?.period_to || '—' }}
-                · F&amp;B 40% · Service 5% (bukan MTD)
+                · F&amp;B 40% · Service 5% · Purchased = GSR/GR + RF · RO outstanding terpisah (bukan MTD)
               </p>
             </div>
             <a
@@ -107,12 +107,20 @@
                   <p class="text-slate-500 text-xs">Purchased</p>
                   <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.fb?.purchased) }}</p>
                 </div>
+                <div class="col-span-2">
+                  <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
+                  <p class="font-semibold text-amber-800">{{ formatCurrency(roForecast.fb?.ro_outstanding) }}</p>
+                </div>
               </div>
               <div class="mt-3 pt-3 border-t border-teal-100/80 flex items-end justify-between gap-2">
                 <div>
                   <p class="text-xs text-slate-500">Sisa budget</p>
                   <p class="text-xl font-bold" :class="remainingClass(roForecast.fb?.remaining)">
                     {{ formatRemaining(roForecast.fb?.remaining) }}
+                  </p>
+                  <p class="text-[11px] text-slate-500 mt-0.5">
+                    Setelah commit:
+                    <span :class="remainingClass(roForecast.fb?.remaining_after_commit)">{{ formatRemaining(roForecast.fb?.remaining_after_commit) }}</span>
                   </p>
                 </div>
                 <p class="text-sm font-semibold text-slate-600">
@@ -142,12 +150,20 @@
                   <p class="text-slate-500 text-xs">Purchased</p>
                   <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.service?.purchased) }}</p>
                 </div>
+                <div class="col-span-2">
+                  <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
+                  <p class="font-semibold text-amber-800">{{ formatCurrency(roForecast.service?.ro_outstanding) }}</p>
+                </div>
               </div>
               <div class="mt-3 pt-3 border-t border-cyan-100/80 flex items-end justify-between gap-2">
                 <div>
                   <p class="text-xs text-slate-500">Sisa budget</p>
                   <p class="text-xl font-bold" :class="remainingClass(roForecast.service?.remaining)">
                     {{ formatRemaining(roForecast.service?.remaining) }}
+                  </p>
+                  <p class="text-[11px] text-slate-500 mt-0.5">
+                    Setelah commit:
+                    <span :class="remainingClass(roForecast.service?.remaining_after_commit)">{{ formatRemaining(roForecast.service?.remaining_after_commit) }}</span>
                   </p>
                 </div>
                 <p class="text-sm font-semibold text-slate-600">
@@ -1061,7 +1077,7 @@
               <input
                 v-model="modalSearch"
                 type="text"
-                placeholder="Cari nomor / user..."
+                placeholder="Cari nomor / user / supplier..."
                 class="flex-1 min-w-[200px] rounded-xl border-slate-200 text-sm"
                 @keyup.enter="fetchModal"
               />
@@ -1075,7 +1091,19 @@
                     <th class="px-4 py-3 text-left">Tanggal</th>
                     <th class="px-4 py-3 text-left">Sumber</th>
                     <th class="px-4 py-3 text-left">Nomor</th>
-                    <th class="px-4 py-3 text-left">{{ modalPartyColumn }}</th>
+                    <template v-if="modalShowsUserSupplier">
+                      <th class="px-4 py-3 text-left">User</th>
+                      <th class="px-4 py-3 text-left">Supplier</th>
+                    </template>
+                    <template v-else-if="modalShowsUserCategory">
+                      <th class="px-4 py-3 text-left">User</th>
+                      <th class="px-4 py-3 text-left">Category</th>
+                    </template>
+                    <template v-else-if="modalShowsPettyParty">
+                      <th class="px-4 py-3 text-left">User</th>
+                      <th class="px-4 py-3 text-left">Supplier / Category</th>
+                    </template>
+                    <th v-else class="px-4 py-3 text-left">{{ modalPartyColumn }}</th>
                     <th class="px-4 py-3 text-right">{{ modalAmountLabel }}</th>
                     <th v-if="modalShowsBill" class="px-4 py-3 text-right">Bill</th>
                   </tr>
@@ -1087,12 +1115,29 @@
                       <span class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.source || txn.type }}</span>
                     </td>
                     <td class="px-4 py-2.5 font-medium text-slate-800">{{ txn.number || '-' }}</td>
-                    <td class="px-4 py-2.5 text-slate-600">{{ txn.beneficiary_name || txn.creator_name || txn.supplier_name || '-' }}</td>
+                    <template v-if="modalShowsUserSupplier">
+                      <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || '-' }}</td>
+                      <td class="px-4 py-2.5 text-slate-600">{{ txn.supplier_name || '-' }}</td>
+                    </template>
+                    <template v-else-if="modalShowsUserCategory">
+                      <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || '-' }}</td>
+                      <td class="px-4 py-2.5 text-slate-600">{{ txn.category_name || '-' }}</td>
+                    </template>
+                    <template v-else-if="modalShowsPettyParty">
+                      <td class="px-4 py-2.5 text-slate-600">{{ txn.creator_name || '-' }}</td>
+                      <td class="px-4 py-2.5 text-slate-600">
+                        <span class="block text-[10px] uppercase tracking-wide text-slate-400">
+                          {{ String(txn.source || '').startsWith('RF') ? 'Supplier' : 'Category' }}
+                        </span>
+                        {{ txn.party_label || txn.supplier_name || txn.category_name || '-' }}
+                      </td>
+                    </template>
+                    <td v-else class="px-4 py-2.5 text-slate-600">{{ txn.beneficiary_name || txn.creator_name || txn.supplier_name || '-' }}</td>
                     <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(txn.amount) }}</td>
                     <td v-if="modalShowsBill" class="px-4 py-2.5 text-right font-medium text-slate-700">{{ formatCurrency(txn.bill_amount) }}</td>
                   </tr>
                   <tr v-if="!modalTxns.length">
-                    <td :colspan="modalShowsBill ? 6 : 5" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
+                    <td :colspan="modalTxnColspan" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
                   </tr>
                 </tbody>
               </table>
@@ -1668,9 +1713,9 @@ const modalPartyColumn = computed(() => {
     revenue: 'Member',
     gsr_ro: 'User / Supplier',
     rws: 'User / Supplier',
-    retail_food: 'User / Supplier',
-    retail_non_food: 'User / Supplier',
-    petty_cash: 'User / Supplier',
+    retail_food: 'User',
+    retail_non_food: 'User',
+    petty_cash: 'User',
     total_spend: 'User / Supplier',
   }
   return map[modalType.value] || 'Keterangan'
@@ -1679,6 +1724,17 @@ const modalPartyColumn = computed(() => {
 const modalShowsBill = computed(() =>
   ['discount_compliment', 'discount_guest_satisfaction', 'officer_check', 'outlet_city_ledger'].includes(modalType.value)
 )
+
+const modalShowsUserSupplier = computed(() => modalType.value === 'retail_food')
+const modalShowsUserCategory = computed(() => modalType.value === 'retail_non_food')
+const modalShowsPettyParty = computed(() => modalType.value === 'petty_cash')
+
+const modalTxnColspan = computed(() => {
+  let cols = 5
+  if (modalShowsUserSupplier.value || modalShowsUserCategory.value || modalShowsPettyParty.value) cols += 1
+  if (modalShowsBill.value) cols += 1
+  return cols
+})
 
 const modalAmountLabel = computed(() => {
   if (modalType.value === 'officer_check' || modalType.value === 'outlet_city_ledger') return 'Pembayaran'
