@@ -379,7 +379,7 @@ class MetaWhatsAppClient
         $response = Http::withToken($token)
             ->acceptJson()
             ->get("https://graph.facebook.com/{$version}/{$phoneNumberId}", [
-                'fields' => 'display_phone_number,verified_name,quality_rating,code_verification_status,platform_type',
+                'fields' => 'display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,webhook_configuration',
             ]);
 
         if (! $response->successful()) {
@@ -425,6 +425,19 @@ class MetaWhatsAppClient
         $data = $response->json('data') ?? [];
 
         return is_array($data) ? $data : [];
+    }
+
+    /**
+     * Konfigurasi webhook nomor WA (application + optional WABA override).
+     *
+     * @return array{application?: string, whatsapp_business_account?: string, id?: string}
+     */
+    public function getPhoneWebhookConfiguration(?string $phoneNumberId = null): array
+    {
+        $details = $this->getPhoneNumberDetails($phoneNumberId);
+        $config = $details['webhook_configuration'] ?? [];
+
+        return is_array($config) ? $config : [];
     }
 
     /**

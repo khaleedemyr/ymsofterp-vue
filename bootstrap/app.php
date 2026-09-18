@@ -182,6 +182,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->appendOutputTo(storage_path('logs/meta-social-comments-notify.log'));
         }
 
+        // Pantau override webhook WA (deteksi hijack → auto subscribe + notifikasi admin)
+        if (filter_var(env('META_WHATSAPP_WEBHOOK_WATCH_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
+            $schedule->command('meta:watch-whatsapp-webhook')
+                ->everyFiveMinutes()
+                ->withoutOverlapping(4)
+                ->appendOutputTo(storage_path('logs/meta-whatsapp-webhook-watch.log'));
+        }
+
         // Cleanup old and excess device tokens - run daily at 2:00 AM
         $schedule->command('device-tokens:cleanup --days=30 --limit=5')
             ->dailyAt('02:00')

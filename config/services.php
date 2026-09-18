@@ -75,6 +75,14 @@ return [
         'webhook_skip_signature_verify' => env('META_WEBHOOK_SKIP_SIGNATURE_VERIFY', false),
         /** Simpan payload webhook WA ke storage (untuk meta:sync-whatsapp-inbox --replay) */
         'whatsapp_webhook_archive' => env('META_WHATSAPP_WEBHOOK_ARCHIVE', true),
+        /** Callback resmi ERP (kosong = APP_URL + /api/webhooks/meta/whatsapp) */
+        'whatsapp_expected_webhook_url' => env('META_WHATSAPP_EXPECTED_WEBHOOK_URL'),
+        /** User ERP yang menerima alert kalau webhook diganti / override asing (default: 26) */
+        'whatsapp_webhook_alert_user_ids' => env('META_WHATSAPP_WEBHOOK_ALERT_USER_IDS', '26'),
+        /** Jangan spam notifikasi untuk fingerprint alert yang sama (jam) */
+        'whatsapp_webhook_alert_dedupe_hours' => (int) env('META_WHATSAPP_WEBHOOK_ALERT_DEDUPE_HOURS', 6),
+        /** Cron pantau webhook WA (auto hapus override + notifikasi) */
+        'whatsapp_webhook_watch_enabled' => filter_var(env('META_WHATSAPP_WEBHOOK_WATCH_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
     ],
 
     'fcm' => [
