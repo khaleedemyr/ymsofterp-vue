@@ -778,6 +778,32 @@ class FloorOrderVsForecastReportController extends Controller
                 }
             }
 
+            // RWS — penjualan gudang ke outlet (branch), ikut purchased (default F&B)
+            $rwsRows = DB::table('retail_warehouse_sales as rws')
+                ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+                ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+                ->leftJoin('warehouses as w', function ($join) {
+                    $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+                })
+                ->where('rws.status', 'completed')
+                ->where('c.type', 'branch')
+                ->where('c.id_outlet', $selectedOutletId)
+                ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$rangeStart, $rangeEnd])
+                ->selectRaw('DATE(rws.sale_date) as d, COALESCE(w.name, \'\') as warehouse_name, SUM(COALESCE(rws.total_amount, 0)) as total')
+                ->groupBy(DB::raw('DATE(rws.sale_date)'), 'w.name')
+                ->get();
+
+            foreach ($rwsRows as $rwsRow) {
+                $dateKey = Carbon::parse($rwsRow->d)->toDateString();
+                $whName = strtolower(trim((string) ($rwsRow->warehouse_name ?? '')));
+                $total = round((float) $rwsRow->total, 2);
+                if ($whName !== '' && (str_contains($whName, 'service') || $whName === 'svc')) {
+                    $roService[$dateKey] = ($roService[$dateKey] ?? 0) + $total;
+                } else {
+                    $roKitchenBar[$dateKey] = ($roKitchenBar[$dateKey] ?? 0) + $total;
+                }
+            }
+
             // Outlet Transfer — nilai keluar (OUT) dan masuk (IN) dari kartu stok outlet transfer
             $outletTransferCards = DB::table('outlet_food_inventory_cards')
                 ->where('id_outlet', $selectedOutletId)

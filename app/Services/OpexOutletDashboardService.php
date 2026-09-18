@@ -410,7 +410,7 @@ class OpexOutletDashboardService
      * Ringkas kolom RO Forecast (Floor Order vs Forecast):
      * Forecast, F&B Purchase (budget 40%), Service Purchase (budget 5%), sisa budget.
      * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
-     * Purchased = GSR + GR (nilai diterima) + Retail Food, bucket Kitchen/Bar vs Service.
+     * Purchased = GSR + GR (nilai diterima) + Retail Food + RWS, bucket Kitchen/Bar vs Service.
      *
      * @return array<string, mixed>
      */
@@ -538,9 +538,9 @@ class OpexOutletDashboardService
     }
 
     /**
-     * F&B (kitchen/bar) vs Service purchase from received goods + Retail Food.
+     * F&B (kitchen/bar) vs Service purchase from received goods + Retail Food + RWS.
      * Received = GSR (serial receive) + outlet GR, by receive_date and warehouse_outlet.
-     * Retail Food remains direct supplier purchase by warehouse_outlet.
+     * Retail Food by warehouse_outlet. RWS (branch) by warehouse (Main Store/MK → F&B).
      *
      * @return array{kitchen_bar: float, service: float}
      */
@@ -648,6 +648,25 @@ class OpexOutletDashboardService
         foreach ($retailFoodRows as $rfRow) {
             $bucket = $warehouseBucketById[(int) $rfRow->warehouse_outlet_id] ?? 'other';
             $addBucket($bucket, (float) $rfRow->total);
+        }
+
+        // RWS — penjualan gudang ke outlet (branch), ikut purchased
+        $rwsRows = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', function ($join) {
+                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+            })
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$dateFrom, $dateTo])
+            ->selectRaw('COALESCE(w.name, \'\') as warehouse_name, SUM(COALESCE(rws.total_amount, 0)) as total')
+            ->groupBy('w.name')
+            ->get();
+
+        foreach ($rwsRows as $rwsRow) {
+            $addBucket($this->rwsPurchaseBucketName($rwsRow->warehouse_name), (float) $rwsRow->total);
         }
 
         return [
@@ -824,6 +843,20 @@ class OpexOutletDashboardService
         }
 
         return 'other';
+    }
+
+    /**
+     * RWS memakai warehouses (Main Store / MK*), bukan warehouse_outlets.
+     * Default ke F&B (kitchen_bar); hanya nama yang jelas "service" ke service.
+     */
+    private function rwsPurchaseBucketName(?string $warehouseName): string
+    {
+        $n = strtolower(trim((string) $warehouseName));
+        if ($n !== '' && (str_contains($n, 'service') || $n === 'svc')) {
+            return 'service';
+        }
+
+        return 'kitchen_bar';
     }
 
     private function qtyToSmall(

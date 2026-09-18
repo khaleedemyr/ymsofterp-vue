@@ -65,7 +65,7 @@
               <h2 class="text-xl font-bold text-slate-900 mt-0.5">Budget vs Purchase</h2>
               <p class="text-xs text-slate-500 mt-1">
                 Full month {{ roForecast?.period_from || '—' }} s/d {{ roForecast?.period_to || '—' }}
-                · F&amp;B 40% · Service 5% · Purchased = GSR/GR + RF · RO outstanding terpisah (bukan MTD)
+                · F&amp;B 40% · Service 5% · Purchased = GSR/GR + RF + RWS · RO outstanding terpisah (bukan MTD)
               </p>
             </div>
             <a
@@ -98,16 +98,18 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-teal-700">F &amp; B Purchase</p>
                 <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">Budget {{ roForecast.fb?.budget_ratio_pct || 40 }}%</span>
               </div>
+              <div class="mt-3">
+                <p class="text-slate-500 text-xs">Purchased</p>
+                <p class="mt-0.5 text-2xl sm:text-3xl font-bold text-teal-800 tracking-tight">
+                  {{ formatCurrency(roForecast.fb?.purchased) }}
+                </p>
+              </div>
               <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p class="text-slate-500 text-xs">Budget</p>
                   <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.fb?.budget) }}</p>
                 </div>
                 <div>
-                  <p class="text-slate-500 text-xs">Purchased</p>
-                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.fb?.purchased) }}</p>
-                </div>
-                <div class="col-span-2">
                   <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
                   <p class="font-semibold text-amber-800">{{ formatCurrency(roForecast.fb?.ro_outstanding) }}</p>
                 </div>
@@ -141,16 +143,18 @@
                 <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700">Service Purchase</p>
                 <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">Budget {{ roForecast.service?.budget_ratio_pct || 5 }}%</span>
               </div>
+              <div class="mt-3">
+                <p class="text-slate-500 text-xs">Purchased</p>
+                <p class="mt-0.5 text-2xl sm:text-3xl font-bold text-cyan-800 tracking-tight">
+                  {{ formatCurrency(roForecast.service?.purchased) }}
+                </p>
+              </div>
               <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p class="text-slate-500 text-xs">Budget</p>
                   <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.service?.budget) }}</p>
                 </div>
                 <div>
-                  <p class="text-slate-500 text-xs">Purchased</p>
-                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.service?.purchased) }}</p>
-                </div>
-                <div class="col-span-2">
                   <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
                   <p class="font-semibold text-amber-800">{{ formatCurrency(roForecast.service?.ro_outstanding) }}</p>
                 </div>
@@ -179,6 +183,43 @@
               </div>
             </div>
           </div>
+        </div>
+
+        <!-- Pembelian MCS — langsung di bawah RO Forecast -->
+        <div v-if="!sectionLoading.overview" class="mb-6">
+          <button
+            type="button"
+            class="w-full rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('mcs_purchase')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembelian MCS</p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
+                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · RWS · Retail Food</p>
+                <p v-if="ov.mcs_purchase_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                  {{ ov.mcs_purchase_revenue_pct }}% dari revenue
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.mcs_purchase, true)">{{ vsLabel(vs.mcs_purchase) }}</p>
+                <div class="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-x-3 gap-y-1.5">
+                  <div
+                    v-for="row in mcsPurchaseByCategory"
+                    :key="row.key"
+                    class="min-w-0"
+                  >
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.label }}</p>
+                    <p class="text-xs font-semibold text-slate-700 truncate">{{ formatCurrency(row.amount) }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-box-open text-xl"></i>
+              </div>
+            </div>
+          </button>
+        </div>
+        <div v-else-if="sectionLoading.overview" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-10 mb-6 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat Pembelian MCS…
         </div>
 
         <!-- Hero metrics -->
@@ -459,8 +500,8 @@
           </button>
         </div>
 
-        <!-- Stock Cut, Category Cost, MCS Purchase -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <!-- Stock Cut, Category Cost -->
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
           <button
             type="button"
             class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition"
@@ -509,37 +550,6 @@
               </div>
               <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-trash text-xl"></i>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('mcs_purchase')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Pembelian MCS</p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
-                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · RWS · Retail Food</p>
-                <p v-if="ov.mcs_purchase_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
-                  {{ ov.mcs_purchase_revenue_pct }}% dari revenue
-                </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.mcs_purchase, true)">{{ vsLabel(vs.mcs_purchase) }}</p>
-                <div class="mt-3 grid grid-cols-3 gap-x-3 gap-y-1.5">
-                  <div
-                    v-for="row in mcsPurchaseByCategory"
-                    :key="row.key"
-                    class="min-w-0"
-                  >
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.label }}</p>
-                    <p class="text-xs font-semibold text-slate-700 truncate">{{ formatCurrency(row.amount) }}</p>
-                  </div>
-                </div>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-box-open text-xl"></i>
               </div>
             </div>
           </button>
