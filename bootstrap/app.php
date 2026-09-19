@@ -182,6 +182,14 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->appendOutputTo(storage_path('logs/meta-social-comments-notify.log'));
         }
 
+        // Metrik performa konten IG/FB → Social Performance Dashboard
+        if (filter_var(env('META_SOCIAL_CONTENT_SYNC_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
+            $schedule->command('meta:sync-social-content')
+                ->everySixHours()
+                ->withoutOverlapping(30)
+                ->appendOutputTo(storage_path('logs/meta-social-content-sync.log'));
+        }
+
         // Pantau override webhook WA (deteksi hijack → auto subscribe + notifikasi admin)
         if (filter_var(env('META_WHATSAPP_WEBHOOK_WATCH_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
             $schedule->command('meta:watch-whatsapp-webhook')

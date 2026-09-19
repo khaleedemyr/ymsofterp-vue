@@ -305,6 +305,7 @@ export default {
     "customer_voice_command_center": "Customer Voice Command Center",
     "omnichannel_inbox": "Omnichannel Inbox",
     "omnichannel_chat_analytics": "Chat Analytics",
+    "social_performance": "Social Performance",
     "wa_broadcast": "WhatsApp Broadcast",
     "instagram_comments": "IG & FB Posts / Comments",
     "omnichannel_teams": "Omnichannel inbox teams",

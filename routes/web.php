@@ -3147,6 +3147,10 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/crm/omnichannel-chat-analytics', [App\Http\Controllers\OmnichannelChatAnalyticsController::class, 'index'])->name('crm.omnichannel-chat-analytics.index');
 
+    Route::get('/crm/social-performance', [App\Http\Controllers\SocialPerformanceController::class, 'index'])->name('crm.social-performance.index');
+    Route::post('/crm/social-performance/sync', [App\Http\Controllers\SocialPerformanceController::class, 'sync'])->name('crm.social-performance.sync');
+    Route::get('/crm/social-performance/export.csv', [App\Http\Controllers\SocialPerformanceController::class, 'exportCsv'])->name('crm.social-performance.export');
+
     Route::get('/crm/omnichannel-inbox', [App\Http\Controllers\OmnichannelInboxController::class, 'index'])->name('crm.omnichannel-inbox.index');
     Route::get('/crm/omnichannel-inbox/poll', [App\Http\Controllers\OmnichannelInboxController::class, 'pollSnapshot'])->name('crm.omnichannel-inbox.poll');
     Route::get('/crm/omnichannel-inbox/conversations-more', [App\Http\Controllers\OmnichannelInboxController::class, 'conversationsMore'])->name('crm.omnichannel-inbox.conversations-more');

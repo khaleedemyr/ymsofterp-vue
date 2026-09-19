@@ -60,6 +60,12 @@ return [
     /** Jumlah post terbaru dicek per akun tiap run cron. */
     'social_comment_posts_per_account' => (int) env('OMNI_SOCIAL_COMMENT_POSTS_PER_ACCOUNT', 12),
 
+    /** Sync performa konten IG/FB (dashboard Social Performance). */
+    'social_content_sync_enabled' => filter_var(env('META_SOCIAL_CONTENT_SYNC_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+
+    /** Max post per akun tiap sync social performance. */
+    'social_content_posts_per_account' => (int) env('META_SOCIAL_CONTENT_POSTS_PER_ACCOUNT', 50),
+
     /** Broadcast WhatsApp — batas kirim per hari (semua campaign digabung). */
     'wa_broadcast_daily_cap' => (int) env('WA_BROADCAST_DAILY_CAP', 100000),
 
