@@ -2,8 +2,6 @@
 
 namespace App\Support;
 
-use Illuminate\Support\Facades\Log;
-
 /**
  * Parse META_PAGE_TOKENS JSON (page_id => Page access token).
  *
@@ -11,6 +9,9 @@ use Illuminate\Support\Facades\Log;
  * META_PAGE_TOKENS='{"1587793758107643":"EAA...","682421618556416":"EAA..."}'
  *
  * Jangan pecah multi-baris tanpa quote — dotenv hanya membaca `{` lalu JSON gagal.
+ *
+ * Catatan: jangan pakai Log/Facade di sini — method ini dipanggil dari config/services.php
+ * saat bootstrap (termasuk `config:clear`), sebelum facade root siap.
  */
 final class MetaPageTokens
 {
@@ -42,11 +43,6 @@ final class MetaPageTokens
         }
 
         if (! is_array($decoded)) {
-            Log::warning('[MetaPageTokens] META_PAGE_TOKENS JSON tidak valid. Pakai SATU BARIS seperti META_PAGE_ACCOUNT_LABELS. Nilai terpotong biasanya karena multi-line tanpa quote.', [
-                'preview' => mb_substr($raw, 0, 80),
-                'json_error' => json_last_error_msg(),
-            ]);
-
             return [];
         }
 
