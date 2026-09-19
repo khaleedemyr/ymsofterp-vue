@@ -20,7 +20,8 @@ $forecast = $svc->buildRoForecastSummary($oid, $from, $to);
 
 echo "GSR card={$fmt($gsr['gsr_total'])} GR card={$fmt($gsr['gr_total'])}\n";
 echo "RF={$fmt($rf['total'])}\n";
-echo "FB purchased={$fmt($forecast['fb']['purchased'])}\n";
+echo "Kitchen purchased={$fmt($forecast['kitchen']['purchased'])}\n";
+echo "Bar purchased={$fmt($forecast['bar']['purchased'])}\n";
 echo "Service purchased={$fmt($forecast['service']['purchased'])}\n";
-echo "Purchased sum={$fmt($forecast['fb']['purchased'] + $forecast['service']['purchased'])}\n";
+echo "Purchased sum={$fmt($forecast['kitchen']['purchased'] + $forecast['bar']['purchased'] + $forecast['service']['purchased'])}\n";
 echo "Expected GSR+RF (if all GSR in kitchen/bar/service)={$fmt($gsr['total'] + $rf['total'])}\n";

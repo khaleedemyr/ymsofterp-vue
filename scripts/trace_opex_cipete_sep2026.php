@@ -34,7 +34,7 @@ foreach ($periods as $label => [$from, $to]) {
     $forecast = $svc->buildRoForecastSummary($oid, $from, $to);
 
     $cardSum = $gsr['total'] + $rws['total'] + $rf['total'] + $rnf['total'];
-    $purchasedSum = $forecast['fb']['purchased'] + $forecast['service']['purchased'];
+    $purchasedSum = $forecast['kitchen']['purchased'] + $forecast['bar']['purchased'] + $forecast['service']['purchased'];
 
     echo "Cards:\n";
     echo "  GSR/RO total={$fmt($gsr['total'])} (GR={$fmt($gsr['gr_total'])} GSR={$fmt($gsr['gsr_total'])})\n";
@@ -45,8 +45,10 @@ foreach ($periods as $label => [$from, $to]) {
     echo "Budget vs Purchase (forced full month):\n";
     echo "  period={$forecast['period_from']} s/d {$forecast['period_to']}\n";
     echo "  Forecast={$fmt($forecast['forecast'])}\n";
-    echo "  FB purchased={$fmt($forecast['fb']['purchased'])}\n";
-    echo "  Service purchased={$fmt($forecast['service']['purchased'])}\n";
+    echo "  Pool {$forecast['budget_pool_ratio_pct']}%={$fmt($forecast['budget_pool'])}\n";
+    echo "  Kitchen purchased={$fmt($forecast['kitchen']['purchased'])} budget={$fmt($forecast['kitchen']['budget'])}\n";
+    echo "  Bar purchased={$fmt($forecast['bar']['purchased'])} budget={$fmt($forecast['bar']['budget'])}\n";
+    echo "  Service purchased={$fmt($forecast['service']['purchased'])} budget={$fmt($forecast['service']['budget'])}\n";
     echo "  Purchased sum={$fmt($purchasedSum)}\n";
     echo "  Diff purchased - card sum={$fmt($purchasedSum - $cardSum)}\n\n";
 }

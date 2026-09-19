@@ -14,9 +14,15 @@ use Illuminate\Support\Facades\Schema;
  */
 class OpexOutletDashboardService
 {
-    private const FB_BUDGET_RATIO = 0.40;
+    /** Total purchase budget pool = 43% × forecast (treated as 100% for split). */
+    private const PURCHASE_BUDGET_POOL_RATIO = 0.43;
 
-    private const SERVICE_BUDGET_RATIO = 0.05;
+    /** Shares of the 43% pool. */
+    private const KITCHEN_SHARE_OF_POOL = 0.70;
+
+    private const BAR_SHARE_OF_POOL = 0.20;
+
+    private const SERVICE_SHARE_OF_POOL = 0.10;
 
     /** @var array<string, string> */
     public const CATEGORY_COST_TYPE_LABELS = [
@@ -432,9 +438,9 @@ class OpexOutletDashboardService
 
     /**
      * Ringkas kolom RO Forecast (Floor Order vs Forecast):
-     * Forecast, F&B Purchase (budget 40%), Service Purchase (budget 5%), sisa budget.
+     * Forecast, lalu pool budget 43% × Forecast, dibagi Kitchen 70% / Bar 20% / Service 10%.
      * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
-     * Purchased = GSR + GR (nilai diterima) + Retail Food + RWS, bucket Kitchen/Bar vs Service.
+     * Purchased = GSR + GR (nilai diterima) + Retail Food + RWS, bucket per warehouse Kitchen / Bar / Service.
      *
      * @return array<string, mixed>
      */
@@ -446,19 +452,25 @@ class OpexOutletDashboardService
         $purchased = $this->sumPurchasedByBucket($outletId, $monthFrom, $monthTo);
         $outstanding = $this->sumOutstandingRoByBucket($outletId, $monthFrom, $monthTo);
 
-        $fbBudget = round($forecastTotal * self::FB_BUDGET_RATIO, 2);
-        $svcBudget = round($forecastTotal * self::SERVICE_BUDGET_RATIO, 2);
-        $fbPurchased = $purchased['kitchen_bar'];
-        $svcPurchased = $purchased['service'];
-        $fbOutstanding = $outstanding['kitchen_bar'];
-        $svcOutstanding = $outstanding['service'];
-
-        $fbRemaining = round($fbBudget - $fbPurchased, 2);
-        $svcRemaining = round($svcBudget - $svcPurchased, 2);
-        $fbRemainingAfterCommit = round($fbBudget - $fbPurchased - $fbOutstanding, 2);
-        $svcRemainingAfterCommit = round($svcBudget - $svcPurchased - $svcOutstanding, 2);
-        $fbPct = $fbBudget > 0 ? round(($fbPurchased / $fbBudget) * 100, 1) : null;
-        $svcPct = $svcBudget > 0 ? round(($svcPurchased / $svcBudget) * 100, 1) : null;
+        $poolBudget = round($forecastTotal * self::PURCHASE_BUDGET_POOL_RATIO, 2);
+        $kitchen = $this->buildPurchaseBudgetBucket(
+            $poolBudget,
+            self::KITCHEN_SHARE_OF_POOL,
+            (float) ($purchased['kitchen'] ?? 0),
+            (float) ($outstanding['kitchen'] ?? 0)
+        );
+        $bar = $this->buildPurchaseBudgetBucket(
+            $poolBudget,
+            self::BAR_SHARE_OF_POOL,
+            (float) ($purchased['bar'] ?? 0),
+            (float) ($outstanding['bar'] ?? 0)
+        );
+        $service = $this->buildPurchaseBudgetBucket(
+            $poolBudget,
+            self::SERVICE_SHARE_OF_POOL,
+            (float) ($purchased['service'] ?? 0),
+            (float) ($outstanding['service'] ?? 0)
+        );
 
         return [
             'has_forecast' => $forecastTotal > 0 || $this->hasForecastHeaderForRange($outletId, $monthFrom, $monthTo),
@@ -466,27 +478,51 @@ class OpexOutletDashboardService
             'period_to' => $monthTo,
             'is_full_month' => true,
             'forecast' => $forecastTotal,
-            'fb' => [
-                'budget_ratio_pct' => (int) round(self::FB_BUDGET_RATIO * 100),
-                'budget' => $fbBudget,
-                'purchased' => $fbPurchased,
-                'ro_outstanding' => $fbOutstanding,
-                'remaining' => $fbRemaining,
-                'remaining_after_commit' => $fbRemainingAfterCommit,
-                'variance' => round($fbPurchased - $fbBudget, 2),
-                'pct' => $fbPct,
-            ],
-            'service' => [
-                'budget_ratio_pct' => (int) round(self::SERVICE_BUDGET_RATIO * 100),
-                'budget' => $svcBudget,
-                'purchased' => $svcPurchased,
-                'ro_outstanding' => $svcOutstanding,
-                'remaining' => $svcRemaining,
-                'remaining_after_commit' => $svcRemainingAfterCommit,
-                'variance' => round($svcPurchased - $svcBudget, 2),
-                'pct' => $svcPct,
-            ],
-            'ro_outstanding_total' => round($fbOutstanding + $svcOutstanding, 2),
+            'budget_pool_ratio_pct' => (int) round(self::PURCHASE_BUDGET_POOL_RATIO * 100),
+            'budget_pool' => $poolBudget,
+            'kitchen' => $kitchen,
+            'bar' => $bar,
+            'service' => $service,
+            'ro_outstanding_total' => round(
+                (float) $kitchen['ro_outstanding'] + (float) $bar['ro_outstanding'] + (float) $service['ro_outstanding'],
+                2
+            ),
+        ];
+    }
+
+    /**
+     * @return array{
+     *   share_of_pool_pct: int,
+     *   of_forecast_pct: float,
+     *   budget: float,
+     *   purchased: float,
+     *   ro_outstanding: float,
+     *   remaining: float,
+     *   remaining_after_commit: float,
+     *   variance: float,
+     *   pct: float|null
+     * }
+     */
+    private function buildPurchaseBudgetBucket(
+        float $poolBudget,
+        float $shareOfPool,
+        float $purchased,
+        float $outstanding
+    ): array {
+        $budget = round($poolBudget * $shareOfPool, 2);
+        $remaining = round($budget - $purchased, 2);
+        $remainingAfterCommit = round($budget - $purchased - $outstanding, 2);
+
+        return [
+            'share_of_pool_pct' => (int) round($shareOfPool * 100),
+            'of_forecast_pct' => round(self::PURCHASE_BUDGET_POOL_RATIO * $shareOfPool * 100, 1),
+            'budget' => $budget,
+            'purchased' => round($purchased, 2),
+            'ro_outstanding' => round($outstanding, 2),
+            'remaining' => $remaining,
+            'remaining_after_commit' => $remainingAfterCommit,
+            'variance' => round($purchased - $budget, 2),
+            'pct' => $budget > 0 ? round(($purchased / $budget) * 100, 1) : null,
         ];
     }
 
@@ -564,11 +600,11 @@ class OpexOutletDashboardService
     }
 
     /**
-     * F&B (kitchen/bar) vs Service purchase from received goods + Retail Food + RWS.
+     * Kitchen / Bar / Service purchase from received goods + Retail Food + RWS.
      * Received = GSR (serial receive) + outlet GR, by receive_date and warehouse_outlet.
-     * Retail Food by warehouse_outlet. RWS (branch) by warehouse (Main Store/MK → F&B).
+     * Retail Food by warehouse_outlet. RWS (branch) by warehouse (Main Store/MK → Kitchen).
      *
-     * @return array{kitchen_bar: float, service: float}
+     * @return array{kitchen: float, bar: float, service: float}
      */
     private function sumPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
     {
@@ -576,30 +612,26 @@ class OpexOutletDashboardService
             ->select('id', 'name')
             ->get()
             ->mapWithKeys(function ($w) {
-                $name = strtolower(trim((string) ($w->name ?? '')));
-                $bucket = 'other';
-                if (in_array($name, ['kitchen', 'bar'], true)) {
-                    $bucket = 'kitchen_bar';
-                } elseif ($name === 'service') {
-                    $bucket = 'service';
-                }
-
-                return [(int) $w->id => $bucket];
+                return [(int) $w->id => $this->warehouseOutletBucketName($w->name ?? null)];
             })
             ->all();
 
         $bucketExpr = "CASE
-            WHEN LOWER(TRIM(wo.name)) IN ('kitchen', 'bar') THEN 'kitchen_bar'
+            WHEN LOWER(TRIM(wo.name)) = 'kitchen' THEN 'kitchen'
+            WHEN LOWER(TRIM(wo.name)) = 'bar' THEN 'bar'
             WHEN LOWER(TRIM(wo.name)) = 'service' THEN 'service'
             ELSE 'other'
         END";
 
-        $kitchenBar = 0.0;
+        $kitchen = 0.0;
+        $bar = 0.0;
         $service = 0.0;
 
-        $addBucket = function (string $bucket, float $total) use (&$kitchenBar, &$service): void {
-            if ($bucket === 'kitchen_bar') {
-                $kitchenBar += $total;
+        $addBucket = function (string $bucket, float $total) use (&$kitchen, &$bar, &$service): void {
+            if ($bucket === 'kitchen') {
+                $kitchen += $total;
+            } elseif ($bucket === 'bar') {
+                $bar += $total;
             } elseif ($bucket === 'service') {
                 $service += $total;
             }
@@ -627,7 +659,8 @@ class OpexOutletDashboardService
 
         // Outlet GR — nilai diterima (jika masih dipakai)
         $grBucketExpr = "CASE
-            WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) IN ('kitchen', 'bar') THEN 'kitchen_bar'
+            WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) = 'kitchen' THEN 'kitchen'
+            WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) = 'bar' THEN 'bar'
             WHEN LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) = 'service' THEN 'service'
             ELSE 'other'
         END";
@@ -696,7 +729,8 @@ class OpexOutletDashboardService
         }
 
         return [
-            'kitchen_bar' => round($kitchenBar, 2),
+            'kitchen' => round($kitchen, 2),
+            'bar' => round($bar, 2),
             'service' => round($service, 2),
         ];
     }
@@ -706,7 +740,7 @@ class OpexOutletDashboardService
      * Filter FO by arrival_date full month; penerimaan GSR/GR dihitung tanpa batasan tanggal
      * (supaya RO yang sudah diterima belakangan tidak tetap outstanding).
      *
-     * @return array{kitchen_bar: float, service: float}
+     * @return array{kitchen: float, bar: float, service: float}
      */
     private function sumOutstandingRoByBucket(int $outletId, string $dateFrom, string $dateTo): array
     {
@@ -736,7 +770,7 @@ class OpexOutletDashboardService
             ->get();
 
         if ($foLines->isEmpty()) {
-            return ['kitchen_bar' => 0.0, 'service' => 0.0];
+            return ['kitchen' => 0.0, 'bar' => 0.0, 'service' => 0.0];
         }
 
         $unitIdByName = DB::table('units')
@@ -808,7 +842,8 @@ class OpexOutletDashboardService
             );
         }
 
-        $kitchenBar = 0.0;
+        $kitchen = 0.0;
+        $bar = 0.0;
         $service = 0.0;
 
         foreach ($foLines as $line) {
@@ -845,15 +880,18 @@ class OpexOutletDashboardService
 
             // Cap at subtotal to avoid float overshoot
             $outstandingValue = min((float) $line->subtotal, $outstandingQty * $price);
-            if ($bucket === 'kitchen_bar') {
-                $kitchenBar += $outstandingValue;
+            if ($bucket === 'kitchen') {
+                $kitchen += $outstandingValue;
+            } elseif ($bucket === 'bar') {
+                $bar += $outstandingValue;
             } else {
                 $service += $outstandingValue;
             }
         }
 
         return [
-            'kitchen_bar' => round($kitchenBar, 2),
+            'kitchen' => round($kitchen, 2),
+            'bar' => round($bar, 2),
             'service' => round($service, 2),
         ];
     }
@@ -861,8 +899,11 @@ class OpexOutletDashboardService
     private function warehouseOutletBucketName(?string $name): string
     {
         $n = strtolower(trim((string) $name));
-        if (in_array($n, ['kitchen', 'bar'], true)) {
-            return 'kitchen_bar';
+        if ($n === 'kitchen') {
+            return 'kitchen';
+        }
+        if ($n === 'bar') {
+            return 'bar';
         }
         if ($n === 'service') {
             return 'service';
@@ -873,7 +914,7 @@ class OpexOutletDashboardService
 
     /**
      * RWS memakai warehouses (Main Store / MK*), bukan warehouse_outlets.
-     * Default ke F&B (kitchen_bar); hanya nama yang jelas "service" ke service.
+     * Default ke Kitchen; nama bar → Bar; nama service → Service.
      */
     private function rwsPurchaseBucketName(?string $warehouseName): string
     {
@@ -881,8 +922,11 @@ class OpexOutletDashboardService
         if ($n !== '' && (str_contains($n, 'service') || $n === 'svc')) {
             return 'service';
         }
+        if ($n !== '' && str_contains($n, 'bar')) {
+            return 'bar';
+        }
 
-        return 'kitchen_bar';
+        return 'kitchen';
     }
 
     private function qtyToSmall(
@@ -928,7 +972,7 @@ class OpexOutletDashboardService
     /**
      * @deprecated Use sumPurchasedByBucket()
      *
-     * @return array{kitchen_bar: float, service: float}
+     * @return array{kitchen: float, bar: float, service: float}
      */
     private function sumRoPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
     {

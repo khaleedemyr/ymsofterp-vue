@@ -75,7 +75,7 @@
             </span>
             <div>
               <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-teal-700">RO Forecast</h2>
-              <p class="text-xs text-slate-500">Budget vs purchase F&amp;B dan Service</p>
+              <p class="text-xs text-slate-500">Budget vs purchase Kitchen, Bar, dan Service</p>
             </div>
           </div>
         <div class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 sm:p-6">
@@ -85,7 +85,9 @@
               <h2 class="text-xl font-bold text-slate-900 mt-0.5">Budget vs Purchase</h2>
               <p class="text-xs text-slate-500 mt-1">
                 Full month {{ roForecast?.period_from || '—' }} s/d {{ roForecast?.period_to || '—' }}
-                · F&amp;B 40% · Service 5% · Purchased = GSR/GR + RF + RWS · RO outstanding terpisah (bukan MTD)
+                · Pool {{ roForecast?.budget_pool_ratio_pct || 43 }}% × Forecast
+                · Kitchen 70% · Bar 20% · Service 10%
+                · Purchased = GSR/GR + RF + RWS · RO outstanding terpisah (bukan MTD)
               </p>
             </div>
             <a
@@ -106,109 +108,77 @@
             Belum ada Revenue Target / Forecast untuk periode ini.
           </div>
 
-          <div v-else class="grid grid-cols-1 xl:grid-cols-12 gap-4">
-            <div class="xl:col-span-3 rounded-2xl border border-slate-100 bg-slate-50/80 p-4">
-              <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 inline-flex items-center gap-1">
-                Forecast
-                <CardHelpTip :text="cardHelps.forecast" />
-              </p>
-              <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(roForecast.forecast) }}</p>
-              <p class="mt-1 text-xs text-slate-500">Total forecast revenue 1 bulan penuh</p>
-            </div>
-
-            <div class="xl:col-span-4 rounded-2xl border border-teal-100 bg-teal-50/40 p-4">
-              <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-700 inline-flex items-center gap-1">
-                  F &amp; B Purchase
-                  <CardHelpTip :text="cardHelps.fb_purchase" />
+          <div v-else class="space-y-4">
+            <div class="rounded-2xl border border-slate-100 bg-slate-50/80 p-4 sm:flex sm:items-end sm:justify-between gap-4">
+              <div>
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 inline-flex items-center gap-1">
+                  Forecast
+                  <CardHelpTip :text="cardHelps.forecast" />
                 </p>
-                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-teal-100 text-teal-800">Budget {{ roForecast.fb?.budget_ratio_pct || 40 }}%</span>
+                <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(roForecast.forecast) }}</p>
+                <p class="mt-1 text-xs text-slate-500">Total forecast revenue 1 bulan penuh</p>
               </div>
-              <div class="mt-3">
-                <p class="text-slate-500 text-xs">Purchased</p>
-                <p class="mt-0.5 text-2xl sm:text-3xl font-bold text-teal-800 tracking-tight">
-                  {{ formatCurrency(roForecast.fb?.purchased) }}
-                </p>
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p class="text-slate-500 text-xs">Budget</p>
-                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.fb?.budget) }}</p>
-                </div>
-                <div>
-                  <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
-                  <p class="font-semibold text-amber-800">{{ formatCurrency(roForecast.fb?.ro_outstanding) }}</p>
-                </div>
-              </div>
-              <div class="mt-3 pt-3 border-t border-teal-100/80 flex items-end justify-between gap-2">
-                <div>
-                  <p class="text-xs text-slate-500">Sisa budget</p>
-                  <p class="text-xl font-bold" :class="remainingClass(roForecast.fb?.remaining)">
-                    {{ formatRemaining(roForecast.fb?.remaining) }}
-                  </p>
-                  <p class="text-[11px] text-slate-500 mt-0.5">
-                    Setelah commit:
-                    <span :class="remainingClass(roForecast.fb?.remaining_after_commit)">{{ formatRemaining(roForecast.fb?.remaining_after_commit) }}</span>
-                  </p>
-                </div>
-                <p class="text-sm font-semibold text-slate-600">
-                  {{ roForecast.fb?.pct != null ? roForecast.fb.pct + '% terpakai' : '—' }}
-                </p>
-              </div>
-              <div class="mt-3 h-2 rounded-full bg-white overflow-hidden border border-teal-100">
-                <div
-                  class="h-full rounded-full transition-all"
-                  :class="(roForecast.fb?.pct || 0) > 100 ? 'bg-rose-500' : 'bg-teal-500'"
-                  :style="{ width: Math.min(100, roForecast.fb?.pct || 0) + '%' }"
-                ></div>
+              <div class="mt-3 sm:mt-0 sm:text-right">
+                <p class="text-xs text-slate-500">Pool budget {{ roForecast.budget_pool_ratio_pct || 43 }}%</p>
+                <p class="text-lg font-bold text-slate-800">{{ formatCurrency(roForecast.budget_pool) }}</p>
+                <p class="text-[11px] text-slate-400">Lalu dibagi Kitchen / Bar / Service</p>
               </div>
             </div>
 
-            <div class="xl:col-span-5 rounded-2xl border border-cyan-100 bg-cyan-50/40 p-4">
-              <div class="flex items-center justify-between gap-2">
-                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
-                  Service Purchase
-                  <CardHelpTip :text="cardHelps.service_purchase" />
-                </p>
-                <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-cyan-100 text-cyan-800">Budget {{ roForecast.service?.budget_ratio_pct || 5 }}%</span>
-              </div>
-              <div class="mt-3">
-                <p class="text-slate-500 text-xs">Purchased</p>
-                <p class="mt-0.5 text-2xl sm:text-3xl font-bold text-cyan-800 tracking-tight">
-                  {{ formatCurrency(roForecast.service?.purchased) }}
-                </p>
-              </div>
-              <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
-                <div>
-                  <p class="text-slate-500 text-xs">Budget</p>
-                  <p class="font-semibold text-slate-900">{{ formatCurrency(roForecast.service?.budget) }}</p>
-                </div>
-                <div>
-                  <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
-                  <p class="font-semibold text-amber-800">{{ formatCurrency(roForecast.service?.ro_outstanding) }}</p>
-                </div>
-              </div>
-              <div class="mt-3 pt-3 border-t border-cyan-100/80 flex items-end justify-between gap-2">
-                <div>
-                  <p class="text-xs text-slate-500">Sisa budget</p>
-                  <p class="text-xl font-bold" :class="remainingClass(roForecast.service?.remaining)">
-                    {{ formatRemaining(roForecast.service?.remaining) }}
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div
+                v-for="card in purchaseBudgetCards"
+                :key="card.key"
+                class="rounded-2xl border p-4"
+                :class="card.cardClass"
+              >
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-xs font-semibold uppercase tracking-wide inline-flex items-center gap-1" :class="card.titleClass">
+                    {{ card.label }}
+                    <CardHelpTip :text="card.help" />
                   </p>
-                  <p class="text-[11px] text-slate-500 mt-0.5">
-                    Setelah commit:
-                    <span :class="remainingClass(roForecast.service?.remaining_after_commit)">{{ formatRemaining(roForecast.service?.remaining_after_commit) }}</span>
+                  <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="card.badgeClass">
+                    {{ card.sharePct }}% dari {{ roForecast.budget_pool_ratio_pct || 43 }}%
+                  </span>
+                </div>
+                <div class="mt-3">
+                  <p class="text-slate-500 text-xs">Purchased</p>
+                  <p class="mt-0.5 text-2xl sm:text-3xl font-bold tracking-tight" :class="card.valueClass">
+                    {{ formatCurrency(card.data?.purchased) }}
                   </p>
                 </div>
-                <p class="text-sm font-semibold text-slate-600">
-                  {{ roForecast.service?.pct != null ? roForecast.service.pct + '% terpakai' : '—' }}
-                </p>
-              </div>
-              <div class="mt-3 h-2 rounded-full bg-white overflow-hidden border border-cyan-100">
-                <div
-                  class="h-full rounded-full transition-all"
-                  :class="(roForecast.service?.pct || 0) > 100 ? 'bg-rose-500' : 'bg-cyan-500'"
-                  :style="{ width: Math.min(100, roForecast.service?.pct || 0) + '%' }"
-                ></div>
+                <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                  <div>
+                    <p class="text-slate-500 text-xs">Budget</p>
+                    <p class="font-semibold text-slate-900">{{ formatCurrency(card.data?.budget) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
+                    <p class="font-semibold text-amber-800">{{ formatCurrency(card.data?.ro_outstanding) }}</p>
+                  </div>
+                </div>
+                <div class="mt-3 pt-3 border-t flex items-end justify-between gap-2" :class="card.dividerClass">
+                  <div>
+                    <p class="text-xs text-slate-500">Sisa budget</p>
+                    <p class="text-xl font-bold" :class="remainingClass(card.data?.remaining)">
+                      {{ formatRemaining(card.data?.remaining) }}
+                    </p>
+                    <p class="text-[11px] text-slate-500 mt-0.5">
+                      Setelah commit:
+                      <span :class="remainingClass(card.data?.remaining_after_commit)">{{ formatRemaining(card.data?.remaining_after_commit) }}</span>
+                    </p>
+                  </div>
+                  <p class="text-sm font-semibold text-slate-600">
+                    {{ card.data?.pct != null ? card.data.pct + '% terpakai' : '—' }}
+                  </p>
+                </div>
+                <div class="mt-3 h-2 rounded-full bg-white overflow-hidden border" :class="card.barBorderClass">
+                  <div
+                    class="h-full rounded-full transition-all"
+                    :class="(card.data?.pct || 0) > 100 ? 'bg-rose-500' : card.barFillClass"
+                    :style="{ width: Math.min(100, card.data?.pct || 0) + '%' }"
+                  ></div>
+                </div>
               </div>
             </div>
           </div>
@@ -2002,19 +1972,21 @@ import axios from 'axios'
 
 const cardHelps = {
   forecast:
-    'Total forecast revenue 1 bulan penuh dari Revenue Target outlet.\n\nDipakai sebagai dasar budget F&B (40%) dan Service (5%). Periode selalu full calendar month, bukan MTD filter.',
-  fb_purchase:
-    'Purchased F&B = nilai diterima untuk warehouse Kitchen + Bar:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS (biasanya Main Store / MK → F&B)\n\nBudget = 40% × Forecast.\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
+    'Total forecast revenue 1 bulan penuh dari Revenue Target outlet.\n\nPool budget = 43% × Forecast, lalu dibagi:\n• Kitchen 70%\n• Bar 20%\n• Service 10%\n\nPeriode selalu full calendar month, bukan MTD filter.',
+  kitchen_purchase:
+    'Purchased Kitchen = nilai diterima untuk warehouse Kitchen:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS (Main Store / MK → Kitchen)\n\nBudget = 70% × (43% × Forecast).\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
+  bar_purchase:
+    'Purchased Bar = nilai diterima untuk warehouse Bar:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Bar)\n• RWS jika nama gudang bertema bar\n\nBudget = 20% × (43% × Forecast).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
   service_purchase:
-    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 5% × Forecast.\nRO Outstanding / sisa budget sama logikanya dengan F&B.',
+    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 10% × (43% × Forecast).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
   gsr_ro:
     'Nilai penerimaan outlet pada periode filter:\n• GR = Outlet Food Good Receive × harga RO\n• GSR = Serial Goods Receive × cost (cost_small, dikonversi unit)\n\nDua bar:\n• vs Total Spend = nilai ÷ Total Spend\n• vs Revenue = nilai ÷ Revenue',
   rws:
-    'Retail Warehouse Sales ke customer tipe branch (outlet ini).\nStatus completed, dijumlah dari total_amount.\n\nIkut ke Purchased F&B (kecuali gudang service).\nDua bar: vs Total Spend & vs Revenue.',
+    'Retail Warehouse Sales ke customer tipe branch (outlet ini).\nStatus completed, dijumlah dari total_amount.\n\nIkut ke Purchased Kitchen (kecuali gudang bar/service).\nDua bar: vs Total Spend & vs Revenue.',
   retail_food:
-    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nIkut ke Purchased F&B/Service menurut warehouse_outlet (Kitchen/Bar/Service).\nDua bar: vs Total Spend & vs Revenue.',
+    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nIkut ke Purchased Kitchen/Bar/Service menurut warehouse_outlet.\nDua bar: vs Total Spend & vs Revenue.',
   retail_non_food:
-    'Transaksi Retail Non Food status approved (Cash + Contra Bon).\n\nMasuk Total Spend, tetapi tidak masuk Purchased F&B/Service.\nDua bar: vs Total Spend & vs Revenue.',
+    'Transaksi Retail Non Food status approved (Cash + Contra Bon).\n\nMasuk Total Spend, tetapi tidak masuk Purchased Kitchen/Bar/Service.\nDua bar: vs Total Spend & vs Revenue.',
   petty_cash:
     'Subset cash dari Retail Food + Retail Non Food (payment_method = cash).\nBukan tambahan di luar RF/RNF — hanya ringkasan cash spend.\n\nDua bar: vs Total Spend & vs Revenue.',
   mcs_purchase:
@@ -2094,6 +2066,54 @@ const vs = computed(() => ov.value.vs_last_month || {})
 const vsMember = computed(() => ov.value.vs_last_month_member || {})
 const trendRows = computed(() => dashboardData.value.trend || [])
 const roForecast = computed(() => dashboardData.value.ro_forecast || null)
+
+const purchaseBudgetCards = computed(() => {
+  const rf = roForecast.value || {}
+  return [
+    {
+      key: 'kitchen',
+      label: 'Budget Kitchen',
+      help: cardHelps.kitchen_purchase,
+      sharePct: rf.kitchen?.share_of_pool_pct || 70,
+      data: rf.kitchen,
+      cardClass: 'border-teal-100 bg-teal-50/40',
+      titleClass: 'text-teal-700',
+      badgeClass: 'bg-teal-100 text-teal-800',
+      valueClass: 'text-teal-800',
+      dividerClass: 'border-teal-100/80',
+      barBorderClass: 'border-teal-100',
+      barFillClass: 'bg-teal-500',
+    },
+    {
+      key: 'bar',
+      label: 'Budget Bar',
+      help: cardHelps.bar_purchase,
+      sharePct: rf.bar?.share_of_pool_pct || 20,
+      data: rf.bar,
+      cardClass: 'border-indigo-100 bg-indigo-50/40',
+      titleClass: 'text-indigo-700',
+      badgeClass: 'bg-indigo-100 text-indigo-800',
+      valueClass: 'text-indigo-800',
+      dividerClass: 'border-indigo-100/80',
+      barBorderClass: 'border-indigo-100',
+      barFillClass: 'bg-indigo-500',
+    },
+    {
+      key: 'service',
+      label: 'Budget Service',
+      help: cardHelps.service_purchase,
+      sharePct: rf.service?.share_of_pool_pct || 10,
+      data: rf.service,
+      cardClass: 'border-cyan-100 bg-cyan-50/40',
+      titleClass: 'text-cyan-700',
+      badgeClass: 'bg-cyan-100 text-cyan-800',
+      valueClass: 'text-cyan-800',
+      dividerClass: 'border-cyan-100/80',
+      barBorderClass: 'border-cyan-100',
+      barFillClass: 'bg-cyan-500',
+    },
+  ]
+})
 const att = computed(() => dashboardData.value.attendance || {})
 
 const sectionLoading = ref({
