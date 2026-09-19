@@ -596,13 +596,31 @@ class OpexOutletDashboardService
             }
             $subtotal = round((float) ($item['subtotal'] ?? 0), 2);
             $grouped[$key]->amount = round((float) $grouped[$key]->amount + $subtotal, 2);
-            $grouped[$key]->items[] = [
-                'name' => (string) ($item['name'] ?? '-'),
-                'qty' => (float) ($item['qty'] ?? 0),
-                'unit' => (string) ($item['unit'] ?? '-'),
-                'price' => round((float) ($item['price'] ?? 0), 2),
-                'subtotal' => $subtotal,
-            ];
+
+            // GSR/RWS serial: 1 baris per SN — gabungkan item sama (nama+unit+harga).
+            $itemKey = strtolower(implode('|', [
+                (string) ($item['name'] ?? '-'),
+                (string) ($item['unit'] ?? '-'),
+                number_format((float) ($item['price'] ?? 0), 4, '.', ''),
+            ]));
+            if (! isset($grouped[$key]->items[$itemKey])) {
+                $grouped[$key]->items[$itemKey] = [
+                    'name' => (string) ($item['name'] ?? '-'),
+                    'qty' => round((float) ($item['qty'] ?? 0), 4),
+                    'unit' => (string) ($item['unit'] ?? '-'),
+                    'price' => round((float) ($item['price'] ?? 0), 2),
+                    'subtotal' => $subtotal,
+                ];
+            } else {
+                $grouped[$key]->items[$itemKey]['qty'] = round(
+                    (float) $grouped[$key]->items[$itemKey]['qty'] + (float) ($item['qty'] ?? 0),
+                    4
+                );
+                $grouped[$key]->items[$itemKey]['subtotal'] = round(
+                    (float) $grouped[$key]->items[$itemKey]['subtotal'] + $subtotal,
+                    2
+                );
+            }
         };
 
         // —— GSR ——
@@ -882,6 +900,9 @@ class OpexOutletDashboardService
         }
 
         $rows = array_values($grouped);
+        foreach ($rows as $row) {
+            $row->items = array_values($row->items);
+        }
         usort($rows, function ($a, $b) {
             $cmp = strcmp((string) $b->date, (string) $a->date);
             if ($cmp !== 0) {

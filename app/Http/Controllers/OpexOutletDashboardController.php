@@ -1112,13 +1112,35 @@ class OpexOutletDashboardController extends Controller
             return [];
         }
 
-        return $rows->map(fn ($i) => [
-            'name' => (string) ($i->item_name ?? $i->name ?? '-'),
-            'qty' => (float) ($i->qty ?? 0),
-            'unit' => (string) ($i->unit_name ?? $i->unit ?? '-'),
-            'price' => (float) ($i->price ?? 0),
-            'subtotal' => (float) ($i->subtotal ?? 0),
-        ])->values()->all();
+        // GSR serial: 1 baris per SN — gabungkan item sama (nama+unit+harga).
+        $merged = [];
+        foreach ($rows as $i) {
+            $name = (string) ($i->item_name ?? $i->name ?? '-');
+            $unit = (string) ($i->unit_name ?? $i->unit ?? '-');
+            $price = round((float) ($i->price ?? 0), 2);
+            $qty = (float) ($i->qty ?? 0);
+            $subtotal = round((float) ($i->subtotal ?? ($qty * $price)), 2);
+            $key = strtolower(implode('|', [
+                $name,
+                $unit,
+                number_format($price, 4, '.', ''),
+            ]));
+
+            if (! isset($merged[$key])) {
+                $merged[$key] = [
+                    'name' => $name,
+                    'qty' => round($qty, 4),
+                    'unit' => $unit,
+                    'price' => $price,
+                    'subtotal' => $subtotal,
+                ];
+            } else {
+                $merged[$key]['qty'] = round((float) $merged[$key]['qty'] + $qty, 4);
+                $merged[$key]['subtotal'] = round((float) $merged[$key]['subtotal'] + $subtotal, 2);
+            }
+        }
+
+        return array_values($merged);
     }
 
     /**

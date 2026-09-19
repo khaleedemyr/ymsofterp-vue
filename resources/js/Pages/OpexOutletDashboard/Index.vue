@@ -398,19 +398,32 @@
             class="lg:col-span-4 rounded-3xl bg-white border border-rose-100 shadow-sm p-6 text-left hover:shadow-md transition"
             @click="openCard('total_spend')"
           >
-            <div class="flex items-start justify-between">
-              <div>
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
                 <p class="text-xs font-semibold uppercase tracking-wide text-rose-600 inline-flex items-center gap-1">
                   Total Spend
-                  <CardHelpTip :text="cardHelps.total_spend" />
+                  <span @click.stop>
+                    <CardHelpTip :text="cardHelps.total_spend" />
+                  </span>
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.total_spend) }}</p>
                 <p class="mt-2 text-sm text-slate-500">
                   {{ ov.spend_ratio_percent != null ? ov.spend_ratio_percent + '% dari revenue' : '—' }}
                 </p>
                 <p class="mt-1 text-xs font-medium" :class="vsClass(vs.total_spend, true)">{{ vsLabel(vs.total_spend) }}</p>
+
+                <div class="mt-4 pt-3 border-t border-rose-100/80 space-y-1.5">
+                  <div
+                    v-for="row in totalSpendBreakdown"
+                    :key="row.key"
+                    class="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <span class="text-slate-500">{{ row.label }}</span>
+                    <span class="font-semibold tabular-nums text-slate-800">{{ formatCurrency(row.amount) }}</span>
+                  </div>
+                </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
+              <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-cart-shopping text-xl"></i>
               </div>
             </div>
@@ -2017,7 +2030,7 @@ const cardHelps = {
   revenue:
     'Total penjualan outlet (orders) pada periode filter.\nBudget & performa dibanding Revenue Target bulanan (jika ada).',
   total_spend:
-    'Total belanja outlet = GSR/RO + RWS + Retail Food + Retail Non Food.\n\nModal detail:\n• tabel harian Receiving Sheet (warehouse + supplier RF)\n• list transaksi Retail Non Food (User + Category) di bawahnya\n% di bawah = Total Spend ÷ Revenue.',
+    'Total belanja outlet = GSR + GR + RWS + Retail Food + Retail Non Food.\n\nBreakdown di card:\n• GSR / GR\n• RWS\n• RF Cash & RF Contra Bon\n• RNF Cash & RNF Contra Bon\n\nModal detail: tabel harian Receiving Sheet + list Retail Non Food.\n% di bawah = Total Spend ÷ Revenue.',
   net:
     'Net = Revenue − Total Spend.\nBar menunjukkan rasio spend terhadap revenue.',
   cover:
@@ -2459,6 +2472,23 @@ const sourceCards = computed(() => [
 
 const categoryCostByType = computed(() => ov.value.category_cost_by_type || [])
 const mcsPurchaseByCategory = computed(() => ov.value.mcs_purchase_by_category || [])
+
+/** Breakdown Total Spend di card (GSR/GR + RWS + RF/RNF cash & contra bon). */
+const totalSpendBreakdown = computed(() => {
+  const o = ov.value || {}
+  const rows = [
+    { key: 'gsr', label: 'GSR', amount: Number(o.gsr_ro_gsr) || 0 },
+    { key: 'gr', label: 'GR', amount: Number(o.gsr_ro_gr) || 0 },
+    { key: 'rws', label: 'RWS', amount: Number(o.rws) || 0 },
+    { key: 'rf_cash', label: 'RF Cash', amount: Number(o.retail_food_cash_total) || 0 },
+    { key: 'rf_cb', label: 'RF Contra Bon', amount: Number(o.retail_food_contra_bon_total) || 0 },
+    { key: 'rnf_cash', label: 'RNF Cash', amount: Number(o.retail_non_food_cash_total) || 0 },
+    { key: 'rnf_cb', label: 'RNF Contra Bon', amount: Number(o.retail_non_food_contra_bon_total) || 0 },
+  ]
+  // Sembunyikan baris 0 supaya card tidak terlalu ramai, kecuali semua 0.
+  const nonzero = rows.filter((r) => r.amount > 0)
+  return nonzero.length ? nonzero : rows
+})
 
 const pettyCashHref = computed(() => {
   const p = new URLSearchParams()
