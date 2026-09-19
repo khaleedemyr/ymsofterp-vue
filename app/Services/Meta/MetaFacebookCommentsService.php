@@ -49,24 +49,44 @@ class MetaFacebookCommentsService
         [$token, $pageId] = $this->resolveCredentials($configuredPageId);
         $version = config('services.meta.graph_api_version', 'v25.0');
 
+        // Selalu pakai Page ID dari config/key META_PAGE_TOKENS.
+        // Jangan timpa dengan /me — User token membuat /me = User ID, lalu
+        // /{user-id}/published_posts error (#100) nonexisting field.
+        $name = null;
+
+        $page = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(20)
+            ->get("https://graph.facebook.com/{$version}/{$pageId}", [
+                'fields' => 'id,name',
+            ]);
+
+        if ($page->successful()) {
+            $name = (string) ($page->json('name') ?? '') ?: null;
+            if ($name !== null) {
+                MetaPageAccountRegistry::remember($pageId, $name);
+            }
+
+            return ['page_id' => $pageId, 'name' => $name];
+        }
+
         $me = Http::withToken($token)
             ->acceptJson()
+            ->timeout(20)
             ->get("https://graph.facebook.com/{$version}/me", ['fields' => 'id,name']);
 
         if ($me->successful()) {
             $resolved = (string) ($me->json('id') ?? '');
-            if ($resolved !== '') {
-                $pageId = $resolved;
+            // Hanya pakai /me id jika sama dengan Page yang diminta (Page token).
+            if ($resolved !== '' && $resolved === $pageId) {
+                $name = (string) ($me->json('name') ?? '') ?: null;
+                if ($name !== null) {
+                    MetaPageAccountRegistry::remember($pageId, $name);
+                }
             }
-            $name = (string) ($me->json('name') ?? '');
-            if ($name !== '') {
-                MetaPageAccountRegistry::remember($pageId, $name);
-            }
-
-            return ['page_id' => $pageId, 'name' => $name !== '' ? $name : null];
         }
 
-        return ['page_id' => $pageId, 'name' => null];
+        return ['page_id' => $pageId, 'name' => $name];
     }
 
     /**
@@ -75,7 +95,9 @@ class MetaFacebookCommentsService
     public function listPosts(string $configuredPageId, int $limit = 25): array
     {
         [$token, $pageId] = $this->resolveCredentials($configuredPageId);
-        $pageId = $this->resolvePage($configuredPageId)['page_id'];
+        // Jangan resolvePage()[/me] — pakai Page ID yang dipilih user.
+        $pageId = $configuredPageId !== '' ? $configuredPageId : $pageId;
+        $token = $this->resolveTokenForPage($token, $pageId);
         $version = config('services.meta.graph_api_version', 'v25.0');
         $limit = min(50, max(1, $limit));
         $fields = 'id,message,created_time,permalink_url,full_picture,status_type,comments.limit(0).summary(true)';
@@ -122,6 +144,65 @@ class MetaFacebookCommentsService
     }
 
     /**
+     * Jika token adalah User token, ambil Page access token dari /me/accounts.
+     */
+    private function resolveTokenForPage(string $token, string $pageId): string
+    {
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        $me = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(20)
+            ->get("https://graph.facebook.com/{$version}/me", ['fields' => 'id']);
+
+        if (! $me->successful()) {
+            return $token;
+        }
+
+        $meId = (string) ($me->json('id') ?? '');
+        // Sudah Page token untuk page ini.
+        if ($meId !== '' && $meId === $pageId) {
+            return $token;
+        }
+
+        $accounts = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(30)
+            ->get("https://graph.facebook.com/{$version}/me/accounts", [
+                'fields' => 'id,name,access_token',
+                'limit' => 100,
+            ]);
+
+        if (! $accounts->successful()) {
+            return $token;
+        }
+
+        $rows = $accounts->json('data') ?? [];
+        if (! is_array($rows)) {
+            return $token;
+        }
+
+        foreach ($rows as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+            if ((string) ($row['id'] ?? '') === $pageId) {
+                $pageToken = (string) ($row['access_token'] ?? '');
+                if ($pageToken !== '') {
+                    $name = (string) ($row['name'] ?? '');
+                    if ($name !== '') {
+                        MetaPageAccountRegistry::remember($pageId, $name);
+                    }
+
+                    return $pageToken;
+                }
+            }
+        }
+
+        return $token;
+    }
+
+    /**
      * Diagnosa cepat token + edge posts (untuk sync dashboard).
      *
      * @return array{
@@ -135,26 +216,23 @@ class MetaFacebookCommentsService
     public function diagnosePostsAccess(string $configuredPageId): array
     {
         [$token, $configured] = $this->resolveCredentials($configuredPageId);
+        $pageId = $configuredPageId !== '' ? $configuredPageId : $configured;
+        $token = $this->resolveTokenForPage($token, $pageId);
         $version = config('services.meta.graph_api_version', 'v25.0');
 
-        $me = Http::withToken($token)
+        $page = Http::withToken($token)
             ->acceptJson()
             ->timeout(20)
-            ->get("https://graph.facebook.com/{$version}/me", ['fields' => 'id,name']);
+            ->get("https://graph.facebook.com/{$version}/{$pageId}", ['fields' => 'id,name']);
 
-        $resolvedId = $configured;
-        $pageName = null;
-        if ($me->successful()) {
-            $resolvedId = (string) ($me->json('id') ?? $configured);
-            $pageName = (string) ($me->json('name') ?? '') ?: null;
-        }
+        $pageName = $page->successful() ? ((string) ($page->json('name') ?? '') ?: null) : null;
 
         $edges = [];
         foreach (['published_posts', 'posts', 'feed'] as $edge) {
             $response = Http::withToken($token)
                 ->acceptJson()
                 ->timeout(30)
-                ->get("https://graph.facebook.com/{$version}/{$resolvedId}/{$edge}", [
+                ->get("https://graph.facebook.com/{$version}/{$pageId}/{$edge}", [
                     'fields' => 'id,created_time',
                     'limit' => 5,
                 ]);
@@ -171,12 +249,12 @@ class MetaFacebookCommentsService
 
         return [
             'configured_page_id' => $configured,
-            'resolved_page_id' => $resolvedId,
+            'resolved_page_id' => $pageId,
             'page_name' => $pageName,
-            'token_ok' => $me->successful(),
-            'me_error' => $me->successful()
+            'token_ok' => $page->successful(),
+            'me_error' => $page->successful()
                 ? null
-                : (string) ($me->json('error.message') ?? mb_substr($me->body(), 0, 240)),
+                : (string) ($page->json('error.message') ?? mb_substr($page->body(), 0, 240)),
             'edges' => $edges,
         ];
     }
@@ -186,7 +264,9 @@ class MetaFacebookCommentsService
      */
     public function listComments(string $configuredPageId, string $postId, int $limit = 50): array
     {
-        [$token] = $this->resolveCredentials($configuredPageId);
+        [$token, $pageId] = $this->resolveCredentials($configuredPageId);
+        $pageId = $configuredPageId !== '' ? $configuredPageId : $pageId;
+        $token = $this->resolveTokenForPage($token, $pageId);
         $version = config('services.meta.graph_api_version', 'v25.0');
 
         $response = Http::withToken($token)
@@ -226,7 +306,9 @@ class MetaFacebookCommentsService
             throw new RuntimeException('Balasan tidak boleh kosong.');
         }
 
-        [$token] = $this->resolveCredentials($configuredPageId);
+        [$token, $pageId] = $this->resolveCredentials($configuredPageId);
+        $pageId = $configuredPageId !== '' ? $configuredPageId : $pageId;
+        $token = $this->resolveTokenForPage($token, $pageId);
         $version = config('services.meta.graph_api_version', 'v25.0');
 
         $response = Http::withToken($token)
