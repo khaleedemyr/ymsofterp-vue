@@ -77,40 +77,108 @@ class MetaFacebookCommentsService
         [$token, $pageId] = $this->resolveCredentials($configuredPageId);
         $pageId = $this->resolvePage($configuredPageId)['page_id'];
         $version = config('services.meta.graph_api_version', 'v25.0');
+        $limit = min(50, max(1, $limit));
+        $fields = 'id,message,created_time,permalink_url,full_picture,status_type,comments.limit(0).summary(true)';
 
-        $response = Http::withToken($token)
-            ->acceptJson()
-            ->get("https://graph.facebook.com/{$version}/{$pageId}/published_posts", [
-                'fields' => 'id,message,created_time,permalink_url,full_picture,status_type,comments.limit(0).summary(true)',
-                'limit' => min(50, max(1, $limit)),
-            ]);
+        $endpoints = ['published_posts', 'posts', 'feed'];
+        $lastError = null;
 
-        if (! $response->successful()) {
-            $feed = Http::withToken($token)
+        foreach ($endpoints as $edge) {
+            $response = Http::withToken($token)
                 ->acceptJson()
-                ->get("https://graph.facebook.com/{$version}/{$pageId}/feed", [
-                    'fields' => 'id,message,created_time,permalink_url,full_picture,status_type,comments.limit(0).summary(true)',
-                    'limit' => min(50, max(1, $limit)),
+                ->timeout(45)
+                ->get("https://graph.facebook.com/{$version}/{$pageId}/{$edge}", [
+                    'fields' => $fields,
+                    'limit' => $limit,
                 ]);
-            if (! $feed->successful()) {
-                throw new RuntimeException('Gagal memuat post Facebook: '.$response->body(), $response->status());
+
+            if (! $response->successful()) {
+                $lastError = $response->body();
+                continue;
             }
-            $response = $feed;
-        }
 
-        $rows = $response->json('data') ?? [];
-        if (! is_array($rows)) {
-            return [];
-        }
+            $rows = $response->json('data') ?? [];
+            if (! is_array($rows) || $rows === []) {
+                continue;
+            }
 
-        $posts = [];
-        foreach ($rows as $row) {
-            if (is_array($row)) {
-                $posts[] = $this->formatPostRow($row);
+            $posts = [];
+            foreach ($rows as $row) {
+                if (is_array($row)) {
+                    $posts[] = $this->formatPostRow($row);
+                }
+            }
+
+            if ($posts !== []) {
+                return $posts;
             }
         }
 
-        return $posts;
+        if ($lastError !== null) {
+            throw new RuntimeException('Gagal memuat post Facebook: '.$lastError);
+        }
+
+        return [];
+    }
+
+    /**
+     * Diagnosa cepat token + edge posts (untuk sync dashboard).
+     *
+     * @return array{
+     *   configured_page_id: string,
+     *   resolved_page_id: string,
+     *   page_name: ?string,
+     *   token_ok: bool,
+     *   edges: array<string, array{ok: bool, status: int, count: int, error: ?string}>
+     * }
+     */
+    public function diagnosePostsAccess(string $configuredPageId): array
+    {
+        [$token, $configured] = $this->resolveCredentials($configuredPageId);
+        $version = config('services.meta.graph_api_version', 'v25.0');
+
+        $me = Http::withToken($token)
+            ->acceptJson()
+            ->timeout(20)
+            ->get("https://graph.facebook.com/{$version}/me", ['fields' => 'id,name']);
+
+        $resolvedId = $configured;
+        $pageName = null;
+        if ($me->successful()) {
+            $resolvedId = (string) ($me->json('id') ?? $configured);
+            $pageName = (string) ($me->json('name') ?? '') ?: null;
+        }
+
+        $edges = [];
+        foreach (['published_posts', 'posts', 'feed'] as $edge) {
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->timeout(30)
+                ->get("https://graph.facebook.com/{$version}/{$resolvedId}/{$edge}", [
+                    'fields' => 'id,created_time',
+                    'limit' => 5,
+                ]);
+
+            $edges[$edge] = [
+                'ok' => $response->successful(),
+                'status' => $response->status(),
+                'count' => is_array($response->json('data')) ? count($response->json('data')) : 0,
+                'error' => $response->successful()
+                    ? null
+                    : (string) ($response->json('error.message') ?? mb_substr($response->body(), 0, 240)),
+            ];
+        }
+
+        return [
+            'configured_page_id' => $configured,
+            'resolved_page_id' => $resolvedId,
+            'page_name' => $pageName,
+            'token_ok' => $me->successful(),
+            'me_error' => $me->successful()
+                ? null
+                : (string) ($me->json('error.message') ?? mb_substr($me->body(), 0, 240)),
+            'edges' => $edges,
+        ];
     }
 
     /**

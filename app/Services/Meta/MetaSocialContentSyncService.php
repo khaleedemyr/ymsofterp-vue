@@ -187,9 +187,22 @@ class MetaSocialContentSyncService
         }
 
         if ($posts === []) {
-            throw new \RuntimeException(
-                'Tidak ada post Facebook (published_posts/feed kosong atau permission pages_read_engagement kurang).'
-            );
+            // Coba juga dengan page id hasil /me (kadang key META_PAGE_TOKENS ≠ id token).
+            if ($pageId !== $configuredPageId) {
+                $posts = $this->listFacebookPostsRaw($token, $version, $configuredPageId, $limit);
+            }
+        }
+
+        if ($posts === []) {
+            $diag = [];
+            try {
+                $diag = $fb->diagnosePostsAccess($configuredPageId);
+            } catch (Throwable $e) {
+                $diag = ['error' => $e->getMessage()];
+            }
+
+            $hint = $this->formatFacebookDiagHint($configuredPageId, $diag);
+            throw new \RuntimeException($hint);
         }
 
         $count = 0;
@@ -233,7 +246,7 @@ class MetaSocialContentSyncService
     }
 
     /**
-     * Field sederhana — hindari reactions/shares di list (sering bikin whole-request gagal).
+     * Field sederhana — coba beberapa edge (published_posts / posts / feed).
      *
      * @return list<array<string, mixed>>
      */
@@ -242,12 +255,13 @@ class MetaSocialContentSyncService
         $fields = 'id,message,created_time,permalink_url,full_picture,status_type,comments.limit(0).summary(true)';
         $endpoints = [
             "https://graph.facebook.com/{$version}/{$pageId}/published_posts",
+            "https://graph.facebook.com/{$version}/{$pageId}/posts",
             "https://graph.facebook.com/{$version}/{$pageId}/feed",
         ];
 
         foreach ($endpoints as $url) {
             try {
-                $rows = $this->paginateGraph($url, $token, ['fields' => $fields], $limit);
+                $rows = $this->paginateGraph($url, $token, ['fields' => $fields], $limit, softFail: true);
                 if ($rows !== []) {
                     return array_map(function (array $row) {
                         $summary = is_array($row['comments']['summary'] ?? null) ? $row['comments']['summary'] : [];
@@ -270,6 +284,53 @@ class MetaSocialContentSyncService
         }
 
         return [];
+    }
+
+    /**
+     * @param  array<string, mixed>  $diag
+     */
+    private function formatFacebookDiagHint(string $configuredPageId, array $diag): string
+    {
+        if (isset($diag['error'])) {
+            return "FB {$configuredPageId}: ".$diag['error'];
+        }
+
+        $resolved = (string) ($diag['resolved_page_id'] ?? $configuredPageId);
+        $name = (string) ($diag['page_name'] ?? '');
+        $parts = ["FB {$configuredPageId}"];
+        if ($name !== '') {
+            $parts[0] .= " ({$name})";
+        }
+        if ($resolved !== '' && $resolved !== $configuredPageId) {
+            $parts[] = "token /me = {$resolved}";
+        }
+        if (! ($diag['token_ok'] ?? false)) {
+            $parts[] = 'token invalid: '.($diag['me_error'] ?? 'unknown');
+
+            return implode(' · ', $parts);
+        }
+
+        $edgeHints = [];
+        foreach (($diag['edges'] ?? []) as $edge => $info) {
+            if (! is_array($info)) {
+                continue;
+            }
+            if (! empty($info['error'])) {
+                $edgeHints[] = "{$edge}: {$info['error']}";
+            } else {
+                $edgeHints[] = "{$edge}: {$info['count']} post";
+            }
+        }
+
+        if ($edgeHints !== []) {
+            $parts[] = implode('; ', $edgeHints);
+        } else {
+            $parts[] = 'published_posts/posts/feed kosong';
+        }
+
+        $parts[] = 'Cek App Review: pages_read_engagement + pages_read_user_content, dan pastikan Page punya post organik (bukan hanya IG).';
+
+        return implode(' · ', $parts);
     }
 
     /**
@@ -474,7 +535,7 @@ class MetaSocialContentSyncService
      * @param  array<string, mixed>  $query
      * @return list<array<string, mixed>>
      */
-    private function paginateGraph(string $url, string $token, array $query, int $limit): array
+    private function paginateGraph(string $url, string $token, array $query, int $limit, bool $softFail = false): array
     {
         $collected = [];
         $nextUrl = $url;
@@ -487,6 +548,9 @@ class MetaSocialContentSyncService
 
             if (! $response->successful()) {
                 if ($collected === []) {
+                    if ($softFail) {
+                        return [];
+                    }
                     throw new \RuntimeException('Graph list gagal: '.$response->body());
                 }
                 break;
