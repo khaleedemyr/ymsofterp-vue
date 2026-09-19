@@ -332,9 +332,11 @@ function onEmojiPickerToggle(commentId, open) {
 }
 
 function ensureDefaultAccount() {
-  if (!selectedAccount.value && accountList.value.length > 0) {
-    selectedAccount.value = accountList.value[0].id
+  const ids = accountList.value.map((a) => a.id)
+  if (selectedAccount.value && ids.includes(selectedAccount.value)) {
+    return
   }
+  selectedAccount.value = ids[0] || ''
 }
 
 watch(
@@ -344,11 +346,21 @@ watch(
   }
 )
 
-watch(platform, () => {
-  ensureDefaultAccount()
-  resetPosts()
-  loadMedia()
-})
+watch(
+  () => props.facebookPages,
+  () => {
+    if (platform.value === 'facebook') ensureDefaultAccount()
+  },
+  { deep: true }
+)
+
+watch(
+  () => props.instagramAccounts,
+  () => {
+    if (platform.value === 'instagram') ensureDefaultAccount()
+  },
+  { deep: true }
+)
 
 watch(selectedAccount, () => {
   resetPosts()
@@ -371,29 +383,51 @@ function resetPosts() {
   selectedMedia.value = null
   commentsList.value = []
   mediaList.value = []
+  mediaError.value = ''
+  commentsError.value = ''
   emojiPickerCommentId.value = null
 }
 
 function setPlatform(p) {
+  if (p !== 'instagram' && p !== 'facebook') return
+  if (p === platform.value) return
+
+  resetPosts()
   platform.value = p
-  selectedAccount.value = accountList.value[0]?.id || ''
-  router.get('/crm/instagram-comments', { platform: p, account: selectedAccount.value }, {
-    preserveState: true,
-    preserveScroll: true,
-    replace: true,
-  })
+
+  const list =
+    p === 'facebook'
+      ? (props.facebookPages || []).map((page) => String(page.page_id || ''))
+      : (props.instagramAccounts || []).map((a) => String(a.ig_id || ''))
+
+  selectedAccount.value = list.filter(Boolean)[0] || ''
+
+  router.get(
+    '/crm/instagram-comments',
+    { platform: p, account: selectedAccount.value || undefined },
+    {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    }
+  )
 }
 
 function selectAccount(id) {
   selectedAccount.value = id
-  router.get('/crm/instagram-comments', { platform: platform.value, account: id }, {
-    preserveState: true,
-    preserveScroll: true,
-    replace: true,
-  })
+  router.get(
+    '/crm/instagram-comments',
+    { platform: platform.value, account: id },
+    {
+      preserveState: true,
+      preserveScroll: true,
+      replace: true,
+    }
+  )
 }
 
 function mediaUrl() {
+  if (!selectedAccount.value) return ''
   if (platform.value === 'facebook') {
     return `/crm/instagram-comments/facebook/${selectedAccount.value}/posts`
   }
@@ -401,6 +435,7 @@ function mediaUrl() {
 }
 
 function commentsUrl(postId) {
+  if (!selectedAccount.value || !postId) return ''
   if (platform.value === 'facebook') {
     return `/crm/instagram-comments/facebook/${selectedAccount.value}/posts/${postId}/comments`
   }
@@ -408,6 +443,7 @@ function commentsUrl(postId) {
 }
 
 function replyUrl(commentId) {
+  if (!selectedAccount.value || !commentId) return ''
   if (platform.value === 'facebook') {
     return `/crm/instagram-comments/facebook/${selectedAccount.value}/comments/${commentId}/reply`
   }
@@ -415,7 +451,22 @@ function replyUrl(commentId) {
 }
 
 async function loadMedia() {
-  if (!selectedAccount.value) return
+  if (!selectedAccount.value) {
+    mediaList.value = []
+    mediaError.value =
+      platform.value === 'facebook'
+        ? 'Belum ada Facebook Page. Isi META_PAGE_TOKENS di .env lalu php artisan config:clear.'
+        : 'Belum ada akun Instagram. Isi META_INSTAGRAM_LOGIN_TOKENS di .env.'
+    return
+  }
+
+  const validIds = accountList.value.map((a) => a.id)
+  if (validIds.length > 0 && !validIds.includes(selectedAccount.value)) {
+    mediaList.value = []
+    mediaError.value = 'Akun tidak valid untuk platform ini. Pilih ulang Page/akun.'
+    return
+  }
+
   loadingMedia.value = true
   mediaError.value = ''
   try {
@@ -430,6 +481,14 @@ async function loadMedia() {
 }
 
 async function selectMedia(post) {
+  if (!selectedAccount.value) {
+    commentsError.value =
+      platform.value === 'facebook'
+        ? 'Pilih Facebook Page dulu (atau isi META_PAGE_TOKENS).'
+        : 'Pilih akun Instagram dulu.'
+    return
+  }
+
   selectedMediaId.value = post.id
   selectedMedia.value = post
   commentsList.value = []
@@ -437,9 +496,15 @@ async function selectMedia(post) {
   emojiPickerCommentId.value = null
   loadingComments.value = true
   try {
-    const { data } = await axios.get(commentsUrl(post.id))
+    const url = commentsUrl(post.id)
+    if (!url) {
+      commentsError.value = 'URL komentar tidak valid (page/akun kosong).'
+      return
+    }
+    const { data } = await axios.get(url)
     commentsList.value = data.comments ?? []
   } catch (e) {
+    commentsList.value = []
     commentsError.value = e.response?.data?.message || e.message || 'Gagal memuat komentar'
   } finally {
     loadingComments.value = false
