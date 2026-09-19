@@ -144,7 +144,23 @@ class MetaFacebookCommentsService
     }
 
     /**
+     * Resolusi token terbaik untuk Page (Page token, atau dari /me/accounts jika User token).
+     */
+    public function accessTokenForPage(string $configuredPageId, ?string $preferredToken = null): string
+    {
+        if ($preferredToken !== null && $preferredToken !== '') {
+            return $this->resolveTokenForPage($preferredToken, $configuredPageId);
+        }
+
+        [$token, $pageId] = $this->resolveCredentials($configuredPageId);
+        $pageId = $configuredPageId !== '' ? $configuredPageId : $pageId;
+
+        return $this->resolveTokenForPage($token, $pageId);
+    }
+
+    /**
      * Jika token adalah User token, ambil Page access token dari /me/accounts.
+     * New Page Experience menolak User token (#190 / 2069032).
      */
     private function resolveTokenForPage(string $token, string $pageId): string
     {
@@ -173,33 +189,36 @@ class MetaFacebookCommentsService
                 'limit' => 100,
             ]);
 
-        if (! $accounts->successful()) {
-            return $token;
-        }
-
-        $rows = $accounts->json('data') ?? [];
-        if (! is_array($rows)) {
-            return $token;
-        }
-
-        foreach ($rows as $row) {
-            if (! is_array($row)) {
-                continue;
-            }
-            if ((string) ($row['id'] ?? '') === $pageId) {
-                $pageToken = (string) ($row['access_token'] ?? '');
-                if ($pageToken !== '') {
-                    $name = (string) ($row['name'] ?? '');
-                    if ($name !== '') {
-                        MetaPageAccountRegistry::remember($pageId, $name);
+        if ($accounts->successful()) {
+            $rows = $accounts->json('data') ?? [];
+            if (is_array($rows)) {
+                foreach ($rows as $row) {
+                    if (! is_array($row)) {
+                        continue;
                     }
+                    if ((string) ($row['id'] ?? '') === $pageId) {
+                        $pageToken = (string) ($row['access_token'] ?? '');
+                        if ($pageToken !== '') {
+                            $name = (string) ($row['name'] ?? '');
+                            if ($name !== '') {
+                                MetaPageAccountRegistry::remember($pageId, $name);
+                            }
 
-                    return $pageToken;
+                            return $pageToken;
+                        }
+                    }
                 }
             }
         }
 
-        return $token;
+        // Jangan pakai User token ke endpoint Page (New Pages → error 2069032).
+        throw new RuntimeException(
+            "Page {$pageId} butuh Page Access Token (bukan User token). "
+            .'Di Graph API Explorer: Generate Access Token → pilih Page "'
+            .MetaPageAccountRegistry::displayLabel($pageId)
+            .'" → salin token Page itu ke META_PAGE_TOKENS untuk ID tersebut. '
+            .'Atau GET /me/accounts lalu pakai access_token per Page.'
+        );
     }
 
     /**

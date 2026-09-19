@@ -52,9 +52,14 @@ function setPlatform(value) {
 function setPreset(days) {
   const to = new Date();
   const from = new Date();
-  from.setDate(to.getDate() - (days - 1));
-  dateTo.value = to.toISOString().slice(0, 10);
-  dateFrom.value = from.toISOString().slice(0, 10);
+  if (days === 'all') {
+    dateTo.value = to.toISOString().slice(0, 10);
+    dateFrom.value = '2020-01-01';
+  } else {
+    from.setDate(to.getDate() - (days - 1));
+    dateTo.value = to.toISOString().slice(0, 10);
+    dateFrom.value = from.toISOString().slice(0, 10);
+  }
   applyFilters();
 }
 
@@ -65,7 +70,10 @@ async function runSync() {
   try {
     const { data } = await axios.post('/crm/social-performance/sync');
     syncMessage.value = data?.message || 'Sync selesai.';
-    syncErrors.value = data?.result?.error_details || [];
+    syncErrors.value = [
+      ...(data?.result?.error_details || []),
+      ...(data?.result?.warnings || []),
+    ];
     applyFilters();
   } catch (e) {
     syncMessage.value =
@@ -341,13 +349,13 @@ const kpiCards = computed(() => [
         <form class="sp-filters" @submit.prevent="applyFilters">
           <div class="sp-presets">
             <button
-              v-for="d in [7, 14, 30, 60, 90]"
+              v-for="d in [7, 14, 30, 60, 90, 365, 'all']"
               :key="d"
               type="button"
               class="sp-chip"
               @click="setPreset(d)"
             >
-              {{ d }}d
+              {{ d === 'all' ? 'All' : d === 365 ? '1y' : d + 'd' }}
             </button>
           </div>
           <div class="sp-date-group">

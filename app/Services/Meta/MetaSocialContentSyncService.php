@@ -28,7 +28,8 @@ class MetaSocialContentSyncService
      *   accounts: int,
      *   ig_synced: int,
      *   fb_synced: int,
-     *   error_details: list<string>
+     *   error_details: list<string>,
+     *   warnings: list<string>
      * }
      */
     public function syncAll(?int $limitPerAccount = null): array
@@ -42,6 +43,7 @@ class MetaSocialContentSyncService
         $errors = 0;
         $accounts = 0;
         $errorDetails = [];
+        $warnings = [];
 
         foreach (MetaInstagramTokens::resolved() as $igId => $token) {
             if ($token === '') {
@@ -92,6 +94,17 @@ class MetaSocialContentSyncService
                 $synced += $n;
                 if ($n === 0) {
                     $errorDetails[] = "FB {$pageId}: 0 post (cek pages_read_engagement / published_posts)";
+                } else {
+                    $newest = SocialContentPost::query()
+                        ->where('platform', 'facebook')
+                        ->where('account_id', (string) $pageId)
+                        ->max('posted_at');
+                    if ($newest && Carbon::parse($newest)->lt(now()->subDays(30))) {
+                        $label = MetaPageAccountRegistry::displayLabel((string) $pageId);
+                        $warnings[] = "FB {$label}: {$n} post tersimpan, terbaru "
+                            .Carbon::parse($newest)->toDateString()
+                            .' — di luar filter 30 hari. Perluas rentang tanggal (mis. 365d) untuk melihatnya.';
+                    }
                 }
             } catch (Throwable $e) {
                 $errors++;
@@ -108,6 +121,7 @@ class MetaSocialContentSyncService
             'errors' => $errors,
             'accounts' => $accounts,
             'error_details' => $errorDetails,
+            'warnings' => $warnings,
         ];
     }
 
@@ -163,34 +177,35 @@ class MetaSocialContentSyncService
         $version = config('services.meta.graph_api_version', 'v25.0');
         $fb = app(MetaFacebookCommentsService::class);
 
-        $page = ['page_id' => $configuredPageId, 'name' => null];
+        $pageId = $configuredPageId;
+        $label = MetaPageAccountRegistry::displayLabel($pageId);
+
         try {
             $page = $fb->resolvePage($configuredPageId);
+            $pageId = (string) ($page['page_id'] ?: $configuredPageId);
+            if (! empty($page['name'])) {
+                $label = (string) $page['name'];
+            }
         } catch (Throwable $e) {
             Log::warning('[social-content-sync] FB resolvePage: '.$e->getMessage());
         }
 
-        $pageId = (string) ($page['page_id'] ?: $configuredPageId);
-        $label = (string) ($page['name'] ?? '') ?: MetaPageAccountRegistry::displayLabel($pageId);
+        // Wajib Page token untuk New Pages + metrics (likes/insights).
+        try {
+            $token = $fb->accessTokenForPage($configuredPageId, $token);
+        } catch (Throwable $e) {
+            throw new \RuntimeException("{$label}: ".$e->getMessage());
+        }
 
         $posts = [];
         try {
-            // Pakai listPosts yang sama dengan halaman IG & FB Comments (sudah terbukti jalan).
             $posts = $fb->listPosts($configuredPageId, $limit);
         } catch (Throwable $e) {
             Log::warning('[social-content-sync] FB listPosts: '.$e->getMessage());
         }
 
         if ($posts === []) {
-            // Fallback Graph dengan field sederhana (tanpa reactions/shares di list).
             $posts = $this->listFacebookPostsRaw($token, $version, $pageId, $limit);
-        }
-
-        if ($posts === []) {
-            // Coba juga dengan page id hasil /me (kadang key META_PAGE_TOKENS ≠ id token).
-            if ($pageId !== $configuredPageId) {
-                $posts = $this->listFacebookPostsRaw($token, $version, $configuredPageId, $limit);
-            }
         }
 
         if ($posts === []) {
@@ -201,8 +216,7 @@ class MetaSocialContentSyncService
                 $diag = ['error' => $e->getMessage()];
             }
 
-            $hint = $this->formatFacebookDiagHint($configuredPageId, $diag);
-            throw new \RuntimeException($hint);
+            throw new \RuntimeException($this->formatFacebookDiagHint($configuredPageId, $diag));
         }
 
         $count = 0;
