@@ -20,6 +20,7 @@ const dateTo = ref(props.filters?.date_to || '');
 const platform = ref(props.filters?.platform || 'all');
 const syncing = ref(false);
 const syncMessage = ref('');
+const syncErrors = ref([]);
 
 watch(
   () => props.filters,
@@ -60,9 +61,11 @@ function setPreset(days) {
 async function runSync() {
   syncing.value = true;
   syncMessage.value = '';
+  syncErrors.value = [];
   try {
     const { data } = await axios.post('/crm/social-performance/sync');
     syncMessage.value = data?.message || 'Sync selesai.';
+    syncErrors.value = data?.result?.error_details || [];
     applyFilters();
   } catch (e) {
     syncMessage.value =
@@ -92,7 +95,7 @@ function formatDayLabel(iso) {
 }
 
 function formatSyncAt(iso) {
-  if (!iso) return '—';
+  if (!iso) return 'Belum pernah sync';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '—';
   return d.toLocaleString('id-ID', {
@@ -118,15 +121,35 @@ const trendSeries = computed(() => [
 ]);
 
 const trendOptions = computed(() => ({
-  chart: { toolbar: { show: false }, zoom: { enabled: false }, type: 'area' },
-  colors: ['#be185d', '#6366f1'],
+  chart: {
+    toolbar: { show: false },
+    zoom: { enabled: false },
+    type: 'area',
+    fontFamily: 'inherit',
+    animations: { enabled: true, speed: 600 },
+  },
+  colors: ['#0f766e', '#c2410c'],
   dataLabels: { enabled: false },
-  stroke: { curve: 'smooth', width: 2 },
-  fill: { type: 'gradient', gradient: { opacityFrom: 0.35, opacityTo: 0.05 } },
-  grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
-  legend: { position: 'top', fontSize: '12px' },
-  xaxis: { categories: chartLabels.value },
-  yaxis: { labels: { formatter: (v) => Math.round(v).toLocaleString('id-ID') } },
+  stroke: { curve: 'smooth', width: 2.5 },
+  fill: {
+    type: 'gradient',
+    gradient: { shadeIntensity: 1, opacityFrom: 0.28, opacityTo: 0.02, stops: [0, 90, 100] },
+  },
+  grid: { borderColor: '#e7e5e4', strokeDashArray: 3, padding: { left: 8, right: 8 } },
+  legend: { position: 'top', fontSize: '12px', fontWeight: 600, markers: { radius: 12 } },
+  xaxis: {
+    categories: chartLabels.value,
+    labels: { style: { colors: '#78716c', fontSize: '11px' } },
+    axisBorder: { show: false },
+    axisTicks: { show: false },
+  },
+  yaxis: {
+    labels: {
+      style: { colors: '#78716c', fontSize: '11px' },
+      formatter: (v) => Math.round(v).toLocaleString('id-ID'),
+    },
+  },
+  tooltip: { theme: 'light', y: { formatter: (v) => n(v) } },
 }));
 
 const engagementBreakdownSeries = computed(() => [
@@ -137,28 +160,58 @@ const engagementBreakdownSeries = computed(() => [
 ]);
 
 const engagementBreakdownOptions = computed(() => ({
-  chart: { type: 'donut', toolbar: { show: false } },
+  chart: { type: 'donut', toolbar: { show: false }, fontFamily: 'inherit', animations: { enabled: true } },
   labels: ['Likes', 'Comments', 'Shares', 'Saved'],
-  colors: ['#e11d48', '#0ea5e9', '#10b981', '#f59e0b'],
-  legend: { position: 'bottom' },
-  dataLabels: { enabled: true },
+  colors: ['#c2410c', '#0369a1', '#0f766e', '#a16207'],
+  legend: { position: 'bottom', fontSize: '12px', fontWeight: 600 },
+  dataLabels: { enabled: false },
+  stroke: { width: 0 },
   plotOptions: {
     pie: {
-      donut: { size: '58%', labels: { show: true, total: { show: true, label: 'Engagement' } } },
+      donut: {
+        size: '72%',
+        labels: {
+          show: true,
+          name: { show: true, fontSize: '12px', color: '#78716c' },
+          value: {
+            show: true,
+            fontSize: '22px',
+            fontWeight: 700,
+            color: '#1c1917',
+            formatter: (v) => Number(v).toLocaleString('id-ID'),
+          },
+          total: {
+            show: true,
+            label: 'Total',
+            fontSize: '12px',
+            color: '#78716c',
+            formatter: () => n(props.totals?.engagement || 0),
+          },
+        },
+      },
     },
   },
 }));
 
 function topBarOptions(categories, color) {
   return {
-    chart: { type: 'bar', toolbar: { show: false } },
+    chart: { type: 'bar', toolbar: { show: false }, fontFamily: 'inherit', animations: { enabled: true } },
     colors: [color],
-    plotOptions: { bar: { horizontal: true, borderRadius: 4, barHeight: '65%' } },
+    plotOptions: { bar: { horizontal: true, borderRadius: 6, barHeight: '62%' } },
     dataLabels: { enabled: false },
-    grid: { borderColor: '#e2e8f0', strokeDashArray: 4 },
+    grid: { borderColor: '#e7e5e4', strokeDashArray: 3 },
     xaxis: {
       categories,
-      labels: { formatter: (v) => Math.round(v).toLocaleString('id-ID') },
+      labels: {
+        style: { colors: '#78716c', fontSize: '11px' },
+        formatter: (v) => Math.round(v).toLocaleString('id-ID'),
+      },
+    },
+    yaxis: {
+      labels: {
+        style: { colors: '#44403c', fontSize: '11px', fontWeight: 600 },
+        maxWidth: 140,
+      },
     },
     tooltip: { y: { formatter: (v) => n(v) } },
   };
@@ -171,14 +224,14 @@ const topEngagementSeries = computed(() => [
   { name: 'Engagement', data: (props.top?.engagement || []).map((r) => r.engagement) },
 ]);
 const topEngagementOptions = computed(() =>
-  topBarOptions(topEngagementCategories.value, '#be185d')
+  topBarOptions(topEngagementCategories.value, '#0f766e')
 );
 
 const topReachCategories = computed(() => (props.top?.reach || []).map((r) => r.title || '—'));
 const topReachSeries = computed(() => [
   { name: 'Reach', data: (props.top?.reach || []).map((r) => r.reach) },
 ]);
-const topReachOptions = computed(() => topBarOptions(topReachCategories.value, '#6366f1'));
+const topReachOptions = computed(() => topBarOptions(topReachCategories.value, '#0369a1'));
 
 const topCommentsCategories = computed(() =>
   (props.top?.comments || []).map((r) => r.title || '—')
@@ -186,7 +239,7 @@ const topCommentsCategories = computed(() =>
 const topCommentsSeries = computed(() => [
   { name: 'Comments', data: (props.top?.comments || []).map((r) => r.comments) },
 ]);
-const topCommentsOptions = computed(() => topBarOptions(topCommentsCategories.value, '#0ea5e9'));
+const topCommentsOptions = computed(() => topBarOptions(topCommentsCategories.value, '#c2410c'));
 
 const highlightItems = computed(() => [
   { key: 'best', label: 'Best Content', metric: 'Engagement', data: props.highlights?.best },
@@ -207,228 +260,235 @@ const highlightItems = computed(() => [
   { key: 'most_shares', label: 'Most Shares', metric: 'Shares', data: props.highlights?.most_shares },
   { key: 'most_saved', label: 'Most Saved', metric: 'Saved', data: props.highlights?.most_saved },
 ]);
+
+const kpiCards = computed(() => [
+  {
+    key: 'engagement',
+    label: 'Engagement',
+    value: props.totals?.engagement,
+    hint: 'Likes + comments + shares + saved',
+    icon: 'fa-solid fa-bolt',
+    tone: 'teal',
+  },
+  {
+    key: 'impressions',
+    label: 'Impressions',
+    value: props.totals?.impressions,
+    hint: 'Total views / impressions',
+    icon: 'fa-solid fa-eye',
+    tone: 'sky',
+  },
+  {
+    key: 'reach',
+    label: 'Reach',
+    value: props.totals?.reach,
+    hint: 'Unique accounts reached',
+    icon: 'fa-solid fa-users',
+    tone: 'stone',
+  },
+  {
+    key: 'likes',
+    label: 'Likes',
+    value: props.totals?.likes,
+    hint: 'Total reactions / likes',
+    icon: 'fa-solid fa-heart',
+    tone: 'orange',
+  },
+]);
 </script>
 
 <template>
   <AppLayout>
-    <div class="mx-auto max-w-7xl space-y-6 p-4 md:p-6">
-      <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div class="flex items-start gap-4">
-          <div
-            class="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-100 text-fuchsia-700"
-          >
-            <i class="fa-solid fa-chart-column text-2xl" />
+    <div class="sp-page">
+      <!-- Header -->
+      <header class="sp-header">
+        <div class="sp-header-left">
+          <div class="sp-brand-icon">
+            <i class="fa-solid fa-chart-column" />
           </div>
           <div>
-            <h1 class="text-2xl font-bold text-slate-900">Social Media Performance</h1>
-            <p class="mt-1 max-w-2xl text-sm text-slate-600">
-              Dashboard performa konten Instagram & Facebook dari sync Meta Omnichannel.
+            <p class="sp-eyebrow">CRM · Omnichannel</p>
+            <h1>Social Media Performance</h1>
+            <p class="sp-sub">
+              Performa konten Instagram & Facebook · sync otomatis Meta Graph
             </p>
           </div>
         </div>
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            :disabled="syncing"
-            @click="runSync"
-          >
-            <i class="fa-solid fa-cloud-arrow-down" :class="{ 'fa-spin': syncing }" />
+        <div class="sp-header-actions">
+          <button type="button" class="sp-btn sp-btn-ghost" :disabled="syncing" @click="runSync">
+            <i class="fa-solid fa-arrows-rotate" :class="{ 'fa-spin': syncing }" />
             {{ syncing ? 'Syncing…' : 'Sync Now' }}
           </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-700"
-            @click="exportCsv"
-          >
-            <i class="fa-solid fa-file-csv" />
+          <button type="button" class="sp-btn sp-btn-primary" @click="exportCsv">
+            <i class="fa-solid fa-download" />
             Export CSV
           </button>
         </div>
+      </header>
+
+      <div v-if="syncMessage" class="sp-alert" :class="{ 'sp-alert-warn': syncErrors.length }">
+        <div class="sp-alert-main">
+          <i class="fa-solid" :class="syncErrors.length ? 'fa-triangle-exclamation' : 'fa-circle-check'" />
+          <span>{{ syncMessage }}</span>
+        </div>
+        <ul v-if="syncErrors.length" class="sp-alert-list">
+          <li v-for="(err, i) in syncErrors" :key="i">{{ err }}</li>
+        </ul>
       </div>
 
-      <p v-if="syncMessage" class="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
-        {{ syncMessage }}
-      </p>
-
-      <!-- Filters -->
-      <form
-        class="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
-        @submit.prevent="applyFilters"
-      >
-        <div>
-          <label class="mb-1 block text-xs font-medium text-slate-500">Preset</label>
-          <div class="flex flex-wrap gap-1">
+      <!-- Toolbar -->
+      <section class="sp-toolbar">
+        <form class="sp-filters" @submit.prevent="applyFilters">
+          <div class="sp-presets">
             <button
               v-for="d in [7, 14, 30, 60, 90]"
               :key="d"
               type="button"
-              class="rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50"
+              class="sp-chip"
               @click="setPreset(d)"
             >
               {{ d }}d
             </button>
           </div>
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-slate-500">Dari tanggal</label>
-          <input
-            v-model="dateFrom"
-            type="date"
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-fuchsia-500 focus:ring-fuchsia-500"
-          />
-        </div>
-        <div>
-          <label class="mb-1 block text-xs font-medium text-slate-500">Sampai tanggal</label>
-          <input
-            v-model="dateTo"
-            type="date"
-            class="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-fuchsia-500 focus:ring-fuchsia-500"
-          />
-        </div>
-        <button
-          type="submit"
-          class="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-900"
-        >
-          <i class="fa-solid fa-filter" />
-          Apply
-        </button>
-        <div class="ml-auto text-right text-xs text-slate-500">
-          <div>
-            <span
-              class="mr-1 inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800"
-            >
-              Data Synced
-            </span>
-            Last update: {{ formatSyncAt(sync?.last_synced_at) }}
+          <div class="sp-date-group">
+            <label>
+              <span>Dari</span>
+              <input v-model="dateFrom" type="date" />
+            </label>
+            <span class="sp-date-sep">—</span>
+            <label>
+              <span>Sampai</span>
+              <input v-model="dateTo" type="date" />
+            </label>
           </div>
-          <div class="mt-0.5">{{ n(sync?.post_count) }} konten pada filter ini</div>
+          <button type="submit" class="sp-btn sp-btn-dark">Apply</button>
+        </form>
+
+        <div class="sp-sync-meta">
+          <span class="sp-pulse" />
+          <div>
+            <strong>Data Synced</strong>
+            <p>
+              {{ formatSyncAt(sync?.last_synced_at) }} · filter {{ n(sync?.post_count) }}
+              · DB IG {{ n(sync?.ig_total) }} / FB {{ n(sync?.fb_total) }}
+            </p>
+          </div>
         </div>
-      </form>
+      </section>
 
       <!-- Platform tabs -->
-      <div class="flex flex-wrap gap-2" role="tablist">
+      <div class="sp-tabs" role="tablist">
         <button
           v-for="opt in platformOptions"
           :key="opt.value"
           type="button"
           role="tab"
-          class="rounded-xl px-4 py-2 text-sm font-semibold transition"
-          :class="
-            platform === opt.value
-              ? 'bg-fuchsia-700 text-white shadow-sm'
-              : 'border border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-          "
+          class="sp-tab"
+          :class="{ active: platform === opt.value }"
           :aria-selected="platform === opt.value"
           @click="setPlatform(opt.value)"
         >
+          <i
+            v-if="opt.value === 'instagram'"
+            class="fa-brands fa-instagram"
+          />
+          <i
+            v-else-if="opt.value === 'facebook'"
+            class="fa-brands fa-facebook"
+          />
+          <i v-else class="fa-solid fa-layer-group" />
           {{ opt.label }}
         </button>
       </div>
 
       <!-- KPI -->
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <div class="rounded-2xl border border-fuchsia-200 bg-fuchsia-50/60 p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-800">Engagement</p>
-          <p class="mt-2 text-3xl font-bold text-fuchsia-950">{{ n(totals.engagement) }}</p>
-        </div>
-        <div class="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-indigo-800">Impressions</p>
-          <p class="mt-2 text-3xl font-bold text-indigo-950">{{ n(totals.impressions) }}</p>
-        </div>
-        <div class="rounded-2xl border border-sky-200 bg-sky-50/60 p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-sky-800">Reach</p>
-          <p class="mt-2 text-3xl font-bold text-sky-950">{{ n(totals.reach) }}</p>
-        </div>
-        <div class="rounded-2xl border border-rose-200 bg-rose-50/60 p-4 shadow-sm">
-          <p class="text-xs font-semibold uppercase tracking-wide text-rose-800">Likes</p>
-          <p class="mt-2 text-3xl font-bold text-rose-950">{{ n(totals.likes) }}</p>
-        </div>
-      </div>
+      <section class="sp-kpi-grid">
+        <article
+          v-for="card in kpiCards"
+          :key="card.key"
+          class="sp-kpi"
+          :data-tone="card.tone"
+        >
+          <div class="sp-kpi-top">
+            <span>{{ card.label }}</span>
+            <i :class="card.icon" />
+          </div>
+          <p class="sp-kpi-value">{{ n(card.value) }}</p>
+          <p class="sp-kpi-hint">{{ card.hint }}</p>
+        </article>
+      </section>
 
       <!-- Content table -->
-      <section class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div class="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <h2 class="text-base font-semibold text-slate-900">Content Data</h2>
-          <span class="text-xs text-slate-500">Swipe / scroll untuk detail</span>
+      <section class="sp-panel">
+        <div class="sp-panel-head">
+          <div>
+            <h2>Content Data</h2>
+            <p>Konten terbaru pada rentang tanggal & platform terpilih</p>
+          </div>
         </div>
-        <div class="overflow-x-auto">
-          <table class="min-w-full text-left text-sm">
-            <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <div class="sp-table-wrap">
+          <table class="sp-table">
+            <thead>
               <tr>
-                <th class="px-3 py-2">Platform</th>
-                <th class="px-3 py-2">Tanggal</th>
-                <th class="px-3 py-2">Konten</th>
-                <th class="px-3 py-2 text-right">Likes</th>
-                <th class="px-3 py-2 text-right">Comments</th>
-                <th class="px-3 py-2 text-right">Shares</th>
-                <th class="px-3 py-2 text-right">Saved</th>
-                <th class="px-3 py-2 text-right">Imp.</th>
-                <th class="px-3 py-2 text-right">Reach</th>
-                <th class="px-3 py-2 text-right">Eng.</th>
+                <th>Platform</th>
+                <th>Tanggal</th>
+                <th>Konten</th>
+                <th class="num">Likes</th>
+                <th class="num">Comments</th>
+                <th class="num">Shares</th>
+                <th class="num">Saved</th>
+                <th class="num">Imp.</th>
+                <th class="num">Reach</th>
+                <th class="num">Eng.</th>
               </tr>
             </thead>
             <tbody>
               <tr v-if="!content.length">
-                <td colspan="10" class="px-4 py-10 text-center text-slate-500">
-                  Belum ada data. Klik <strong>Sync Now</strong> atau tunggu cron
-                  <code class="rounded bg-slate-100 px-1">meta:sync-social-content</code>.
+                <td colspan="10" class="sp-empty">
+                  <template v-if="platform === 'facebook'">
+                    Belum ada data Facebook. Klik <strong>Sync Now</strong> lalu cek detail error di atas
+                    (pastikan <code>META_PAGE_TOKENS</code> terisi Page ID, bukan hanya IG ID).
+                  </template>
+                  <template v-else>
+                    Belum ada data. Klik <strong>Sync Now</strong> atau tunggu cron
+                    <code>meta:sync-social-content</code>.
+                  </template>
                 </td>
               </tr>
-              <tr
-                v-for="row in content"
-                :key="row.id"
-                class="border-t border-slate-100 hover:bg-slate-50/80"
-              >
-                <td class="px-3 py-2 whitespace-nowrap">
-                  <span
-                    class="inline-flex rounded-full px-2 py-0.5 text-xs font-semibold"
-                    :class="
-                      row.platform === 'instagram'
-                        ? 'bg-pink-100 text-pink-800'
-                        : 'bg-blue-100 text-blue-800'
-                    "
-                  >
+              <tr v-for="row in content" :key="row.id">
+                <td>
+                  <span class="sp-badge" :data-platform="row.platform">
                     {{ platformLabel(row.platform) }}
                   </span>
                 </td>
-                <td class="px-3 py-2 whitespace-nowrap text-slate-600">
-                  {{ formatDayLabel(row.posted_date) }}
-                </td>
-                <td class="max-w-xs px-3 py-2">
-                  <div class="flex items-center gap-2">
+                <td class="muted">{{ formatDayLabel(row.posted_date) }}</td>
+                <td>
+                  <div class="sp-content-cell">
                     <img
                       v-if="row.thumbnail_url"
                       :src="row.thumbnail_url"
                       alt=""
-                      class="h-10 w-10 rounded-lg object-cover"
+                      loading="lazy"
                     />
-                    <div class="min-w-0">
+                    <div class="sp-content-text">
                       <a
                         v-if="row.permalink"
                         :href="row.permalink"
                         target="_blank"
                         rel="noopener"
-                        class="block truncate font-medium text-slate-900 hover:text-fuchsia-700"
-                      >
-                        {{ row.title }}
-                      </a>
-                      <span v-else class="block truncate font-medium text-slate-900">{{ row.title }}</span>
-                      <span class="block truncate text-xs text-slate-500">{{
-                        row.account_label || row.account_id
-                      }}</span>
+                      >{{ row.title }}</a>
+                      <span v-else>{{ row.title }}</span>
+                      <small>{{ row.account_label || row.account_id }}</small>
                     </div>
                   </div>
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ n(row.likes) }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ n(row.comments) }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ n(row.shares) }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ n(row.saved) }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ n(row.impressions) }}</td>
-                <td class="px-3 py-2 text-right tabular-nums">{{ n(row.reach) }}</td>
-                <td class="px-3 py-2 text-right font-semibold tabular-nums text-fuchsia-800">
-                  {{ n(row.engagement) }}
-                </td>
+                <td class="num">{{ n(row.likes) }}</td>
+                <td class="num">{{ n(row.comments) }}</td>
+                <td class="num">{{ n(row.shares) }}</td>
+                <td class="num">{{ n(row.saved) }}</td>
+                <td class="num">{{ n(row.impressions) }}</td>
+                <td class="num">{{ n(row.reach) }}</td>
+                <td class="num eng">{{ n(row.engagement) }}</td>
               </tr>
             </tbody>
           </table>
@@ -436,96 +496,707 @@ const highlightItems = computed(() => [
       </section>
 
       <!-- Highlights -->
-      <section>
-        <h2 class="mb-3 text-base font-semibold text-slate-900">Content Performance Highlights</h2>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <div
-            v-for="item in highlightItems"
-            :key="item.key"
-            class="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm"
-          >
-            <p class="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              {{ item.label }}
-            </p>
-            <template v-if="item.data">
-              <p class="mt-2 line-clamp-2 text-sm font-semibold text-slate-900">{{ item.data.title }}</p>
-              <p class="mt-1 text-lg font-bold text-fuchsia-800">{{ n(item.data.value) }}</p>
-              <p class="text-[11px] text-slate-500">{{ item.metric }}</p>
-            </template>
-            <template v-else>
-              <p class="mt-2 text-sm text-slate-400">—</p>
-            </template>
+      <section class="sp-panel">
+        <div class="sp-panel-head">
+          <div>
+            <h2>Content Performance Highlights</h2>
+            <p>Konten terbaik & metrik tertinggi di periode ini</p>
           </div>
+        </div>
+        <div class="sp-highlights">
+          <article v-for="item in highlightItems" :key="item.key" class="sp-hl">
+            <p class="sp-hl-label">{{ item.label }}</p>
+            <template v-if="item.data">
+              <p class="sp-hl-title">{{ item.data.title }}</p>
+              <p class="sp-hl-value">{{ n(item.data.value) }}</p>
+              <p class="sp-hl-metric">{{ item.metric }}</p>
+            </template>
+            <p v-else class="sp-hl-empty">—</p>
+          </article>
         </div>
       </section>
 
       <!-- Charts -->
-      <div class="grid gap-6 lg:grid-cols-2">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 class="text-base font-semibold text-slate-900">Daily Trend: Impressions & Likes</h2>
-          <p class="mt-0.5 text-xs text-slate-500">
-            Agregat metrik berdasarkan tanggal publish konten
-          </p>
-          <div class="mt-4">
-            <apexchart type="area" height="300" :options="trendOptions" :series="trendSeries" />
+      <div class="sp-charts-2">
+        <section class="sp-panel">
+          <div class="sp-panel-head">
+            <div>
+              <h2>Daily Trend</h2>
+              <p>Impressions & likes berdasarkan tanggal publish</p>
+            </div>
           </div>
+          <apexchart type="area" height="320" :options="trendOptions" :series="trendSeries" />
         </section>
-
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 class="text-base font-semibold text-slate-900">Engagement Breakdown</h2>
-          <p class="mt-0.5 text-xs text-slate-500">Likes, comments, shares, saved</p>
-          <div class="mt-4">
-            <apexchart
-              type="donut"
-              height="300"
-              :options="engagementBreakdownOptions"
-              :series="engagementBreakdownSeries"
-            />
+        <section class="sp-panel">
+          <div class="sp-panel-head">
+            <div>
+              <h2>Engagement Breakdown</h2>
+              <p>Komposisi likes, comments, shares, saved</p>
+            </div>
           </div>
+          <apexchart
+            type="donut"
+            height="320"
+            :options="engagementBreakdownOptions"
+            :series="engagementBreakdownSeries"
+          />
         </section>
       </div>
 
-      <div class="grid gap-6 lg:grid-cols-3">
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 class="text-base font-semibold text-slate-900">Top 5 Engagement</h2>
-          <div class="mt-4">
-            <apexchart
-              v-if="(top.engagement || []).length"
-              type="bar"
-              height="280"
-              :options="topEngagementOptions"
-              :series="topEngagementSeries"
-            />
-            <p v-else class="py-10 text-center text-sm text-slate-400">Tidak ada data</p>
-          </div>
+      <div class="sp-charts-3">
+        <section class="sp-panel">
+          <div class="sp-panel-head"><div><h2>Top 5 Engagement</h2></div></div>
+          <apexchart
+            v-if="(top.engagement || []).length"
+            type="bar"
+            height="280"
+            :options="topEngagementOptions"
+            :series="topEngagementSeries"
+          />
+          <p v-else class="sp-empty soft">Tidak ada data</p>
         </section>
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 class="text-base font-semibold text-slate-900">Top 5 Reach</h2>
-          <div class="mt-4">
-            <apexchart
-              v-if="(top.reach || []).length"
-              type="bar"
-              height="280"
-              :options="topReachOptions"
-              :series="topReachSeries"
-            />
-            <p v-else class="py-10 text-center text-sm text-slate-400">Tidak ada data</p>
-          </div>
+        <section class="sp-panel">
+          <div class="sp-panel-head"><div><h2>Top 5 Reach</h2></div></div>
+          <apexchart
+            v-if="(top.reach || []).length"
+            type="bar"
+            height="280"
+            :options="topReachOptions"
+            :series="topReachSeries"
+          />
+          <p v-else class="sp-empty soft">Tidak ada data</p>
         </section>
-        <section class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 class="text-base font-semibold text-slate-900">Top 5 Comments</h2>
-          <div class="mt-4">
-            <apexchart
-              v-if="(top.comments || []).length"
-              type="bar"
-              height="280"
-              :options="topCommentsOptions"
-              :series="topCommentsSeries"
-            />
-            <p v-else class="py-10 text-center text-sm text-slate-400">Tidak ada data</p>
-          </div>
+        <section class="sp-panel">
+          <div class="sp-panel-head"><div><h2>Top 5 Comments</h2></div></div>
+          <apexchart
+            v-if="(top.comments || []).length"
+            type="bar"
+            height="280"
+            :options="topCommentsOptions"
+            :series="topCommentsSeries"
+          />
+          <p v-else class="sp-empty soft">Tidak ada data</p>
         </section>
       </div>
     </div>
   </AppLayout>
 </template>
+
+<style scoped>
+.sp-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1.25rem 1.5rem 2.5rem;
+  background:
+    radial-gradient(1200px 400px at 0% -10%, rgba(15, 118, 110, 0.08), transparent 55%),
+    radial-gradient(900px 320px at 100% 0%, rgba(194, 65, 12, 0.06), transparent 50%),
+    #f5f5f4;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.sp-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.sp-header-left {
+  display: flex;
+  gap: 1rem;
+  align-items: flex-start;
+}
+
+.sp-brand-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 1rem;
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #0f766e, #115e59);
+  color: #fff;
+  font-size: 1.25rem;
+  box-shadow: 0 10px 24px rgba(15, 118, 110, 0.28);
+}
+
+.sp-eyebrow {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #78716c;
+}
+
+.sp-header h1 {
+  margin: 0.15rem 0 0;
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #1c1917;
+}
+
+.sp-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: #78716c;
+}
+
+.sp-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.sp-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 0.85rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.sp-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.sp-btn:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.sp-btn-ghost {
+  background: #fff;
+  border-color: #d6d3d1;
+  color: #44403c;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+}
+
+.sp-btn-ghost:hover:not(:disabled) {
+  border-color: #a8a29e;
+  background: #fafaf9;
+}
+
+.sp-btn-primary {
+  background: #0f766e;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(15, 118, 110, 0.25);
+}
+
+.sp-btn-primary:hover {
+  background: #0d9488;
+}
+
+.sp-btn-dark {
+  background: #1c1917;
+  color: #fff;
+}
+
+.sp-btn-dark:hover {
+  background: #292524;
+}
+
+.sp-alert {
+  margin-bottom: 1rem;
+  border-radius: 1rem;
+  border: 1px solid #d6d3d1;
+  background: #fff;
+  padding: 0.85rem 1rem;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+}
+
+.sp-alert-warn {
+  border-color: #fdba74;
+  background: #fff7ed;
+}
+
+.sp-alert-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  color: #44403c;
+  font-weight: 600;
+}
+
+.sp-alert-list {
+  margin: 0.55rem 0 0 1.5rem;
+  padding: 0;
+  font-size: 0.8rem;
+  color: #9a3412;
+  font-weight: 500;
+}
+
+.sp-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 1.15rem;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #e7e5e4;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+  margin-bottom: 0.85rem;
+}
+
+.sp-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.sp-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.sp-chip {
+  border: 1px solid #e7e5e4;
+  background: #fafaf9;
+  color: #57534e;
+  border-radius: 999px;
+  padding: 0.35rem 0.7rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sp-chip:hover {
+  background: #1c1917;
+  border-color: #1c1917;
+  color: #fff;
+}
+
+.sp-date-group {
+  display: flex;
+  align-items: end;
+  gap: 0.4rem;
+}
+
+.sp-date-group label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a8a29e;
+}
+
+.sp-date-group input {
+  border: 1px solid #d6d3d1;
+  border-radius: 0.7rem;
+  padding: 0.45rem 0.65rem;
+  font-size: 0.85rem;
+  color: #1c1917;
+  background: #fff;
+}
+
+.sp-date-sep {
+  color: #a8a29e;
+  padding-bottom: 0.55rem;
+}
+
+.sp-sync-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 220px;
+}
+
+.sp-pulse {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 999px;
+  background: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  animation: spPulse 2s infinite;
+}
+
+@keyframes spPulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.45); }
+  70% { box-shadow: 0 0 0 10px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+.sp-sync-meta strong {
+  display: block;
+  font-size: 0.8rem;
+  color: #1c1917;
+}
+
+.sp-sync-meta p {
+  margin: 0.1rem 0 0;
+  font-size: 0.75rem;
+  color: #78716c;
+}
+
+.sp-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.sp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #e7e5e4;
+  background: #fff;
+  color: #57534e;
+  padding: 0.55rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.sp-tab:hover {
+  border-color: #a8a29e;
+}
+
+.sp-tab.active {
+  background: #1c1917;
+  border-color: #1c1917;
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(28, 25, 23, 0.18);
+}
+
+.sp-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.sp-kpi {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1.15rem;
+  padding: 1.1rem 1.15rem;
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+  transition: transform 0.18s ease, box-shadow 0.2s ease;
+}
+
+.sp-kpi::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+}
+
+.sp-kpi[data-tone='teal']::before { background: #0f766e; }
+.sp-kpi[data-tone='sky']::before { background: #0369a1; }
+.sp-kpi[data-tone='stone']::before { background: #57534e; }
+.sp-kpi[data-tone='orange']::before { background: #c2410c; }
+
+.sp-kpi:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(28, 25, 23, 0.08);
+}
+
+.sp-kpi-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #78716c;
+}
+
+.sp-kpi-top i {
+  opacity: 0.7;
+}
+
+.sp-kpi-value {
+  margin: 0.55rem 0 0.2rem;
+  font-size: 1.85rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: #1c1917;
+}
+
+.sp-kpi-hint {
+  margin: 0;
+  font-size: 0.75rem;
+  color: #a8a29e;
+}
+
+.sp-panel {
+  background: #fff;
+  border: 1px solid #e7e5e4;
+  border-radius: 1.25rem;
+  padding: 1rem 1.1rem 1.15rem;
+  box-shadow: 0 1px 2px rgba(28, 25, 23, 0.04);
+  margin-bottom: 1rem;
+}
+
+.sp-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.85rem;
+}
+
+.sp-panel-head h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: #1c1917;
+}
+
+.sp-panel-head p {
+  margin: 0.2rem 0 0;
+  font-size: 0.8rem;
+  color: #a8a29e;
+}
+
+.sp-table-wrap {
+  overflow-x: auto;
+  border-radius: 0.9rem;
+  border: 1px solid #f5f5f4;
+}
+
+.sp-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+  font-size: 0.85rem;
+}
+
+.sp-table th {
+  text-align: left;
+  padding: 0.7rem 0.75rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a8a29e;
+  background: #fafaf9;
+  border-bottom: 1px solid #e7e5e4;
+  position: sticky;
+  top: 0;
+}
+
+.sp-table td {
+  padding: 0.7rem 0.75rem;
+  border-bottom: 1px solid #f5f5f4;
+  color: #44403c;
+  vertical-align: middle;
+}
+
+.sp-table tbody tr {
+  transition: background 0.15s ease;
+}
+
+.sp-table tbody tr:hover {
+  background: #fafaf9;
+}
+
+.sp-table .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.sp-table .eng {
+  font-weight: 800;
+  color: #0f766e;
+}
+
+.sp-table .muted {
+  color: #78716c;
+  white-space: nowrap;
+}
+
+.sp-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.sp-badge[data-platform='instagram'] {
+  background: #fce7f3;
+  color: #9d174d;
+}
+
+.sp-badge[data-platform='facebook'] {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.sp-content-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 220px;
+}
+
+.sp-content-cell img {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 0.7rem;
+  object-fit: cover;
+  background: #f5f5f4;
+  flex-shrink: 0;
+}
+
+.sp-content-text {
+  min-width: 0;
+}
+
+.sp-content-text a,
+.sp-content-text > span {
+  display: block;
+  font-weight: 700;
+  color: #1c1917;
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 320px;
+}
+
+.sp-content-text a:hover {
+  color: #0f766e;
+}
+
+.sp-content-text small {
+  display: block;
+  margin-top: 0.1rem;
+  color: #a8a29e;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sp-empty {
+  text-align: center;
+  padding: 2.5rem 1rem !important;
+  color: #78716c;
+}
+
+.sp-empty.soft {
+  border: none;
+  padding: 2rem 1rem !important;
+}
+
+.sp-empty code {
+  background: #f5f5f4;
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.35rem;
+  font-size: 0.8em;
+}
+
+.sp-highlights {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.sp-hl {
+  border-radius: 1rem;
+  border: 1px solid #e7e5e4;
+  background: linear-gradient(180deg, #fafaf9, #fff);
+  padding: 0.85rem;
+  min-height: 7.5rem;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.sp-hl:hover {
+  transform: translateY(-2px);
+  border-color: #d6d3d1;
+}
+
+.sp-hl-label {
+  margin: 0;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #a8a29e;
+}
+
+.sp-hl-title {
+  margin: 0.55rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1c1917;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 2.4em;
+}
+
+.sp-hl-value {
+  margin: 0.45rem 0 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #0f766e;
+}
+
+.sp-hl-metric {
+  margin: 0.1rem 0 0;
+  font-size: 0.7rem;
+  color: #a8a29e;
+}
+
+.sp-hl-empty {
+  margin: 1.4rem 0 0;
+  color: #d6d3d1;
+  font-size: 1.25rem;
+}
+
+.sp-charts-2 {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 1rem;
+  margin-bottom: 0;
+}
+
+.sp-charts-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+@media (max-width: 1280px) {
+  .sp-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sp-highlights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .sp-charts-2,
+  .sp-charts-3 { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .sp-page { padding: 1rem; }
+  .sp-highlights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .sp-header h1 { font-size: 1.35rem; }
+}
+</style>

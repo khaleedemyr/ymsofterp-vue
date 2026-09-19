@@ -24,8 +24,10 @@ class SyncMetaSocialContentCommand extends Command
         }
 
         $this->info(sprintf(
-            'Selesai: synced=%d accounts=%d errors=%d',
+            'Selesai: synced=%d (ig=%d fb=%d) accounts=%d errors=%d',
             $result['synced'],
+            $result['ig_synced'] ?? 0,
+            $result['fb_synced'] ?? 0,
             $result['accounts'],
             $result['errors']
         ));

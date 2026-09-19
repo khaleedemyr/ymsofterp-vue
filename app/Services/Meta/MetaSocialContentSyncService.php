@@ -22,7 +22,14 @@ use Throwable;
 class MetaSocialContentSyncService
 {
     /**
-     * @return array{synced: int, errors: int, accounts: int, error_details: list<string>}
+     * @return array{
+     *   synced: int,
+     *   errors: int,
+     *   accounts: int,
+     *   ig_synced: int,
+     *   fb_synced: int,
+     *   error_details: list<string>
+     * }
      */
     public function syncAll(?int $limitPerAccount = null): array
     {
@@ -30,6 +37,8 @@ class MetaSocialContentSyncService
         $limit = min(100, max(5, $limit));
 
         $synced = 0;
+        $igSynced = 0;
+        $fbSynced = 0;
         $errors = 0;
         $accounts = 0;
         $errorDetails = [];
@@ -40,7 +49,9 @@ class MetaSocialContentSyncService
             }
             $accounts++;
             try {
-                $synced += $this->syncInstagramAccount((string) $igId, $token, $limit);
+                $n = $this->syncInstagramAccount((string) $igId, $token, $limit);
+                $igSynced += $n;
+                $synced += $n;
             } catch (Throwable $e) {
                 $errors++;
                 $msg = "IG {$igId}: ".$e->getMessage();
@@ -49,10 +60,39 @@ class MetaSocialContentSyncService
             }
         }
 
-        foreach ($this->resolvePageTokenMap() as $pageId => $token) {
+        $pageTokens = $this->resolvePageTokenMap();
+        $fbPages = app(MetaFacebookCommentsService::class)->listPages();
+
+        if ($fbPages === [] && $pageTokens === []) {
+            $errorDetails[] = 'FB: tidak ada META_PAGE_TOKENS / META_PAGE_ACCESS_TOKEN. Halaman Facebook Comments juga tidak akan punya daftar Page.';
+        }
+
+        $pageIds = [];
+        foreach ($fbPages as $page) {
+            $pid = (string) ($page['page_id'] ?? '');
+            if ($pid !== '') {
+                $pageIds[$pid] = true;
+            }
+        }
+        foreach (array_keys($pageTokens) as $pid) {
+            $pageIds[(string) $pid] = true;
+        }
+
+        foreach (array_keys($pageIds) as $pageId) {
+            $token = $pageTokens[$pageId] ?? (string) config('services.meta.page_access_token', '');
+            if ($token === '') {
+                $errors++;
+                $errorDetails[] = "FB {$pageId}: token kosong";
+                continue;
+            }
             $accounts++;
             try {
-                $synced += $this->syncFacebookPage((string) $pageId, $token, $limit);
+                $n = $this->syncFacebookPage((string) $pageId, $token, $limit);
+                $fbSynced += $n;
+                $synced += $n;
+                if ($n === 0) {
+                    $errorDetails[] = "FB {$pageId}: 0 post (cek pages_read_engagement / published_posts)";
+                }
             } catch (Throwable $e) {
                 $errors++;
                 $msg = "FB {$pageId}: ".$e->getMessage();
@@ -63,6 +103,8 @@ class MetaSocialContentSyncService
 
         return [
             'synced' => $synced,
+            'ig_synced' => $igSynced,
+            'fb_synced' => $fbSynced,
             'errors' => $errors,
             'accounts' => $accounts,
             'error_details' => $errorDetails,
@@ -119,27 +161,34 @@ class MetaSocialContentSyncService
     private function syncFacebookPage(string $configuredPageId, string $token, int $limit): int
     {
         $version = config('services.meta.graph_api_version', 'v25.0');
-        $pageId = $this->resolveFacebookPageId($configuredPageId, $token, $version);
-        $label = MetaPageAccountRegistry::displayLabel($pageId);
+        $fb = app(MetaFacebookCommentsService::class);
 
-        $fields = 'id,message,created_time,permalink_url,full_picture,status_type,'
-            .'comments.limit(0).summary(true),'
-            .'reactions.summary(true),'
-            .'shares';
+        $page = ['page_id' => $configuredPageId, 'name' => null];
+        try {
+            $page = $fb->resolvePage($configuredPageId);
+        } catch (Throwable $e) {
+            Log::warning('[social-content-sync] FB resolvePage: '.$e->getMessage());
+        }
 
-        $posts = $this->paginateGraph(
-            "https://graph.facebook.com/{$version}/{$pageId}/published_posts",
-            $token,
-            ['fields' => $fields],
-            $limit
-        );
+        $pageId = (string) ($page['page_id'] ?: $configuredPageId);
+        $label = (string) ($page['name'] ?? '') ?: MetaPageAccountRegistry::displayLabel($pageId);
+
+        $posts = [];
+        try {
+            // Pakai listPosts yang sama dengan halaman IG & FB Comments (sudah terbukti jalan).
+            $posts = $fb->listPosts($configuredPageId, $limit);
+        } catch (Throwable $e) {
+            Log::warning('[social-content-sync] FB listPosts: '.$e->getMessage());
+        }
 
         if ($posts === []) {
-            $posts = $this->paginateGraph(
-                "https://graph.facebook.com/{$version}/{$pageId}/feed",
-                $token,
-                ['fields' => $fields],
-                $limit
+            // Fallback Graph dengan field sederhana (tanpa reactions/shares di list).
+            $posts = $this->listFacebookPostsRaw($token, $version, $pageId, $limit);
+        }
+
+        if ($posts === []) {
+            throw new \RuntimeException(
+                'Tidak ada post Facebook (published_posts/feed kosong atau permission pages_read_engagement kurang).'
             );
         }
 
@@ -149,26 +198,28 @@ class MetaSocialContentSyncService
                 continue;
             }
 
-            $commentSummary = is_array($row['comments']['summary'] ?? null) ? $row['comments']['summary'] : [];
-            $reactionSummary = is_array($row['reactions']['summary'] ?? null) ? $row['reactions']['summary'] : [];
-            $sharesCount = is_array($row['shares'] ?? null) ? (int) ($row['shares']['count'] ?? 0) : null;
+            $postId = (string) $row['id'];
+            $engagement = $this->fetchFacebookPostEngagement($token, $version, $postId);
+            $insights = $this->fetchFacebookPostInsights($token, $version, $postId);
 
-            $insights = $this->fetchFacebookPostInsights($token, $version, (string) $row['id']);
+            $likes = $engagement['likes'] ?? (isset($row['like_count']) ? (int) $row['like_count'] : null);
+            $comments = $engagement['comments'] ?? (isset($row['comments_count']) ? (int) $row['comments_count'] : null);
+            $shares = $engagement['shares'] ?? null;
 
             $this->upsertPostAndMetrics(
                 platform: 'facebook',
                 accountId: $pageId,
                 accountLabel: $label,
-                externalId: (string) $row['id'],
-                caption: (string) ($row['message'] ?? ''),
-                permalink: (string) ($row['permalink_url'] ?? ''),
-                thumbnailUrl: (string) ($row['full_picture'] ?? ''),
-                mediaType: (string) ($row['status_type'] ?? 'POST'),
-                postedAt: $this->parseTimestamp((string) ($row['created_time'] ?? '')),
+                externalId: $postId,
+                caption: (string) ($row['caption'] ?? $row['message'] ?? ''),
+                permalink: (string) ($row['permalink'] ?? $row['permalink_url'] ?? ''),
+                thumbnailUrl: (string) ($row['thumbnail_url'] ?? $row['full_picture'] ?? ''),
+                mediaType: (string) ($row['media_type'] ?? $row['status_type'] ?? 'POST'),
+                postedAt: $this->parseTimestamp((string) ($row['timestamp'] ?? $row['created_time'] ?? '')),
                 metrics: [
-                    'likes' => isset($reactionSummary['total_count']) ? (int) $reactionSummary['total_count'] : null,
-                    'comments' => isset($commentSummary['total_count']) ? (int) $commentSummary['total_count'] : null,
-                    'shares' => $sharesCount,
+                    'likes' => $likes,
+                    'comments' => $comments,
+                    'shares' => $shares,
                     'saved' => null,
                     'impressions' => $insights['impressions'] ?? null,
                     'reach' => $insights['reach'] ?? null,
@@ -179,6 +230,91 @@ class MetaSocialContentSyncService
         }
 
         return $count;
+    }
+
+    /**
+     * Field sederhana — hindari reactions/shares di list (sering bikin whole-request gagal).
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function listFacebookPostsRaw(string $token, string $version, string $pageId, int $limit): array
+    {
+        $fields = 'id,message,created_time,permalink_url,full_picture,status_type,comments.limit(0).summary(true)';
+        $endpoints = [
+            "https://graph.facebook.com/{$version}/{$pageId}/published_posts",
+            "https://graph.facebook.com/{$version}/{$pageId}/feed",
+        ];
+
+        foreach ($endpoints as $url) {
+            try {
+                $rows = $this->paginateGraph($url, $token, ['fields' => $fields], $limit);
+                if ($rows !== []) {
+                    return array_map(function (array $row) {
+                        $summary = is_array($row['comments']['summary'] ?? null) ? $row['comments']['summary'] : [];
+
+                        return [
+                            'id' => (string) ($row['id'] ?? ''),
+                            'caption' => (string) ($row['message'] ?? ''),
+                            'permalink' => (string) ($row['permalink_url'] ?? ''),
+                            'thumbnail_url' => ! empty($row['full_picture']) ? (string) $row['full_picture'] : null,
+                            'media_type' => (string) ($row['status_type'] ?? 'POST'),
+                            'timestamp' => (string) ($row['created_time'] ?? ''),
+                            'comments_count' => (int) ($summary['total_count'] ?? 0),
+                            'like_count' => 0,
+                        ];
+                    }, $rows);
+                }
+            } catch (Throwable $e) {
+                Log::warning('[social-content-sync] FB list fallback: '.$e->getMessage());
+            }
+        }
+
+        return [];
+    }
+
+    /**
+     * @return array{likes: ?int, comments: ?int, shares: ?int}
+     */
+    private function fetchFacebookPostEngagement(string $token, string $version, string $postId): array
+    {
+        $result = ['likes' => null, 'comments' => null, 'shares' => null];
+
+        $fieldSets = [
+            'reactions.summary(true),comments.limit(0).summary(true),shares',
+            'reactions.summary(true),comments.limit(0).summary(true)',
+            'comments.limit(0).summary(true)',
+        ];
+
+        foreach ($fieldSets as $fields) {
+            $response = Http::withToken($token)
+                ->acceptJson()
+                ->timeout(20)
+                ->get("https://graph.facebook.com/{$version}/{$postId}", [
+                    'fields' => $fields,
+                ]);
+
+            if (! $response->successful()) {
+                continue;
+            }
+
+            $json = $response->json() ?? [];
+            $reactionSummary = is_array($json['reactions']['summary'] ?? null) ? $json['reactions']['summary'] : [];
+            $commentSummary = is_array($json['comments']['summary'] ?? null) ? $json['comments']['summary'] : [];
+
+            if (isset($reactionSummary['total_count'])) {
+                $result['likes'] = (int) $reactionSummary['total_count'];
+            }
+            if (isset($commentSummary['total_count'])) {
+                $result['comments'] = (int) $commentSummary['total_count'];
+            }
+            if (is_array($json['shares'] ?? null) && isset($json['shares']['count'])) {
+                $result['shares'] = (int) $json['shares']['count'];
+            }
+
+            return $result;
+        }
+
+        return $result;
     }
 
     /**

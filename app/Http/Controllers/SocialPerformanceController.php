@@ -48,8 +48,10 @@ class SocialPerformanceController extends Controller
         return response()->json([
             'success' => true,
             'message' => sprintf(
-                'Sync selesai: %d konten dari %d akun (%d error).',
+                'Sync selesai: %d konten (IG %d, FB %d) dari %d akun (%d error).',
                 $result['synced'],
+                $result['ig_synced'] ?? 0,
+                $result['fb_synced'] ?? 0,
                 $result['accounts'],
                 $result['errors']
             ),

@@ -54,6 +54,8 @@ class SocialPerformanceAnalyticsService
         ];
 
         $lastSynced = SocialContentPost::query()->max('last_synced_at');
+        $igCount = SocialContentPost::query()->where('platform', 'instagram')->count();
+        $fbCount = SocialContentPost::query()->where('platform', 'facebook')->count();
 
         return [
             'filters' => [
@@ -64,6 +66,8 @@ class SocialPerformanceAnalyticsService
             'sync' => [
                 'last_synced_at' => $lastSynced ? Carbon::parse($lastSynced)->toIso8601String() : null,
                 'post_count' => $rows->count(),
+                'ig_total' => $igCount,
+                'fb_total' => $fbCount,
             ],
             'content' => $rows->all(),
             'highlights' => $highlights,
