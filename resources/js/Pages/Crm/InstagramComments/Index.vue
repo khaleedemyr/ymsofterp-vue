@@ -242,16 +242,16 @@ const selectedAccount = ref(props.selectedAccount || '')
 const accountList = computed(() => {
   if (platform.value === 'facebook') {
     return (props.facebookPages || []).map((p) => ({
-      id: p.page_id,
+      id: String(p.page_id ?? ''),
       label: p.label,
       icon: 'fa-brands fa-facebook text-blue-600',
-    }))
+    })).filter((p) => p.id !== '')
   }
   return (props.instagramAccounts || []).map((a) => ({
-    id: a.ig_id,
+    id: String(a.ig_id ?? ''),
     label: a.label,
     icon: 'fa-brands fa-instagram text-pink-600',
-  }))
+  })).filter((a) => a.id !== '')
 })
 
 const emptyAccountsHint = computed(() =>
@@ -332,8 +332,10 @@ function onEmojiPickerToggle(commentId, open) {
 }
 
 function ensureDefaultAccount() {
-  const ids = accountList.value.map((a) => a.id)
-  if (selectedAccount.value && ids.includes(selectedAccount.value)) {
+  const ids = accountList.value.map((a) => String(a.id))
+  const current = String(selectedAccount.value || '')
+  if (current && ids.includes(current)) {
+    selectedAccount.value = current
     return
   }
   selectedAccount.value = ids[0] || ''
@@ -342,7 +344,15 @@ function ensureDefaultAccount() {
 watch(
   () => props.selectedAccount,
   (v) => {
-    if (v) selectedAccount.value = v
+    const next = String(v || '')
+    if (!next) return
+    const ids = accountList.value.map((a) => String(a.id))
+    // Abaikan account dari URL kalau tidak cocok platform aktif (mis. sisa ID IG di tab FB).
+    if (ids.length === 0 || ids.includes(next)) {
+      selectedAccount.value = next
+    } else {
+      ensureDefaultAccount()
+    }
   }
 )
 
@@ -414,10 +424,10 @@ function setPlatform(p) {
 }
 
 function selectAccount(id) {
-  selectedAccount.value = id
+  selectedAccount.value = String(id || '')
   router.get(
     '/crm/instagram-comments',
-    { platform: platform.value, account: id },
+    { platform: platform.value, account: selectedAccount.value },
     {
       preserveState: true,
       preserveScroll: true,
@@ -460,10 +470,11 @@ async function loadMedia() {
     return
   }
 
-  const validIds = accountList.value.map((a) => a.id)
-  if (validIds.length > 0 && !validIds.includes(selectedAccount.value)) {
-    mediaList.value = []
-    mediaError.value = 'Akun tidak valid untuk platform ini. Pilih ulang Page/akun.'
+  const validIds = accountList.value.map((a) => String(a.id))
+  const current = String(selectedAccount.value)
+  if (validIds.length > 0 && !validIds.includes(current)) {
+    // Auto-pilih page/akun yang valid, jangan stuck di alert.
+    selectedAccount.value = validIds[0]
     return
   }
 
