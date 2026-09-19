@@ -93,8 +93,9 @@ class OpexOutletDashboardController extends Controller
         $dateFrom = $period['date_from'];
         $dateTo = $period['date_to'];
         $page = max(1, (int) $request->get('page', 1));
-        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'], true) ? 62 : 20;
-        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'], true) ? 93 : 50;
+        $purchaseBudgetTypes = ['kitchen_purchase', 'bar_purchase', 'service_purchase'];
+        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', ...$purchaseBudgetTypes], true) ? 62 : 20;
+        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', ...$purchaseBudgetTypes], true) ? 93 : 50;
         $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
         $category = trim((string) $request->get('category', ''));
@@ -108,6 +109,11 @@ class OpexOutletDashboardController extends Controller
         }
 
         $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first(['qr_code']);
+
+        // Budget Kitchen/Bar/Service selalu full calendar month (sama seperti RO Forecast cards).
+        if (in_array($type, $purchaseBudgetTypes, true)) {
+            [$dateFrom, $dateTo] = $this->opexService->fullMonthBounds($dateFrom, $dateTo);
+        }
 
         if ($type === 'begin_inventory') {
             $detail = $this->opexService->buildBeginInventoryDetail($outletId, $dateFrom, $search);
@@ -170,6 +176,20 @@ class OpexOutletDashboardController extends Controller
                 'category' => $category !== '' ? $category : null,
                 'mcs_only' => false,
             ];
+        } elseif (in_array($type, ['kitchen_purchase', 'bar_purchase', 'service_purchase'], true)) {
+            $bucket = str_replace('_purchase', '', $type);
+            $transactions = collect($this->opexService->listPurchasedBucketTransactions(
+                $outletId,
+                $dateFrom,
+                $dateTo,
+                $bucket
+            ));
+            $sheetMeta = [
+                'bucket' => $bucket,
+                'period_from' => $dateFrom,
+                'period_to' => $dateTo,
+                'purchased_total' => round($transactions->sum(fn ($t) => (float) ($t->amount ?? 0)), 2),
+            ];
         } else {
             $transactions = $this->transactionsForType($type, $outletId, $outlet?->qr_code, $dateFrom, $dateTo);
         }
@@ -195,6 +215,7 @@ class OpexOutletDashboardController extends Controller
                     $row->member_name ?? null,
                     $row->manual_discount_reason ?? null,
                     $row->beneficiary_name ?? null,
+                    $row->warehouse ?? null,
                     $row->bill_amount ?? null,
                     $row->day_name ?? null,
                     $row->date ?? null,
@@ -304,6 +325,9 @@ class OpexOutletDashboardController extends Controller
             'stock_cut' => collect($this->opexService->buildStockCutDaily($outletId, $dateFrom, $dateTo)),
             'category_cost' => collect($this->opexService->buildCategoryCostDaily($outletId, $dateFrom, $dateTo)['rows']),
             'mcs_purchase' => collect($this->opexService->listMcsPurchaseTransactions($outletId, $dateFrom, $dateTo)),
+            'kitchen_purchase' => collect($this->opexService->listPurchasedBucketTransactions($outletId, $dateFrom, $dateTo, 'kitchen')),
+            'bar_purchase' => collect($this->opexService->listPurchasedBucketTransactions($outletId, $dateFrom, $dateTo, 'bar')),
+            'service_purchase' => collect($this->opexService->listPurchasedBucketTransactions($outletId, $dateFrom, $dateTo, 'service')),
             'outlet_city_ledger' => $this->listOutletCityLedger($qrCode, $dateFrom, $dateTo),
             'total_spend' => collect($this->opexService->buildReceivingSheetStyleDaily($outletId, $dateFrom, $dateTo)['rows']),
             default => collect(),

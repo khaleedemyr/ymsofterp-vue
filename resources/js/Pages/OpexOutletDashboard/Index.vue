@@ -126,16 +126,20 @@
             </div>
 
             <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div
+              <button
                 v-for="card in purchaseBudgetCards"
                 :key="card.key"
-                class="rounded-2xl border p-4"
+                type="button"
+                class="rounded-2xl border p-4 text-left transition hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-400"
                 :class="card.cardClass"
+                @click="openCard(card.modalType)"
               >
                 <div class="flex items-center justify-between gap-2">
                   <p class="text-xs font-semibold uppercase tracking-wide inline-flex items-center gap-1" :class="card.titleClass">
                     {{ card.label }}
-                    <CardHelpTip :text="card.help" />
+                    <span @click.stop>
+                      <CardHelpTip :text="card.help" />
+                    </span>
                   </p>
                   <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full" :class="card.badgeClass">
                     {{ card.sharePct }}% dari {{ roForecast.budget_pool_ratio_pct || 43 }}%
@@ -179,7 +183,10 @@
                     :style="{ width: Math.min(100, card.data?.pct || 0) + '%' }"
                   ></div>
                 </div>
-              </div>
+                <p class="mt-3 text-[11px] font-medium" :class="card.titleClass">
+                  Klik untuk lihat transaksi · detail item
+                </p>
+              </button>
             </div>
           </div>
         </div>
@@ -1634,7 +1641,15 @@
                         {{ txn.party_label || txn.supplier_name || txn.category_name || '-' }}
                       </td>
                     </template>
-                    <td v-else class="px-4 py-2.5 text-slate-600">{{ txn.beneficiary_name || txn.creator_name || txn.supplier_name || '-' }}</td>
+                    <td v-else class="px-4 py-2.5 text-slate-600">
+                      <template v-if="modalShowsPurchaseBucket">
+                        <span class="block font-medium text-slate-800">{{ txn.warehouse || '-' }}</span>
+                        <span class="text-xs text-slate-500">{{ txn.creator_name || '-' }}</span>
+                      </template>
+                      <template v-else>
+                        {{ txn.beneficiary_name || txn.creator_name || txn.supplier_name || '-' }}
+                      </template>
+                    </td>
                     <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(txn.amount) }}</td>
                     <td v-if="modalShowsBill" class="px-4 py-2.5 text-right font-medium text-slate-700">{{ formatCurrency(txn.bill_amount) }}</td>
                   </tr>
@@ -1645,7 +1660,13 @@
               </table>
             </div>
 
-            <p v-if="modalTxnClickable" class="text-xs text-slate-500">Klik baris transaksi untuk melihat detail item</p>
+            <p v-if="modalTxnClickable" class="text-xs text-slate-500">
+              Klik baris transaksi untuk melihat detail item
+              <span v-if="modalShowsPurchaseBucket && modalSheetMeta?.period_from">
+                · periode {{ modalSheetMeta.period_from }} s/d {{ modalSheetMeta.period_to }}
+                · total {{ formatCurrency(modalSheetMeta.purchased_total) }}
+              </span>
+            </p>
 
             <div v-if="modalPagination.total_pages > 1" class="flex justify-between items-center text-sm">
               <span class="text-slate-500">{{ modalPagination.total }} transaksi</span>
@@ -2072,6 +2093,7 @@ const purchaseBudgetCards = computed(() => {
   return [
     {
       key: 'kitchen',
+      modalType: 'kitchen_purchase',
       label: 'Budget Kitchen',
       help: cardHelps.kitchen_purchase,
       sharePct: rf.kitchen?.share_of_pool_pct || 70,
@@ -2086,6 +2108,7 @@ const purchaseBudgetCards = computed(() => {
     },
     {
       key: 'bar',
+      modalType: 'bar_purchase',
       label: 'Budget Bar',
       help: cardHelps.bar_purchase,
       sharePct: rf.bar?.share_of_pool_pct || 20,
@@ -2100,6 +2123,7 @@ const purchaseBudgetCards = computed(() => {
     },
     {
       key: 'service',
+      modalType: 'service_purchase',
       label: 'Budget Service',
       help: cardHelps.service_purchase,
       sharePct: rf.service?.share_of_pool_pct || 10,
@@ -2655,6 +2679,9 @@ const modalTitle = computed(() => {
     purchase_category: mcsCategoryFilter.value
       ? `Pembelian · ${mcsCategoryFilter.value}`
       : 'Pembelian per Category',
+    kitchen_purchase: 'Budget Kitchen · Purchased',
+    bar_purchase: 'Budget Bar · Purchased',
+    service_purchase: 'Budget Service · Purchased',
     outlet_city_ledger: 'Outlet City Ledger',
     total_spend: 'Total Spend',
   }
@@ -2676,6 +2703,9 @@ const modalPartyColumn = computed(() => {
     retail_food: 'User',
     retail_non_food: 'User',
     petty_cash: 'User',
+    kitchen_purchase: 'Warehouse / User',
+    bar_purchase: 'Warehouse / User',
+    service_purchase: 'Warehouse / User',
     total_spend: 'User / Supplier',
   }
   return map[modalType.value] || 'Keterangan'
@@ -2688,8 +2718,11 @@ const modalShowsBill = computed(() =>
 const modalShowsUserSupplier = computed(() => modalType.value === 'retail_food')
 const modalShowsUserCategory = computed(() => modalType.value === 'retail_non_food')
 const modalShowsPettyParty = computed(() => modalType.value === 'petty_cash')
+const modalShowsPurchaseBucket = computed(() =>
+  ['kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value)
+)
 const modalTxnClickable = computed(() =>
-  ['gsr_ro', 'rws', 'retail_food', 'retail_non_food', 'petty_cash'].includes(modalType.value)
+  ['gsr_ro', 'rws', 'retail_food', 'retail_non_food', 'petty_cash', 'kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value)
 )
 
 const modalTxnColspan = computed(() => {
@@ -2876,6 +2909,7 @@ const openSourceTxnDetail = (txn) => {
         received_by: txn.received_by,
         category_name: txn.category_name,
         supplier_name: txn.supplier_name,
+        warehouse: txn.warehouse,
         ordered_by: txn.creator_name,
         total: Number(txn.amount) || 0,
         items,
@@ -3088,7 +3122,7 @@ const fetchModal = async () => {
       ...filterParams(),
       search: modalSearch.value,
       page: modalPage.value,
-      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory'].includes(modalType.value) ? 62 : 20,
+      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value) ? 62 : 20,
     }
     if (['mcs_purchase', 'purchase_category'].includes(modalType.value) && mcsCategoryFilter.value) {
       params.category = mcsCategoryFilter.value

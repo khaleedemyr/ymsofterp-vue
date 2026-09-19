@@ -531,7 +531,7 @@ class OpexOutletDashboardService
      *
      * @return array{0: string, 1: string}
      */
-    private function fullMonthBounds(string $dateFrom, string $dateTo): array
+    public function fullMonthBounds(string $dateFrom, string $dateTo): array
     {
         $anchor = Carbon::parse($dateTo);
 
@@ -539,6 +539,387 @@ class OpexOutletDashboardService
             $anchor->copy()->startOfMonth()->format('Y-m-d'),
             $anchor->copy()->endOfMonth()->format('Y-m-d'),
         ];
+    }
+
+    /**
+     * Transaksi Purchased (GSR/GR + Retail Food + RWS) untuk satu warehouse bucket.
+     * Dipakai drill-down card Budget Kitchen / Bar / Service.
+     *
+     * @param  'kitchen'|'bar'|'service'  $bucket
+     * @return list<object{
+     *   id: string,
+     *   number: string,
+     *   date: string,
+     *   source: string,
+     *   type: string,
+     *   creator_name: string,
+     *   warehouse: string,
+     *   amount: float,
+     *   items: list<array{name: string, qty: float, unit: string, price: float, subtotal: float}>
+     * }>
+     */
+    public function listPurchasedBucketTransactions(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        string $bucket
+    ): array {
+        $bucket = $this->normalizePurchaseBudgetBucket($bucket);
+        if ($bucket === null) {
+            return [];
+        }
+
+        [$monthFrom, $monthTo] = $this->fullMonthBounds($dateFrom, $dateTo);
+        $grouped = [];
+
+        $addLine = function (
+            string $key,
+            string $number,
+            string $date,
+            string $source,
+            string $creator,
+            string $warehouse,
+            array $item
+        ) use (&$grouped, $bucket): void {
+            if (! isset($grouped[$key])) {
+                $grouped[$key] = (object) [
+                    'id' => $key,
+                    'number' => $number,
+                    'date' => $date,
+                    'source' => $source,
+                    'type' => $bucket.'_purchase',
+                    'creator_name' => $creator !== '' ? $creator : '-',
+                    'warehouse' => $warehouse,
+                    'amount' => 0.0,
+                    'items' => [],
+                ];
+            }
+            $subtotal = round((float) ($item['subtotal'] ?? 0), 2);
+            $grouped[$key]->amount = round((float) $grouped[$key]->amount + $subtotal, 2);
+            $grouped[$key]->items[] = [
+                'name' => (string) ($item['name'] ?? '-'),
+                'qty' => (float) ($item['qty'] ?? 0),
+                'unit' => (string) ($item['unit'] ?? '-'),
+                'price' => round((float) ($item['price'] ?? 0), 2),
+                'subtotal' => $subtotal,
+            ];
+        };
+
+        // —— GSR ——
+        if ($this->hasSerialGrTables()) {
+            $priceSql = $this->serialGrPriceSql('it');
+            $gsrRows = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('warehouse_outlets as wo', 'wo.id', '=', 'si.warehouse_outlet_id')
+                ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+                ->leftJoin('users as usr', 'h.created_by', '=', 'usr.id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->where('h.outlet_id', $outletId)
+                ->whereRaw('LOWER(TRIM(wo.name)) = ?', [$bucket])
+                ->whereBetween(DB::raw('DATE(h.receive_date)'), [$monthFrom, $monthTo])
+                ->orderBy('it.name')
+                ->get([
+                    'h.id as header_id',
+                    'h.number',
+                    'h.receive_date as date',
+                    'wo.name as warehouse_name',
+                    'usr.nama_lengkap as creator_name',
+                    'it.name as item_name',
+                    'u.name as unit_name',
+                    'si.qty',
+                    DB::raw("({$priceSql}) as price"),
+                    DB::raw("si.qty * ({$priceSql}) as subtotal"),
+                ]);
+
+            foreach ($gsrRows as $row) {
+                $addLine(
+                    'gsr-'.$row->header_id,
+                    (string) ($row->number ?? '-'),
+                    (string) $row->date,
+                    'GSR',
+                    (string) ($row->creator_name ?? ''),
+                    (string) ($row->warehouse_name ?? $bucket),
+                    [
+                        'name' => $row->item_name,
+                        'qty' => $row->qty,
+                        'unit' => $row->unit_name,
+                        'price' => $row->price,
+                        'subtotal' => $row->subtotal,
+                    ]
+                );
+            }
+        }
+
+        // —— Outlet GR ——
+        $grRows = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
+                    ->where(function ($q) {
+                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
+                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
+                    });
+            })
+            ->leftJoin('warehouse_outlets as wo_ffo', 'wo_ffo.id', '=', 'ffo.warehouse_outlet_id')
+            ->leftJoin('warehouse_outlets as wo_ro', 'wo_ro.id', '=', 'ffo_ro.warehouse_outlet_id')
+            ->leftJoin('items as it', 'ofgri.item_id', '=', 'it.id')
+            ->leftJoin('units as un', 'ofgri.unit_id', '=', 'un.id')
+            ->leftJoin('users as usr', 'ofgr.created_by', '=', 'usr.id')
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(ofgr.receive_date)'), [$monthFrom, $monthTo])
+            ->whereRaw('LOWER(TRIM(COALESCE(wo_ffo.name, wo_ro.name))) = ?', [$bucket])
+            ->orderBy('it.name')
+            ->get([
+                'ofgr.id as header_id',
+                'ofgr.number',
+                'ofgr.receive_date as date',
+                DB::raw('COALESCE(wo_ffo.name, wo_ro.name) as warehouse_name'),
+                'usr.nama_lengkap as creator_name',
+                'it.name as item_name',
+                'un.name as unit_name',
+                'ofgri.received_qty as qty',
+                DB::raw('COALESCE(ffoi.price, 0) as price'),
+                DB::raw('(ofgri.received_qty * COALESCE(ffoi.price, 0)) as subtotal'),
+            ]);
+
+        foreach ($grRows as $row) {
+            $addLine(
+                'gr-'.$row->header_id,
+                (string) ($row->number ?? '-'),
+                (string) $row->date,
+                'GR',
+                (string) ($row->creator_name ?? ''),
+                (string) ($row->warehouse_name ?? $bucket),
+                [
+                    'name' => $row->item_name,
+                    'qty' => $row->qty,
+                    'unit' => $row->unit_name,
+                    'price' => $row->price,
+                    'subtotal' => $row->subtotal,
+                ]
+            );
+        }
+
+        // —— Retail Food ——
+        $rfHeaders = DB::table('retail_food as rf')
+            ->join('warehouse_outlets as wo', 'wo.id', '=', 'rf.warehouse_outlet_id')
+            ->leftJoin('users as usr', 'rf.created_by', '=', 'usr.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$monthFrom, $monthTo])
+            ->whereRaw('LOWER(TRIM(wo.name)) = ?', [$bucket])
+            ->get([
+                'rf.id',
+                'rf.retail_number as number',
+                'rf.transaction_date as date',
+                'rf.total_amount',
+                'wo.name as warehouse_name',
+                'usr.nama_lengkap as creator_name',
+            ]);
+
+        $rfIds = $rfHeaders->pluck('id')->all();
+        $rfItemsByHeader = collect();
+        if ($rfIds !== [] && Schema::hasTable('retail_food_items')) {
+            $rfItemsByHeader = DB::table('retail_food_items')
+                ->whereIn('retail_food_id', $rfIds)
+                ->orderBy('item_name')
+                ->get([
+                    'retail_food_id as header_id',
+                    'item_name',
+                    'unit as unit_name',
+                    'qty',
+                    DB::raw('COALESCE(price, 0) as price'),
+                    DB::raw('COALESCE(subtotal, qty * price, 0) as subtotal'),
+                ])
+                ->groupBy('header_id');
+        }
+
+        foreach ($rfHeaders as $header) {
+            $items = $rfItemsByHeader->get($header->id) ?? collect();
+            if ($items->isEmpty()) {
+                $addLine(
+                    'rf-'.$header->id,
+                    (string) ($header->number ?? '-'),
+                    (string) $header->date,
+                    'Retail Food',
+                    (string) ($header->creator_name ?? ''),
+                    (string) ($header->warehouse_name ?? $bucket),
+                    [
+                        'name' => 'Total transaksi',
+                        'qty' => 1,
+                        'unit' => '-',
+                        'price' => $header->total_amount,
+                        'subtotal' => $header->total_amount,
+                    ]
+                );
+                continue;
+            }
+            foreach ($items as $item) {
+                $addLine(
+                    'rf-'.$header->id,
+                    (string) ($header->number ?? '-'),
+                    (string) $header->date,
+                    'Retail Food',
+                    (string) ($header->creator_name ?? ''),
+                    (string) ($header->warehouse_name ?? $bucket),
+                    [
+                        'name' => $item->item_name,
+                        'qty' => $item->qty,
+                        'unit' => $item->unit_name,
+                        'price' => $item->price,
+                        'subtotal' => $item->subtotal,
+                    ]
+                );
+            }
+        }
+
+        // —— RWS ——
+        $rwsHeaders = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', function ($join) {
+                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+            })
+            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$monthFrom, $monthTo])
+            ->get([
+                'rws.id',
+                'rws.number',
+                'rws.sale_date as date',
+                'rws.total_amount',
+                DB::raw("COALESCE(w.name, '') as warehouse_name"),
+                'usr.nama_lengkap as creator_name',
+            ])
+            ->filter(fn ($row) => $this->rwsPurchaseBucketName($row->warehouse_name) === $bucket)
+            ->values();
+
+        $rwsIds = $rwsHeaders->pluck('id')->all();
+        $rwsItemsByHeader = collect();
+        if ($rwsIds !== []) {
+            $lines = collect();
+            if (Schema::hasTable('retail_warehouse_sale_items')) {
+                $lines = $lines->concat(
+                    DB::table('retail_warehouse_sale_items as rwsi')
+                        ->leftJoin('items as it', 'rwsi.item_id', '=', 'it.id')
+                        ->whereIn('rwsi.retail_warehouse_sale_id', $rwsIds)
+                        ->get([
+                            'rwsi.retail_warehouse_sale_id as header_id',
+                            'it.name as item_name',
+                            'rwsi.unit as unit_name',
+                            'rwsi.qty',
+                            DB::raw('COALESCE(rwsi.price, 0) as price'),
+                            DB::raw('COALESCE(rwsi.subtotal, rwsi.qty * rwsi.price, 0) as subtotal'),
+                        ])
+                );
+            }
+            if (Schema::hasTable('retail_warehouse_sale_serial_items')) {
+                $lines = $lines->concat(
+                    DB::table('retail_warehouse_sale_serial_items as rwss')
+                        ->leftJoin('items as it', 'rwss.item_id', '=', 'it.id')
+                        ->whereIn('rwss.retail_warehouse_sale_id', $rwsIds)
+                        ->get([
+                            'rwss.retail_warehouse_sale_id as header_id',
+                            'it.name as item_name',
+                            'rwss.unit_name as unit_name',
+                            'rwss.qty',
+                            DB::raw('COALESCE(rwss.price, 0) as price'),
+                            DB::raw('COALESCE(rwss.subtotal, rwss.qty * rwss.price, 0) as subtotal'),
+                        ])
+                );
+            }
+            $rwsItemsByHeader = $lines->groupBy('header_id');
+        }
+
+        foreach ($rwsHeaders as $header) {
+            $items = $rwsItemsByHeader->get($header->id) ?? collect();
+            if ($items->isEmpty()) {
+                $addLine(
+                    'rws-'.$header->id,
+                    (string) ($header->number ?? '-'),
+                    (string) $header->date,
+                    'RWS',
+                    (string) ($header->creator_name ?? ''),
+                    (string) ($header->warehouse_name !== '' ? $header->warehouse_name : 'Main Store'),
+                    [
+                        'name' => 'Total transaksi',
+                        'qty' => 1,
+                        'unit' => '-',
+                        'price' => $header->total_amount,
+                        'subtotal' => $header->total_amount,
+                    ]
+                );
+                continue;
+            }
+            foreach ($items as $item) {
+                $addLine(
+                    'rws-'.$header->id,
+                    (string) ($header->number ?? '-'),
+                    (string) $header->date,
+                    'RWS',
+                    (string) ($header->creator_name ?? ''),
+                    (string) ($header->warehouse_name !== '' ? $header->warehouse_name : 'Main Store'),
+                    [
+                        'name' => $item->item_name,
+                        'qty' => $item->qty,
+                        'unit' => $item->unit_name,
+                        'price' => $item->price,
+                        'subtotal' => $item->subtotal,
+                    ]
+                );
+            }
+        }
+
+        $rows = array_values($grouped);
+        usort($rows, function ($a, $b) {
+            $cmp = strcmp((string) $b->date, (string) $a->date);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return strcmp((string) $b->number, (string) $a->number);
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @return array<string, float>
+     */
+    public function purchasedBucketByDate(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        string $bucket
+    ): array {
+        $map = [];
+        foreach ($this->listPurchasedBucketTransactions($outletId, $dateFrom, $dateTo, $bucket) as $txn) {
+            $d = substr((string) $txn->date, 0, 10);
+            $map[$d] = round(((float) ($map[$d] ?? 0)) + (float) $txn->amount, 2);
+        }
+
+        return $map;
+    }
+
+    private function normalizePurchaseBudgetBucket(string $bucket): ?string
+    {
+        $b = strtolower(trim($bucket));
+        if (str_ends_with($b, '_purchase')) {
+            $b = substr($b, 0, -strlen('_purchase'));
+        }
+
+        return in_array($b, ['kitchen', 'bar', 'service'], true) ? $b : null;
     }
 
     private function hasForecastHeaderForRange(int $outletId, string $dateFrom, string $dateTo): bool
@@ -1888,6 +2269,9 @@ class OpexOutletDashboardService
             'stock_cut' => $this->stockCutByDate($outletId, $dateFrom, $dateTo),
             'category_cost' => $this->categoryCostByDate($outletId, $dateFrom, $dateTo),
             'mcs_purchase' => $this->mcsPurchaseByDate($outletId, $dateFrom, $dateTo),
+            'kitchen_purchase' => $this->purchasedBucketByDate($outletId, $dateFrom, $dateTo, 'kitchen'),
+            'bar_purchase' => $this->purchasedBucketByDate($outletId, $dateFrom, $dateTo, 'bar'),
+            'service_purchase' => $this->purchasedBucketByDate($outletId, $dateFrom, $dateTo, 'service'),
             'outlet_city_ledger' => $this->outletCityLedgerByDate($qrCode, $dateFrom, $dateTo),
             'total_spend' => $this->mergeDateMaps(
                 $this->foodGrByDate($outletId, $dateFrom, $dateTo),

@@ -233,21 +233,31 @@ class DeliveryOrderController extends Controller
     {
         $prefix = 'DO';
         $date = now()->format('ymd');
-        
-        // Get the last DO number for today
-        $lastDO = DB::table('delivery_orders')
-            ->where('number', 'like', $prefix . $date . '%')
-            ->orderBy('number', 'desc')
-            ->first();
-        
-        if ($lastDO) {
-            $lastNumber = (int) substr($lastDO->number, -4);
-            $newNumber = $lastNumber + 1;
-        } else {
-            $newNumber = 1;
+        $pattern = $prefix.$date.'%';
+
+        // Serialize within the open DO transaction so concurrent stores
+        // cannot mint the same daily sequence.
+        for ($attempt = 0; $attempt < 15; $attempt++) {
+            $lastNumber = DB::table('delivery_orders')
+                ->where('number', 'like', $pattern)
+                ->orderByDesc('number')
+                ->lockForUpdate()
+                ->value('number');
+
+            $seq = $lastNumber ? ((int) substr((string) $lastNumber, -4)) + 1 : 1;
+            $candidate = $prefix.$date.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
+
+            $exists = DB::table('delivery_orders')
+                ->where('number', $candidate)
+                ->lockForUpdate()
+                ->exists();
+
+            if (! $exists) {
+                return $candidate;
+            }
         }
-        
-        return $prefix . $date . str_pad($newNumber, 4, '0', STR_PAD_LEFT);
+
+        throw new \Exception('Gagal generate nomor Delivery Order unik. Silakan coba lagi.');
     }
 
     public function store(Request $request)
@@ -471,7 +481,6 @@ class DeliveryOrderController extends Controller
     {
         $deliveryOrderItems = [];
         $inventoryUpdates = [];
-        $inventoryCards = [];
         
         // OPTIMIZED: Pre-fetch all required data in batch
         $itemIds = collect($items)->pluck('id')->toArray();
@@ -551,36 +560,16 @@ class DeliveryOrderController extends Controller
                 }
                 $deliveryOrderItems[] = $row;
                 
-                // Prepare inventory update
+                // Prepare inventory update (card saldo dihitung ulang saat apply + lock)
                 $inventoryUpdates[] = [
                     'inventory_item_id' => $stockInfo['inventory_item_id'],
                     'warehouse_id' => $warehouseId,
                     'qty_small' => $quantities['qty_small'],
                     'qty_medium' => $quantities['qty_medium'],
                     'qty_large' => $quantities['qty_large'],
-                    'current_stock' => $stockInfo
-                ];
-                
-                // Prepare inventory card with detailed description
-                $inventoryCards[] = [
-                    'inventory_item_id' => $stockInfo['inventory_item_id'],
-                    'warehouse_id' => $warehouseId,
-                    'date' => now()->toDateString(),
-                    'reference_type' => 'delivery_order',
-                    'reference_id' => $doId,
-                    'out_qty_small' => $quantities['qty_small'],
-                    'out_qty_medium' => $quantities['qty_medium'],
-                    'out_qty_large' => $quantities['qty_large'],
-                    'cost_per_small' => $stockInfo['last_cost_small'],
-                    'cost_per_medium' => $stockInfo['last_cost_medium'],
-                    'cost_per_large' => $stockInfo['last_cost_large'],
-                    'value_out' => $quantities['qty_small'] * $stockInfo['last_cost_small'],
-                    'saldo_qty_small' => $stockInfo['qty_small'] - $quantities['qty_small'],
-                    'saldo_qty_medium' => $stockInfo['qty_medium'] - $quantities['qty_medium'],
-                    'saldo_qty_large' => $stockInfo['qty_large'] - $quantities['qty_large'],
-                    'saldo_value' => ($stockInfo['qty_small'] - $quantities['qty_small']) * $stockInfo['last_cost_small'],
-                    'description' => 'Stock Out - Delivery Order ' . $this->getDONumber($doId) . ' to ' . ($this->getOutletName($doId) ?: 'Outlet'),
-                    'created_at' => now(),
+                    'last_cost_small' => $stockInfo['last_cost_small'],
+                    'last_cost_medium' => $stockInfo['last_cost_medium'],
+                    'last_cost_large' => $stockInfo['last_cost_large'],
                 ];
             } catch (\Exception $e) {
                 // Fallback: Use original method for this item
@@ -598,20 +587,65 @@ class DeliveryOrderController extends Controller
             DB::table('delivery_order_items')->insert($deliveryOrderItems);
         }
         
-        // OPTIMIZED: Batch update inventory stocks
+        // Apply stock outs sequentially with row locks so concurrent DO
+        // (and duplicate SKUs in one DO) cannot overwrite each other's saldo.
+        $inventoryCards = [];
         foreach ($inventoryUpdates as $update) {
+            $stock = DB::table('food_inventory_stocks')
+                ->where('inventory_item_id', $update['inventory_item_id'])
+                ->where('warehouse_id', $update['warehouse_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if (! $stock) {
+                throw new \Exception('Stok tidak ditemukan saat update inventory DO');
+            }
+
+            if ((float) $update['qty_small'] > (float) $stock->qty_small) {
+                throw new \Exception(
+                    'Qty melebihi stok yang tersedia saat commit. Stok tersedia: '.$stock->qty_small
+                );
+            }
+
+            $newSmall = (float) $stock->qty_small - (float) $update['qty_small'];
+            $newMedium = (float) $stock->qty_medium - (float) $update['qty_medium'];
+            $newLarge = (float) $stock->qty_large - (float) $update['qty_large'];
+            $costSmall = (float) ($stock->last_cost_small ?? $update['last_cost_small']);
+            $costMedium = (float) ($stock->last_cost_medium ?? $update['last_cost_medium']);
+            $costLarge = (float) ($stock->last_cost_large ?? $update['last_cost_large']);
+
             DB::table('food_inventory_stocks')
                 ->where('inventory_item_id', $update['inventory_item_id'])
                 ->where('warehouse_id', $update['warehouse_id'])
                 ->update([
-                    'qty_small' => DB::raw('qty_small - ' . $update['qty_small']),
-                    'qty_medium' => DB::raw('qty_medium - ' . $update['qty_medium']),
-                    'qty_large' => DB::raw('qty_large - ' . $update['qty_large']),
+                    'qty_small' => $newSmall,
+                    'qty_medium' => $newMedium,
+                    'qty_large' => $newLarge,
                     'updated_at' => now(),
                 ]);
+
+            $inventoryCards[] = [
+                'inventory_item_id' => $update['inventory_item_id'],
+                'warehouse_id' => $update['warehouse_id'],
+                'date' => now()->toDateString(),
+                'reference_type' => 'delivery_order',
+                'reference_id' => $doId,
+                'out_qty_small' => $update['qty_small'],
+                'out_qty_medium' => $update['qty_medium'],
+                'out_qty_large' => $update['qty_large'],
+                'cost_per_small' => $costSmall,
+                'cost_per_medium' => $costMedium,
+                'cost_per_large' => $costLarge,
+                'value_out' => (float) $update['qty_small'] * $costSmall,
+                'saldo_qty_small' => $newSmall,
+                'saldo_qty_medium' => $newMedium,
+                'saldo_qty_large' => $newLarge,
+                'saldo_value' => $newSmall * $costSmall,
+                'description' => 'Stock Out - Delivery Order '.$this->getDONumber($doId).' to '.($this->getOutletName($doId) ?: 'Outlet'),
+                'created_at' => now(),
+            ];
         }
-        
-        // OPTIMIZED: Batch insert inventory cards
+
         if (!empty($inventoryCards)) {
             DB::table('food_inventory_cards')->insert($inventoryCards);
         }
@@ -654,9 +688,11 @@ class DeliveryOrderController extends Controller
         if ($warehouseId) {
             $inventoryItem = DB::table('food_inventory_items')->where('item_id', $realItemId)->first();
             if ($inventoryItem) {
+                // Lock stock row so concurrent DO on the same item cannot lost-update saldo.
                 $stock = DB::table('food_inventory_stocks')
                     ->where('inventory_item_id', $inventoryItem->id)
                     ->where('warehouse_id', $warehouseId)
+                    ->lockForUpdate()
                     ->first();
                 
                 if ($stock) {
@@ -731,15 +767,22 @@ class DeliveryOrderController extends Controller
                         
                         throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availableStock} {$unitName}");
                     }
+
+                    $newSmall = (float) $stock->qty_small - (float) $qty_small;
+                    $newMedium = (float) $stock->qty_medium - (float) $qty_medium;
+                    $newLarge = (float) $stock->qty_large - (float) $qty_large;
+                    $costSmall = (float) $stock->last_cost_small;
+                    $costMedium = (float) $stock->last_cost_medium;
+                    $costLarge = (float) $stock->last_cost_large;
                         
-                        // Update stock with proper conversion
+                        // Update stock from locked snapshot (safe under lockForUpdate)
                     DB::table('food_inventory_stocks')
                             ->where('inventory_item_id', $inventoryItem->id)
                         ->where('warehouse_id', $warehouseId)
                         ->update([
-                            'qty_small' => $stock->qty_small - $qty_small,
-                            'qty_medium' => $stock->qty_medium - $qty_medium,
-                            'qty_large' => $stock->qty_large - $qty_large,
+                            'qty_small' => $newSmall,
+                            'qty_medium' => $newMedium,
+                            'qty_large' => $newLarge,
                             'updated_at' => now(),
                         ]);
                         
@@ -753,14 +796,14 @@ class DeliveryOrderController extends Controller
                         'out_qty_small' => $qty_small,
                         'out_qty_medium' => $qty_medium,
                         'out_qty_large' => $qty_large,
-                        'cost_per_small' => $stock->last_cost_small,
-                        'cost_per_medium' => $stock->last_cost_medium,
-                        'cost_per_large' => $stock->last_cost_large,
-                        'value_out' => $qty_small * $stock->last_cost_small,
-                        'saldo_qty_small' => $stock->qty_small - $qty_small,
-                        'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                        'saldo_qty_large' => $stock->qty_large - $qty_large,
-                        'saldo_value' => ($stock->qty_small - $qty_small) * $stock->last_cost_small,
+                        'cost_per_small' => $costSmall,
+                        'cost_per_medium' => $costMedium,
+                        'cost_per_large' => $costLarge,
+                        'value_out' => $qty_small * $costSmall,
+                        'saldo_qty_small' => $newSmall,
+                        'saldo_qty_medium' => $newMedium,
+                        'saldo_qty_large' => $newLarge,
+                        'saldo_value' => $newSmall * $costSmall,
                                 'description' => 'Stock Out - Delivery Order ' . $this->getDONumber($doId) . ' to ' . ($this->getOutletName($doId) ?: 'Outlet') . ' (Fallback)',
                         'created_at' => now(),
                     ]);
