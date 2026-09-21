@@ -89,6 +89,8 @@ class WarehouseCostHealthDashboardController extends Controller
             'type' => ['required', 'string'],
             'warehouse_id' => ['nullable', 'integer'],
             'period' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'search' => ['nullable', 'string', 'max:100'],
             'page' => ['nullable', 'integer', 'min:1'],
             'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
@@ -96,10 +98,12 @@ class WarehouseCostHealthDashboardController extends Controller
 
         try {
             $periodMeta = WarehouseDashboardOpsService::resolvePeriod($validated['period'] ?? null);
+            $dateFrom = $validated['date_from'] ?? $periodMeta['date_from'];
+            $dateTo = $validated['date_to'] ?? $periodMeta['date_to'];
             $result = $this->opsService->listTransactions(
                 $validated['type'],
-                $periodMeta['date_from'],
-                $periodMeta['date_to'],
+                $dateFrom,
+                $dateTo,
                 (int) ($validated['warehouse_id'] ?? 0),
                 (string) ($validated['search'] ?? ''),
                 (int) ($validated['page'] ?? 1),
@@ -108,7 +112,10 @@ class WarehouseCostHealthDashboardController extends Controller
 
             return response()->json([
                 'status' => 'success',
-                'period' => $periodMeta,
+                'period' => array_merge($periodMeta, [
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                ]),
                 ...$result,
             ]);
         } catch (\InvalidArgumentException $e) {

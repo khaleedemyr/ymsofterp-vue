@@ -1,12 +1,12 @@
 <template>
   <AppLayout>
-    <Head title="Warehouse Cost Health Dashboard" />
+    <Head title="Warehouse Dashboard" />
 
     <div class="w-full min-h-screen bg-gray-50">
       <div class="w-full px-4 md:px-6 lg:px-8 py-6">
         <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
           <div>
-            <h1 class="text-3xl font-bold text-gray-900">Warehouse Cost Health</h1>
+            <h1 class="text-3xl font-bold text-gray-900">Warehouse Dashboard</h1>
             <p class="text-gray-600 mt-1">
               Ringkas transaksi gudang + kesehatan MAC / cost.
               <a href="/warehouse-mac-anomaly-tracking" class="text-blue-600 underline">Scan detail anomali</a>
@@ -356,17 +356,27 @@
         </div>
 
         <div class="p-6 overflow-y-auto flex-1 space-y-5">
-          <div class="flex flex-wrap gap-2 items-end">
-            <input
-              v-model="modalSearch"
-              type="text"
-              placeholder="Cari nomor / warehouse / status..."
-              class="flex-1 min-w-[200px] rounded-xl border-slate-200 text-sm"
-              @keyup.enter="fetchModal"
-            />
-            <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="() => { modalPage = 1; fetchModal(); }">
-              Cari
-            </button>
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Dari tanggal</label>
+              <input v-model="modalDateFrom" type="date" class="w-full rounded-xl border-slate-200 text-sm" />
+            </div>
+            <div>
+              <label class="block text-xs font-medium text-slate-500 mb-1">Sampai tanggal</label>
+              <input v-model="modalDateTo" type="date" class="w-full rounded-xl border-slate-200 text-sm" />
+            </div>
+            <div class="md:col-span-2 flex flex-wrap gap-2 items-end">
+              <input
+                v-model="modalSearch"
+                type="text"
+                placeholder="Cari nomor / warehouse / status / approver..."
+                class="flex-1 min-w-[180px] rounded-xl border-slate-200 text-sm"
+                @keyup.enter="() => { modalPage = 1; fetchModal(); }"
+              />
+              <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="() => { modalPage = 1; fetchModal(); }">
+                Cari
+              </button>
+            </div>
           </div>
 
           <div v-if="modalLoading" class="py-16 text-center text-slate-400">
@@ -386,7 +396,7 @@
                     <th class="px-4 py-3 text-left">Warehouse</th>
                     <th class="px-4 py-3 text-left">Keterangan</th>
                     <th class="px-4 py-3 text-left">Status</th>
-                    <th class="px-4 py-3 text-right">Nilai</th>
+                    <th class="px-4 py-3 text-left">Approver</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -396,7 +406,7 @@
                     class="border-t border-slate-100 cursor-pointer hover:bg-sky-50/70"
                     @click="openTxn(txn)"
                   >
-                    <td class="px-4 py-2.5 whitespace-nowrap">{{ txn.date || '—' }}</td>
+                    <td class="px-4 py-2.5 whitespace-nowrap">{{ formatDateOnly(txn.date) }}</td>
                     <td class="px-4 py-2.5 font-medium text-slate-800 underline decoration-dotted underline-offset-2">
                       {{ txn.number || '—' }}
                     </td>
@@ -406,8 +416,9 @@
                       <span v-if="txn.status" class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.status }}</span>
                       <span v-else class="text-slate-300">—</span>
                     </td>
-                    <td class="px-4 py-2.5 text-right font-semibold text-slate-900">
-                      {{ txn.amount != null ? formatCurrency(txn.amount) : '—' }}
+                    <td class="px-4 py-2.5 text-slate-600">
+                      <span v-if="txn.approver">{{ txn.approver }}</span>
+                      <span v-else class="text-slate-300">—</span>
                     </td>
                   </tr>
                   <tr v-if="!modalTxns.length">
@@ -489,47 +500,46 @@
             </div>
 
             <div class="overflow-x-auto border border-slate-200 rounded-xl">
-              <table class="min-w-full text-sm">
+              <table class="w-full text-sm table-fixed">
                 <thead>
                   <tr class="bg-white border-b text-slate-600">
-                    <th class="px-4 py-2 text-left">Item</th>
-                    <th class="px-4 py-2 text-right">Qty</th>
-                    <th class="px-4 py-2 text-left">Unit</th>
-                    <th class="px-4 py-2 text-right">Harga PO</th>
-                    <th class="px-4 py-2 text-right">Subtotal</th>
-                    <th class="px-4 py-2 text-left">No. PO</th>
-                    <th class="px-4 py-2 text-left">Tgl PO</th>
-                    <th class="px-4 py-2 text-left">Pembuat PO</th>
-                    <th class="px-4 py-2 text-left">Supplier</th>
-                    <th class="px-4 py-2 text-left">Catatan</th>
+                    <th class="px-4 py-2 text-left w-[42%]">Item</th>
+                    <th class="px-4 py-2 text-right w-[22%]">Harga</th>
+                    <th class="px-4 py-2 text-left w-[36%]">PO</th>
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(item, idx) in detailItems" :key="idx" class="border-t border-slate-100">
-                    <td class="px-4 py-2">
-                      <p class="font-medium text-slate-800">{{ item.name }}</p>
-                      <p v-if="item.code" class="text-xs text-slate-400">{{ item.code }}</p>
+                  <tr v-for="(item, idx) in detailItems" :key="idx" class="border-t border-slate-100 align-top">
+                    <td class="px-4 py-3">
+                      <p class="font-medium text-slate-800 leading-snug">{{ item.name }}</p>
+                      <p v-if="item.code" class="text-xs text-slate-400 mt-0.5">{{ item.code }}</p>
+                      <p class="text-xs text-slate-600 mt-1">
+                        Qty <strong>{{ formatNum(item.qty) }}</strong>
+                        <span v-if="item.unit"> {{ item.unit }}</span>
+                      </p>
+                      <p v-if="item.note" class="text-xs text-slate-400 mt-1">{{ item.note }}</p>
                     </td>
-                    <td class="px-4 py-2 text-right">{{ formatNum(item.qty) }}</td>
-                    <td class="px-4 py-2">{{ item.unit || '—' }}</td>
-                    <td class="px-4 py-2 text-right">{{ item.price != null ? formatCurrency(item.price) : '—' }}</td>
-                    <td class="px-4 py-2 text-right font-semibold">{{ item.subtotal != null ? formatCurrency(item.subtotal) : '—' }}</td>
-                    <td class="px-4 py-2">
-                      <a
-                        v-if="item.po_number"
-                        :href="item.po_url || '#'"
-                        class="text-blue-600 hover:underline font-medium"
-                        @click.stop
-                      >{{ item.po_number }}</a>
-                      <span v-else class="text-slate-300">—</span>
+                    <td class="px-4 py-3 text-right">
+                      <p class="text-slate-800">{{ item.price != null ? formatCurrency(item.price) : '—' }}</p>
+                      <p class="text-xs text-slate-500 mt-0.5">Subtotal</p>
+                      <p class="font-semibold text-slate-900">{{ item.subtotal != null ? formatCurrency(item.subtotal) : '—' }}</p>
                     </td>
-                    <td class="px-4 py-2 whitespace-nowrap text-slate-600">{{ formatShortDate(item.po_date) }}</td>
-                    <td class="px-4 py-2 text-slate-600">{{ item.po_creator || '—' }}</td>
-                    <td class="px-4 py-2 text-slate-600">{{ item.po_supplier || '—' }}</td>
-                    <td class="px-4 py-2 text-xs text-slate-500">{{ item.note || '—' }}</td>
+                    <td class="px-4 py-3">
+                      <template v-if="item.po_number">
+                        <a
+                          :href="item.po_url || '#'"
+                          class="text-blue-600 hover:underline font-medium"
+                          @click.stop
+                        >{{ item.po_number }}</a>
+                        <p class="text-xs text-slate-500 mt-0.5">{{ formatShortDate(item.po_date) }}</p>
+                        <p v-if="item.po_creator" class="text-xs text-slate-600 mt-0.5">{{ item.po_creator }}</p>
+                        <p v-if="item.po_supplier" class="text-xs text-slate-500 mt-0.5">{{ item.po_supplier }}</p>
+                      </template>
+                      <span v-else class="text-slate-300">Belum ada PO</span>
+                    </td>
                   </tr>
                   <tr v-if="!detailItems.length">
-                    <td colspan="10" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
+                    <td colspan="3" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
                   </tr>
                 </tbody>
               </table>
@@ -592,6 +602,8 @@ const modalType = ref('');
 const modalTitle = ref('');
 const modalListRoute = ref('');
 const modalSearch = ref('');
+const modalDateFrom = ref('');
+const modalDateTo = ref('');
 const modalPage = ref(1);
 const modalTxns = ref([]);
 const modalPagination = ref({ current_page: 1, per_page: 20, total: 0, total_pages: 1 });
@@ -623,6 +635,21 @@ const formatShortDate = (value) => {
   if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
   return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 };
+const formatDateOnly = (value) => {
+  if (!value) return '—';
+  const s = String(value);
+  return s.length >= 10 ? s.slice(0, 10) : s;
+};
+
+function monthRange(monthValue) {
+  if (!monthValue) return { date_from: '', date_to: '' };
+  const [year, month] = monthValue.split('-').map(Number);
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    date_from: `${monthValue}-01`,
+    date_to: `${monthValue}-${String(lastDay).padStart(2, '0')}`,
+  };
+}
 
 const resetFilters = () => {
   selectedMonth.value = currentMonthValue();
@@ -637,6 +664,9 @@ const openCard = async (card) => {
   modalListRoute.value = card.route || '';
   modalSearch.value = '';
   modalPage.value = 1;
+  const range = monthRange(selectedMonth.value);
+  modalDateFrom.value = periodMeta.value?.date_from || range.date_from;
+  modalDateTo.value = periodMeta.value?.date_to || range.date_to;
   modalOpen.value = true;
   await fetchModal();
 };
@@ -690,6 +720,8 @@ const fetchModal = async () => {
       page: modalPage.value,
       per_page: 20,
       search: modalSearch.value || undefined,
+      date_from: modalDateFrom.value || undefined,
+      date_to: modalDateTo.value || undefined,
     };
     if (filters.value.warehouse_id) {
       params.warehouse_id = filters.value.warehouse_id;

@@ -15,7 +15,7 @@ INSERT INTO `erp_menu` (
     `created_at`,
     `updated_at`
 ) VALUES (
-    'Warehouse Cost Health',
+    'Warehouse Dashboard',
     'warehouse_cost_health_dashboard',
     6,
     '/warehouse-cost-health-dashboard',
@@ -23,7 +23,7 @@ INSERT INTO `erp_menu` (
     NOW(),
     NOW()
 ) ON DUPLICATE KEY UPDATE
-    `name` = 'Warehouse Cost Health',
+    `name` = 'Warehouse Dashboard',
     `parent_id` = 6,
     `route` = '/warehouse-cost-health-dashboard',
     `icon` = 'fa-solid fa-heart-pulse',

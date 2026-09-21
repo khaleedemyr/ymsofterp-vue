@@ -827,13 +827,20 @@ class WarehouseDashboardOpsService
         $q = DB::table('pr_foods as p')
             ->leftJoin('warehouses as w', 'w.id', '=', 'p.warehouse_id')
             ->leftJoin('users as u', 'u.id', '=', 'p.requested_by')
-            ->whereBetween('p.tanggal', [$from, $to])
+            ->leftJoin('users as u_ssd', 'u_ssd.id', '=', 'p.ssd_manager_approved_by')
+            ->leftJoin('users as u_asst', 'u_asst.id', '=', 'p.assistant_ssd_manager_approved_by')
+            ->leftJoin('users as u_coo', 'u_coo.id', '=', 'p.vice_coo_approved_by')
+            ->whereDate('p.tanggal', '>=', $from)
+            ->whereDate('p.tanggal', '<=', $to)
             ->when($warehouseId > 0, fn ($qq) => $qq->where('p.warehouse_id', $warehouseId))
             ->when($search !== '', function ($qq) use ($search) {
                 $qq->where(function ($q2) use ($search) {
                     $q2->where('p.pr_number', 'like', "%{$search}%")
                         ->orWhere('w.name', 'like', "%{$search}%")
                         ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('u_ssd.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('u_asst.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('u_coo.nama_lengkap', 'like', "%{$search}%")
                         ->orWhere('p.status', 'like', "%{$search}%");
                 });
             })
@@ -842,22 +849,33 @@ class WarehouseDashboardOpsService
             ->get([
                 'p.id',
                 'p.pr_number as number',
-                'p.tanggal as date',
+                DB::raw('DATE(p.tanggal) as date'),
                 'p.status',
                 'w.name as warehouse_name',
                 'u.nama_lengkap as user_name',
+                'u_coo.nama_lengkap as vice_coo_name',
+                'u_ssd.nama_lengkap as ssd_manager_name',
+                'u_asst.nama_lengkap as assistant_ssd_name',
             ]);
 
-        return $q->map(fn ($r) => [
-            'id' => (int) $r->id,
-            'number' => $r->number,
-            'date' => $r->date,
-            'status' => $r->status,
-            'warehouse_name' => $r->warehouse_name ?? '—',
-            'party' => $r->user_name ?? '—',
-            'amount' => null,
-            'url' => '/pr-foods/' . $r->id,
-        ]);
+        return $q->map(function ($r) {
+            $approver = null;
+            if (strtolower((string) $r->status) === 'approved') {
+                $approver = $r->vice_coo_name ?: ($r->ssd_manager_name ?: $r->assistant_ssd_name);
+            }
+
+            return [
+                'id' => (int) $r->id,
+                'number' => $r->number,
+                'date' => $r->date,
+                'status' => $r->status,
+                'warehouse_name' => $r->warehouse_name ?? '—',
+                'party' => $r->user_name ?? '—',
+                'approver' => $approver,
+                'amount' => null,
+                'url' => '/pr-foods/' . $r->id,
+            ];
+        });
     }
 
     /**
