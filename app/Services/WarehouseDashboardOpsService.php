@@ -1090,9 +1090,11 @@ class WarehouseDashboardOpsService
         $h = DB::table('warehouse_sales as s')
             ->leftJoin('warehouses as wf', 'wf.id', '=', 's.source_warehouse_id')
             ->leftJoin('warehouses as wt', 'wt.id', '=', 's.target_warehouse_id')
+            ->leftJoin('users as u', 'u.id', '=', 's.created_by')
             ->where('s.id', $id)
             ->first([
                 's.id', 's.number', 's.date', 's.status', 's.note',
+                'u.nama_lengkap as user_name',
                 DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
             ]);
         if (!$h) {
@@ -1101,14 +1103,15 @@ class WarehouseDashboardOpsService
 
         $items = DB::table('warehouse_sale_items as si')
             ->leftJoin('items as i', 'i.id', '=', 'si.item_id')
+            ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
             ->where('si.warehouse_sale_id', $id)
             ->whereNull('si.deleted_at')
-            ->get(['i.name as item_name', 'i.sku as item_code', 'si.qty_small', 'si.price', 'si.total', 'si.note'])
+            ->get(['i.name as item_name', 'i.sku as item_code', 'si.qty_small', 'si.price', 'si.total', 'si.note', 'us.name as unit_name'])
             ->map(fn ($r) => [
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
                 'qty' => (float) $r->qty_small,
-                'unit' => 'small',
+                'unit' => $r->unit_name ?? 'small',
                 'price' => $r->price !== null ? (float) $r->price : null,
                 'subtotal' => $r->total !== null ? (float) $r->total : null,
                 'note' => $r->note,
@@ -1124,8 +1127,10 @@ class WarehouseDashboardOpsService
                 'status' => $h->status,
                 'warehouse' => $h->warehouse_name,
                 'party' => null,
+                'user' => $h->user_name,
                 'note' => $h->note,
                 'url' => '/warehouse-sales/' . $id,
+                'price_label' => 'Cost',
             ],
             'items' => $items,
             'grand_total' => $grand ?: null,
@@ -1140,33 +1145,96 @@ class WarehouseDashboardOpsService
         $h = DB::table('outlet_rejections as r')
             ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'r.outlet_id')
+            ->leftJoin('users as u', 'u.id', '=', 'r.created_by')
             ->where('r.id', $id)
             ->first([
                 'r.id', 'r.number', 'r.rejection_date as date', 'r.status', 'r.notes',
+                'r.rejection_mode',
                 'w.name as warehouse_name', 'o.nama_outlet as outlet_name',
+                'u.nama_lengkap as user_name',
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Outlet Rejection tidak ditemukan');
         }
 
-        $items = DB::table('outlet_rejection_items as ri')
-            ->leftJoin('items as i', 'i.id', '=', 'ri.item_id')
-            ->leftJoin('units as un', 'un.id', '=', 'ri.unit_id')
-            ->where('ri.outlet_rejection_id', $id)
-            ->get([
-                'i.name as item_name', 'i.sku as item_code',
-                'ri.qty_rejected', 'un.name as unit_name',
-                'ri.mac_cost', 'ri.rejection_reason', 'ri.item_condition',
-            ])
-            ->map(fn ($r) => [
-                'name' => $r->item_name ?? '-',
-                'code' => $r->item_code,
-                'qty' => (float) $r->qty_rejected,
-                'unit' => $r->unit_name ?? '-',
-                'price' => $r->mac_cost !== null ? (float) $r->mac_cost : null,
-                'subtotal' => ($r->mac_cost !== null) ? ((float) $r->mac_cost * (float) $r->qty_rejected) : null,
-                'note' => trim(($r->rejection_reason ?? '') . ' ' . ($r->item_condition ?? '')),
-            ])->all();
+        $items = [];
+        $grand = 0.0;
+        $hasAmount = false;
+
+        // Mode serial: item di outlet_rejection_serial_items
+        if (($h->rejection_mode ?? '') === 'serial' || Schema::hasTable('outlet_rejection_serial_items')) {
+            $serialRows = DB::table('outlet_rejection_serial_items as osi')
+                ->leftJoin('items as i', 'i.id', '=', 'osi.item_id')
+                ->where('osi.outlet_rejection_id', $id)
+                ->orderBy('osi.id')
+                ->get([
+                    'i.name as item_name',
+                    'i.sku as item_code',
+                    'osi.qty_rejected',
+                    'osi.unit_name',
+                    'osi.mac_cost',
+                    'osi.rejection_reason',
+                    'osi.item_condition',
+                    'osi.serial_number',
+                    'osi.condition_notes',
+                ]);
+            foreach ($serialRows as $r) {
+                $qty = (float) $r->qty_rejected;
+                $cost = $r->mac_cost !== null ? (float) $r->mac_cost : null;
+                $subtotal = ($cost !== null) ? $cost * $qty : null;
+                if ($subtotal !== null) {
+                    $grand += $subtotal;
+                    $hasAmount = true;
+                }
+                $noteParts = array_filter([
+                    $r->serial_number ? ('SN: ' . $r->serial_number) : null,
+                    $r->rejection_reason,
+                    $r->item_condition,
+                    $r->condition_notes,
+                ]);
+                $items[] = [
+                    'name' => $r->item_name ?? '-',
+                    'code' => $r->item_code,
+                    'qty' => $qty,
+                    'unit' => $r->unit_name ?? '-',
+                    'price' => $cost,
+                    'subtotal' => $subtotal,
+                    'note' => implode(' · ', $noteParts) ?: null,
+                ];
+            }
+        }
+
+        // Mode normal / fallback
+        if (empty($items)) {
+            $normalRows = DB::table('outlet_rejection_items as ri')
+                ->leftJoin('items as i', 'i.id', '=', 'ri.item_id')
+                ->leftJoin('units as un', 'un.id', '=', 'ri.unit_id')
+                ->where('ri.outlet_rejection_id', $id)
+                ->get([
+                    'i.name as item_name', 'i.sku as item_code',
+                    'ri.qty_rejected', 'un.name as unit_name',
+                    'ri.mac_cost', 'ri.rejection_reason', 'ri.item_condition', 'ri.condition_notes',
+                ]);
+            foreach ($normalRows as $r) {
+                $qty = (float) $r->qty_rejected;
+                $cost = $r->mac_cost !== null ? (float) $r->mac_cost : null;
+                $subtotal = ($cost !== null) ? $cost * $qty : null;
+                if ($subtotal !== null) {
+                    $grand += $subtotal;
+                    $hasAmount = true;
+                }
+                $noteParts = array_filter([$r->rejection_reason, $r->item_condition, $r->condition_notes]);
+                $items[] = [
+                    'name' => $r->item_name ?? '-',
+                    'code' => $r->item_code,
+                    'qty' => $qty,
+                    'unit' => $r->unit_name ?? '-',
+                    'price' => $cost,
+                    'subtotal' => $subtotal,
+                    'note' => implode(' · ', $noteParts) ?: null,
+                ];
+            }
+        }
 
         return [
             'header' => [
@@ -1176,11 +1244,13 @@ class WarehouseDashboardOpsService
                 'status' => $h->status,
                 'warehouse' => $h->warehouse_name,
                 'party' => $h->outlet_name,
+                'user' => $h->user_name,
                 'note' => $h->notes,
                 'url' => '/outlet-rejections/' . $id,
+                'price_label' => 'Cost',
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $hasAmount ? $grand : null,
         ];
     }
 
@@ -1808,6 +1878,7 @@ class WarehouseDashboardOpsService
         $q = DB::table('warehouse_sales as s')
             ->leftJoin('warehouses as wf', 'wf.id', '=', 's.source_warehouse_id')
             ->leftJoin('warehouses as wt', 'wt.id', '=', 's.target_warehouse_id')
+            ->leftJoin('users as u', 'u.id', '=', 's.created_by')
             ->whereNull('s.deleted_at')
             ->whereBetween('s.date', [$from, $to])
             ->when($warehouseId > 0, function ($qq) use ($warehouseId) {
@@ -1821,7 +1892,8 @@ class WarehouseDashboardOpsService
                     $q2->where('s.number', 'like', "%{$search}%")
                         ->orWhere('wf.name', 'like', "%{$search}%")
                         ->orWhere('wt.name', 'like', "%{$search}%")
-                        ->orWhere('s.status', 'like', "%{$search}%");
+                        ->orWhere('s.status', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('s.date')
@@ -1831,6 +1903,7 @@ class WarehouseDashboardOpsService
                 's.number',
                 's.date',
                 's.status',
+                'u.nama_lengkap as user_name',
                 DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
             ]);
 
@@ -1841,6 +1914,7 @@ class WarehouseDashboardOpsService
             'status' => $r->status,
             'warehouse_name' => $r->warehouse_name,
             'party' => '—',
+            'user' => $r->user_name ?? '—',
             'amount' => null,
             'url' => '/warehouse-sales/' . $r->id,
         ]);
@@ -1854,6 +1928,7 @@ class WarehouseDashboardOpsService
         $q = DB::table('outlet_rejections as r')
             ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
             ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'r.outlet_id')
+            ->leftJoin('users as u', 'u.id', '=', 'r.created_by')
             ->whereBetween('r.rejection_date', [$from, $to])
             ->when($warehouseId > 0, fn ($qq) => $qq->where('r.warehouse_id', $warehouseId))
             ->when($search !== '', function ($qq) use ($search) {
@@ -1861,7 +1936,8 @@ class WarehouseDashboardOpsService
                     $q2->where('r.number', 'like', "%{$search}%")
                         ->orWhere('w.name', 'like', "%{$search}%")
                         ->orWhere('o.nama_outlet', 'like', "%{$search}%")
-                        ->orWhere('r.status', 'like', "%{$search}%");
+                        ->orWhere('r.status', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('r.rejection_date')
@@ -1873,6 +1949,7 @@ class WarehouseDashboardOpsService
                 'r.status',
                 'w.name as warehouse_name',
                 'o.nama_outlet as outlet_name',
+                'u.nama_lengkap as user_name',
             ]);
 
         return $q->map(fn ($r) => [
@@ -1882,6 +1959,7 @@ class WarehouseDashboardOpsService
             'status' => $r->status,
             'warehouse_name' => $r->warehouse_name ?? '—',
             'party' => $r->outlet_name ?? '—',
+            'user' => $r->user_name ?? '—',
             'amount' => null,
             'url' => '/outlet-rejections/' . $r->id,
         ]);

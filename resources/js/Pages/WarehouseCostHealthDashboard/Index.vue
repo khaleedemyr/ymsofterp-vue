@@ -681,7 +681,7 @@ const detailUserLabel = computed(() =>
 );
 const detailPriceLabel = computed(() =>
   detailHeader.value?.price_label
-    || (['warehouse_transfer', 'stock_adjustment', 'internal_use_waste'].includes(modalType.value) ? 'Cost' : 'Harga')
+    || (['warehouse_transfer', 'stock_adjustment', 'internal_use_waste', 'warehouse_sales', 'outlet_rejection'].includes(modalType.value) ? 'Cost' : 'Harga')
 );
 const detailShowPo = computed(() => {
   if (detailHeader.value?.show_po === false) return false;
