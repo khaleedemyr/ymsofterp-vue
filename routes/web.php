@@ -1897,6 +1897,11 @@ Route::get('/api/mac-anomaly-tracking/options', [App\Http\Controllers\MacAnomaly
 Route::get('/api/mac-anomaly-tracking/scan', [App\Http\Controllers\MacAnomalyTrackingController::class, 'scan'])->name('mac-anomaly-tracking.scan');
 Route::get('/api/mac-anomaly-tracking/reference-modules', [App\Http\Controllers\MacAnomalyTrackingController::class, 'referenceModules'])->name('mac-anomaly-tracking.reference-modules');
 Route::get('/api/mac-anomaly-tracking', [App\Http\Controllers\MacAnomalyTrackingController::class, 'data'])->name('mac-anomaly-tracking.data');
+Route::get('/warehouse-mac-anomaly-tracking', [App\Http\Controllers\WarehouseMacAnomalyTrackingController::class, 'index'])->name('warehouse-mac-anomaly-tracking.index');
+Route::get('/api/warehouse-mac-anomaly-tracking/options', [App\Http\Controllers\WarehouseMacAnomalyTrackingController::class, 'options'])->name('warehouse-mac-anomaly-tracking.options');
+Route::get('/api/warehouse-mac-anomaly-tracking/scan', [App\Http\Controllers\WarehouseMacAnomalyTrackingController::class, 'scan'])->name('warehouse-mac-anomaly-tracking.scan');
+Route::get('/api/warehouse-mac-anomaly-tracking/reference-modules', [App\Http\Controllers\WarehouseMacAnomalyTrackingController::class, 'referenceModules'])->name('warehouse-mac-anomaly-tracking.reference-modules');
+Route::get('/api/warehouse-mac-anomaly-tracking', [App\Http\Controllers\WarehouseMacAnomalyTrackingController::class, 'data'])->name('warehouse-mac-anomaly-tracking.data');
 Route::get('/warehouse-mac-tracking', [App\Http\Controllers\WarehouseMacTrackingController::class, 'index'])->name('warehouse-mac-tracking.index');
 Route::get('/api/warehouse-mac-tracking/options', [App\Http\Controllers\WarehouseMacTrackingController::class, 'options'])->name('warehouse-mac-tracking.options');
 Route::get('/api/warehouse-mac-tracking', [App\Http\Controllers\WarehouseMacTrackingController::class, 'data'])->name('warehouse-mac-tracking.data');

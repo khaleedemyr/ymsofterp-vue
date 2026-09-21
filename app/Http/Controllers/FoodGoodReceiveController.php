@@ -334,13 +334,16 @@ class FoodGoodReceiveController extends Controller
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('warehouse_id', $warehouseId)
                     ->first();
-                $qty_lama = $existingStock ? $existingStock->qty_small : 0;
-                $nilai_lama = $existingStock ? $existingStock->value : 0;
+                $qty_lama = $existingStock ? (float) $existingStock->qty_small : 0;
+                // Jangan pakai value yatim (qty<=0 tapi value>0)
+                $nilai_lama = ($existingStock && $qty_lama > 0) ? (float) $existingStock->value : 0;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small_for_value * $cost_small;
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
                 $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                $mac_medium = $mac * $smallConv;
+                $mac_large = $mac_medium * $mediumConv;
                 if ($existingStock) {
                     DB::table('food_inventory_stocks')
                         ->where('id', $existingStock->id)
@@ -350,8 +353,8 @@ class FoodGoodReceiveController extends Controller
                             'qty_large' => $existingStock->qty_large + $qty_large,
                             'value' => $total_nilai,
                             'last_cost_small' => $mac,
-                            'last_cost_medium' => $cost_medium, // opsional, bisa juga pakai konversi dari MAC
-                            'last_cost_large' => $cost_large,   // opsional
+                            'last_cost_medium' => $mac_medium,
+                            'last_cost_large' => $mac_large,
                             'updated_at' => now(),
                         ]);
                 } else {
@@ -656,13 +659,16 @@ class FoodGoodReceiveController extends Controller
                     ->where('inventory_item_id', $inventoryItemId)
                     ->where('warehouse_id', $warehouseId)
                     ->first();
-                $qty_lama = $existingStock ? $existingStock->qty_small : 0;
-                $nilai_lama = $existingStock ? $existingStock->value : 0;
+                $qty_lama = $existingStock ? (float) $existingStock->qty_small : 0;
+                // Jangan pakai value yatim (qty<=0 tapi value>0)
+                $nilai_lama = ($existingStock && $qty_lama > 0) ? (float) $existingStock->value : 0;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small_for_value * $cost_small;
                 $total_qty = $qty_lama + $qty_baru;
                 $total_nilai = $nilai_lama + $nilai_baru;
                 $mac = $total_qty > 0 ? $total_nilai / $total_qty : $cost_small;
+                $mac_medium = $mac * $smallConv;
+                $mac_large = $mac_medium * $mediumConv;
                 if ($existingStock) {
                     DB::table('food_inventory_stocks')
                         ->where('id', $existingStock->id)
@@ -672,8 +678,8 @@ class FoodGoodReceiveController extends Controller
                             'qty_large' => $existingStock->qty_large + $qty_large,
                             'value' => $total_nilai,
                             'last_cost_small' => $mac,
-                            'last_cost_medium' => $cost_medium, // opsional, bisa juga pakai konversi dari MAC
-                            'last_cost_large' => $cost_large,   // opsional
+                            'last_cost_medium' => $mac_medium,
+                            'last_cost_large' => $mac_large,
                             'updated_at' => now(),
                         ]);
                 } else {

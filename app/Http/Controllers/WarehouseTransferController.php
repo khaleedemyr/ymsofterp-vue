@@ -300,7 +300,7 @@ class WarehouseTransferController extends Controller
                     ]
                 );
                 $qty_lama = $stockTo->qty_small;
-                $nilai_lama = $stockTo->value;
+                $nilai_lama = ((float) $qty_lama > 0) ? (float) $stockTo->value : 0;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small * $incomingCostPerSmall;
                 $total_qty = $qty_lama + $qty_baru;
@@ -447,7 +447,7 @@ class WarehouseTransferController extends Controller
             );
 
             $qty_lama = $stockTo->qty_small;
-            $nilai_lama = $stockTo->value;
+            $nilai_lama = ((float) $qty_lama > 0) ? (float) $stockTo->value : 0;
             $nilai_baru = $qty_small * $incomingCostPerSmall;
             $total_qty = $qty_lama + $qty_small;
             $total_nilai = $nilai_lama + $nilai_baru;
@@ -928,7 +928,7 @@ class WarehouseTransferController extends Controller
                     ]
                 );
                 $qty_lama = $stockTo->qty_small;
-                $nilai_lama = $stockTo->value;
+                $nilai_lama = ((float) $qty_lama > 0) ? (float) $stockTo->value : 0;
                 $qty_baru = $qty_small;
                 $nilai_baru = $qty_small * $incomingCostPerSmall;
                 $total_qty = $qty_lama + $qty_baru;
