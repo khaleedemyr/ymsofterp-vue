@@ -99,7 +99,7 @@ class WarehouseDashboardOpsService
             'retail_warehouse_sale' => ['title' => 'Penjualan Warehouse Retail', 'list_route' => '/retail-warehouse-sale'],
             'stock_adjustment' => ['title' => 'Penyesuaian Stok', 'list_route' => '/food-inventory-adjustment'],
             'warehouse_stock_opname' => ['title' => 'Stock Opname', 'list_route' => '/warehouse-stock-opnames'],
-            'internal_use_waste' => ['title' => 'Pemakaian Internal & Sampah', 'list_route' => '/internal-use-waste'],
+            'internal_use_waste' => ['title' => 'Pemakaian Internal & Waste', 'list_route' => '/internal-use-waste'],
             'warehouse_sales' => ['title' => 'Penjualan Antar Gudang', 'list_route' => '/warehouse-sales'],
             'outlet_rejection' => ['title' => 'Penolakan Outlet', 'list_route' => '/outlet-rejections'],
             default => throw new \InvalidArgumentException('Tipe transaksi tidak dikenal: ' . $type),
@@ -804,10 +804,14 @@ class WarehouseDashboardOpsService
     {
         $h = DB::table('retail_warehouse_sales as r')
             ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->leftJoin('customers as c', 'c.id', '=', 'r.customer_id')
+            ->leftJoin('users as u', 'u.id', '=', 'r.created_by')
             ->where('r.id', $id)
             ->first([
                 'r.id', 'r.number', 'r.sale_date as date', 'r.status',
                 'r.total_amount', 'r.notes', 'w.name as warehouse_name',
+                'c.name as customer_name',
+                'u.nama_lengkap as user_name',
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Retail Sale tidak ditemukan');
@@ -834,7 +838,8 @@ class WarehouseDashboardOpsService
                 'date' => $h->date,
                 'status' => $h->status,
                 'warehouse' => $h->warehouse_name,
-                'party' => null,
+                'party' => $h->customer_name,
+                'user' => $h->user_name,
                 'note' => $h->notes,
                 'url' => '/retail-warehouse-sale/' . $id,
             ],
@@ -850,28 +855,73 @@ class WarehouseDashboardOpsService
     {
         $h = DB::table('food_inventory_adjustments as a')
             ->leftJoin('warehouses as w', 'w.id', '=', 'a.warehouse_id')
+            ->leftJoin('users as u', 'u.id', '=', 'a.created_by')
             ->where('a.id', $id)
             ->first([
                 'a.id', 'a.number', 'a.date', 'a.status', 'a.type', 'a.reason',
+                'a.warehouse_id',
                 'w.name as warehouse_name',
+                'u.nama_lengkap as user_name',
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Adjustment tidak ditemukan');
         }
 
-        $items = DB::table('food_inventory_adjustment_items as ai')
+        $rows = DB::table('food_inventory_adjustment_items as ai')
             ->leftJoin('items as i', 'i.id', '=', 'ai.item_id')
+            ->leftJoin('food_inventory_items as fii', 'fii.item_id', '=', 'ai.item_id')
+            ->leftJoin('food_inventory_stocks as st', function ($join) use ($h) {
+                $join->on('st.inventory_item_id', '=', 'fii.id')
+                    ->where('st.warehouse_id', '=', $h->warehouse_id);
+            })
+            ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
+            ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
+            ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
             ->where('ai.adjustment_id', $id)
-            ->get(['i.name as item_name', 'i.sku as item_code', 'ai.qty', 'ai.unit', 'ai.note'])
-            ->map(fn ($r) => [
+            ->orderBy('ai.id')
+            ->get([
+                'i.name as item_name',
+                'i.sku as item_code',
+                'ai.qty',
+                'ai.unit',
+                'ai.note',
+                'us.name as small_unit',
+                'um.name as medium_unit',
+                'ul.name as large_unit',
+                'st.last_cost_small',
+                'st.last_cost_medium',
+                'st.last_cost_large',
+            ]);
+
+        $items = [];
+        $grand = 0.0;
+        $hasAmount = false;
+        foreach ($rows as $r) {
+            $cost = $this->pickLastCostForUnit(
+                (string) ($r->unit ?? ''),
+                $r->small_unit,
+                $r->medium_unit,
+                $r->large_unit,
+                $r->last_cost_small,
+                $r->last_cost_medium,
+                $r->last_cost_large
+            );
+            $qty = (float) $r->qty;
+            $subtotal = $cost !== null ? $cost * $qty : null;
+            if ($subtotal !== null) {
+                $grand += $subtotal;
+                $hasAmount = true;
+            }
+            $items[] = [
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
-                'qty' => (float) $r->qty,
+                'qty' => $qty,
                 'unit' => $r->unit ?? '-',
-                'price' => null,
-                'subtotal' => null,
+                'price' => $cost,
+                'subtotal' => $subtotal,
                 'note' => $r->note,
-            ])->all();
+            ];
+        }
 
         return [
             'header' => [
@@ -881,11 +931,13 @@ class WarehouseDashboardOpsService
                 'status' => $h->status,
                 'warehouse' => $h->warehouse_name,
                 'party' => $h->type,
+                'user' => $h->user_name,
                 'note' => $h->reason,
                 'url' => '/food-inventory-adjustment/' . $id,
+                'price_label' => 'Cost',
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $hasAmount ? $grand : null,
         ];
     }
 
@@ -954,39 +1006,79 @@ class WarehouseDashboardOpsService
             ->leftJoin('warehouses as w', 'w.id', '=', 'i.warehouse_id')
             ->leftJoin('items as it', 'it.id', '=', 'i.item_id')
             ->leftJoin('units as un', 'un.id', '=', 'i.unit_id')
+            ->leftJoin('users as u', 'u.id', '=', 'i.created_by')
+            ->leftJoin('food_inventory_items as fii', 'fii.item_id', '=', 'i.item_id')
+            ->leftJoin('food_inventory_stocks as st', function ($join) {
+                $join->on('st.inventory_item_id', '=', 'fii.id')
+                    ->on('st.warehouse_id', '=', 'i.warehouse_id');
+            })
+            ->leftJoin('food_inventory_cards as c', function ($join) {
+                $join->on('c.reference_id', '=', 'i.id')
+                    ->where('c.reference_type', '=', 'internal_use_waste');
+            })
+            ->leftJoin('units as us', 'us.id', '=', 'it.small_unit_id')
+            ->leftJoin('units as um', 'um.id', '=', 'it.medium_unit_id')
+            ->leftJoin('units as ul', 'ul.id', '=', 'it.large_unit_id')
             ->where('i.id', $id)
             ->first([
                 'i.id', 'i.type', 'i.date', 'i.qty', 'i.notes',
                 'w.name as warehouse_name', 'it.name as item_name', 'it.sku as item_code',
                 'un.name as unit_name',
+                'u.nama_lengkap as user_name',
+                'us.name as small_unit',
+                'um.name as medium_unit',
+                'ul.name as large_unit',
+                'st.last_cost_small',
+                'st.last_cost_medium',
+                'st.last_cost_large',
+                'c.cost_per_small',
+                'c.cost_per_medium',
+                'c.cost_per_large',
+                'c.value_out',
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Internal use/waste tidak ditemukan');
         }
 
+        $qty = (float) $h->qty;
+        $cost = $this->pickLastCostForUnit(
+            (string) ($h->unit_name ?? ''),
+            $h->small_unit,
+            $h->medium_unit,
+            $h->large_unit,
+            $h->cost_per_small ?? $h->last_cost_small,
+            $h->cost_per_medium ?? $h->last_cost_medium,
+            $h->cost_per_large ?? $h->last_cost_large
+        );
+        $subtotal = $h->value_out !== null
+            ? (float) $h->value_out
+            : ($cost !== null ? $cost * $qty : null);
+
         $items = [[
             'name' => $h->item_name ?? '-',
             'code' => $h->item_code,
-            'qty' => (float) $h->qty,
+            'qty' => $qty,
             'unit' => $h->unit_name ?? '-',
-            'price' => null,
-            'subtotal' => null,
+            'price' => $cost,
+            'subtotal' => $subtotal,
             'note' => $h->notes,
         ]];
 
         return [
             'header' => [
-                'type' => 'Pemakaian Internal & Sampah',
+                'type' => 'Pemakaian Internal & Waste',
                 'number' => '#' . $h->id,
                 'date' => $h->date,
                 'status' => $h->type,
                 'warehouse' => $h->warehouse_name,
-                'party' => null,
+                'party' => $h->item_name,
+                'user' => $h->user_name,
                 'note' => $h->notes,
                 'url' => '/internal-use-waste',
+                'price_label' => 'Cost',
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $subtotal,
         ];
     }
 
@@ -1524,13 +1616,17 @@ class WarehouseDashboardOpsService
 
         $q = DB::table('retail_warehouse_sales as r')
             ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->leftJoin('customers as c', 'c.id', '=', 'r.customer_id')
+            ->leftJoin('users as u', 'u.id', '=', 'r.created_by')
             ->whereBetween('r.sale_date', [$from, $to])
             ->when($warehouseId > 0, fn ($qq) => $qq->where('r.warehouse_id', $warehouseId))
             ->when($search !== '', function ($qq) use ($search) {
                 $qq->where(function ($q2) use ($search) {
                     $q2->where('r.number', 'like', "%{$search}%")
                         ->orWhere('w.name', 'like', "%{$search}%")
-                        ->orWhere('r.status', 'like', "%{$search}%");
+                        ->orWhere('r.status', 'like', "%{$search}%")
+                        ->orWhere('c.name', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('r.sale_date')
@@ -1542,6 +1638,8 @@ class WarehouseDashboardOpsService
                 'r.status',
                 'r.total_amount',
                 'w.name as warehouse_name',
+                'c.name as customer_name',
+                'u.nama_lengkap as user_name',
             ]);
 
         return $q->map(fn ($r) => [
@@ -1550,7 +1648,8 @@ class WarehouseDashboardOpsService
             'date' => $r->date,
             'status' => $r->status,
             'warehouse_name' => $r->warehouse_name ?? '—',
-            'party' => '—',
+            'party' => $r->customer_name ?? '—',
+            'user' => $r->user_name ?? '—',
             'amount' => $r->total_amount !== null ? (float) $r->total_amount : null,
             'url' => '/retail-warehouse-sale/' . $r->id,
         ]);
@@ -1563,6 +1662,7 @@ class WarehouseDashboardOpsService
     {
         $q = DB::table('food_inventory_adjustments as a')
             ->leftJoin('warehouses as w', 'w.id', '=', 'a.warehouse_id')
+            ->leftJoin('users as u', 'u.id', '=', 'a.created_by')
             ->whereBetween('a.date', [$from, $to])
             ->when($warehouseId > 0, fn ($qq) => $qq->where('a.warehouse_id', $warehouseId))
             ->when($search !== '', function ($qq) use ($search) {
@@ -1570,7 +1670,8 @@ class WarehouseDashboardOpsService
                     $q2->where('a.number', 'like', "%{$search}%")
                         ->orWhere('w.name', 'like', "%{$search}%")
                         ->orWhere('a.status', 'like', "%{$search}%")
-                        ->orWhere('a.type', 'like', "%{$search}%");
+                        ->orWhere('a.type', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('a.date')
@@ -1582,7 +1683,11 @@ class WarehouseDashboardOpsService
                 'a.status',
                 'a.type',
                 'w.name as warehouse_name',
+                'u.nama_lengkap as user_name',
             ]);
+
+        $ids = $q->pluck('id')->all();
+        $amountById = $this->batchAdjustmentAmounts($ids);
 
         return $q->map(fn ($r) => [
             'id' => (int) $r->id,
@@ -1591,7 +1696,8 @@ class WarehouseDashboardOpsService
             'status' => $r->status,
             'warehouse_name' => $r->warehouse_name ?? '—',
             'party' => $r->type ?? '—',
-            'amount' => null,
+            'user' => $r->user_name ?? '—',
+            'amount' => $amountById[(int) $r->id] ?? null,
             'url' => '/food-inventory-adjustment/' . $r->id,
         ]);
     }
@@ -1642,13 +1748,15 @@ class WarehouseDashboardOpsService
         $q = DB::table('internal_use_wastes as i')
             ->leftJoin('warehouses as w', 'w.id', '=', 'i.warehouse_id')
             ->leftJoin('items as it', 'it.id', '=', 'i.item_id')
+            ->leftJoin('users as u', 'u.id', '=', 'i.created_by')
             ->whereBetween('i.date', [$from, $to])
             ->when($warehouseId > 0, fn ($qq) => $qq->where('i.warehouse_id', $warehouseId))
             ->when($search !== '', function ($qq) use ($search) {
                 $qq->where(function ($q2) use ($search) {
                     $q2->where('i.type', 'like', "%{$search}%")
                         ->orWhere('w.name', 'like', "%{$search}%")
-                        ->orWhere('it.name', 'like', "%{$search}%");
+                        ->orWhere('it.name', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('i.date')
@@ -1660,7 +1768,24 @@ class WarehouseDashboardOpsService
                 'i.qty',
                 'w.name as warehouse_name',
                 'it.name as item_name',
+                'u.nama_lengkap as user_name',
             ]);
+
+        $ids = $q->pluck('id')->all();
+        $amountById = [];
+        if (!empty($ids)) {
+            $idList = implode(',', array_map('intval', $ids));
+            $cardRows = DB::select(
+                "SELECT reference_id as id, SUM(value_out) as amount
+                 FROM food_inventory_cards
+                 WHERE reference_type = 'internal_use_waste'
+                   AND reference_id IN ({$idList})
+                 GROUP BY reference_id"
+            );
+            foreach ($cardRows as $row) {
+                $amountById[(int) $row->id] = (float) $row->amount;
+            }
+        }
 
         return $q->map(fn ($r) => [
             'id' => (int) $r->id,
@@ -1669,7 +1794,8 @@ class WarehouseDashboardOpsService
             'status' => $r->type,
             'warehouse_name' => $r->warehouse_name ?? '—',
             'party' => $r->item_name ?? '—',
-            'amount' => null,
+            'user' => $r->user_name ?? '—',
+            'amount' => $amountById[(int) $r->id] ?? null,
             'url' => '/internal-use-waste',
         ]);
     }
@@ -1914,7 +2040,17 @@ class WarehouseDashboardOpsService
             ->pluck('cnt', 'status')
             ->all();
 
-        return $this->card('stock_adjustment', 'Penyesuaian Stok', $count, '/food-inventory-adjustment', 'fa-solid fa-boxes-stacked', $byStatus);
+        $ids = DB::table('food_inventory_adjustments')
+            ->whereBetween('date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('warehouse_id', $warehouseId))
+            ->pluck('id')
+            ->all();
+        $amount = array_sum($this->batchAdjustmentAmounts($ids));
+
+        $card = $this->card('stock_adjustment', 'Penyesuaian Stok', $count, '/food-inventory-adjustment', 'fa-solid fa-boxes-stacked', $byStatus);
+        $card['amount'] = round($amount, 2);
+
+        return $card;
     }
 
     /**
@@ -1956,7 +2092,18 @@ class WarehouseDashboardOpsService
             ->pluck('cnt', 'type')
             ->all();
 
-        return $this->card('internal_use_waste', 'Pemakaian Internal & Sampah', $count, '/internal-use-waste', 'fa-solid fa-recycle', $byType);
+        $amountQ = DB::table('food_inventory_cards')
+            ->where('reference_type', 'internal_use_waste')
+            ->whereBetween('date', [$from, $to]);
+        if ($warehouseId > 0) {
+            $amountQ->where('warehouse_id', $warehouseId);
+        }
+        $amount = (float) $amountQ->sum('value_out');
+
+        $card = $this->card('internal_use_waste', 'Pemakaian Internal & Waste', $count, '/internal-use-waste', 'fa-solid fa-recycle', $byType);
+        $card['amount'] = round($amount, 2);
+
+        return $card;
     }
 
     /**
@@ -2034,6 +2181,81 @@ class WarehouseDashboardOpsService
             'by_status' => $byStatus,
             'note' => $note,
         ];
+    }
+
+    /**
+     * Pilih last_cost sesuai unit transaksi (small/medium/large).
+     */
+    private function pickLastCostForUnit(
+        string $unitName,
+        ?string $smallUnit,
+        ?string $mediumUnit,
+        ?string $largeUnit,
+        mixed $costSmall,
+        mixed $costMedium,
+        mixed $costLarge
+    ): ?float {
+        $unit = strtolower(trim($unitName));
+        if ($unit === '') {
+            return $costSmall !== null ? (float) $costSmall : null;
+        }
+        if ($smallUnit && strtolower($smallUnit) === $unit && $costSmall !== null) {
+            return (float) $costSmall;
+        }
+        if ($mediumUnit && strtolower($mediumUnit) === $unit && $costMedium !== null) {
+            return (float) $costMedium;
+        }
+        if ($largeUnit && strtolower($largeUnit) === $unit && $costLarge !== null) {
+            return (float) $costLarge;
+        }
+        // fallback: medium → large → small
+        foreach ([$costMedium, $costLarge, $costSmall] as $c) {
+            if ($c !== null && (float) $c > 0) {
+                return (float) $c;
+            }
+        }
+
+        return $costSmall !== null ? (float) $costSmall : null;
+    }
+
+    /**
+     * @param  list<int|string>  $ids
+     * @return array<int, float>
+     */
+    private function batchAdjustmentAmounts(array $ids): array
+    {
+        if (empty($ids)) {
+            return [];
+        }
+        $idList = implode(',', array_map('intval', $ids));
+        $rows = DB::select(
+            "SELECT ai.adjustment_id as id,
+                    SUM(
+                        ai.qty * CASE
+                            WHEN LOWER(TRIM(ai.unit)) = LOWER(TRIM(COALESCE(us.name, ''))) THEN COALESCE(st.last_cost_small, 0)
+                            WHEN LOWER(TRIM(ai.unit)) = LOWER(TRIM(COALESCE(um.name, ''))) THEN COALESCE(st.last_cost_medium, 0)
+                            WHEN LOWER(TRIM(ai.unit)) = LOWER(TRIM(COALESCE(ul.name, ''))) THEN COALESCE(st.last_cost_large, 0)
+                            ELSE COALESCE(NULLIF(st.last_cost_medium, 0), NULLIF(st.last_cost_large, 0), st.last_cost_small, 0)
+                        END
+                    ) as amount
+             FROM food_inventory_adjustment_items ai
+             JOIN food_inventory_adjustments a ON a.id = ai.adjustment_id
+             LEFT JOIN food_inventory_items fii ON fii.item_id = ai.item_id
+             LEFT JOIN food_inventory_stocks st
+               ON st.inventory_item_id = fii.id AND st.warehouse_id = a.warehouse_id
+             LEFT JOIN items it ON it.id = ai.item_id
+             LEFT JOIN units us ON us.id = it.small_unit_id
+             LEFT JOIN units um ON um.id = it.medium_unit_id
+             LEFT JOIN units ul ON ul.id = it.large_unit_id
+             WHERE ai.adjustment_id IN ({$idList})
+             GROUP BY ai.adjustment_id"
+        );
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->id] = (float) $row->amount;
+        }
+
+        return $out;
     }
 
     /**

@@ -220,7 +220,7 @@ class WarehouseCostHealthDashboardController extends Controller
                 'group' => 'ops',
             ],
             [
-                'label' => 'Pemakaian Internal & Sampah',
+                'label' => 'Pemakaian Internal & Waste',
                 'route' => '/internal-use-waste',
                 'icon' => 'fa-solid fa-recycle',
                 'group' => 'ops',

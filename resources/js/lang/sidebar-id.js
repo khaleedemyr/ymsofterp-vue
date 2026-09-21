@@ -250,7 +250,7 @@ export default {
     "laporan_stok_minimum": "Laporan Stok Minimum",
     "laporan_rekap_persediaan_per_kategori": "Laporan Rekap Persediaan per Kategori",
     "laporan_aging_persediaan": "Laporan Aging Persediaan",
-    "internal_use_waste": "Pemakaian Internal & Sampah",
+    "internal_use_waste": "Pemakaian Internal & Waste",
     "penjualan_antar_gudang": "Penjualan Antar Gudang",
     "outlet_rejection": "Penolakan Outlet",
     "kelola_return_outlet": "Kelola Retur Outlet",
