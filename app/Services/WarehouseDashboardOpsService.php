@@ -183,19 +183,77 @@ class WarehouseDashboardOpsService
             throw new \InvalidArgumentException('PR tidak ditemukan');
         }
 
-        $items = DB::table('pr_food_items as pi')
-            ->leftJoin('items as i', 'i.id', '=', 'pi.item_id')
-            ->where('pi.pr_food_id', $id)
-            ->get(['i.name as item_name', 'i.sku as item_code', 'pi.qty', 'pi.unit', 'pi.note'])
-            ->map(fn ($r) => [
+        // Ambil item PR + harga/PO terbaru per pr_food_item (jika sudah dibuat PO)
+        $rows = DB::select(
+            "SELECT
+                pi.id as pr_item_id,
+                i.name as item_name,
+                i.sku as item_code,
+                pi.qty,
+                pi.unit,
+                pi.note,
+                poi.price as po_price,
+                poi.total as po_total,
+                poi.subtotal as po_subtotal,
+                poi.quantity as po_qty,
+                po.id as po_id,
+                po.number as po_number,
+                po.date as po_date,
+                COALESCE(s_item.name, s_po.name) as po_supplier,
+                u_po.nama_lengkap as po_creator
+            FROM pr_food_items pi
+            LEFT JOIN items i ON i.id = pi.item_id
+            LEFT JOIN purchase_order_food_items poi
+                ON poi.id = (
+                    SELECT poi2.id
+                    FROM purchase_order_food_items poi2
+                    WHERE poi2.pr_food_item_id = pi.id
+                    ORDER BY poi2.id DESC
+                    LIMIT 1
+                )
+            LEFT JOIN purchase_order_foods po
+                ON po.id = COALESCE(poi.purchase_order_food_id, poi.purchase_order_id)
+            LEFT JOIN suppliers s_po ON s_po.id = po.supplier_id
+            LEFT JOIN suppliers s_item ON s_item.id = poi.supplier_id
+            LEFT JOIN users u_po ON u_po.id = po.created_by
+            WHERE pi.pr_food_id = ?
+            ORDER BY pi.id ASC",
+            [$id]
+        );
+
+        $items = [];
+        $grand = 0.0;
+        $hasAmount = false;
+        foreach ($rows as $r) {
+            $price = $r->po_price !== null ? (float) $r->po_price : null;
+            $subtotal = null;
+            if ($r->po_total !== null) {
+                $subtotal = (float) $r->po_total;
+            } elseif ($r->po_subtotal !== null) {
+                $subtotal = (float) $r->po_subtotal;
+            } elseif ($price !== null) {
+                $subtotal = $price * (float) $r->qty;
+            }
+            if ($subtotal !== null) {
+                $grand += $subtotal;
+                $hasAmount = true;
+            }
+
+            $items[] = [
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
                 'qty' => (float) $r->qty,
                 'unit' => $r->unit ?? '-',
-                'price' => null,
-                'subtotal' => null,
+                'price' => $price,
+                'subtotal' => $subtotal,
                 'note' => $r->note,
-            ])->all();
+                'po_number' => $r->po_number,
+                'po_date' => $r->po_date,
+                'po_creator' => $r->po_creator,
+                'po_supplier' => $r->po_supplier,
+                'po_url' => $r->po_id ? ('/po-foods/' . $r->po_id) : null,
+            ];
+        }
 
         return [
             'header' => [
@@ -209,7 +267,7 @@ class WarehouseDashboardOpsService
                 'url' => '/pr-foods/' . $id,
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $hasAmount ? $grand : null,
         ];
     }
 

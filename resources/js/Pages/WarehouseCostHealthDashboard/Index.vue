@@ -495,8 +495,12 @@
                     <th class="px-4 py-2 text-left">Item</th>
                     <th class="px-4 py-2 text-right">Qty</th>
                     <th class="px-4 py-2 text-left">Unit</th>
-                    <th class="px-4 py-2 text-right">Harga</th>
+                    <th class="px-4 py-2 text-right">Harga PO</th>
                     <th class="px-4 py-2 text-right">Subtotal</th>
+                    <th class="px-4 py-2 text-left">No. PO</th>
+                    <th class="px-4 py-2 text-left">Tgl PO</th>
+                    <th class="px-4 py-2 text-left">Pembuat PO</th>
+                    <th class="px-4 py-2 text-left">Supplier</th>
                     <th class="px-4 py-2 text-left">Catatan</th>
                   </tr>
                 </thead>
@@ -510,10 +514,22 @@
                     <td class="px-4 py-2">{{ item.unit || '—' }}</td>
                     <td class="px-4 py-2 text-right">{{ item.price != null ? formatCurrency(item.price) : '—' }}</td>
                     <td class="px-4 py-2 text-right font-semibold">{{ item.subtotal != null ? formatCurrency(item.subtotal) : '—' }}</td>
+                    <td class="px-4 py-2">
+                      <a
+                        v-if="item.po_number"
+                        :href="item.po_url || '#'"
+                        class="text-blue-600 hover:underline font-medium"
+                        @click.stop
+                      >{{ item.po_number }}</a>
+                      <span v-else class="text-slate-300">—</span>
+                    </td>
+                    <td class="px-4 py-2 whitespace-nowrap text-slate-600">{{ formatShortDate(item.po_date) }}</td>
+                    <td class="px-4 py-2 text-slate-600">{{ item.po_creator || '—' }}</td>
+                    <td class="px-4 py-2 text-slate-600">{{ item.po_supplier || '—' }}</td>
                     <td class="px-4 py-2 text-xs text-slate-500">{{ item.note || '—' }}</td>
                   </tr>
                   <tr v-if="!detailItems.length">
-                    <td colspan="6" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
+                    <td colspan="10" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
                   </tr>
                 </tbody>
               </table>
@@ -600,6 +616,12 @@ const formatNum = (value) => {
   const n = Number(value);
   if (Number.isNaN(n)) return value ?? '—';
   return new Intl.NumberFormat('id-ID', { maximumFractionDigits: 2 }).format(n);
+};
+const formatShortDate = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value).slice(0, 10);
+  return d.toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric' });
 };
 
 const resetFilters = () => {
