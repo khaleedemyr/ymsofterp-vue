@@ -58,12 +58,14 @@ class WarehouseDashboardOpsService
         $recent = $this->recentTransactions($dateFrom, $dateTo, $warehouseId, 20);
         $daily = $this->dailyCounts($dateFrom, $dateTo, $warehouseId);
         $revenue = $this->buildRevenue($dateFrom, $dateTo, $warehouseId);
+        $purchase = $this->buildPurchase($dateFrom, $dateTo, $warehouseId);
 
         return [
             'summary' => $summary,
             'recent' => $recent,
             'daily' => $daily,
             'revenue' => $revenue,
+            'purchase' => $purchase,
             'total_transactions' => array_sum(array_column($summary, 'count')),
         ];
     }
@@ -337,11 +339,8 @@ class WarehouseDashboardOpsService
             }
             $price = $r->po_price !== null ? (float) $r->po_price : null;
             $subtotal = null;
-            if ($r->po_total !== null) {
-                $subtotal = (float) $r->po_total;
-            } elseif ($r->po_subtotal !== null) {
-                $subtotal = (float) $r->po_subtotal;
-            } elseif ($price !== null) {
+            // Nilai = harga PO × qty diterima GR (bukan total baris PO)
+            if ($price !== null) {
                 $subtotal = $price * (float) $r->qty_received;
             }
             if ($subtotal !== null) {
@@ -629,20 +628,32 @@ class WarehouseDashboardOpsService
         $warehouseLabel = $srcWh . ' → ' . $dest;
 
         // Prioritas penerimaan: GSR (serial) → OGR legacy
+        // Qty GSR dikonversi ke unit FO agar cocok dengan harga FO
         $receivedByItem = [];
+        $receiveUnitByItem = [];
         $receiveSource = null;
         if ($gsrHeader) {
-            $recvRows = DB::table('outlet_serial_receive_items as si')
-                ->join('outlet_serial_receive_headers as gsr', 'gsr.id', '=', 'si.header_id')
-                ->where('si.delivery_order_id', $id)
-                ->whereNull('gsr.deleted_at')
-                ->groupBy('si.item_id')
-                ->get([
-                    'si.item_id',
-                    DB::raw('SUM(si.qty) as received_qty'),
-                ]);
+            $amtExpr = $this->sqlGsrQtyInFoUnit();
+            $recvRows = DB::select(
+                "SELECT si.item_id,
+                        SUM({$amtExpr}) as received_qty,
+                        MAX(ffoi.unit) as fo_unit
+                 FROM outlet_serial_receive_items si
+                 JOIN outlet_serial_receive_headers gsr ON gsr.id = si.header_id AND gsr.deleted_at IS NULL
+                 JOIN delivery_orders do2 ON do2.id = si.delivery_order_id
+                 LEFT JOIN food_floor_order_items ffoi
+                   ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
+                 LEFT JOIN items it ON it.id = si.item_id
+                 LEFT JOIN units us ON us.id = it.small_unit_id
+                 LEFT JOIN units um ON um.id = it.medium_unit_id
+                 LEFT JOIN units ul ON ul.id = it.large_unit_id
+                 WHERE si.delivery_order_id = ?
+                 GROUP BY si.item_id",
+                [$id]
+            );
             foreach ($recvRows as $rr) {
                 $receivedByItem[(int) $rr->item_id] = (float) ($rr->received_qty ?? 0);
+                $receiveUnitByItem[(int) $rr->item_id] = $rr->fo_unit;
             }
             $receiveSource = 'GSR';
         } elseif ($h->ofgr_id) {
@@ -671,6 +682,7 @@ class WarehouseDashboardOpsService
                 'di.qty_packing_list',
                 'di.qty_scan',
                 'di.unit',
+                'ffoi.unit as fo_unit',
                 'ffoi.price as fo_price',
             ]);
 
@@ -683,8 +695,11 @@ class WarehouseDashboardOpsService
             $qtyDo = (float) ($r->qty_scan ?? $r->qty_packing_list ?? 0);
             $qtyReceived = $receivedByItem[$itemId] ?? null;
             $price = $r->fo_price !== null ? (float) $r->fo_price : null;
+            $unitLabel = $hasReceived
+                ? ($receiveUnitByItem[$itemId] ?? $r->fo_unit ?? $r->unit ?? '-')
+                : ($r->unit ?? '-');
             $subtotal = null;
-            // Nilai Rp hanya dari qty yang diterima outlet
+            // Nilai Rp: harga FO × qty diterima (sudah di unit FO)
             if ($price !== null && $hasReceived) {
                 $subtotal = $price * (float) ($qtyReceived ?? 0);
                 $grand += $subtotal;
@@ -696,9 +711,9 @@ class WarehouseDashboardOpsService
                 $noteParts[] = 'PL qty: ' . $r->qty_packing_list;
             }
             if ($hasReceived) {
-                $noteParts[] = 'Diterima outlet (' . $receiveSource . '): ' . ($qtyReceived ?? 0);
+                $noteParts[] = 'Diterima outlet (' . $receiveSource . '): ' . ($qtyReceived ?? 0) . ' ' . $unitLabel;
                 if ($qtyDo > 0 && abs($qtyDo - (float) ($qtyReceived ?? 0)) > 0.0001) {
-                    $noteParts[] = 'Qty DO: ' . $qtyDo;
+                    $noteParts[] = 'Qty DO: ' . $qtyDo . ' ' . ($r->unit ?? '');
                 }
             } else {
                 $noteParts[] = 'Belum diterima outlet — subtotal menunggu GSR';
@@ -708,7 +723,7 @@ class WarehouseDashboardOpsService
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
                 'qty' => $hasReceived ? (float) ($qtyReceived ?? 0) : $qtyDo,
-                'unit' => $r->unit ?? '-',
+                'unit' => $unitLabel,
                 'price' => $price,
                 'subtotal' => $subtotal,
                 'note' => implode(' · ', $noteParts),
@@ -1575,15 +1590,20 @@ class WarehouseDashboardOpsService
                 }
             }
 
-            // Nilai diterima: FO price × qty GSR (prioritas) / OGR legacy
+            // Nilai diterima: FO price × qty GSR (qty dikonversi ke unit FO)
+            $lineAmt = $this->sqlGsrFoLineAmount();
             $gsrAmt = DB::select(
                 "SELECT si.delivery_order_id as do_id,
-                        SUM(si.qty * COALESCE(ffoi.price, 0)) as amount
+                        SUM({$lineAmt}) as amount
                  FROM outlet_serial_receive_items si
                  JOIN outlet_serial_receive_headers gsr ON gsr.id = si.header_id AND gsr.deleted_at IS NULL
                  JOIN delivery_orders do2 ON do2.id = si.delivery_order_id
                  LEFT JOIN food_floor_order_items ffoi
                    ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
+                 LEFT JOIN items it ON it.id = si.item_id
+                 LEFT JOIN units us ON us.id = it.small_unit_id
+                 LEFT JOIN units um ON um.id = it.medium_unit_id
+                 LEFT JOIN units ul ON ul.id = it.large_unit_id
                  WHERE si.delivery_order_id IN ({$idList})
                  GROUP BY si.delivery_order_id"
             );
@@ -2304,14 +2324,15 @@ class WarehouseDashboardOpsService
         $whFilterRws = $warehouseId > 0 ? ' AND r.warehouse_id = ' . (int) $warehouseId : '';
         $whFilterWhs = $warehouseId > 0 ? ' AND s.source_warehouse_id = ' . (int) $warehouseId : '';
 
-        // DO sudah diterima outlet (GSR): FO price × qty GSR
+        // DO sudah diterima outlet (GSR): FO price × qty GSR (qty dikonversi ke unit FO)
+        $lineAmt = $this->sqlGsrFoLineAmount();
         $doRows = DB::select(
             "SELECT
                 COALESCE(w.id, w2.id) as warehouse_id,
                 COALESCE(w.name, w2.name, 'Unknown') as warehouse_name,
                 wd.id as division_id,
                 COALESCE(wd.name, 'Tanpa Division') as division_name,
-                SUM(si.qty * COALESCE(ffoi.price, 0)) as amount
+                SUM({$lineAmt}) as amount
              FROM outlet_serial_receive_items si
              JOIN outlet_serial_receive_headers gsr
                ON gsr.id = si.header_id AND gsr.deleted_at IS NULL
@@ -2321,6 +2342,9 @@ class WarehouseDashboardOpsService
              LEFT JOIN food_floor_order_items ffoi
                ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
              LEFT JOIN items it ON it.id = si.item_id
+             LEFT JOIN units us ON us.id = it.small_unit_id
+             LEFT JOIN units um ON um.id = it.medium_unit_id
+             LEFT JOIN units ul ON ul.id = it.large_unit_id
              LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
              LEFT JOIN (
                 SELECT c.reference_id as do_id, MIN(c.warehouse_id) as warehouse_id
@@ -2401,13 +2425,146 @@ class WarehouseDashboardOpsService
         $add('rws', $rwsRows);
         $add('warehouse_sales', $whsRows);
 
+        return $this->finalizeMoneyBuckets($bucket, [
+            'do_gsr' => 'DO (sudah GSR)',
+            'rws' => 'RWS',
+            'warehouse_sales' => 'Penjualan Antar Gudang (sumber)',
+        ]);
+    }
+
+    /**
+     * Purchase warehouse: PO sudah GR (qty GR × harga PO)
+     * + Retail Food + Penjualan Antar Gudang di sisi penerima.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildPurchase(string $from, string $to, int $warehouseId): array
+    {
+        $whFilterGr = $warehouseId > 0
+            ? ' AND COALESCE(w.id, w2.id) = ' . (int) $warehouseId
+            : '';
+        $whFilterRwf = $warehouseId > 0 ? ' AND r.warehouse_id = ' . (int) $warehouseId : '';
+        $whFilterWhs = $warehouseId > 0 ? ' AND s.target_warehouse_id = ' . (int) $warehouseId : '';
+
+        $grLineAmt = $this->sqlGrPoLineAmount();
+        $grRows = DB::select(
+            "SELECT
+                COALESCE(w.id, w2.id) as warehouse_id,
+                COALESCE(w.name, w2.name, 'Unknown') as warehouse_name,
+                wd.id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                SUM({$grLineAmt}) as amount
+             FROM food_good_receive_items gi
+             JOIN food_good_receives g ON g.id = gi.good_receive_id
+             LEFT JOIN purchase_order_food_items poi ON poi.id = gi.po_item_id
+             LEFT JOIN items it ON it.id = gi.item_id
+             LEFT JOIN pr_food_items pfi ON pfi.id = poi.pr_food_item_id
+             LEFT JOIN pr_foods pf ON pf.id = pfi.pr_food_id
+             LEFT JOIN warehouses w ON w.id = pf.warehouse_id
+             LEFT JOIN (
+                SELECT c.reference_id as gr_id, MIN(c.warehouse_id) as warehouse_id
+                FROM food_inventory_cards c
+                WHERE c.reference_type = 'good_receive'
+                GROUP BY c.reference_id
+             ) src ON src.gr_id = g.id
+             LEFT JOIN warehouses w2 ON w2.id = src.warehouse_id
+             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
+             WHERE g.receive_date BETWEEN ? AND ?
+               {$whFilterGr}
+             GROUP BY COALESCE(w.id, w2.id), COALESCE(w.name, w2.name, 'Unknown'), wd.id, COALESCE(wd.name, 'Tanpa Division')",
+            [$from, $to]
+        );
+
+        $rwfRows = DB::select(
+            "SELECT
+                r.warehouse_id,
+                COALESCE(w.name, 'Unknown') as warehouse_name,
+                r.warehouse_division_id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                SUM(r.total_amount) as amount
+             FROM retail_warehouse_food r
+             LEFT JOIN warehouses w ON w.id = r.warehouse_id
+             LEFT JOIN warehouse_division wd ON wd.id = r.warehouse_division_id
+             WHERE r.deleted_at IS NULL
+               AND r.transaction_date BETWEEN ? AND ?
+               {$whFilterRwf}
+             GROUP BY r.warehouse_id, w.name, r.warehouse_division_id, wd.name",
+            [$from, $to]
+        );
+
+        // WHS di sisi penerima = purchase gudang tujuan
+        $whsRows = DB::select(
+            "SELECT
+                s.target_warehouse_id as warehouse_id,
+                COALESCE(w.name, 'Unknown') as warehouse_name,
+                it.warehouse_division_id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                SUM(si.total) as amount
+             FROM warehouse_sales s
+             JOIN warehouse_sale_items si
+               ON si.warehouse_sale_id = s.id AND si.deleted_at IS NULL
+             LEFT JOIN warehouses w ON w.id = s.target_warehouse_id
+             LEFT JOIN items it ON it.id = si.item_id
+             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
+             WHERE s.deleted_at IS NULL
+               AND s.date BETWEEN ? AND ?
+               {$whFilterWhs}
+             GROUP BY s.target_warehouse_id, w.name, it.warehouse_division_id, wd.name",
+            [$from, $to]
+        );
+
+        $bucket = [];
+        $add = function (string $source, $rows) use (&$bucket) {
+            foreach ($rows as $r) {
+                $whId = (int) ($r->warehouse_id ?? 0);
+                $divId = (int) ($r->division_id ?? 0);
+                $key = $whId . '|' . $divId;
+                if (!isset($bucket[$key])) {
+                    $bucket[$key] = [
+                        'warehouse_id' => $whId,
+                        'warehouse_name' => (string) ($r->warehouse_name ?? 'Unknown'),
+                        'division_id' => $divId ?: null,
+                        'division_name' => (string) ($r->division_name ?? 'Tanpa Division'),
+                        'amount' => 0.0,
+                        'sources' => [
+                            'po_gr' => 0.0,
+                            'retail_food' => 0.0,
+                            'warehouse_sales_in' => 0.0,
+                        ],
+                    ];
+                }
+                $amt = (float) ($r->amount ?? 0);
+                $bucket[$key]['amount'] += $amt;
+                $bucket[$key]['sources'][$source] += $amt;
+            }
+        };
+
+        $add('po_gr', $grRows);
+        $add('retail_food', $rwfRows);
+        $add('warehouse_sales_in', $whsRows);
+
+        return $this->finalizeMoneyBuckets($bucket, [
+            'po_gr' => 'PO sudah GR',
+            'retail_food' => 'Warehouse Retail Food',
+            'warehouse_sales_in' => 'Penjualan Antar Gudang (penerima)',
+        ]);
+    }
+
+    /**
+     * @param  array<string, array<string, mixed>>  $bucket
+     * @param  array<string, string>  $sourceLabels
+     * @return array<string, mixed>
+     */
+    private function finalizeMoneyBuckets(array $bucket, array $sourceLabels): array
+    {
+        $sourceKeys = array_keys($sourceLabels);
         $byDivision = array_values($bucket);
         usort($byDivision, fn ($a, $b) => $b['amount'] <=> $a['amount']);
         foreach ($byDivision as &$row) {
             $row['amount'] = round($row['amount'], 2);
-            $row['sources']['do_gsr'] = round($row['sources']['do_gsr'], 2);
-            $row['sources']['rws'] = round($row['sources']['rws'], 2);
-            $row['sources']['warehouse_sales'] = round($row['sources']['warehouse_sales'], 2);
+            foreach ($sourceKeys as $k) {
+                $row['sources'][$k] = round((float) ($row['sources'][$k] ?? 0), 2);
+            }
         }
         unset($row);
 
@@ -2415,22 +2572,22 @@ class WarehouseDashboardOpsService
         foreach ($byDivision as $row) {
             $wid = $row['warehouse_id'];
             if (!isset($byWarehouseMap[$wid])) {
+                $emptySources = [];
+                foreach ($sourceKeys as $k) {
+                    $emptySources[$k] = 0.0;
+                }
                 $byWarehouseMap[$wid] = [
                     'warehouse_id' => $wid,
                     'warehouse_name' => $row['warehouse_name'],
                     'amount' => 0.0,
-                    'sources' => [
-                        'do_gsr' => 0.0,
-                        'rws' => 0.0,
-                        'warehouse_sales' => 0.0,
-                    ],
+                    'sources' => $emptySources,
                     'divisions' => [],
                 ];
             }
             $byWarehouseMap[$wid]['amount'] += $row['amount'];
-            $byWarehouseMap[$wid]['sources']['do_gsr'] += $row['sources']['do_gsr'];
-            $byWarehouseMap[$wid]['sources']['rws'] += $row['sources']['rws'];
-            $byWarehouseMap[$wid]['sources']['warehouse_sales'] += $row['sources']['warehouse_sales'];
+            foreach ($sourceKeys as $k) {
+                $byWarehouseMap[$wid]['sources'][$k] += $row['sources'][$k];
+            }
             $byWarehouseMap[$wid]['divisions'][] = [
                 'division_id' => $row['division_id'],
                 'division_name' => $row['division_name'],
@@ -2442,35 +2599,62 @@ class WarehouseDashboardOpsService
         usort($byWarehouse, fn ($a, $b) => $b['amount'] <=> $a['amount']);
         foreach ($byWarehouse as &$wh) {
             $wh['amount'] = round($wh['amount'], 2);
-            $wh['sources']['do_gsr'] = round($wh['sources']['do_gsr'], 2);
-            $wh['sources']['rws'] = round($wh['sources']['rws'], 2);
-            $wh['sources']['warehouse_sales'] = round($wh['sources']['warehouse_sales'], 2);
+            foreach ($sourceKeys as $k) {
+                $wh['sources'][$k] = round((float) $wh['sources'][$k], 2);
+            }
         }
         unset($wh);
 
-        $sourceTotals = [
-            'do_gsr' => 0.0,
-            'rws' => 0.0,
-            'warehouse_sales' => 0.0,
-        ];
+        $sourceTotals = [];
+        foreach ($sourceKeys as $k) {
+            $sourceTotals[$k] = 0.0;
+        }
         foreach ($byWarehouse as $wh) {
-            $sourceTotals['do_gsr'] += $wh['sources']['do_gsr'];
-            $sourceTotals['rws'] += $wh['sources']['rws'];
-            $sourceTotals['warehouse_sales'] += $wh['sources']['warehouse_sales'];
+            foreach ($sourceKeys as $k) {
+                $sourceTotals[$k] += $wh['sources'][$k];
+            }
         }
 
-        $total = array_sum($sourceTotals);
+        $bySource = [];
+        foreach ($sourceLabels as $key => $label) {
+            $bySource[] = [
+                'key' => $key,
+                'label' => $label,
+                'amount' => round($sourceTotals[$key], 2),
+            ];
+        }
 
         return [
-            'total' => round($total, 2),
-            'by_source' => [
-                ['key' => 'do_gsr', 'label' => 'DO (sudah GSR)', 'amount' => round($sourceTotals['do_gsr'], 2)],
-                ['key' => 'rws', 'label' => 'RWS', 'amount' => round($sourceTotals['rws'], 2)],
-                ['key' => 'warehouse_sales', 'label' => 'Penjualan Antar Gudang', 'amount' => round($sourceTotals['warehouse_sales'], 2)],
-            ],
+            'total' => round(array_sum($sourceTotals), 2),
+            'by_source' => $bySource,
             'by_warehouse' => $byWarehouse,
             'by_division' => $byDivision,
         ];
+    }
+
+    /**
+     * SQL: qty GR dikonversi ke unit PO × harga PO.
+     * Alias wajib: gi, it, poi
+     */
+    private function sqlGrPoLineAmount(): string
+    {
+        return "
+            (
+              CASE
+                WHEN gi.unit_id = it.small_unit_id THEN gi.qty_received
+                WHEN gi.unit_id = it.medium_unit_id THEN gi.qty_received * COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN gi.unit_id = it.large_unit_id THEN gi.qty_received * COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE gi.qty_received
+              END
+            ) / (
+              CASE
+                WHEN poi.unit_id = it.small_unit_id THEN 1
+                WHEN poi.unit_id = it.medium_unit_id THEN COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN poi.unit_id = it.large_unit_id THEN COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE 1
+              END
+            ) * COALESCE(poi.price, 0)
+        ";
     }
 
     /**
@@ -2495,6 +2679,40 @@ class WarehouseDashboardOpsService
             'by_status' => $byStatus,
             'note' => $note,
         ];
+    }
+
+    /**
+     * SQL: qty GSR dikonversi ke unit FO, lalu × harga FO.
+     * Alias wajib: si, it, ffoi, us, um, ul
+     */
+    private function sqlGsrFoLineAmount(): string
+    {
+        return '(' . $this->sqlGsrQtyInFoUnit() . ') * COALESCE(ffoi.price, 0)';
+    }
+
+    /**
+     * SQL: qty GSR → unit FO (via satuan kecil).
+     * Alias wajib: si, it, ffoi, us, um, ul
+     */
+    private function sqlGsrQtyInFoUnit(): string
+    {
+        return "
+            (
+              CASE
+                WHEN si.unit_id = it.small_unit_id THEN si.qty
+                WHEN si.unit_id = it.medium_unit_id THEN si.qty * COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN si.unit_id = it.large_unit_id THEN si.qty * COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE si.qty
+              END
+            ) / (
+              CASE
+                WHEN LOWER(TRIM(COALESCE(ffoi.unit, ''))) = LOWER(TRIM(COALESCE(us.name, ''))) THEN 1
+                WHEN LOWER(TRIM(COALESCE(ffoi.unit, ''))) = LOWER(TRIM(COALESCE(um.name, ''))) THEN COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN LOWER(TRIM(COALESCE(ffoi.unit, ''))) = LOWER(TRIM(COALESCE(ul.name, ''))) THEN COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE 1
+              END
+            )
+        ";
     }
 
     /**
