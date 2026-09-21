@@ -409,9 +409,11 @@ class WarehouseDashboardOpsService
             "SELECT
                 i.name as item_name,
                 i.sku as item_code,
+                i.small_conversion_qty,
                 ti.quantity,
                 ti.qty_small,
                 un.name as unit_name,
+                un_small.name as small_unit_name,
                 ti.note,
                 ti.notes,
                 COALESCE(
@@ -432,6 +434,7 @@ class WarehouseDashboardOpsService
             FROM warehouse_transfer_items ti
             LEFT JOIN items i ON i.id = ti.item_id
             LEFT JOIN units un ON un.id = ti.unit_id
+            LEFT JOIN units un_small ON un_small.id = i.small_unit_id
             LEFT JOIN food_inventory_items fii ON fii.item_id = ti.item_id
             LEFT JOIN food_inventory_stocks st_from
                 ON st_from.inventory_item_id = fii.id
@@ -448,21 +451,32 @@ class WarehouseDashboardOpsService
         $grand = 0.0;
         $hasAmount = false;
         foreach ($rows as $r) {
-            $qty = (float) ($r->quantity ?? $r->qty_small ?? 0);
-            $qtySmall = (float) ($r->qty_small ?? $qty);
+            $qtySmall = (float) ($r->qty_small ?? $r->quantity ?? 0);
+            // Tampilkan qty_small + satuan kecil agar selaras dengan cost/subtotal
+            // (kolom quantity sering tersimpan angka input user, unit_id dipaksa small → "10 Gram" padahal 10kg)
+            $qty = $qtySmall;
+            $unitLabel = $r->small_unit_name ?: ($r->unit_name ?? '-');
             $rawCost = $r->unit_cost !== null ? (float) $r->unit_cost : null;
             $cost = $rawCost;
             $costNote = null;
 
-            // Cost history transfer sering menyimpan MAC rusak (sebelum repair).
-            // Untuk dashboard health: jika historis absurd, tampilkan cost stok saat ini.
-            $stockCost = null;
-            if ($r->st_from_cost !== null || $r->st_to_cost !== null) {
-                $from = $r->st_from_cost !== null ? (float) $r->st_from_cost : null;
-                $to = $r->st_to_cost !== null ? (float) $r->st_to_cost : null;
-                $stockCost = $from !== null && $from > 0 ? $from : $to;
-            }
-            if ($rawCost !== null && $rawCost > \App\Support\FoodInventoryCostGuard::MAX_SANE_COST_SMALL) {
+            $from = $r->st_from_cost !== null ? (float) $r->st_from_cost : null;
+            $to = $r->st_to_cost !== null ? (float) $r->st_to_cost : null;
+            // Ambil cost stok paling masuk akal (lebih rendah & >0)
+            $stockCandidates = array_values(array_filter(
+                [$from, $to],
+                fn ($c) => $c !== null && $c > 0
+            ));
+            sort($stockCandidates);
+            $stockCost = $stockCandidates[0] ?? null;
+
+            // Sanitasi: historis jauh di atas stok saat ini (bukan hanya threshold absolut)
+            if ($rawCost !== null && $stockCost !== null && $stockCost > 0 && $rawCost > $stockCost * 2) {
+                $cost = $stockCost;
+                $costNote = 'Cost transaksi historis tidak wajar (Rp '
+                    . number_format($rawCost, 0, ',', '.')
+                    . '/unit); ditampilkan cost stok saat ini.';
+            } elseif ($rawCost !== null && $rawCost > \App\Support\FoodInventoryCostGuard::MAX_SANE_COST_SMALL) {
                 if ($stockCost !== null && $stockCost > 0 && $stockCost < $rawCost * 0.5) {
                     $cost = $stockCost;
                     $costNote = 'Cost transaksi historis tidak wajar (Rp '
@@ -480,7 +494,7 @@ class WarehouseDashboardOpsService
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
                 'qty' => $qty,
-                'unit' => $r->unit_name ?? '-',
+                'unit' => $unitLabel,
                 'price' => $cost,
                 'subtotal' => $subtotal,
                 'note' => $r->note ?? $r->notes,
