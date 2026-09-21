@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\WarehouseDashboardOpsService;
 use App\Services\WarehouseMacAnomalyDetectionService;
 use App\Support\MacAnomalyHistoryCutoff;
 use Carbon\Carbon;
@@ -13,6 +14,7 @@ class WarehouseCostHealthDashboardController extends Controller
 {
     public function __construct(
         private WarehouseMacAnomalyDetectionService $anomalyDetection,
+        private WarehouseDashboardOpsService $opsService,
     ) {}
 
     public function index()
@@ -22,13 +24,14 @@ class WarehouseCostHealthDashboardController extends Controller
             ->orderBy('name')
             ->get();
 
+        $period = WarehouseDashboardOpsService::resolvePeriod(Carbon::now()->format('Y-m'));
+
         return Inertia::render('WarehouseCostHealthDashboard/Index', [
             'warehouses' => $warehouses,
             'historyCutoffDate' => MacAnomalyHistoryCutoff::DATE,
             'defaultFilters' => [
                 'warehouse_id' => null,
-                'date_from' => Carbon::now()->subDays(30)->format('Y-m-d'),
-                'date_to' => Carbon::now()->format('Y-m-d'),
+                'period' => $period['month'],
                 'max_mac' => 10_000_000,
             ],
             'shortcuts' => $this->shortcutCatalog(),
@@ -39,6 +42,7 @@ class WarehouseCostHealthDashboardController extends Controller
     {
         $validated = $request->validate([
             'warehouse_id' => ['nullable', 'integer'],
+            'period' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
             'date_from' => ['nullable', 'date'],
             'date_to' => ['nullable', 'date', 'after_or_equal:date_from'],
             'min_spike_percent' => ['nullable', 'numeric', 'min:0'],
@@ -47,11 +51,27 @@ class WarehouseCostHealthDashboardController extends Controller
         ]);
 
         try {
-            $result = $this->anomalyDetection->dashboardSnapshot($validated);
+            $periodMeta = WarehouseDashboardOpsService::resolvePeriod($validated['period'] ?? null);
+            $dateFrom = $validated['date_from'] ?? $periodMeta['date_from'];
+            $dateTo = $validated['date_to'] ?? $periodMeta['date_to'];
+            $warehouseId = (int) ($validated['warehouse_id'] ?? 0);
+
+            $cost = $this->anomalyDetection->dashboardSnapshot([
+                'warehouse_id' => $warehouseId ?: null,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'min_spike_percent' => $validated['min_spike_percent'] ?? null,
+                'spike_multiplier' => $validated['spike_multiplier'] ?? null,
+                'max_mac' => $validated['max_mac'] ?? null,
+            ]);
+
+            $transactions = $this->opsService->build($dateFrom, $dateTo, $warehouseId);
 
             return response()->json([
                 'status' => 'success',
-                ...$result,
+                'period' => $periodMeta,
+                ...$cost,
+                'transactions' => $transactions,
             ]);
         } catch (\Throwable $e) {
             report($e);
