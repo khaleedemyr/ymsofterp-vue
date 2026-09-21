@@ -114,6 +114,60 @@
             </button>
           </div>
 
+          <!-- Revenue: DO GSR + RWS + Penjualan Antar Gudang -->
+          <div v-if="revenue?.total != null" class="mb-6">
+            <div class="mb-2 flex items-center justify-between gap-3 flex-wrap">
+              <h2 class="text-lg font-semibold text-gray-800">Revenue warehouse</h2>
+              <span class="text-sm text-emerald-700 font-semibold">Total: {{ formatCurrency(revenue.total) }}</span>
+            </div>
+            <p class="text-xs text-slate-500 mb-3">
+              Sumber: DO sudah GSR (harga FO × qty diterima) · RWS · Penjualan Antar Gudang
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+              <div
+                v-for="src in (revenue.by_source || [])"
+                :key="src.key"
+                class="bg-white rounded-lg border p-3"
+              >
+                <p class="text-xs text-slate-500">{{ src.label }}</p>
+                <p class="text-lg font-bold text-slate-900 mt-0.5 tabular-nums">{{ formatCurrency(src.amount) }}</p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              <div
+                v-for="wh in (revenue.by_warehouse || [])"
+                :key="'wh-' + wh.warehouse_id"
+                class="bg-white rounded-lg shadow-sm border p-4"
+              >
+                <div class="flex items-start justify-between gap-2 mb-2">
+                  <div>
+                    <p class="text-xs font-medium text-slate-500">Warehouse</p>
+                    <p class="text-sm font-semibold text-slate-900">{{ wh.warehouse_name }}</p>
+                  </div>
+                  <p class="text-sm font-bold text-emerald-700 tabular-nums">{{ formatCurrency(wh.amount) }}</p>
+                </div>
+                <div class="space-y-1.5 border-t border-slate-100 pt-2">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold">Per division</p>
+                  <div
+                    v-for="div in (wh.divisions || [])"
+                    :key="(div.division_id || 'x') + '-' + div.division_name"
+                    class="flex justify-between gap-2 text-xs"
+                  >
+                    <span class="text-slate-600 truncate">{{ div.division_name }}</span>
+                    <span class="tabular-nums text-slate-800 shrink-0 font-medium">{{ formatCurrency(div.amount) }}</span>
+                  </div>
+                </div>
+                <div class="mt-2 pt-2 border-t border-slate-50 grid grid-cols-3 gap-1 text-[10px] text-slate-400">
+                  <span>DO {{ formatCurrency(wh.sources?.do_gsr || 0) }}</span>
+                  <span>RWS {{ formatCurrency(wh.sources?.rws || 0) }}</span>
+                  <span>WHS {{ formatCurrency(wh.sources?.warehouse_sales || 0) }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Cost health KPIs -->
           <h2 class="text-lg font-semibold text-gray-800 mb-2">Kesehatan cost / MAC</h2>
           <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
@@ -638,7 +692,8 @@ const topWarehouses = ref([]);
 const topItems = ref([]);
 const summary = ref(null);
 const periodMeta = ref(null);
-const transactions = ref({ summary: [], recent: [], daily: [], total_transactions: 0 });
+const transactions = ref({ summary: [], recent: [], daily: [], total_transactions: 0, revenue: null });
+const revenue = computed(() => transactions.value?.revenue || null);
 
 const modalOpen = ref(false);
 const modalLoading = ref(false);
@@ -839,14 +894,14 @@ const loadSnapshot = async () => {
     topItems.value = data.top_items || [];
     summary.value = data.summary || null;
     periodMeta.value = data.period || null;
-    transactions.value = data.transactions || { summary: [], recent: [], daily: [], total_transactions: 0 };
+    transactions.value = data.transactions || { summary: [], recent: [], daily: [], total_transactions: 0, revenue: null };
   } catch (e) {
     error.value = e.response?.data?.message || e.message || 'Gagal memuat snapshot';
     kpis.value = {};
     moduleBreakdown.value = [];
     topWarehouses.value = [];
     topItems.value = [];
-    transactions.value = { summary: [], recent: [], daily: [], total_transactions: 0 };
+    transactions.value = { summary: [], recent: [], daily: [], total_transactions: 0, revenue: null };
   } finally {
     loading.value = false;
   }

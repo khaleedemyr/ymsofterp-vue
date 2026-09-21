@@ -57,11 +57,13 @@ class WarehouseDashboardOpsService
 
         $recent = $this->recentTransactions($dateFrom, $dateTo, $warehouseId, 20);
         $daily = $this->dailyCounts($dateFrom, $dateTo, $warehouseId);
+        $revenue = $this->buildRevenue($dateFrom, $dateTo, $warehouseId);
 
         return [
             'summary' => $summary,
             'recent' => $recent,
             'daily' => $daily,
+            'revenue' => $revenue,
             'total_transactions' => array_sum(array_column($summary, 'count')),
         ];
     }
@@ -101,7 +103,7 @@ class WarehouseDashboardOpsService
             'warehouse_stock_opname' => ['title' => 'Stock Opname', 'list_route' => '/warehouse-stock-opnames'],
             'internal_use_waste' => ['title' => 'Pemakaian Internal & Waste', 'list_route' => '/internal-use-waste'],
             'warehouse_sales' => ['title' => 'Penjualan Antar Gudang', 'list_route' => '/warehouse-sales'],
-            'outlet_rejection' => ['title' => 'Penolakan Outlet', 'list_route' => '/outlet-rejections'],
+            'outlet_rejection' => ['title' => 'Outlet Rejection', 'list_route' => '/outlet-rejections'],
             default => throw new \InvalidArgumentException('Tipe transaksi tidak dikenal: ' . $type),
         };
 
@@ -1238,7 +1240,7 @@ class WarehouseDashboardOpsService
 
         return [
             'header' => [
-                'type' => 'Penolakan Outlet',
+                'type' => 'Outlet Rejection',
                 'number' => $h->number,
                 'date' => $h->date,
                 'status' => $h->status,
@@ -2285,7 +2287,190 @@ class WarehouseDashboardOpsService
             ->pluck('cnt', 'status')
             ->all();
 
-        return $this->card('outlet_rejection', 'Penolakan Outlet', $count, '/outlet-rejections', 'fas fa-undo', $byStatus);
+        return $this->card('outlet_rejection', 'Outlet Rejection', $count, '/outlet-rejections', 'fas fa-undo', $byStatus);
+    }
+
+    /**
+     * Revenue warehouse: DO yang sudah GSR + RWS + Penjualan Antar Gudang.
+     * Dipecah per warehouse dan per warehouse division.
+     *
+     * @return array<string, mixed>
+     */
+    private function buildRevenue(string $from, string $to, int $warehouseId): array
+    {
+        $whFilterDo = $warehouseId > 0
+            ? ' AND COALESCE(pl.warehouse_id, src.warehouse_id) = ' . (int) $warehouseId
+            : '';
+        $whFilterRws = $warehouseId > 0 ? ' AND r.warehouse_id = ' . (int) $warehouseId : '';
+        $whFilterWhs = $warehouseId > 0 ? ' AND s.source_warehouse_id = ' . (int) $warehouseId : '';
+
+        // DO sudah diterima outlet (GSR): FO price × qty GSR
+        $doRows = DB::select(
+            "SELECT
+                COALESCE(w.id, w2.id) as warehouse_id,
+                COALESCE(w.name, w2.name, 'Unknown') as warehouse_name,
+                wd.id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                SUM(si.qty * COALESCE(ffoi.price, 0)) as amount
+             FROM outlet_serial_receive_items si
+             JOIN outlet_serial_receive_headers gsr
+               ON gsr.id = si.header_id AND gsr.deleted_at IS NULL
+             JOIN delivery_orders do2 ON do2.id = si.delivery_order_id
+             LEFT JOIN packing_lists pl ON pl.id = do2.packing_list_id
+             LEFT JOIN warehouses w ON w.id = pl.warehouse_id
+             LEFT JOIN food_floor_order_items ffoi
+               ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
+             LEFT JOIN items it ON it.id = si.item_id
+             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
+             LEFT JOIN (
+                SELECT c.reference_id as do_id, MIN(c.warehouse_id) as warehouse_id
+                FROM food_inventory_cards c
+                WHERE c.reference_type = 'delivery_order'
+                GROUP BY c.reference_id
+             ) src ON src.do_id = do2.id
+             LEFT JOIN warehouses w2 ON w2.id = src.warehouse_id
+             WHERE gsr.receive_date BETWEEN ? AND ?
+               {$whFilterDo}
+             GROUP BY COALESCE(w.id, w2.id), COALESCE(w.name, w2.name, 'Unknown'), wd.id, COALESCE(wd.name, 'Tanpa Division')",
+            [$from, $to]
+        );
+
+        $rwsRows = DB::select(
+            "SELECT
+                r.warehouse_id,
+                COALESCE(w.name, 'Unknown') as warehouse_name,
+                r.warehouse_division_id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                SUM(r.total_amount) as amount
+             FROM retail_warehouse_sales r
+             LEFT JOIN warehouses w ON w.id = r.warehouse_id
+             LEFT JOIN warehouse_division wd ON wd.id = r.warehouse_division_id
+             WHERE r.sale_date BETWEEN ? AND ?
+               {$whFilterRws}
+             GROUP BY r.warehouse_id, w.name, r.warehouse_division_id, wd.name",
+            [$from, $to]
+        );
+
+        $whsRows = DB::select(
+            "SELECT
+                s.source_warehouse_id as warehouse_id,
+                COALESCE(w.name, 'Unknown') as warehouse_name,
+                it.warehouse_division_id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                SUM(si.total) as amount
+             FROM warehouse_sales s
+             JOIN warehouse_sale_items si
+               ON si.warehouse_sale_id = s.id AND si.deleted_at IS NULL
+             LEFT JOIN warehouses w ON w.id = s.source_warehouse_id
+             LEFT JOIN items it ON it.id = si.item_id
+             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
+             WHERE s.deleted_at IS NULL
+               AND s.date BETWEEN ? AND ?
+               {$whFilterWhs}
+             GROUP BY s.source_warehouse_id, w.name, it.warehouse_division_id, wd.name",
+            [$from, $to]
+        );
+
+        $bucket = []; // key = whId|divId
+        $add = function (string $source, $rows) use (&$bucket) {
+            foreach ($rows as $r) {
+                $whId = (int) ($r->warehouse_id ?? 0);
+                $divId = (int) ($r->division_id ?? 0);
+                $key = $whId . '|' . $divId;
+                if (!isset($bucket[$key])) {
+                    $bucket[$key] = [
+                        'warehouse_id' => $whId,
+                        'warehouse_name' => (string) ($r->warehouse_name ?? 'Unknown'),
+                        'division_id' => $divId ?: null,
+                        'division_name' => (string) ($r->division_name ?? 'Tanpa Division'),
+                        'amount' => 0.0,
+                        'sources' => [
+                            'do_gsr' => 0.0,
+                            'rws' => 0.0,
+                            'warehouse_sales' => 0.0,
+                        ],
+                    ];
+                }
+                $amt = (float) ($r->amount ?? 0);
+                $bucket[$key]['amount'] += $amt;
+                $bucket[$key]['sources'][$source] += $amt;
+            }
+        };
+
+        $add('do_gsr', $doRows);
+        $add('rws', $rwsRows);
+        $add('warehouse_sales', $whsRows);
+
+        $byDivision = array_values($bucket);
+        usort($byDivision, fn ($a, $b) => $b['amount'] <=> $a['amount']);
+        foreach ($byDivision as &$row) {
+            $row['amount'] = round($row['amount'], 2);
+            $row['sources']['do_gsr'] = round($row['sources']['do_gsr'], 2);
+            $row['sources']['rws'] = round($row['sources']['rws'], 2);
+            $row['sources']['warehouse_sales'] = round($row['sources']['warehouse_sales'], 2);
+        }
+        unset($row);
+
+        $byWarehouseMap = [];
+        foreach ($byDivision as $row) {
+            $wid = $row['warehouse_id'];
+            if (!isset($byWarehouseMap[$wid])) {
+                $byWarehouseMap[$wid] = [
+                    'warehouse_id' => $wid,
+                    'warehouse_name' => $row['warehouse_name'],
+                    'amount' => 0.0,
+                    'sources' => [
+                        'do_gsr' => 0.0,
+                        'rws' => 0.0,
+                        'warehouse_sales' => 0.0,
+                    ],
+                    'divisions' => [],
+                ];
+            }
+            $byWarehouseMap[$wid]['amount'] += $row['amount'];
+            $byWarehouseMap[$wid]['sources']['do_gsr'] += $row['sources']['do_gsr'];
+            $byWarehouseMap[$wid]['sources']['rws'] += $row['sources']['rws'];
+            $byWarehouseMap[$wid]['sources']['warehouse_sales'] += $row['sources']['warehouse_sales'];
+            $byWarehouseMap[$wid]['divisions'][] = [
+                'division_id' => $row['division_id'],
+                'division_name' => $row['division_name'],
+                'amount' => $row['amount'],
+                'sources' => $row['sources'],
+            ];
+        }
+        $byWarehouse = array_values($byWarehouseMap);
+        usort($byWarehouse, fn ($a, $b) => $b['amount'] <=> $a['amount']);
+        foreach ($byWarehouse as &$wh) {
+            $wh['amount'] = round($wh['amount'], 2);
+            $wh['sources']['do_gsr'] = round($wh['sources']['do_gsr'], 2);
+            $wh['sources']['rws'] = round($wh['sources']['rws'], 2);
+            $wh['sources']['warehouse_sales'] = round($wh['sources']['warehouse_sales'], 2);
+        }
+        unset($wh);
+
+        $sourceTotals = [
+            'do_gsr' => 0.0,
+            'rws' => 0.0,
+            'warehouse_sales' => 0.0,
+        ];
+        foreach ($byWarehouse as $wh) {
+            $sourceTotals['do_gsr'] += $wh['sources']['do_gsr'];
+            $sourceTotals['rws'] += $wh['sources']['rws'];
+            $sourceTotals['warehouse_sales'] += $wh['sources']['warehouse_sales'];
+        }
+
+        $total = array_sum($sourceTotals);
+
+        return [
+            'total' => round($total, 2),
+            'by_source' => [
+                ['key' => 'do_gsr', 'label' => 'DO (sudah GSR)', 'amount' => round($sourceTotals['do_gsr'], 2)],
+                ['key' => 'rws', 'label' => 'RWS', 'amount' => round($sourceTotals['rws'], 2)],
+                ['key' => 'warehouse_sales', 'label' => 'Penjualan Antar Gudang', 'amount' => round($sourceTotals['warehouse_sales'], 2)],
+            ],
+            'by_warehouse' => $byWarehouse,
+            'by_division' => $byDivision,
+        ];
     }
 
     /**
@@ -2582,7 +2767,7 @@ class WarehouseDashboardOpsService
             ->get(['r.id', 'r.number', 'r.rejection_date as txn_date', 'r.status', 'w.name as warehouse_name']);
         foreach ($rejQ as $r) {
             $rows[] = [
-                'type' => 'Penolakan Outlet',
+                'type' => 'Outlet Rejection',
                 'type_key' => 'outlet_rejection',
                 'number' => $r->number,
                 'date' => $r->txn_date,

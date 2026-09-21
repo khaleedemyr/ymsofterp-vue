@@ -252,7 +252,7 @@ export default {
     "laporan_aging_persediaan": "Laporan Aging Persediaan",
     "internal_use_waste": "Pemakaian Internal & Waste",
     "penjualan_antar_gudang": "Penjualan Antar Gudang",
-    "outlet_rejection": "Penolakan Outlet",
+    "outlet_rejection": "Outlet Rejection",
     "kelola_return_outlet": "Kelola Retur Outlet",
     "laporan_perubahan_harga_po": "Laporan Perubahan Harga PO",
     "mac_report": "Laporan MAC",
