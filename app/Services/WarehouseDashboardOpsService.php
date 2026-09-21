@@ -2319,12 +2319,13 @@ class WarehouseDashboardOpsService
     private function buildRevenue(string $from, string $to, int $warehouseId): array
     {
         $whFilterDo = $warehouseId > 0
-            ? ' AND COALESCE(pl.warehouse_id, src.warehouse_id) = ' . (int) $warehouseId
+            ? ' AND COALESCE(w.id, w2.id) = ' . (int) $warehouseId
             : '';
         $whFilterRws = $warehouseId > 0 ? ' AND r.warehouse_id = ' . (int) $warehouseId : '';
         $whFilterWhs = $warehouseId > 0 ? ' AND s.source_warehouse_id = ' . (int) $warehouseId : '';
 
         // DO sudah diterima outlet (GSR): FO price × qty GSR (qty dikonversi ke unit FO)
+        // Division dari transaksi Packing List (food_packing_lists.warehouse_division_id), bukan master item.
         $lineAmt = $this->sqlGsrFoLineAmount();
         $doRows = DB::select(
             "SELECT
@@ -2337,15 +2338,16 @@ class WarehouseDashboardOpsService
              JOIN outlet_serial_receive_headers gsr
                ON gsr.id = si.header_id AND gsr.deleted_at IS NULL
              JOIN delivery_orders do2 ON do2.id = si.delivery_order_id
-             LEFT JOIN packing_lists pl ON pl.id = do2.packing_list_id
-             LEFT JOIN warehouses w ON w.id = pl.warehouse_id
+             LEFT JOIN food_packing_lists fpl
+               ON fpl.id = do2.packing_list_id AND do2.packing_list_id > 0
+             LEFT JOIN warehouse_division wd ON wd.id = fpl.warehouse_division_id
+             LEFT JOIN warehouses w ON w.id = wd.warehouse_id
              LEFT JOIN food_floor_order_items ffoi
                ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
              LEFT JOIN items it ON it.id = si.item_id
              LEFT JOIN units us ON us.id = it.small_unit_id
              LEFT JOIN units um ON um.id = it.medium_unit_id
              LEFT JOIN units ul ON ul.id = it.large_unit_id
-             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
              LEFT JOIN (
                 SELECT c.reference_id as do_id, MIN(c.warehouse_id) as warehouse_id
                 FROM food_inventory_cards c
@@ -2355,15 +2357,20 @@ class WarehouseDashboardOpsService
              LEFT JOIN warehouses w2 ON w2.id = src.warehouse_id
              WHERE gsr.receive_date BETWEEN ? AND ?
                {$whFilterDo}
-             GROUP BY COALESCE(w.id, w2.id), COALESCE(w.name, w2.name, 'Unknown'), wd.id, COALESCE(wd.name, 'Tanpa Division')",
+             GROUP BY
+                COALESCE(w.id, w2.id),
+                COALESCE(w.name, w2.name, 'Unknown'),
+                wd.id,
+                COALESCE(wd.name, 'Tanpa Division')",
             [$from, $to]
         );
 
+        // RWS: division dari pilihan di header RWS (r.warehouse_division_id)
         $rwsRows = DB::select(
             "SELECT
                 r.warehouse_id,
                 COALESCE(w.name, 'Unknown') as warehouse_name,
-                r.warehouse_division_id as division_id,
+                wd.id as division_id,
                 COALESCE(wd.name, 'Tanpa Division') as division_name,
                 SUM(r.total_amount) as amount
              FROM retail_warehouse_sales r
@@ -2371,27 +2378,32 @@ class WarehouseDashboardOpsService
              LEFT JOIN warehouse_division wd ON wd.id = r.warehouse_division_id
              WHERE r.sale_date BETWEEN ? AND ?
                {$whFilterRws}
-             GROUP BY r.warehouse_id, w.name, r.warehouse_division_id, wd.name",
+             GROUP BY
+                r.warehouse_id,
+                w.name,
+                wd.id,
+                COALESCE(wd.name, 'Tanpa Division')",
             [$from, $to]
         );
 
+        // WHS: tidak ada pilihan division di transaksi → Tanpa Division
         $whsRows = DB::select(
             "SELECT
                 s.source_warehouse_id as warehouse_id,
                 COALESCE(w.name, 'Unknown') as warehouse_name,
-                it.warehouse_division_id as division_id,
-                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                NULL as division_id,
+                'Tanpa Division' as division_name,
                 SUM(si.total) as amount
              FROM warehouse_sales s
              JOIN warehouse_sale_items si
                ON si.warehouse_sale_id = s.id AND si.deleted_at IS NULL
              LEFT JOIN warehouses w ON w.id = s.source_warehouse_id
-             LEFT JOIN items it ON it.id = si.item_id
-             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
              WHERE s.deleted_at IS NULL
                AND s.date BETWEEN ? AND ?
                {$whFilterWhs}
-             GROUP BY s.source_warehouse_id, w.name, it.warehouse_division_id, wd.name",
+             GROUP BY
+                s.source_warehouse_id,
+                w.name",
             [$from, $to]
         );
 
@@ -2451,8 +2463,14 @@ class WarehouseDashboardOpsService
             "SELECT
                 COALESCE(w.id, w2.id) as warehouse_id,
                 COALESCE(w.name, w2.name, 'Unknown') as warehouse_name,
-                wd.id as division_id,
-                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.id
+                    ELSE NULL
+                END as division_id,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.name
+                    ELSE 'Tanpa Division'
+                END as division_name,
                 SUM({$grLineAmt}) as amount
              FROM food_good_receive_items gi
              JOIN food_good_receives g ON g.id = gi.good_receive_id
@@ -2471,7 +2489,17 @@ class WarehouseDashboardOpsService
              LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
              WHERE g.receive_date BETWEEN ? AND ?
                {$whFilterGr}
-             GROUP BY COALESCE(w.id, w2.id), COALESCE(w.name, w2.name, 'Unknown'), wd.id, COALESCE(wd.name, 'Tanpa Division')",
+             GROUP BY
+                COALESCE(w.id, w2.id),
+                COALESCE(w.name, w2.name, 'Unknown'),
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.id
+                    ELSE NULL
+                END,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.name
+                    ELSE 'Tanpa Division'
+                END",
             [$from, $to]
         );
 
@@ -2479,8 +2507,14 @@ class WarehouseDashboardOpsService
             "SELECT
                 r.warehouse_id,
                 COALESCE(w.name, 'Unknown') as warehouse_name,
-                r.warehouse_division_id as division_id,
-                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.id
+                    ELSE NULL
+                END as division_id,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.name
+                    ELSE 'Tanpa Division'
+                END as division_name,
                 SUM(r.total_amount) as amount
              FROM retail_warehouse_food r
              LEFT JOIN warehouses w ON w.id = r.warehouse_id
@@ -2488,7 +2522,17 @@ class WarehouseDashboardOpsService
              WHERE r.deleted_at IS NULL
                AND r.transaction_date BETWEEN ? AND ?
                {$whFilterRwf}
-             GROUP BY r.warehouse_id, w.name, r.warehouse_division_id, wd.name",
+             GROUP BY
+                r.warehouse_id,
+                w.name,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.id
+                    ELSE NULL
+                END,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.name
+                    ELSE 'Tanpa Division'
+                END",
             [$from, $to]
         );
 
@@ -2497,8 +2541,14 @@ class WarehouseDashboardOpsService
             "SELECT
                 s.target_warehouse_id as warehouse_id,
                 COALESCE(w.name, 'Unknown') as warehouse_name,
-                it.warehouse_division_id as division_id,
-                COALESCE(wd.name, 'Tanpa Division') as division_name,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.id
+                    ELSE NULL
+                END as division_id,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.name
+                    ELSE 'Tanpa Division'
+                END as division_name,
                 SUM(si.total) as amount
              FROM warehouse_sales s
              JOIN warehouse_sale_items si
@@ -2509,7 +2559,17 @@ class WarehouseDashboardOpsService
              WHERE s.deleted_at IS NULL
                AND s.date BETWEEN ? AND ?
                {$whFilterWhs}
-             GROUP BY s.target_warehouse_id, w.name, it.warehouse_division_id, wd.name",
+             GROUP BY
+                s.target_warehouse_id,
+                w.name,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.id
+                    ELSE NULL
+                END,
+                CASE
+                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.name
+                    ELSE 'Tanpa Division'
+                END",
             [$from, $to]
         );
 

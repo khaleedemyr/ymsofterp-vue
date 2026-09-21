@@ -121,7 +121,8 @@
               <span class="text-sm text-emerald-700 font-semibold">Total: {{ formatCurrency(revenue.total) }}</span>
             </div>
             <p class="text-xs text-slate-500 mb-3">
-              Sumber: DO sudah GSR (harga FO × qty diterima, disamakan unit) · RWS · Penjualan Antar Gudang
+              Sumber: DO sudah GSR (harga FO × qty diterima, disamakan unit) · RWS · Penjualan Antar Gudang (gudang sumber).
+              Division dari transaksi: Packing List / pilihan RWS — bukan dari master barang. “Tanpa Division” = transaksi tanpa division (mis. DO tanpa PL, WHS).
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
@@ -175,7 +176,8 @@
               <span class="text-sm text-sky-700 font-semibold">Total: {{ formatCurrency(purchase.total) }}</span>
             </div>
             <p class="text-xs text-slate-500 mb-3">
-              Sumber: PO sudah GR (harga PO × qty GR, disamakan unit) · Warehouse Retail Food · Penjualan Antar Gudang (gudang penerima)
+              Sumber: PO sudah GR (harga PO × qty GR, disamakan unit) · Warehouse Retail Food · Penjualan Antar Gudang (gudang penerima).
+              Division mengikuti master per warehouse (Main Store = Perishable/Dry Store saja).
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
