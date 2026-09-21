@@ -83,6 +83,49 @@ class WarehouseCostHealthDashboardController extends Controller
         }
     }
 
+    public function transactions(Request $request)
+    {
+        $validated = $request->validate([
+            'type' => ['required', 'string'],
+            'warehouse_id' => ['nullable', 'integer'],
+            'period' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+        ]);
+
+        try {
+            $periodMeta = WarehouseDashboardOpsService::resolvePeriod($validated['period'] ?? null);
+            $result = $this->opsService->listTransactions(
+                $validated['type'],
+                $periodMeta['date_from'],
+                $periodMeta['date_to'],
+                (int) ($validated['warehouse_id'] ?? 0),
+                (string) ($validated['search'] ?? ''),
+                (int) ($validated['page'] ?? 1),
+                (int) ($validated['per_page'] ?? 20),
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'period' => $periodMeta,
+                ...$result,
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat daftar transaksi: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     /**
      * @return list<array{label: string, route: string, icon: string, group: string}>
      */

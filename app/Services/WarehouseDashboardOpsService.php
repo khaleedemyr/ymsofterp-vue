@@ -67,6 +67,571 @@ class WarehouseDashboardOpsService
     }
 
     /**
+     * Daftar transaksi paginated untuk modal klik card.
+     *
+     * @return array{
+     *   transactions: list<array<string, mixed>>,
+     *   pagination: array<string, int>,
+     *   title: string,
+     *   list_route: string,
+     * }
+     */
+    public function listTransactions(
+        string $type,
+        string $dateFrom,
+        string $dateTo,
+        int $warehouseId = 0,
+        string $search = '',
+        int $page = 1,
+        int $perPage = 20,
+    ): array {
+        $page = max(1, $page);
+        $perPage = min(100, max(10, $perPage));
+        $search = trim($search);
+
+        $meta = match ($type) {
+            'pr_foods' => ['title' => 'Purchase Requisition', 'list_route' => '/pr-foods'],
+            'food_good_receive' => ['title' => 'Penerimaan Barang', 'list_route' => '/food-good-receive'],
+            'warehouse_transfer' => ['title' => 'Pindah Gudang', 'list_route' => '/warehouse-transfer'],
+            'packing_list' => ['title' => 'Packing List', 'list_route' => '/packing-list'],
+            'delivery_order' => ['title' => 'Delivery Order', 'list_route' => '/delivery-order'],
+            'retail_warehouse_food' => ['title' => 'Warehouse Retail Food', 'list_route' => '/retail-warehouse-food'],
+            'retail_warehouse_sale' => ['title' => 'Penjualan Warehouse Retail', 'list_route' => '/retail-warehouse-sale'],
+            'stock_adjustment' => ['title' => 'Penyesuaian Stok', 'list_route' => '/food-inventory-adjustment'],
+            'warehouse_stock_opname' => ['title' => 'Stock Opname', 'list_route' => '/warehouse-stock-opnames'],
+            'internal_use_waste' => ['title' => 'Pemakaian Internal & Sampah', 'list_route' => '/internal-use-waste'],
+            'warehouse_sales' => ['title' => 'Penjualan Antar Gudang', 'list_route' => '/warehouse-sales'],
+            'outlet_rejection' => ['title' => 'Penolakan Outlet', 'list_route' => '/outlet-rejections'],
+            default => throw new \InvalidArgumentException('Tipe transaksi tidak dikenal: ' . $type),
+        };
+
+        $rows = match ($type) {
+            'pr_foods' => $this->queryPrFoods($dateFrom, $dateTo, $warehouseId, $search),
+            'food_good_receive' => $this->queryGoodReceives($dateFrom, $dateTo, $search),
+            'warehouse_transfer' => $this->queryTransfers($dateFrom, $dateTo, $warehouseId, $search),
+            'packing_list' => $this->queryPackingLists($dateFrom, $dateTo, $warehouseId, $search),
+            'delivery_order' => $this->queryDeliveryOrders($dateFrom, $dateTo, $warehouseId, $search),
+            'retail_warehouse_food' => $this->queryRetailFood($dateFrom, $dateTo, $warehouseId, $search),
+            'retail_warehouse_sale' => $this->queryRetailSales($dateFrom, $dateTo, $warehouseId, $search),
+            'stock_adjustment' => $this->queryAdjustments($dateFrom, $dateTo, $warehouseId, $search),
+            'warehouse_stock_opname' => $this->queryStockOpnames($dateFrom, $dateTo, $warehouseId, $search),
+            'internal_use_waste' => $this->queryInternalUseWaste($dateFrom, $dateTo, $warehouseId, $search),
+            'warehouse_sales' => $this->queryWarehouseSales($dateFrom, $dateTo, $warehouseId, $search),
+            'outlet_rejection' => $this->queryOutletRejections($dateFrom, $dateTo, $warehouseId, $search),
+        };
+
+        $total = $rows->count();
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min($page, $lastPage);
+        $slice = $rows->slice(($page - 1) * $perPage, $perPage)->values()->all();
+
+        return [
+            'title' => $meta['title'],
+            'list_route' => $meta['list_route'],
+            'transactions' => $slice,
+            'pagination' => [
+                'current_page' => $page,
+                'per_page' => $perPage,
+                'total' => $total,
+                'total_pages' => $lastPage,
+            ],
+        ];
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryPrFoods(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('pr_foods as p')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'p.warehouse_id')
+            ->leftJoin('users as u', 'u.id', '=', 'p.requested_by')
+            ->whereBetween('p.tanggal', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('p.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('p.pr_number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('p.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('p.tanggal')
+            ->orderByDesc('p.id')
+            ->get([
+                'p.id',
+                'p.pr_number as number',
+                'p.tanggal as date',
+                'p.status',
+                'w.name as warehouse_name',
+                'u.nama_lengkap as user_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => $r->user_name ?? '—',
+            'amount' => null,
+            'url' => '/pr-foods/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryGoodReceives(string $from, string $to, string $search)
+    {
+        $q = DB::table('food_good_receives as g')
+            ->leftJoin('suppliers as s', 's.id', '=', 'g.supplier_id')
+            ->leftJoin('users as u', 'u.id', '=', 'g.received_by')
+            ->whereBetween('g.receive_date', [$from, $to])
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('g.gr_number', 'like', "%{$search}%")
+                        ->orWhere('s.name', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('g.receive_date')
+            ->orderByDesc('g.id')
+            ->get([
+                'g.id',
+                'g.gr_number as number',
+                'g.receive_date as date',
+                's.name as supplier_name',
+                'u.nama_lengkap as user_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => null,
+            'warehouse_name' => '—',
+            'party' => $r->supplier_name ?? ($r->user_name ?? '—'),
+            'amount' => null,
+            'url' => '/food-good-receive/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryTransfers(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('warehouse_transfers as t')
+            ->leftJoin('warehouses as wf', 'wf.id', '=', 't.warehouse_from_id')
+            ->leftJoin('warehouses as wt', 'wt.id', '=', 't.warehouse_to_id')
+            ->whereBetween('t.transfer_date', [$from, $to])
+            ->when($warehouseId > 0, function ($qq) use ($warehouseId) {
+                $qq->where(function ($q2) use ($warehouseId) {
+                    $q2->where('t.warehouse_from_id', $warehouseId)
+                        ->orWhere('t.warehouse_to_id', $warehouseId);
+                });
+            })
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('t.transfer_number', 'like', "%{$search}%")
+                        ->orWhere('wf.name', 'like', "%{$search}%")
+                        ->orWhere('wt.name', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('t.transfer_date')
+            ->orderByDesc('t.id')
+            ->get([
+                't.id',
+                't.transfer_number as number',
+                't.transfer_date as date',
+                't.transfer_mode as status',
+                DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name,
+            'party' => '—',
+            'amount' => null,
+            'url' => '/warehouse-transfer/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryPackingLists(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('packing_lists as p')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'p.warehouse_id')
+            ->whereDate('p.created_at', '>=', $from)
+            ->whereDate('p.created_at', '<=', $to)
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('p.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('p.pl_number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('p.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('p.created_at')
+            ->orderByDesc('p.id')
+            ->get([
+                'p.id',
+                'p.pl_number as number',
+                DB::raw('DATE(p.created_at) as date'),
+                'p.status',
+                'w.name as warehouse_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => '—',
+            'amount' => null,
+            'url' => '/packing-list/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryDeliveryOrders(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('delivery_orders as do')
+            ->leftJoin('packing_lists as pl', 'pl.id', '=', 'do.packing_list_id')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'pl.warehouse_id')
+            ->whereDate('do.created_at', '>=', $from)
+            ->whereDate('do.created_at', '<=', $to)
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('pl.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('do.number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('pl.pl_number', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('do.created_at')
+            ->orderByDesc('do.id')
+            ->get([
+                'do.id',
+                'do.number',
+                DB::raw('DATE(do.created_at) as date'),
+                'pl.pl_number as pl_number',
+                'w.name as warehouse_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => null,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => $r->pl_number ? ('PL: ' . $r->pl_number) : '—',
+            'amount' => null,
+            'url' => '/delivery-order/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryRetailFood(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('retail_warehouse_food as r')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'r.supplier_id')
+            ->whereNull('r.deleted_at')
+            ->whereBetween('r.transaction_date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('r.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('r.retail_number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('s.name', 'like', "%{$search}%")
+                        ->orWhere('r.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('r.transaction_date')
+            ->orderByDesc('r.id')
+            ->get([
+                'r.id',
+                'r.retail_number as number',
+                'r.transaction_date as date',
+                'r.status',
+                'r.total_amount',
+                'w.name as warehouse_name',
+                's.name as supplier_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => $r->supplier_name ?? '—',
+            'amount' => $r->total_amount !== null ? (float) $r->total_amount : null,
+            'url' => '/retail-warehouse-food/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryRetailSales(string $from, string $to, int $warehouseId, string $search)
+    {
+        if (!Schema::hasTable('retail_warehouse_sales')) {
+            return collect();
+        }
+
+        $q = DB::table('retail_warehouse_sales as r')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->whereBetween('r.sale_date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('r.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('r.number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('r.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('r.sale_date')
+            ->orderByDesc('r.id')
+            ->get([
+                'r.id',
+                'r.number',
+                'r.sale_date as date',
+                'r.status',
+                'r.total_amount',
+                'w.name as warehouse_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => '—',
+            'amount' => $r->total_amount !== null ? (float) $r->total_amount : null,
+            'url' => '/retail-warehouse-sale/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryAdjustments(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('food_inventory_adjustments as a')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'a.warehouse_id')
+            ->whereBetween('a.date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('a.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('a.number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('a.status', 'like', "%{$search}%")
+                        ->orWhere('a.type', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('a.date')
+            ->orderByDesc('a.id')
+            ->get([
+                'a.id',
+                'a.number',
+                'a.date',
+                'a.status',
+                'a.type',
+                'w.name as warehouse_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => $r->type ?? '—',
+            'amount' => null,
+            'url' => '/food-inventory-adjustment/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryStockOpnames(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('warehouse_stock_opnames as s')
+            ->leftJoin('warehouses as w', 'w.id', '=', 's.warehouse_id')
+            ->whereBetween('s.opname_date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('s.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('s.opname_number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('s.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('s.opname_date')
+            ->orderByDesc('s.id')
+            ->get([
+                's.id',
+                's.opname_number as number',
+                's.opname_date as date',
+                's.status',
+                'w.name as warehouse_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => '—',
+            'amount' => null,
+            'url' => '/warehouse-stock-opnames/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryInternalUseWaste(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('internal_use_wastes as i')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'i.warehouse_id')
+            ->leftJoin('items as it', 'it.id', '=', 'i.item_id')
+            ->whereBetween('i.date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('i.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('i.type', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('it.name', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('i.date')
+            ->orderByDesc('i.id')
+            ->get([
+                'i.id',
+                'i.type',
+                'i.date',
+                'i.qty',
+                'w.name as warehouse_name',
+                'it.name as item_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => '#' . $r->id . ' · ' . ($r->type ?? '—'),
+            'date' => $r->date,
+            'status' => $r->type,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => $r->item_name ?? '—',
+            'amount' => null,
+            'url' => '/internal-use-waste',
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryWarehouseSales(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('warehouse_sales as s')
+            ->leftJoin('warehouses as wf', 'wf.id', '=', 's.source_warehouse_id')
+            ->leftJoin('warehouses as wt', 'wt.id', '=', 's.target_warehouse_id')
+            ->whereNull('s.deleted_at')
+            ->whereBetween('s.date', [$from, $to])
+            ->when($warehouseId > 0, function ($qq) use ($warehouseId) {
+                $qq->where(function ($q2) use ($warehouseId) {
+                    $q2->where('s.source_warehouse_id', $warehouseId)
+                        ->orWhere('s.target_warehouse_id', $warehouseId);
+                });
+            })
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('s.number', 'like', "%{$search}%")
+                        ->orWhere('wf.name', 'like', "%{$search}%")
+                        ->orWhere('wt.name', 'like', "%{$search}%")
+                        ->orWhere('s.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('s.date')
+            ->orderByDesc('s.id')
+            ->get([
+                's.id',
+                's.number',
+                's.date',
+                's.status',
+                DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name,
+            'party' => '—',
+            'amount' => null,
+            'url' => '/warehouse-sales/' . $r->id,
+        ]);
+    }
+
+    /**
+     * @return \Illuminate\Support\Collection<int, array<string, mixed>>
+     */
+    private function queryOutletRejections(string $from, string $to, int $warehouseId, string $search)
+    {
+        $q = DB::table('outlet_rejections as r')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'r.outlet_id')
+            ->whereBetween('r.rejection_date', [$from, $to])
+            ->when($warehouseId > 0, fn ($qq) => $qq->where('r.warehouse_id', $warehouseId))
+            ->when($search !== '', function ($qq) use ($search) {
+                $qq->where(function ($q2) use ($search) {
+                    $q2->where('r.number', 'like', "%{$search}%")
+                        ->orWhere('w.name', 'like', "%{$search}%")
+                        ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                        ->orWhere('r.status', 'like', "%{$search}%");
+                });
+            })
+            ->orderByDesc('r.rejection_date')
+            ->orderByDesc('r.id')
+            ->get([
+                'r.id',
+                'r.number',
+                'r.rejection_date as date',
+                'r.status',
+                'w.name as warehouse_name',
+                'o.nama_outlet as outlet_name',
+            ]);
+
+        return $q->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => $r->number,
+            'date' => $r->date,
+            'status' => $r->status,
+            'warehouse_name' => $r->warehouse_name ?? '—',
+            'party' => $r->outlet_name ?? '—',
+            'amount' => null,
+            'url' => '/outlet-rejections/' . $r->id,
+        ]);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function countPrFoods(string $from, string $to, int $warehouseId): array
@@ -192,16 +757,7 @@ class WarehouseDashboardOpsService
             return $this->card('retail_warehouse_sale', 'Penjualan Warehouse Retail', 0, '/retail-warehouse-sale', 'fa-solid fa-store');
         }
 
-        $dateCol = Schema::hasColumn('retail_warehouse_sales', 'transaction_date')
-            ? 'transaction_date'
-            : (Schema::hasColumn('retail_warehouse_sales', 'date') ? 'date' : 'created_at');
-
-        $q = DB::table('retail_warehouse_sales');
-        if ($dateCol === 'created_at') {
-            $q->whereDate('created_at', '>=', $from)->whereDate('created_at', '<=', $to);
-        } else {
-            $q->whereBetween($dateCol, [$from, $to]);
-        }
+        $q = DB::table('retail_warehouse_sales')->whereBetween('sale_date', [$from, $to]);
         if ($warehouseId > 0 && Schema::hasColumn('retail_warehouse_sales', 'warehouse_id')) {
             $q->where('warehouse_id', $warehouseId);
         }

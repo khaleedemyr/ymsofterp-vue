@@ -81,11 +81,12 @@
             <span class="text-sm text-gray-500">Total: <strong>{{ formatNumber(transactions.total_transactions || 0) }}</strong></span>
           </div>
           <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-3 mb-6">
-            <a
+            <button
               v-for="card in (transactions.summary || [])"
               :key="card.key"
-              :href="card.route"
-              class="bg-white rounded-lg shadow-sm border p-4 hover:border-blue-300 hover:shadow transition"
+              type="button"
+              class="bg-white rounded-lg shadow-sm border p-4 text-left hover:border-blue-300 hover:shadow transition cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
+              @click="openCard(card)"
             >
               <div class="flex items-start justify-between gap-2">
                 <div>
@@ -96,7 +97,8 @@
                 <i :class="[card.icon, 'text-blue-500 text-lg']"></i>
               </div>
               <p v-if="card.note" class="text-[10px] text-amber-600 mt-2">{{ card.note }}</p>
-            </a>
+              <p class="mt-2 text-[11px] font-medium text-blue-600">Klik untuk lihat transaksi</p>
+            </button>
           </div>
 
           <!-- Cost health KPIs -->
@@ -326,6 +328,120 @@
         </template>
       </div>
     </div>
+
+    <!-- Detail Modal (pola Opex Outlet Dashboard) -->
+    <div
+      v-if="modalOpen"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 p-4 backdrop-blur-[2px]"
+      @click.self="closeModal"
+    >
+      <div class="bg-white rounded-3xl shadow-2xl w-full max-w-5xl max-h-[88vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
+          <div>
+            <h3 class="text-xl font-bold text-slate-900">{{ modalTitle }}</h3>
+            <p class="text-sm text-slate-500">{{ periodLabel }}</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <a
+              v-if="modalListRoute"
+              :href="modalListRoute"
+              class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              Buka halaman
+            </a>
+            <button type="button" class="text-slate-400 hover:text-slate-700" @click="closeModal">
+              <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="p-6 overflow-y-auto flex-1 space-y-5">
+          <div class="flex flex-wrap gap-2 items-end">
+            <input
+              v-model="modalSearch"
+              type="text"
+              placeholder="Cari nomor / warehouse / status..."
+              class="flex-1 min-w-[200px] rounded-xl border-slate-200 text-sm"
+              @keyup.enter="fetchModal"
+            />
+            <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="() => { modalPage = 1; fetchModal(); }">
+              Cari
+            </button>
+          </div>
+
+          <div v-if="modalLoading" class="py-16 text-center text-slate-400">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
+          </div>
+          <div v-else-if="modalError" class="py-10 text-center text-rose-600 text-sm">
+            {{ modalError }}
+          </div>
+
+          <template v-else>
+            <div class="overflow-x-auto rounded-2xl border border-slate-100">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 text-slate-500">
+                  <tr>
+                    <th class="px-4 py-3 text-left">Tanggal</th>
+                    <th class="px-4 py-3 text-left">Nomor</th>
+                    <th class="px-4 py-3 text-left">Warehouse</th>
+                    <th class="px-4 py-3 text-left">Keterangan</th>
+                    <th class="px-4 py-3 text-left">Status</th>
+                    <th class="px-4 py-3 text-right">Nilai</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="txn in modalTxns"
+                    :key="txn.id + '-' + (txn.number || '')"
+                    class="border-t border-slate-100 cursor-pointer hover:bg-sky-50/70"
+                    @click="openTxn(txn)"
+                  >
+                    <td class="px-4 py-2.5 whitespace-nowrap">{{ txn.date || '—' }}</td>
+                    <td class="px-4 py-2.5 font-medium text-slate-800 underline decoration-dotted underline-offset-2">
+                      {{ txn.number || '—' }}
+                    </td>
+                    <td class="px-4 py-2.5 text-slate-600">{{ txn.warehouse_name || '—' }}</td>
+                    <td class="px-4 py-2.5 text-slate-600">{{ txn.party || '—' }}</td>
+                    <td class="px-4 py-2.5">
+                      <span v-if="txn.status" class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.status }}</span>
+                      <span v-else class="text-slate-300">—</span>
+                    </td>
+                    <td class="px-4 py-2.5 text-right font-semibold text-slate-900">
+                      {{ txn.amount != null ? formatCurrency(txn.amount) : '—' }}
+                    </td>
+                  </tr>
+                  <tr v-if="!modalTxns.length">
+                    <td colspan="6" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p class="text-xs text-slate-500">Klik baris untuk buka detail transaksi</p>
+
+            <div v-if="modalPagination.total_pages > 1" class="flex justify-between items-center text-sm">
+              <span class="text-slate-500">{{ formatNumber(modalPagination.total) }} transaksi</span>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-lg border disabled:opacity-40"
+                  :disabled="modalPage <= 1"
+                  @click="modalPage--; fetchModal()"
+                >Prev</button>
+                <span class="px-2 py-1.5">{{ modalPage }} / {{ modalPagination.total_pages }}</span>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-lg border disabled:opacity-40"
+                  :disabled="modalPage >= modalPagination.total_pages"
+                  @click="modalPage++; fetchModal()"
+                >Next</button>
+              </div>
+            </div>
+            <p v-else class="text-sm text-slate-500">{{ formatNumber(modalPagination.total) }} transaksi</p>
+          </template>
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -370,6 +486,17 @@ const summary = ref(null);
 const periodMeta = ref(null);
 const transactions = ref({ summary: [], recent: [], daily: [], total_transactions: 0 });
 
+const modalOpen = ref(false);
+const modalLoading = ref(false);
+const modalType = ref('');
+const modalTitle = ref('');
+const modalListRoute = ref('');
+const modalSearch = ref('');
+const modalPage = ref(1);
+const modalTxns = ref([]);
+const modalPagination = ref({ current_page: 1, per_page: 20, total: 0, total_pages: 1 });
+const modalError = ref('');
+
 const periodLabel = computed(() => periodMeta.value?.label || monthLabel(selectedMonth.value));
 const hasData = computed(() => (transactions.value.summary || []).length > 0 || Object.keys(kpis.value).length > 0);
 const costShortcuts = computed(() => props.shortcuts.filter((s) => s.group === 'cost'));
@@ -388,6 +515,59 @@ const resetFilters = () => {
   selectedMonth.value = currentMonthValue();
   filters.value.warehouse_id = '';
   loadSnapshot();
+};
+
+const openCard = async (card) => {
+  if (!card?.key) return;
+  modalType.value = card.key;
+  modalTitle.value = card.label || card.key;
+  modalListRoute.value = card.route || '';
+  modalSearch.value = '';
+  modalPage.value = 1;
+  modalOpen.value = true;
+  await fetchModal();
+};
+
+const closeModal = () => {
+  modalOpen.value = false;
+  modalTxns.value = [];
+  modalError.value = '';
+};
+
+const openTxn = (txn) => {
+  if (txn?.url) {
+    window.open(txn.url, '_blank');
+  }
+};
+
+const fetchModal = async () => {
+  modalLoading.value = true;
+  modalError.value = '';
+  try {
+    const params = {
+      type: modalType.value,
+      period: selectedMonth.value,
+      page: modalPage.value,
+      per_page: 20,
+      search: modalSearch.value || undefined,
+    };
+    if (filters.value.warehouse_id) {
+      params.warehouse_id = filters.value.warehouse_id;
+    }
+    const { data } = await axios.get('/api/warehouse-cost-health-dashboard/transactions', { params });
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'Gagal memuat transaksi');
+    }
+    modalTitle.value = data.title || modalTitle.value;
+    modalListRoute.value = data.list_route || modalListRoute.value;
+    modalTxns.value = data.transactions || [];
+    modalPagination.value = data.pagination || { current_page: 1, per_page: 20, total: 0, total_pages: 1 };
+  } catch (e) {
+    modalError.value = e.response?.data?.message || e.message || 'Gagal memuat transaksi';
+    modalTxns.value = [];
+  } finally {
+    modalLoading.value = false;
+  }
 };
 
 const loadSnapshot = async () => {
@@ -426,7 +606,7 @@ const loadSnapshot = async () => {
 };
 
 watch(selectedMonth, () => {
-  // auto-apply when month changes (mirip UX cepat)
+  // period dipilih via Apply / klik card
 });
 
 onMounted(loadSnapshot);

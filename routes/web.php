@@ -1905,6 +1905,7 @@ Route::get('/api/warehouse-mac-anomaly-tracking', [App\Http\Controllers\Warehous
 
 Route::get('/warehouse-cost-health-dashboard', [App\Http\Controllers\WarehouseCostHealthDashboardController::class, 'index'])->name('warehouse-cost-health-dashboard.index');
 Route::get('/api/warehouse-cost-health-dashboard/snapshot', [App\Http\Controllers\WarehouseCostHealthDashboardController::class, 'snapshot'])->name('warehouse-cost-health-dashboard.snapshot');
+Route::get('/api/warehouse-cost-health-dashboard/transactions', [App\Http\Controllers\WarehouseCostHealthDashboardController::class, 'transactions'])->name('warehouse-cost-health-dashboard.transactions');
 Route::get('/warehouse-mac-tracking', [App\Http\Controllers\WarehouseMacTrackingController::class, 'index'])->name('warehouse-mac-tracking.index');
 Route::get('/api/warehouse-mac-tracking/options', [App\Http\Controllers\WarehouseMacTrackingController::class, 'options'])->name('warehouse-mac-tracking.options');
 Route::get('/api/warehouse-mac-tracking', [App\Http\Controllers\WarehouseMacTrackingController::class, 'data'])->name('warehouse-mac-tracking.data');
