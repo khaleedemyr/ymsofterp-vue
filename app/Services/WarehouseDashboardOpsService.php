@@ -2325,7 +2325,7 @@ class WarehouseDashboardOpsService
         $whFilterWhs = $warehouseId > 0 ? ' AND s.source_warehouse_id = ' . (int) $warehouseId : '';
 
         // DO sudah diterima outlet (GSR): FO price × qty GSR (qty dikonversi ke unit FO)
-        // Division dari transaksi Packing List (food_packing_lists.warehouse_division_id), bukan master item.
+        // Division dari transaksi: Packing List, fallback FO item (DO ro_supplier_gr tanpa PL).
         $lineAmt = $this->sqlGsrFoLineAmount();
         $doRows = DB::select(
             "SELECT
@@ -2340,10 +2340,11 @@ class WarehouseDashboardOpsService
              JOIN delivery_orders do2 ON do2.id = si.delivery_order_id
              LEFT JOIN food_packing_lists fpl
                ON fpl.id = do2.packing_list_id AND do2.packing_list_id > 0
-             LEFT JOIN warehouse_division wd ON wd.id = fpl.warehouse_division_id
-             LEFT JOIN warehouses w ON w.id = wd.warehouse_id
              LEFT JOIN food_floor_order_items ffoi
                ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
+             LEFT JOIN warehouse_division wd
+               ON wd.id = COALESCE(fpl.warehouse_division_id, ffoi.warehouse_division_id)
+             LEFT JOIN warehouses w ON w.id = wd.warehouse_id
              LEFT JOIN items it ON it.id = si.item_id
              LEFT JOIN units us ON us.id = it.small_unit_id
              LEFT JOIN units um ON um.id = it.medium_unit_id
@@ -2459,18 +2460,13 @@ class WarehouseDashboardOpsService
         $whFilterWhs = $warehouseId > 0 ? ' AND s.target_warehouse_id = ' . (int) $warehouseId : '';
 
         $grLineAmt = $this->sqlGrPoLineAmount();
+        // Division dari transaksi PR (pr_foods.warehouse_division_id), bukan master item.
         $grRows = DB::select(
             "SELECT
                 COALESCE(w.id, w2.id) as warehouse_id,
                 COALESCE(w.name, w2.name, 'Unknown') as warehouse_name,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.id
-                    ELSE NULL
-                END as division_id,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.name
-                    ELSE 'Tanpa Division'
-                END as division_name,
+                wd.id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
                 SUM({$grLineAmt}) as amount
              FROM food_good_receive_items gi
              JOIN food_good_receives g ON g.id = gi.good_receive_id
@@ -2486,35 +2482,24 @@ class WarehouseDashboardOpsService
                 GROUP BY c.reference_id
              ) src ON src.gr_id = g.id
              LEFT JOIN warehouses w2 ON w2.id = src.warehouse_id
-             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
+             LEFT JOIN warehouse_division wd ON wd.id = pf.warehouse_division_id
              WHERE g.receive_date BETWEEN ? AND ?
                {$whFilterGr}
              GROUP BY
                 COALESCE(w.id, w2.id),
                 COALESCE(w.name, w2.name, 'Unknown'),
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.id
-                    ELSE NULL
-                END,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = COALESCE(w.id, w2.id) THEN wd.name
-                    ELSE 'Tanpa Division'
-                END",
+                wd.id,
+                COALESCE(wd.name, 'Tanpa Division')",
             [$from, $to]
         );
 
+        // RWF: division dari pilihan di header
         $rwfRows = DB::select(
             "SELECT
                 r.warehouse_id,
                 COALESCE(w.name, 'Unknown') as warehouse_name,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.id
-                    ELSE NULL
-                END as division_id,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.name
-                    ELSE 'Tanpa Division'
-                END as division_name,
+                wd.id as division_id,
+                COALESCE(wd.name, 'Tanpa Division') as division_name,
                 SUM(r.total_amount) as amount
              FROM retail_warehouse_food r
              LEFT JOIN warehouses w ON w.id = r.warehouse_id
@@ -2525,51 +2510,29 @@ class WarehouseDashboardOpsService
              GROUP BY
                 r.warehouse_id,
                 w.name,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.id
-                    ELSE NULL
-                END,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = r.warehouse_id THEN wd.name
-                    ELSE 'Tanpa Division'
-                END",
+                wd.id,
+                COALESCE(wd.name, 'Tanpa Division')",
             [$from, $to]
         );
 
-        // WHS di sisi penerima = purchase gudang tujuan
+        // WHS penerima: tidak ada pilihan division di transaksi → Tanpa Division
         $whsRows = DB::select(
             "SELECT
                 s.target_warehouse_id as warehouse_id,
                 COALESCE(w.name, 'Unknown') as warehouse_name,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.id
-                    ELSE NULL
-                END as division_id,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.name
-                    ELSE 'Tanpa Division'
-                END as division_name,
+                NULL as division_id,
+                'Tanpa Division' as division_name,
                 SUM(si.total) as amount
              FROM warehouse_sales s
              JOIN warehouse_sale_items si
                ON si.warehouse_sale_id = s.id AND si.deleted_at IS NULL
              LEFT JOIN warehouses w ON w.id = s.target_warehouse_id
-             LEFT JOIN items it ON it.id = si.item_id
-             LEFT JOIN warehouse_division wd ON wd.id = it.warehouse_division_id
              WHERE s.deleted_at IS NULL
                AND s.date BETWEEN ? AND ?
                {$whFilterWhs}
              GROUP BY
                 s.target_warehouse_id,
-                w.name,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.id
-                    ELSE NULL
-                END,
-                CASE
-                    WHEN wd.id IS NOT NULL AND wd.warehouse_id = s.target_warehouse_id THEN wd.name
-                    ELSE 'Tanpa Division'
-                END",
+                w.name",
             [$from, $to]
         );
 

@@ -122,7 +122,7 @@
             </div>
             <p class="text-xs text-slate-500 mb-3">
               Sumber: DO sudah GSR (harga FO × qty diterima, disamakan unit) · RWS · Penjualan Antar Gudang (gudang sumber).
-              Division dari transaksi: Packing List / pilihan RWS — bukan dari master barang. “Tanpa Division” = transaksi tanpa division (mis. DO tanpa PL, WHS).
+              Division dari transaksi: Packing List, atau FO item (DO supplier tanpa PL) · pilihan RWS. “Tanpa Division” = WHS / transaksi tanpa division.
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
@@ -177,7 +177,7 @@
             </div>
             <p class="text-xs text-slate-500 mb-3">
               Sumber: PO sudah GR (harga PO × qty GR, disamakan unit) · Warehouse Retail Food · Penjualan Antar Gudang (gudang penerima).
-              Division mengikuti master per warehouse (Main Store = Perishable/Dry Store saja).
+              Division dari transaksi: PR · pilihan Retail Food. “Tanpa Division” = PR/RWF tanpa division, atau WHS-in.
             </p>
 
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
