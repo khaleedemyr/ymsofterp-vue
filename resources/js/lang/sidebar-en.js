@@ -257,6 +257,7 @@ export default {
     "mac_report": "MAC Report",
     "outlet_mac_anomaly": "Outlet MAC Anomaly",
     "outlet_mac_tracking": "Outlet MAC Tracking",
+    "warehouse_mac_anomaly": "Warehouse MAC Anomaly",
     "warehouse_mac_tracking": "Warehouse MAC Tracking",
     "tracking_nomor_seri": "Tracking Nomor Seri",
     "outlet_stock_report": "Outlet Stock Report",

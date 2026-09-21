@@ -46,11 +46,14 @@ INSERT INTO `erp_permission` (
 ) ON DUPLICATE KEY UPDATE
     `updated_at` = NOW();
 
--- Opsional: beri akses ke role yang sudah punya outlet mac anomaly / warehouse mac tracking
--- INSERT INTO erp_role_permission (role_id, permission_id)
--- SELECT rp.role_id, p2.id
--- FROM erp_permission p1
--- JOIN erp_role_permission rp ON rp.permission_id = p1.id
--- JOIN erp_permission p2 ON p2.code = 'warehouse_mac_anomaly_tracking_view'
--- WHERE p1.code IN ('mac_anomaly_tracking_view', 'warehouse_mac_tracking_view', 'outlet_mac_tracking_view')
--- ON DUPLICATE KEY UPDATE permission_id = permission_id;
+-- Beri akses ke role yang sudah punya outlet mac anomaly / warehouse mac tracking
+INSERT INTO erp_role_permission (role_id, permission_id)
+SELECT DISTINCT rp.role_id, p2.id
+FROM erp_permission p1
+JOIN erp_role_permission rp ON rp.permission_id = p1.id
+JOIN erp_permission p2 ON p2.code = 'warehouse_mac_anomaly_tracking_view'
+WHERE p1.code IN ('mac_anomaly_tracking_view', 'warehouse_mac_tracking_view', 'outlet_mac_tracking_view')
+AND NOT EXISTS (
+    SELECT 1 FROM erp_role_permission x
+    WHERE x.role_id = rp.role_id AND x.permission_id = p2.id
+);

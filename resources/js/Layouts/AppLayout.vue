@@ -480,6 +480,12 @@ const menuGroups = [
                 code: 'outlet_mac_tracking',
             },
             {
+                name: () => t('sidebar.menus.warehouse_mac_anomaly'),
+                icon: 'fa-solid fa-triangle-exclamation',
+                route: '/warehouse-mac-anomaly-tracking',
+                code: 'warehouse_mac_anomaly_tracking',
+            },
+            {
                 name: () => t('sidebar.menus.warehouse_mac_tracking'),
                 icon: 'fa-solid fa-warehouse',
                 route: '/warehouse-mac-tracking',
