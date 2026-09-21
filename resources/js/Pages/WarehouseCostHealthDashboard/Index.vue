@@ -355,25 +355,25 @@
           </div>
         </div>
 
-        <div class="p-6 overflow-y-auto flex-1 space-y-5">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+        <div class="px-5 py-4 overflow-y-auto flex-1 space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-2.5 items-end">
             <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">Dari tanggal</label>
-              <input v-model="modalDateFrom" type="date" class="w-full rounded-xl border-slate-200 text-sm" />
+              <label class="block text-[11px] font-medium text-slate-500 mb-1">Dari tanggal</label>
+              <input v-model="modalDateFrom" type="date" class="w-full rounded-lg border-slate-200 text-sm" />
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1">Sampai tanggal</label>
-              <input v-model="modalDateTo" type="date" class="w-full rounded-xl border-slate-200 text-sm" />
+              <label class="block text-[11px] font-medium text-slate-500 mb-1">Sampai tanggal</label>
+              <input v-model="modalDateTo" type="date" class="w-full rounded-lg border-slate-200 text-sm" />
             </div>
             <div class="md:col-span-2 flex flex-wrap gap-2 items-end">
               <input
                 v-model="modalSearch"
                 type="text"
                 :placeholder="modalSearchPlaceholder"
-                class="flex-1 min-w-[180px] rounded-xl border-slate-200 text-sm"
+                class="flex-1 min-w-[180px] rounded-lg border-slate-200 text-sm"
                 @keyup.enter="() => { modalPage = 1; fetchModal(); }"
               />
-              <button type="button" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-sm" @click="() => { modalPage = 1; fetchModal(); }">
+              <button type="button" class="px-3.5 py-2 rounded-lg bg-slate-900 text-white text-sm" @click="() => { modalPage = 1; fetchModal(); }">
                 Cari
               </button>
             </div>
@@ -387,48 +387,68 @@
           </div>
 
           <template v-else>
-            <div class="overflow-x-auto rounded-2xl border border-slate-100">
-              <table class="min-w-full text-sm">
-                <thead class="bg-slate-50 text-slate-500">
-                  <tr>
-                    <th class="px-4 py-3 text-left">Tanggal</th>
-                    <th class="px-4 py-3 text-left">Nomor</th>
-                    <th class="px-4 py-3 text-left">Warehouse</th>
-                    <th class="px-4 py-3 text-left">Keterangan</th>
-                    <th class="px-4 py-3 text-left">Status</th>
-                    <th class="px-4 py-3 text-left">{{ modalUserLabel }}</th>
+            <div class="rounded-xl border border-slate-200 overflow-hidden">
+              <table class="w-full table-fixed text-[13px] leading-snug">
+                <thead>
+                  <tr class="bg-slate-50/90 text-[11px] uppercase tracking-wide text-slate-500 border-b border-slate-200">
+                    <th class="px-3 py-2 text-left font-semibold w-[10%]">Tanggal</th>
+                    <th class="px-3 py-2 text-left font-semibold" :class="modalShowParty ? 'w-[16%]' : 'w-[20%]'">Nomor</th>
+                    <th class="px-3 py-2 text-left font-semibold" :class="modalShowParty ? 'w-[18%]' : 'w-[28%]'">Warehouse</th>
+                    <th v-if="modalShowParty" class="px-3 py-2 text-left font-semibold w-[26%]">Keterangan</th>
+                    <th class="px-3 py-2 text-left font-semibold w-[12%]">Status</th>
+                    <th class="px-3 py-2 text-left font-semibold w-[18%]">{{ modalUserLabel }}</th>
                   </tr>
                 </thead>
-                <tbody>
+                <tbody class="divide-y divide-slate-100">
                   <tr
                     v-for="txn in modalTxns"
                     :key="txn.id + '-' + (txn.number || '')"
-                    class="border-t border-slate-100 cursor-pointer hover:bg-sky-50/70"
+                    class="cursor-pointer hover:bg-slate-50 transition-colors"
                     @click="openTxn(txn)"
                   >
-                    <td class="px-4 py-2.5 whitespace-nowrap">{{ formatDateOnly(txn.date) }}</td>
-                    <td class="px-4 py-2.5 font-medium text-slate-800 underline decoration-dotted underline-offset-2">
-                      {{ txn.number || '—' }}
+                    <td class="px-3 py-2 whitespace-nowrap text-slate-500 tabular-nums">
+                      {{ formatDateOnly(txn.date) }}
                     </td>
-                    <td class="px-4 py-2.5 text-slate-600">{{ txn.warehouse_name || '—' }}</td>
-                    <td class="px-4 py-2.5 text-slate-600">{{ txn.party || '—' }}</td>
-                    <td class="px-4 py-2.5">
-                      <span v-if="txn.status" class="px-2 py-0.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium">{{ txn.status }}</span>
+                    <td class="px-3 py-2">
+                      <span class="font-medium text-slate-800 truncate block" :title="txn.number || ''">
+                        {{ txn.number || '—' }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2">
+                      <span class="text-slate-700 truncate block" :title="txn.warehouse_name || ''">
+                        {{ txn.warehouse_name || '—' }}
+                      </span>
+                    </td>
+                    <td v-if="modalShowParty" class="px-3 py-2">
+                      <span class="text-slate-600 truncate block" :title="txn.party || ''">
+                        {{ txn.party || '—' }}
+                      </span>
+                    </td>
+                    <td class="px-3 py-2">
+                      <span
+                        v-if="txn.status"
+                        class="inline-block max-w-full truncate px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-medium"
+                        :title="txn.status"
+                      >{{ formatStatus(txn.status) }}</span>
                       <span v-else class="text-slate-300">—</span>
                     </td>
-                    <td class="px-4 py-2.5 text-slate-600">
-                      <span v-if="txn.user || txn.approver">{{ txn.user || txn.approver }}</span>
+                    <td class="px-3 py-2">
+                      <span
+                        v-if="txn.user || txn.approver"
+                        class="text-slate-600 truncate block"
+                        :title="txn.user || txn.approver"
+                      >{{ txn.user || txn.approver }}</span>
                       <span v-else class="text-slate-300">—</span>
                     </td>
                   </tr>
                   <tr v-if="!modalTxns.length">
-                    <td colspan="6" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
+                    <td :colspan="modalShowParty ? 6 : 5" class="px-3 py-10 text-center text-slate-400">Tidak ada transaksi</td>
                   </tr>
                 </tbody>
               </table>
             </div>
 
-            <p class="text-xs text-slate-500">Klik baris untuk lihat detail item (modal)</p>
+            <p class="text-xs text-slate-400">Klik baris untuk lihat detail item</p>
 
             <div v-if="modalPagination.total_pages > 1" class="flex justify-between items-center text-sm">
               <span class="text-slate-500">{{ formatNumber(modalPagination.total) }} transaksi</span>
@@ -506,9 +526,9 @@
               <table class="w-full text-sm table-fixed">
                 <thead>
                   <tr class="bg-white border-b text-slate-600">
-                    <th class="px-4 py-2 text-left w-[42%]">Item</th>
-                    <th class="px-4 py-2 text-right w-[22%]">Harga</th>
-                    <th class="px-4 py-2 text-left w-[36%]">PO</th>
+                    <th class="px-4 py-2 text-left" :class="detailShowPo ? 'w-[42%]' : 'w-[62%]'">Item</th>
+                    <th class="px-4 py-2 text-right" :class="detailShowPo ? 'w-[22%]' : 'w-[38%]'">{{ detailPriceLabel }}</th>
+                    <th v-if="detailShowPo" class="px-4 py-2 text-left w-[36%]">PO</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -527,7 +547,7 @@
                       <p class="text-xs text-slate-500 mt-0.5">Subtotal</p>
                       <p class="font-semibold text-slate-900">{{ item.subtotal != null ? formatCurrency(item.subtotal) : '—' }}</p>
                     </td>
-                    <td class="px-4 py-3">
+                    <td v-if="detailShowPo" class="px-4 py-3">
                       <template v-if="item.po_number">
                         <a
                           :href="item.po_url || '#'"
@@ -542,7 +562,7 @@
                     </td>
                   </tr>
                   <tr v-if="!detailItems.length">
-                    <td colspan="3" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
+                    <td :colspan="detailShowPo ? 3 : 2" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
                   </tr>
                 </tbody>
               </table>
@@ -628,13 +648,24 @@ const modalUserLabel = computed(() => {
   if (modalType.value === 'pr_foods') return 'Approver';
   return 'User';
 });
+const modalShowParty = computed(() => modalType.value !== 'warehouse_transfer');
 const modalSearchPlaceholder = computed(() => {
   if (modalType.value === 'food_good_receive') return 'Cari nomor / warehouse / status / user GR...';
   if (modalType.value === 'pr_foods') return 'Cari nomor / warehouse / status / approver...';
+  if (modalType.value === 'warehouse_transfer') return 'Cari nomor / warehouse / status / user...';
   return 'Cari nomor / warehouse / status / user...';
 });
 const detailUserLabel = computed(() =>
   modalType.value === 'food_good_receive' ? 'User GR' : 'User'
+);
+const detailShowPo = computed(() => {
+  if (detailHeader.value?.show_po === false) return false;
+  if (detailHeader.value?.show_po === true) return true;
+  return modalType.value === 'food_good_receive' || modalType.value === 'pr_foods';
+});
+const detailPriceLabel = computed(() =>
+  detailHeader.value?.price_label
+    || (modalType.value === 'warehouse_transfer' ? 'Cost' : 'Harga')
 );
 
 const formatNumber = (value) => new Intl.NumberFormat('id-ID').format(Number(value) || 0);
@@ -655,6 +686,13 @@ const formatDateOnly = (value) => {
   if (!value) return '—';
   const s = String(value);
   return s.length >= 10 ? s.slice(0, 10) : s;
+};
+const formatStatus = (value) => {
+  if (!value) return '—';
+  return String(value)
+    .replace(/[_-]+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 };
 
 function monthRange(monthValue) {

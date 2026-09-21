@@ -393,30 +393,77 @@ class WarehouseDashboardOpsService
         $h = DB::table('warehouse_transfers as t')
             ->leftJoin('warehouses as wf', 'wf.id', '=', 't.warehouse_from_id')
             ->leftJoin('warehouses as wt', 'wt.id', '=', 't.warehouse_to_id')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
             ->where('t.id', $id)
             ->first([
                 't.id', 't.transfer_number as number', 't.transfer_date as date',
-                't.transfer_mode as status', 't.notes',
+                't.transfer_mode as status', 't.notes', 't.warehouse_to_id',
+                'u.nama_lengkap as user_name',
                 DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Transfer tidak ditemukan');
         }
 
-        $items = DB::table('warehouse_transfer_items as ti')
-            ->leftJoin('items as i', 'i.id', '=', 'ti.item_id')
-            ->leftJoin('units as un', 'un.id', '=', 'ti.unit_id')
-            ->where('ti.warehouse_transfer_id', $id)
-            ->get(['i.name as item_name', 'i.sku as item_code', 'ti.quantity', 'ti.qty_small', 'un.name as unit_name', 'ti.note', 'ti.notes'])
-            ->map(fn ($r) => [
+        $rows = DB::select(
+            "SELECT
+                i.name as item_name,
+                i.sku as item_code,
+                ti.quantity,
+                ti.qty_small,
+                un.name as unit_name,
+                ti.note,
+                ti.notes,
+                COALESCE(
+                    (
+                        SELECT ch.new_cost
+                        FROM food_inventory_cost_histories ch
+                        WHERE ch.reference_type = 'warehouse_transfer'
+                          AND ch.reference_id = ?
+                          AND ch.inventory_item_id = fii.id
+                        ORDER BY CASE WHEN ch.warehouse_id = ? THEN 0 ELSE 1 END, ch.id DESC
+                        LIMIT 1
+                    ),
+                    st_from.last_cost_small,
+                    st_to.last_cost_small
+                ) as unit_cost
+            FROM warehouse_transfer_items ti
+            LEFT JOIN items i ON i.id = ti.item_id
+            LEFT JOIN units un ON un.id = ti.unit_id
+            LEFT JOIN food_inventory_items fii ON fii.item_id = ti.item_id
+            LEFT JOIN food_inventory_stocks st_from
+                ON st_from.inventory_item_id = fii.id
+                AND st_from.warehouse_id = (SELECT warehouse_from_id FROM warehouse_transfers WHERE id = ?)
+            LEFT JOIN food_inventory_stocks st_to
+                ON st_to.inventory_item_id = fii.id
+                AND st_to.warehouse_id = ?
+            WHERE ti.warehouse_transfer_id = ?
+            ORDER BY ti.id ASC",
+            [$id, $h->warehouse_to_id, $id, $h->warehouse_to_id, $id]
+        );
+
+        $items = [];
+        $grand = 0.0;
+        $hasAmount = false;
+        foreach ($rows as $r) {
+            $qty = (float) ($r->quantity ?? $r->qty_small ?? 0);
+            $qtySmall = (float) ($r->qty_small ?? $qty);
+            $cost = $r->unit_cost !== null ? (float) $r->unit_cost : null;
+            $subtotal = $cost !== null ? $cost * $qtySmall : null;
+            if ($subtotal !== null) {
+                $grand += $subtotal;
+                $hasAmount = true;
+            }
+            $items[] = [
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
-                'qty' => (float) ($r->quantity ?? $r->qty_small ?? 0),
+                'qty' => $qty,
                 'unit' => $r->unit_name ?? '-',
-                'price' => null,
-                'subtotal' => null,
+                'price' => $cost,
+                'subtotal' => $subtotal,
                 'note' => $r->note ?? $r->notes,
-            ])->all();
+            ];
+        }
 
         return [
             'header' => [
@@ -426,11 +473,14 @@ class WarehouseDashboardOpsService
                 'status' => $h->status,
                 'warehouse' => $h->warehouse_name,
                 'party' => null,
+                'user' => $h->user_name,
                 'note' => $h->notes,
                 'url' => '/warehouse-transfer/' . $id,
+                'show_po' => false,
+                'price_label' => 'Cost',
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $hasAmount ? $grand : null,
         ];
     }
 
@@ -1022,6 +1072,7 @@ class WarehouseDashboardOpsService
         $q = DB::table('warehouse_transfers as t')
             ->leftJoin('warehouses as wf', 'wf.id', '=', 't.warehouse_from_id')
             ->leftJoin('warehouses as wt', 'wt.id', '=', 't.warehouse_to_id')
+            ->leftJoin('users as u', 'u.id', '=', 't.created_by')
             ->whereBetween('t.transfer_date', [$from, $to])
             ->when($warehouseId > 0, function ($qq) use ($warehouseId) {
                 $qq->where(function ($q2) use ($warehouseId) {
@@ -1033,7 +1084,10 @@ class WarehouseDashboardOpsService
                 $qq->where(function ($q2) use ($search) {
                     $q2->where('t.transfer_number', 'like', "%{$search}%")
                         ->orWhere('wf.name', 'like', "%{$search}%")
-                        ->orWhere('wt.name', 'like', "%{$search}%");
+                        ->orWhere('wt.name', 'like', "%{$search}%")
+                        ->orWhere('t.transfer_mode', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('t.notes', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('t.transfer_date')
@@ -1043,6 +1097,8 @@ class WarehouseDashboardOpsService
                 't.transfer_number as number',
                 't.transfer_date as date',
                 't.transfer_mode as status',
+                't.notes',
+                'u.nama_lengkap as user_name',
                 DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
             ]);
 
@@ -1052,7 +1108,9 @@ class WarehouseDashboardOpsService
             'date' => $r->date,
             'status' => $r->status,
             'warehouse_name' => $r->warehouse_name,
-            'party' => '—',
+            'party' => $r->notes ?: null,
+            'user' => $r->user_name ?? '—',
+            'approver' => null,
             'amount' => null,
             'url' => '/warehouse-transfer/' . $r->id,
         ]);
