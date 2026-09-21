@@ -233,20 +233,22 @@
             <div class="bg-white rounded-lg shadow-sm border">
               <div class="px-6 py-4 border-b border-gray-200">
                 <h2 class="text-lg font-semibold text-gray-800">Top item bermasalah</h2>
+                <p class="text-xs text-gray-500 mt-1">Berdasarkan cost stok saat ini (bukan puncak riwayat lama)</p>
               </div>
               <div class="overflow-x-auto max-h-[360px] overflow-y-auto">
-                <table class="w-full min-w-[640px] text-sm">
+                <table class="w-full min-w-[720px] text-sm">
                   <thead class="bg-gray-50 sticky top-0">
                     <tr>
                       <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Barang</th>
                       <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Warehouse</th>
                       <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Hit</th>
-                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">MAC max</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Cost stok</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">MAC max riwayat</th>
                     </tr>
                   </thead>
                   <tbody class="divide-y divide-gray-100">
                     <tr v-if="!topItems.length">
-                      <td colspan="4" class="px-4 py-6 text-center text-gray-400">Tidak ada data</td>
+                      <td colspan="5" class="px-4 py-6 text-center text-gray-400">Tidak ada item yang masih bermasalah di stok saat ini</td>
                     </tr>
                     <tr v-for="item in topItems" :key="(item.warehouse_id || 0) + '-' + (item.item_id || item.inventory_item_id)" class="hover:bg-gray-50">
                       <td class="px-4 py-3">
@@ -255,7 +257,10 @@
                       </td>
                       <td class="px-4 py-3 text-gray-700">{{ item.warehouse_name }}</td>
                       <td class="px-4 py-3 text-right font-semibold">{{ item.count }}</td>
-                      <td class="px-4 py-3 text-right font-mono text-red-700">{{ formatNum(item.max_mac) }}</td>
+                      <td class="px-4 py-3 text-right font-mono" :class="Number(item.current_cost) > 100000 ? 'text-red-700' : 'text-slate-800'">
+                        {{ item.current_cost != null ? formatNum(item.current_cost) : '—' }}
+                      </td>
+                      <td class="px-4 py-3 text-right font-mono text-slate-400 text-xs">{{ formatNum(item.max_mac) }}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -537,13 +542,16 @@
                       <p class="font-medium text-slate-800 leading-snug">{{ item.name }}</p>
                       <p v-if="item.code" class="text-xs text-slate-400 mt-0.5">{{ item.code }}</p>
                       <p class="text-xs text-slate-600 mt-1">
-                        Qty <strong>{{ formatNum(item.qty) }}</strong>
-                        <span v-if="item.unit"> {{ item.unit }}</span>
+                        Qty <strong>{{ formatNum(item.qty) }}</strong><span v-if="item.unit"> {{ item.unit }}</span>
                       </p>
                       <p v-if="item.note" class="text-xs text-slate-400 mt-1">{{ item.note }}</p>
+                      <p v-if="item.cost_note" class="text-[11px] text-amber-700 mt-1 leading-snug">{{ item.cost_note }}</p>
                     </td>
                     <td class="px-4 py-3 text-right">
                       <p class="text-slate-800">{{ item.price != null ? formatCurrency(item.price) : '—' }}</p>
+                      <p v-if="item.historical_cost != null" class="text-[10px] text-slate-400 line-through mt-0.5">
+                        {{ formatCurrency(item.historical_cost) }}
+                      </p>
                       <p class="text-xs text-slate-500 mt-0.5">Subtotal</p>
                       <p class="font-semibold text-slate-900">{{ item.subtotal != null ? formatCurrency(item.subtotal) : '—' }}</p>
                     </td>

@@ -277,7 +277,7 @@ class WarehouseTransferController extends Controller
                 if (!$stockFrom) {
                     throw new \Exception('Stok tidak ditemukan di gudang asal');
                 }
-                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom);
+                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom, $itemMaster);
                 $stockFrom->qty_small -= $qty_small;
                 $stockFrom->qty_medium -= $qty_medium;
                 $stockFrom->qty_large -= $qty_large;
@@ -408,7 +408,7 @@ class WarehouseTransferController extends Controller
                 throw new \Exception('Stok tidak ditemukan di gudang asal untuk serial ' . $si['serial_number']);
             }
 
-            $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom);
+            $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom, $itemMaster);
 
             DB::table('warehouse_transfer_serial_items')->insert([
                 'warehouse_transfer_id' => $transfer->id,
@@ -906,7 +906,7 @@ class WarehouseTransferController extends Controller
                 if (!$stockFrom) {
                     throw new \Exception('Stok tidak ditemukan di gudang asal');
                 }
-                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom);
+                $incomingCostPerSmall = $this->foodStockImpliedCostPerSmall($stockFrom, $itemMaster);
                 $stockFrom->qty_small -= $qty_small;
                 $stockFrom->qty_medium -= $qty_medium;
                 $stockFrom->qty_large -= $qty_large;
@@ -1219,18 +1219,10 @@ class WarehouseTransferController extends Controller
     /**
      * Biaya per unit kecil dari saldo (value / qty_small) bila konsisten; fallback last_cost_small.
      * Dipakai transfer supaya insert cost history tidak mengikuti last_cost_small yang sudah ngaco vs nilai stok.
+     * Juga sanitasi pack-as-small / cost absurd agar tidak menularkan ke gudang tujuan.
      */
-    private function foodStockImpliedCostPerSmall($stock): float
+    private function foodStockImpliedCostPerSmall($stock, $item = null): float
     {
-        $q = (float) ($stock->qty_small ?? 0);
-        $v = (float) ($stock->value ?? 0);
-        if ($q > 0 && $v >= 0) {
-            $implied = $v / $q;
-            if (is_finite($implied) && $implied > 0) {
-                return $implied;
-            }
-        }
-
-        return max(0.0, (float) ($stock->last_cost_small ?? 0));
+        return \App\Support\FoodInventoryCostGuard::sanitizeCostPerSmall($stock, $item, false);
     }
 } 

@@ -116,6 +116,8 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - [x] Fix kalkulasi cost MK Production
 - [x] Fix orphan-value MAC di Retail Warehouse Food + Food Good Receive + Warehouse Transfer
 - [x] Mass repair stock cost MK1 / MK2 / Main Store (script)
+- [x] Pass 3 residual repair (Oxtail, Sauce, Coating, Kuah, Butter, Jamur, zero-qty poison)
+- [x] Guard runtime: `FoodInventoryCostGuard` di MK Production + Warehouse Transfer
 - [ ] Audit DO / Internal Transfer / Adjustment untuk update `value` saat OUT
 - [ ] Rebuild kartu historis (opsional; stock aktif sudah di-repair)
 
@@ -126,12 +128,21 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - `scripts/repair_kimchi_ss_cost.php` — repair awal Kimchi + Simple Syrup
 - `scripts/repair_mass_inventory_costs.php` — mass repair pass 1 (MK1/MK2/Main Store)
 - `scripts/repair_mass_inventory_costs_pass2.php` — pass 2 (orphan cost reset, sauce re-deflate, leftovers)
+- `scripts/repair_mass_inventory_costs_pass3.php` — pass 3 (residual high cost + value realign)
 
 ## Hasil mass repair (21 Sep 2026)
 
 - Pass 1: ~63 item cost di-reset + ~102 orphan value dibersihkan
 - Pass 2: orphan cost absurd di-nol/diisi referensi; sauce MK1 di-deflate ulang; Plastik Wrap & Gomatare di-fix
-- Sisa value tinggi di Main Store (Fryall, Whole Beef Tenderloin) = qty besar × cost wajar, **bukan** bug
+- Pass 3: 26 baris — Whole Beef Oxtail 6869→150, Beef Oxtail FG 634k→75k, Kuah/Sauce/Coating/Butter/Jamur ke IB/GR, zero-qty poison dibersihkan
+- Sisa cost tinggi yang **wajar**: Plastik Wrap roll, Duck Confit/Crispy portion, Beef Dice portion, bulk meat value tinggi × cost/gram rendah
+
+## Pencegahan (runtime)
+
+- `app/Support/FoodInventoryCostGuard.php`
+  - sanitasi cost bahan (implied value/qty, deflate pack-as-small, soft cap)
+  - tolak produksi jika cost FG / bahan masih absurd
+  - transfer memakai cost tersanitasi (tidak menyalin `last_cost_small` rusak)
 
 ## Fitur monitoring
 

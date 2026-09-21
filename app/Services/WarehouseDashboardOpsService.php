@@ -426,7 +426,9 @@ class WarehouseDashboardOpsService
                     ),
                     st_from.last_cost_small,
                     st_to.last_cost_small
-                ) as unit_cost
+                ) as unit_cost,
+                st_from.last_cost_small as st_from_cost,
+                st_to.last_cost_small as st_to_cost
             FROM warehouse_transfer_items ti
             LEFT JOIN items i ON i.id = ti.item_id
             LEFT JOIN units un ON un.id = ti.unit_id
@@ -448,7 +450,27 @@ class WarehouseDashboardOpsService
         foreach ($rows as $r) {
             $qty = (float) ($r->quantity ?? $r->qty_small ?? 0);
             $qtySmall = (float) ($r->qty_small ?? $qty);
-            $cost = $r->unit_cost !== null ? (float) $r->unit_cost : null;
+            $rawCost = $r->unit_cost !== null ? (float) $r->unit_cost : null;
+            $cost = $rawCost;
+            $costNote = null;
+
+            // Cost history transfer sering menyimpan MAC rusak (sebelum repair).
+            // Untuk dashboard health: jika historis absurd, tampilkan cost stok saat ini.
+            $stockCost = null;
+            if ($r->st_from_cost !== null || $r->st_to_cost !== null) {
+                $from = $r->st_from_cost !== null ? (float) $r->st_from_cost : null;
+                $to = $r->st_to_cost !== null ? (float) $r->st_to_cost : null;
+                $stockCost = $from !== null && $from > 0 ? $from : $to;
+            }
+            if ($rawCost !== null && $rawCost > \App\Support\FoodInventoryCostGuard::MAX_SANE_COST_SMALL) {
+                if ($stockCost !== null && $stockCost > 0 && $stockCost < $rawCost * 0.5) {
+                    $cost = $stockCost;
+                    $costNote = 'Cost transaksi historis tidak wajar (Rp '
+                        . number_format($rawCost, 0, ',', '.')
+                        . '); ditampilkan cost stok saat ini.';
+                }
+            }
+
             $subtotal = $cost !== null ? $cost * $qtySmall : null;
             if ($subtotal !== null) {
                 $grand += $subtotal;
@@ -462,6 +484,8 @@ class WarehouseDashboardOpsService
                 'price' => $cost,
                 'subtotal' => $subtotal,
                 'note' => $r->note ?? $r->notes,
+                'cost_note' => $costNote,
+                'historical_cost' => ($costNote && $rawCost !== null) ? $rawCost : null,
             ];
         }
 

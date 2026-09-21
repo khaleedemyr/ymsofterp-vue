@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use App\Support\InventorySerialInUse;
 use App\Support\InventorySerialRepackChunk;
+use App\Support\FoodInventoryCostGuard;
 
 class MKProductionController extends Controller
 {
@@ -400,9 +401,26 @@ class MKProductionController extends Controller
                 [$qty_small, $qty_medium, $qty_large] = $convertQty($qty_total, $b->unit_id, $materialItem);
 
                 $stockBahan = $stocksData->get($bomInventoryId);
-                $last_cost_small = (float) ($stockBahan->last_cost_small ?? 0);
+                $last_cost_small = FoodInventoryCostGuard::sanitizeCostPerSmall(
+                    $stockBahan,
+                    $materialItem,
+                    true
+                );
+                FoodInventoryCostGuard::assertMaterialCost(
+                    $last_cost_small,
+                    $materialItem->name ?? (string) $b->material_item_id
+                );
                 $last_cost_medium = (float) ($stockBahan->last_cost_medium ?? 0);
                 $last_cost_large = (float) ($stockBahan->last_cost_large ?? 0);
+                // Selaraskan medium/large dari cost small yang sudah disanitasi
+                $matSmallConv = (float) ($materialItem->small_conversion_qty ?? 1) ?: 1;
+                $matMediumConv = (float) ($materialItem->medium_conversion_qty ?? 1) ?: 1;
+                if ($last_cost_medium <= 0 || $last_cost_medium < $last_cost_small) {
+                    $last_cost_medium = $last_cost_small * $matSmallConv;
+                }
+                if ($last_cost_large <= 0 || $last_cost_large < $last_cost_medium) {
+                    $last_cost_large = $last_cost_medium * $matMediumConv;
+                }
                 $value_out = $qty_small * $last_cost_small;
                 $total_bom_cost += $value_out;
 
@@ -522,6 +540,11 @@ class MKProductionController extends Controller
             // ROOT FIX: cost per SMALL = total BOM cost / qty hasil dalam SMALL
             // (bukan / qty_jadi yang bisa berupa Pack/Bottle — itu yang bikin cost × conversion)
             $last_cost_small = $qty_small > 0 ? ($total_bom_cost / $qty_small) : 0;
+            FoodInventoryCostGuard::assertFinishedGoodCost(
+                (float) $last_cost_small,
+                (float) $smallConv,
+                $itemMaster->name ?? (string) $item_id
+            );
             $last_cost_medium = $smallConv > 0 ? ($last_cost_small * $smallConv) : $last_cost_small;
             $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
                 ? ($last_cost_small * $smallConv * $mediumConv)

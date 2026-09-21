@@ -186,7 +186,9 @@ class WarehouseMacAnomalyDetectionService
             'type_breakdown' => $typeBreakdown,
             'module_breakdown' => $moduleBreakdown,
             'top_warehouses' => $this->buildTopWarehouses($all, 10),
-            'top_items' => $this->buildTopItems($all, 15),
+            // Ranking fokus stok SAAT INI — jangan pakai puncak MAC historis (itu yang bikin
+            // daftar tetap "triliunan" padahal stok sudah di-repair).
+            'top_items' => $this->buildTopItems($stockAnomalies, $historyAnomalies, 15, $maxMac),
             'summary' => [
                 'date_from' => $dateFrom,
                 'date_to' => $dateTo,
@@ -245,62 +247,145 @@ class WarehouseMacAnomalyDetectionService
     }
 
     /**
-     * @param  list<array<string, mixed>>  $anomalies
+     * Top item bermasalah berdasarkan kondisi STOK SAAT INI.
+     * MAC historis (max) hanya ditampilkan sebagai konteks — tidak lagi jadi kunci ranking,
+     * supaya item yang sudah di-repair tidak tetap muncul dengan angka triliunan.
+     *
+     * @param  list<array<string, mixed>>  $stockAnomalies
+     * @param  list<array<string, mixed>>  $historyAnomalies
      * @return list<array<string, mixed>>
      */
-    private function buildTopItems(array $anomalies, int $limit = 15): array
+    private function buildTopItems(array $stockAnomalies, array $historyAnomalies, int $limit = 15, float $maxMac = 10_000_000): array
     {
         $items = [];
-        foreach ($anomalies as $row) {
+
+        $touch = function (array $row, bool $fromStock) use (&$items): void {
             $itemId = (int) ($row['item_id'] ?? 0);
             $warehouseId = (int) ($row['warehouse_id'] ?? 0);
-            $key = $warehouseId . '|' . ($itemId ?: ('inv:' . ($row['inventory_item_id'] ?? 0)));
+            $invId = (int) ($row['inventory_item_id'] ?? 0);
+            $key = $warehouseId . '|' . ($itemId ?: ('inv:' . $invId));
             if (!isset($items[$key])) {
                 $items[$key] = [
                     'item_id' => $itemId ?: null,
-                    'inventory_item_id' => (int) ($row['inventory_item_id'] ?? 0),
+                    'inventory_item_id' => $invId,
                     'item_name' => $row['item_name'] ?? '-',
                     'item_code' => $row['item_code'] ?? null,
                     'warehouse_id' => $warehouseId,
                     'warehouse_name' => $row['warehouse_name'] ?? '-',
                     'count' => 0,
+                    'history_hits' => 0,
                     'max_mac' => 0.0,
+                    'current_cost' => null,
+                    'current_qty' => null,
                     'orphan_value' => false,
                     'stock_value' => null,
                     'flags' => [],
+                    'status' => 'history_only',
                 ];
             }
             $items[$key]['count']++;
-            $mac = (float) ($row['mac'] ?? 0);
-            if ($mac > $items[$key]['max_mac']) {
-                $items[$key]['max_mac'] = $mac;
+            if ($fromStock) {
+                $items[$key]['current_cost'] = (float) ($row['mac'] ?? 0);
+                $items[$key]['current_qty'] = isset($row['qty_small']) ? (float) $row['qty_small'] : null;
+                $items[$key]['stock_value'] = $row['stock_value'] ?? $items[$key]['stock_value'];
+                $items[$key]['status'] = 'current';
+            } else {
+                $items[$key]['history_hits']++;
+                $mac = (float) ($row['mac'] ?? 0);
+                if ($mac > $items[$key]['max_mac']) {
+                    $items[$key]['max_mac'] = $mac;
+                }
             }
             if (in_array('orphan_value', $row['anomaly_types'] ?? [], true)) {
                 $items[$key]['orphan_value'] = true;
-                $items[$key]['stock_value'] = $row['stock_value'] ?? $items[$key]['stock_value'];
             }
             foreach ($row['anomaly_types'] ?? [] as $flag) {
                 if (!in_array($flag, $items[$key]['flags'], true)) {
                     $items[$key]['flags'][] = $flag;
                 }
             }
+        };
+
+        foreach ($stockAnomalies as $row) {
+            $touch($row, true);
+        }
+        foreach ($historyAnomalies as $row) {
+            $touch($row, false);
         }
 
-        $list = array_values($items);
+        // Lengkapi current_cost dari stok untuk item yang hanya muncul di history
+        $needStock = [];
+        foreach ($items as $key => $item) {
+            if ($item['current_cost'] === null && $item['inventory_item_id'] > 0 && $item['warehouse_id'] > 0) {
+                $needStock[] = [$item['inventory_item_id'], $item['warehouse_id'], $key];
+            }
+        }
+        if (!empty($needStock)) {
+            $invIds = array_values(array_unique(array_map(fn ($x) => $x[0], $needStock)));
+            $whIds = array_values(array_unique(array_map(fn ($x) => $x[1], $needStock)));
+            $stocks = DB::table('food_inventory_stocks')
+                ->whereIn('inventory_item_id', $invIds)
+                ->whereIn('warehouse_id', $whIds)
+                ->get(['inventory_item_id', 'warehouse_id', 'last_cost_small', 'qty_small', 'value'])
+                ->keyBy(fn ($r) => $r->warehouse_id . '|' . $r->inventory_item_id);
+            foreach ($needStock as [$invId, $whId, $key]) {
+                $s = $stocks->get($whId . '|' . $invId);
+                if (!$s) {
+                    continue;
+                }
+                $items[$key]['current_cost'] = (float) $s->last_cost_small;
+                $items[$key]['current_qty'] = (float) $s->qty_small;
+                $items[$key]['stock_value'] = number_format((float) $s->value, 2, '.', '');
+                $cost = (float) $s->last_cost_small;
+                $qty = (float) $s->qty_small;
+                if ($qty <= 0 && (float) $s->value > 1) {
+                    $items[$key]['orphan_value'] = true;
+                }
+                // Sudah sane setelah repair → tandai repaired (boleh disembunyikan dari ranking utama)
+                if ($cost >= 0 && ($maxMac <= 0 || $cost <= $maxMac) && !($qty <= 0 && (float) $s->value > 1)) {
+                    $items[$key]['status'] = 'repaired';
+                } elseif ($cost > $maxMac && $maxMac > 0) {
+                    $items[$key]['status'] = 'current';
+                }
+            }
+        }
+
+        $list = array_values(array_filter($items, function ($item) use ($maxMac) {
+            // Utamakan yang masih bermasalah di stok sekarang
+            if ($item['orphan_value']) {
+                return true;
+            }
+            $current = (float) ($item['current_cost'] ?? 0);
+            if ($maxMac > 0 && $current > $maxMac) {
+                return true;
+            }
+            // Soft: cost stok masih tinggi (bukan puncak history)
+            if ($current > 100_000 && (float) ($item['current_qty'] ?? 0) > 0) {
+                return true;
+            }
+
+            return false;
+        }));
+
         usort($list, function ($a, $b) {
             if ($a['orphan_value'] !== $b['orphan_value']) {
                 return $a['orphan_value'] ? -1 : 1;
             }
-            if ($a['max_mac'] !== $b['max_mac']) {
-                return $b['max_mac'] <=> $a['max_mac'];
+            $ca = (float) ($a['current_cost'] ?? 0);
+            $cb = (float) ($b['current_cost'] ?? 0);
+            if ($ca !== $cb) {
+                return $cb <=> $ca;
             }
 
-            return $b['count'] <=> $a['count'];
+            return $b['max_mac'] <=> $a['max_mac'];
         });
 
         $sliced = array_slice($list, 0, $limit);
         foreach ($sliced as &$item) {
             $item['max_mac'] = number_format((float) $item['max_mac'], 4, '.', '');
+            $item['current_cost'] = $item['current_cost'] !== null
+                ? number_format((float) $item['current_cost'], 4, '.', '')
+                : null;
         }
         unset($item);
 
