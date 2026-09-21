@@ -602,6 +602,18 @@ class WarehouseDashboardOpsService
             throw new \InvalidArgumentException('Delivery Order tidak ditemukan');
         }
 
+        $gsrHeader = DB::table('outlet_serial_receive_items as si')
+            ->join('outlet_serial_receive_headers as gsr', 'gsr.id', '=', 'si.header_id')
+            ->where('si.delivery_order_id', $id)
+            ->whereNull('gsr.deleted_at')
+            ->orderByDesc('gsr.id')
+            ->first([
+                'gsr.id as gsr_id',
+                'gsr.number as gsr_number',
+                'gsr.status as gsr_status',
+                'gsr.receive_date as gsr_receive_date',
+            ]);
+
         $srcWh = DB::table('food_inventory_cards as c')
             ->leftJoin('warehouses as w', 'w.id', '=', 'c.warehouse_id')
             ->where('c.reference_type', 'delivery_order')
@@ -614,8 +626,24 @@ class WarehouseDashboardOpsService
         $dest = $h->outlet_name ?: ($h->warehouse_outlet_name ?: 'Outlet');
         $warehouseLabel = $srcWh . ' → ' . $dest;
 
+        // Prioritas penerimaan: GSR (serial) → OGR legacy
         $receivedByItem = [];
-        if ($h->ofgr_id) {
+        $receiveSource = null;
+        if ($gsrHeader) {
+            $recvRows = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as gsr', 'gsr.id', '=', 'si.header_id')
+                ->where('si.delivery_order_id', $id)
+                ->whereNull('gsr.deleted_at')
+                ->groupBy('si.item_id')
+                ->get([
+                    'si.item_id',
+                    DB::raw('SUM(si.qty) as received_qty'),
+                ]);
+            foreach ($recvRows as $rr) {
+                $receivedByItem[(int) $rr->item_id] = (float) ($rr->received_qty ?? 0);
+            }
+            $receiveSource = 'GSR';
+        } elseif ($h->ofgr_id) {
             $recvRows = DB::table('outlet_food_good_receive_items')
                 ->where('outlet_food_good_receive_id', $h->ofgr_id)
                 ->whereNull('deleted_at')
@@ -623,6 +651,7 @@ class WarehouseDashboardOpsService
             foreach ($recvRows as $rr) {
                 $receivedByItem[(int) $rr->item_id] = (float) ($rr->received_qty ?? $rr->qty ?? 0);
             }
+            $receiveSource = 'OGR';
         }
 
         $rows = DB::table('delivery_order_items as di')
@@ -665,12 +694,12 @@ class WarehouseDashboardOpsService
                 $noteParts[] = 'PL qty: ' . $r->qty_packing_list;
             }
             if ($hasReceived) {
-                $noteParts[] = 'Diterima outlet: ' . ($qtyReceived ?? 0);
+                $noteParts[] = 'Diterima outlet (' . $receiveSource . '): ' . ($qtyReceived ?? 0);
                 if ($qtyDo > 0 && abs($qtyDo - (float) ($qtyReceived ?? 0)) > 0.0001) {
                     $noteParts[] = 'Qty DO: ' . $qtyDo;
                 }
             } else {
-                $noteParts[] = 'Belum diterima outlet — subtotal menunggu OGR';
+                $noteParts[] = 'Belum diterima outlet — subtotal menunggu GSR';
             }
 
             $items[] = [
@@ -684,8 +713,19 @@ class WarehouseDashboardOpsService
             ];
         }
 
-        $status = $h->ofgr_status
-            ?: ($hasReceived ? 'diterima' : 'belum_diterima');
+        $status = $gsrHeader->gsr_status
+            ?? $h->ofgr_status
+            ?? ($hasReceived ? 'diterima' : 'belum_diterima');
+
+        $note = null;
+        if ($gsrHeader) {
+            $note = 'GSR: ' . $gsrHeader->gsr_number
+                . ($gsrHeader->gsr_receive_date ? ' · ' . $gsrHeader->gsr_receive_date : '');
+        } elseif ($h->ofgr_number) {
+            $note = 'OGR: ' . $h->ofgr_number . ($h->receive_date ? ' · ' . $h->receive_date : '');
+        } elseif ($h->fo_number) {
+            $note = 'FO: ' . $h->fo_number;
+        }
 
         return [
             'header' => [
@@ -696,9 +736,7 @@ class WarehouseDashboardOpsService
                 'warehouse' => $warehouseLabel,
                 'party' => $dest,
                 'user' => $h->user_name,
-                'note' => $h->ofgr_number
-                    ? ('OGR: ' . $h->ofgr_number . ($h->receive_date ? ' · ' . $h->receive_date : ''))
-                    : ($h->fo_number ? ('FO: ' . $h->fo_number) : null),
+                'note' => $note,
                 'url' => '/delivery-order/' . $id,
                 'show_po' => false,
                 'price_label' => 'Harga FO',
@@ -1288,6 +1326,18 @@ class WarehouseDashboardOpsService
      */
     private function queryDeliveryOrders(string $from, string $to, int $warehouseId, string $search)
     {
+        $gsrAgg = DB::table('outlet_serial_receive_items as si')
+            ->join('outlet_serial_receive_headers as gsr', 'gsr.id', '=', 'si.header_id')
+            ->whereNull('gsr.deleted_at')
+            ->groupBy('si.delivery_order_id')
+            ->select([
+                'si.delivery_order_id',
+                DB::raw('MAX(gsr.id) as gsr_id'),
+                DB::raw('MAX(gsr.number) as gsr_number'),
+                DB::raw('MAX(gsr.status) as gsr_status'),
+                DB::raw('MAX(gsr.receive_date) as gsr_receive_date'),
+            ]);
+
         $q = DB::table('delivery_orders as do')
             ->leftJoin('food_floor_orders as ffo', 'ffo.id', '=', 'do.floor_order_id')
             ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
@@ -1297,6 +1347,7 @@ class WarehouseDashboardOpsService
                 $join->on('ofgr.delivery_order_id', '=', 'do.id')
                     ->whereNull('ofgr.deleted_at');
             })
+            ->leftJoinSub($gsrAgg, 'gsr', 'gsr.delivery_order_id', '=', 'do.id')
             ->whereDate('do.created_at', '>=', $from)
             ->whereDate('do.created_at', '<=', $to)
             ->when($warehouseId > 0, function ($qq) use ($warehouseId) {
@@ -1316,6 +1367,8 @@ class WarehouseDashboardOpsService
                         ->orWhere('wo.name', 'like', "%{$search}%")
                         ->orWhere('ffo.order_number', 'like', "%{$search}%")
                         ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('gsr.gsr_status', 'like', "%{$search}%")
+                        ->orWhere('gsr.gsr_number', 'like', "%{$search}%")
                         ->orWhere('ofgr.status', 'like', "%{$search}%");
                 });
             })
@@ -1324,11 +1377,15 @@ class WarehouseDashboardOpsService
             ->get([
                 'do.id',
                 'do.number',
+                'do.floor_order_id',
                 DB::raw('DATE(do.created_at) as date'),
                 'o.nama_outlet as outlet_name',
                 'wo.name as warehouse_outlet_name',
                 'ffo.order_number as fo_number',
                 'u.nama_lengkap as user_name',
+                'gsr.gsr_id',
+                'gsr.gsr_number',
+                'gsr.gsr_status',
                 'ofgr.status as ofgr_status',
                 'ofgr.id as ofgr_id',
             ]);
@@ -1336,13 +1393,15 @@ class WarehouseDashboardOpsService
         // Batch warehouse sumber dari kartu stok
         $ids = $q->pluck('id')->all();
         $srcWhByDo = [];
+        $amountByDo = [];
         if (!empty($ids)) {
+            $idList = implode(',', array_map('intval', $ids));
             $cardRows = DB::select(
                 "SELECT c.reference_id as do_id, w.name as warehouse_name
                  FROM food_inventory_cards c
                  LEFT JOIN warehouses w ON w.id = c.warehouse_id
                  WHERE c.reference_type = 'delivery_order'
-                   AND c.reference_id IN (" . implode(',', array_map('intval', $ids)) . ")
+                   AND c.reference_id IN ({$idList})
                    AND w.name IS NOT NULL
                  GROUP BY c.reference_id, w.name"
             );
@@ -1351,12 +1410,50 @@ class WarehouseDashboardOpsService
                     $srcWhByDo[$row->do_id] = $row->warehouse_name;
                 }
             }
+
+            // Nilai diterima: FO price × qty GSR (prioritas) / OGR legacy
+            $gsrAmt = DB::select(
+                "SELECT si.delivery_order_id as do_id,
+                        SUM(si.qty * COALESCE(ffoi.price, 0)) as amount
+                 FROM outlet_serial_receive_items si
+                 JOIN outlet_serial_receive_headers gsr ON gsr.id = si.header_id AND gsr.deleted_at IS NULL
+                 JOIN delivery_orders do2 ON do2.id = si.delivery_order_id
+                 LEFT JOIN food_floor_order_items ffoi
+                   ON ffoi.item_id = si.item_id AND ffoi.floor_order_id = do2.floor_order_id
+                 WHERE si.delivery_order_id IN ({$idList})
+                 GROUP BY si.delivery_order_id"
+            );
+            foreach ($gsrAmt as $row) {
+                $amountByDo[(int) $row->do_id] = (float) $row->amount;
+            }
+
+            $ofgrAmt = DB::select(
+                "SELECT ofgr.delivery_order_id as do_id,
+                        SUM(COALESCE(ofgri.received_qty, ofgri.qty, 0) * COALESCE(ffoi.price, 0)) as amount
+                 FROM outlet_food_good_receives ofgr
+                 JOIN outlet_food_good_receive_items ofgri
+                   ON ofgri.outlet_food_good_receive_id = ofgr.id AND ofgri.deleted_at IS NULL
+                 JOIN delivery_orders do2 ON do2.id = ofgr.delivery_order_id
+                 LEFT JOIN food_floor_order_items ffoi
+                   ON ffoi.item_id = ofgri.item_id AND ffoi.floor_order_id = do2.floor_order_id
+                 WHERE ofgr.deleted_at IS NULL
+                   AND ofgr.delivery_order_id IN ({$idList})
+                 GROUP BY ofgr.delivery_order_id"
+            );
+            foreach ($ofgrAmt as $row) {
+                $doId = (int) $row->do_id;
+                if (!isset($amountByDo[$doId])) {
+                    $amountByDo[$doId] = (float) $row->amount;
+                }
+            }
         }
 
-        return $q->map(function ($r) use ($srcWhByDo) {
+        return $q->map(function ($r) use ($srcWhByDo, $amountByDo) {
             $src = $srcWhByDo[$r->id] ?? 'Main Store';
             $dest = $r->outlet_name ?: ($r->warehouse_outlet_name ?: '—');
-            $status = $r->ofgr_status ?: ($r->ofgr_id ? 'diterima' : 'belum_diterima');
+            $status = $r->gsr_status
+                ?: ($r->ofgr_status
+                    ?: (($r->gsr_id || $r->ofgr_id) ? 'diterima' : 'belum_diterima'));
 
             return [
                 'id' => (int) $r->id,
@@ -1367,7 +1464,7 @@ class WarehouseDashboardOpsService
                 'party' => $dest,
                 'user' => $r->user_name ?? '—',
                 'approver' => null,
-                'amount' => null,
+                'amount' => $amountByDo[(int) $r->id] ?? null,
                 'url' => '/delivery-order/' . $r->id,
             ];
         });
