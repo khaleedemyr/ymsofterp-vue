@@ -574,47 +574,137 @@ class WarehouseDashboardOpsService
     private function detailDeliveryOrder(int $id): array
     {
         $h = DB::table('delivery_orders as do')
-            ->leftJoin('packing_lists as pl', 'pl.id', '=', 'do.packing_list_id')
-            ->leftJoin('warehouses as w', 'w.id', '=', 'pl.warehouse_id')
+            ->leftJoin('food_floor_orders as ffo', 'ffo.id', '=', 'do.floor_order_id')
+            ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
+            ->leftJoin('users as u', 'u.id', '=', 'do.created_by')
+            ->leftJoin('outlet_food_good_receives as ofgr', function ($join) {
+                $join->on('ofgr.delivery_order_id', '=', 'do.id')
+                    ->whereNull('ofgr.deleted_at');
+            })
             ->where('do.id', $id)
             ->first([
-                'do.id', 'do.number', DB::raw('DATE(do.created_at) as date'),
-                'pl.pl_number', 'w.name as warehouse_name',
+                'do.id',
+                'do.number',
+                DB::raw('DATE(do.created_at) as date'),
+                'do.source_type',
+                'do.floor_order_id',
+                'ffo.order_number as fo_number',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'u.nama_lengkap as user_name',
+                'ofgr.id as ofgr_id',
+                'ofgr.number as ofgr_number',
+                'ofgr.status as ofgr_status',
+                'ofgr.receive_date',
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Delivery Order tidak ditemukan');
         }
 
-        $items = DB::table('delivery_order_items as di')
+        $srcWh = DB::table('food_inventory_cards as c')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'c.warehouse_id')
+            ->where('c.reference_type', 'delivery_order')
+            ->where('c.reference_id', $id)
+            ->orderBy('c.id')
+            ->value('w.name');
+        if (!$srcWh) {
+            $srcWh = 'Main Store';
+        }
+        $dest = $h->outlet_name ?: ($h->warehouse_outlet_name ?: 'Outlet');
+        $warehouseLabel = $srcWh . ' → ' . $dest;
+
+        $receivedByItem = [];
+        if ($h->ofgr_id) {
+            $recvRows = DB::table('outlet_food_good_receive_items')
+                ->where('outlet_food_good_receive_id', $h->ofgr_id)
+                ->whereNull('deleted_at')
+                ->get(['item_id', 'received_qty', 'qty', 'unit_id']);
+            foreach ($recvRows as $rr) {
+                $receivedByItem[(int) $rr->item_id] = (float) ($rr->received_qty ?? $rr->qty ?? 0);
+            }
+        }
+
+        $rows = DB::table('delivery_order_items as di')
             ->leftJoin('items as i', 'i.id', '=', 'di.item_id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) use ($h) {
+                $join->on('ffoi.item_id', '=', 'di.item_id')
+                    ->where('ffoi.floor_order_id', '=', $h->floor_order_id);
+            })
             ->where('di.delivery_order_id', $id)
+            ->orderBy('di.id')
             ->get([
-                'i.name as item_name', 'i.sku as item_code',
-                'di.qty_packing_list', 'di.qty_scan', 'di.unit',
-            ])
-            ->map(fn ($r) => [
+                'di.item_id',
+                'i.name as item_name',
+                'i.sku as item_code',
+                'di.qty_packing_list',
+                'di.qty_scan',
+                'di.unit',
+                'ffoi.price as fo_price',
+            ]);
+
+        $items = [];
+        $grand = 0.0;
+        $hasAmount = false;
+        $hasReceived = !empty($receivedByItem);
+        foreach ($rows as $r) {
+            $itemId = (int) $r->item_id;
+            $qtyDo = (float) ($r->qty_scan ?? $r->qty_packing_list ?? 0);
+            $qtyReceived = $receivedByItem[$itemId] ?? null;
+            $price = $r->fo_price !== null ? (float) $r->fo_price : null;
+            $subtotal = null;
+            // Nilai Rp hanya dari qty yang diterima outlet
+            if ($price !== null && $hasReceived) {
+                $subtotal = $price * (float) ($qtyReceived ?? 0);
+                $grand += $subtotal;
+                $hasAmount = true;
+            }
+
+            $noteParts = [];
+            if ($r->qty_packing_list !== null) {
+                $noteParts[] = 'PL qty: ' . $r->qty_packing_list;
+            }
+            if ($hasReceived) {
+                $noteParts[] = 'Diterima outlet: ' . ($qtyReceived ?? 0);
+                if ($qtyDo > 0 && abs($qtyDo - (float) ($qtyReceived ?? 0)) > 0.0001) {
+                    $noteParts[] = 'Qty DO: ' . $qtyDo;
+                }
+            } else {
+                $noteParts[] = 'Belum diterima outlet — subtotal menunggu OGR';
+            }
+
+            $items[] = [
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
-                'qty' => (float) ($r->qty_scan ?? $r->qty_packing_list ?? 0),
+                'qty' => $hasReceived ? (float) ($qtyReceived ?? 0) : $qtyDo,
                 'unit' => $r->unit ?? '-',
-                'price' => null,
-                'subtotal' => null,
-                'note' => 'PL qty: ' . ($r->qty_packing_list ?? 0),
-            ])->all();
+                'price' => $price,
+                'subtotal' => $subtotal,
+                'note' => implode(' · ', $noteParts),
+            ];
+        }
+
+        $status = $h->ofgr_status
+            ?: ($hasReceived ? 'diterima' : 'belum_diterima');
 
         return [
             'header' => [
                 'type' => 'Delivery Order',
                 'number' => $h->number,
                 'date' => $h->date,
-                'status' => null,
-                'warehouse' => $h->warehouse_name,
-                'party' => $h->pl_number ? ('PL: ' . $h->pl_number) : null,
-                'note' => null,
+                'status' => $status,
+                'warehouse' => $warehouseLabel,
+                'party' => $dest,
+                'user' => $h->user_name,
+                'note' => $h->ofgr_number
+                    ? ('OGR: ' . $h->ofgr_number . ($h->receive_date ? ' · ' . $h->receive_date : ''))
+                    : ($h->fo_number ? ('FO: ' . $h->fo_number) : null),
                 'url' => '/delivery-order/' . $id,
+                'show_po' => false,
+                'price_label' => 'Harga FO',
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $hasAmount ? $grand : null,
         ];
     }
 
@@ -1199,16 +1289,34 @@ class WarehouseDashboardOpsService
     private function queryDeliveryOrders(string $from, string $to, int $warehouseId, string $search)
     {
         $q = DB::table('delivery_orders as do')
-            ->leftJoin('packing_lists as pl', 'pl.id', '=', 'do.packing_list_id')
-            ->leftJoin('warehouses as w', 'w.id', '=', 'pl.warehouse_id')
+            ->leftJoin('food_floor_orders as ffo', 'ffo.id', '=', 'do.floor_order_id')
+            ->leftJoin('warehouse_outlets as wo', 'wo.id', '=', 'ffo.warehouse_outlet_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'ffo.id_outlet')
+            ->leftJoin('users as u', 'u.id', '=', 'do.created_by')
+            ->leftJoin('outlet_food_good_receives as ofgr', function ($join) {
+                $join->on('ofgr.delivery_order_id', '=', 'do.id')
+                    ->whereNull('ofgr.deleted_at');
+            })
             ->whereDate('do.created_at', '>=', $from)
             ->whereDate('do.created_at', '<=', $to)
-            ->when($warehouseId > 0, fn ($qq) => $qq->where('pl.warehouse_id', $warehouseId))
+            ->when($warehouseId > 0, function ($qq) use ($warehouseId) {
+                // Filter warehouse sumber via kartu stok DO
+                $qq->whereExists(function ($ex) use ($warehouseId) {
+                    $ex->select(DB::raw(1))
+                        ->from('food_inventory_cards as c')
+                        ->whereColumn('c.reference_id', 'do.id')
+                        ->where('c.reference_type', 'delivery_order')
+                        ->where('c.warehouse_id', $warehouseId);
+                });
+            })
             ->when($search !== '', function ($qq) use ($search) {
                 $qq->where(function ($q2) use ($search) {
                     $q2->where('do.number', 'like', "%{$search}%")
-                        ->orWhere('w.name', 'like', "%{$search}%")
-                        ->orWhere('pl.pl_number', 'like', "%{$search}%");
+                        ->orWhere('o.nama_outlet', 'like', "%{$search}%")
+                        ->orWhere('wo.name', 'like', "%{$search}%")
+                        ->orWhere('ffo.order_number', 'like', "%{$search}%")
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('ofgr.status', 'like', "%{$search}%");
                 });
             })
             ->orderByDesc('do.created_at')
@@ -1217,20 +1325,52 @@ class WarehouseDashboardOpsService
                 'do.id',
                 'do.number',
                 DB::raw('DATE(do.created_at) as date'),
-                'pl.pl_number as pl_number',
-                'w.name as warehouse_name',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_outlet_name',
+                'ffo.order_number as fo_number',
+                'u.nama_lengkap as user_name',
+                'ofgr.status as ofgr_status',
+                'ofgr.id as ofgr_id',
             ]);
 
-        return $q->map(fn ($r) => [
-            'id' => (int) $r->id,
-            'number' => $r->number,
-            'date' => $r->date,
-            'status' => null,
-            'warehouse_name' => $r->warehouse_name ?? '—',
-            'party' => $r->pl_number ? ('PL: ' . $r->pl_number) : '—',
-            'amount' => null,
-            'url' => '/delivery-order/' . $r->id,
-        ]);
+        // Batch warehouse sumber dari kartu stok
+        $ids = $q->pluck('id')->all();
+        $srcWhByDo = [];
+        if (!empty($ids)) {
+            $cardRows = DB::select(
+                "SELECT c.reference_id as do_id, w.name as warehouse_name
+                 FROM food_inventory_cards c
+                 LEFT JOIN warehouses w ON w.id = c.warehouse_id
+                 WHERE c.reference_type = 'delivery_order'
+                   AND c.reference_id IN (" . implode(',', array_map('intval', $ids)) . ")
+                   AND w.name IS NOT NULL
+                 GROUP BY c.reference_id, w.name"
+            );
+            foreach ($cardRows as $row) {
+                if (!isset($srcWhByDo[$row->do_id])) {
+                    $srcWhByDo[$row->do_id] = $row->warehouse_name;
+                }
+            }
+        }
+
+        return $q->map(function ($r) use ($srcWhByDo) {
+            $src = $srcWhByDo[$r->id] ?? 'Main Store';
+            $dest = $r->outlet_name ?: ($r->warehouse_outlet_name ?: '—');
+            $status = $r->ofgr_status ?: ($r->ofgr_id ? 'diterima' : 'belum_diterima');
+
+            return [
+                'id' => (int) $r->id,
+                'number' => $r->number,
+                'date' => $r->date,
+                'status' => $status,
+                'warehouse_name' => $src . ' → ' . $dest,
+                'party' => $dest,
+                'user' => $r->user_name ?? '—',
+                'approver' => null,
+                'amount' => null,
+                'url' => '/delivery-order/' . $r->id,
+            ];
+        });
     }
 
     /**

@@ -666,15 +666,15 @@ const modalSearchPlaceholder = computed(() => {
 const detailUserLabel = computed(() =>
   modalType.value === 'food_good_receive' ? 'User GR' : 'User'
 );
+const detailPriceLabel = computed(() =>
+  detailHeader.value?.price_label
+    || (modalType.value === 'warehouse_transfer' ? 'Cost' : 'Harga')
+);
 const detailShowPo = computed(() => {
   if (detailHeader.value?.show_po === false) return false;
   if (detailHeader.value?.show_po === true) return true;
   return modalType.value === 'food_good_receive' || modalType.value === 'pr_foods';
 });
-const detailPriceLabel = computed(() =>
-  detailHeader.value?.price_label
-    || (modalType.value === 'warehouse_transfer' ? 'Cost' : 'Harga')
-);
 
 const formatNumber = (value) => new Intl.NumberFormat('id-ID').format(Number(value) || 0);
 const formatCurrency = (value) =>
