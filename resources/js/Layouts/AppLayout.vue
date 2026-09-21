@@ -423,6 +423,7 @@ const menuGroups = [
         collapsible: true,
         open: ref(false),
         menus: [
+            { name: () => t('sidebar.menus.warehouse_cost_health_dashboard'), icon: 'fa-solid fa-heart-pulse', route: '/warehouse-cost-health-dashboard', code: 'warehouse_cost_health_dashboard' },
             { name: () => t('sidebar.menus.purchase_requisition_foods'), icon: 'fa-solid fa-file-invoice', route: '/pr-foods', code: 'pr_foods' },
             { name: () => t('sidebar.menus.good_receive'), icon: 'fa-solid fa-truck', route: '/food-good-receive', code: 'food_good_receive' },
             { name: () => t('sidebar.menus.food_good_receive_report'), icon: 'fa-solid fa-chart-bar', route: '/food-good-receive-report', code: 'food_good_receive_report' },

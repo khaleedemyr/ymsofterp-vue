@@ -101,6 +101,213 @@ class WarehouseMacAnomalyDetectionService
     }
 
     /**
+     * Snapshot ringan untuk dashboard (tanpa pagination / attach nomor transaksi).
+     *
+     * @param  array{
+     *   warehouse_id?: int,
+     *   date_from?: string,
+     *   date_to?: string,
+     *   min_spike_percent?: float,
+     *   spike_multiplier?: float,
+     *   max_mac?: float,
+     * }  $filters
+     * @return array{
+     *   kpis: array<string, mixed>,
+     *   type_breakdown: array<string, int>,
+     *   module_breakdown: list<array<string, mixed>>,
+     *   top_warehouses: list<array<string, mixed>>,
+     *   top_items: list<array<string, mixed>>,
+     *   summary: array<string, mixed>,
+     * }
+     */
+    public function dashboardSnapshot(array $filters): array
+    {
+        $warehouseId = (int) ($filters['warehouse_id'] ?? 0);
+        $dateTo = (string) ($filters['date_to'] ?? Carbon::now()->format('Y-m-d'));
+        $dateFrom = MacAnomalyHistoryCutoff::effectiveDateFrom(
+            (string) ($filters['date_from'] ?? Carbon::parse($dateTo)->subDays(30)->format('Y-m-d'))
+        );
+        $minSpikePercent = max(0, (float) ($filters['min_spike_percent'] ?? 100));
+        $spikeMultiplier = max(1.1, (float) ($filters['spike_multiplier'] ?? 5));
+        $maxMac = max(0, (float) ($filters['max_mac'] ?? 10_000_000));
+
+        $historyTypes = ['negative_mac', 'negative_new_cost', 'spike_percent', 'spike_multiplier', 'absolute_high'];
+
+        $historyScan = $this->scanHistoryAnomalies(
+            $warehouseId,
+            $dateFrom,
+            $dateTo,
+            $minSpikePercent,
+            $spikeMultiplier,
+            $maxMac,
+            $historyTypes,
+        );
+        $historyAnomalies = $historyScan['anomalies'];
+
+        $stockScan = $this->scanCurrentStockAnomalies($warehouseId, $maxMac);
+        $stockAnomalies = $stockScan['anomalies'];
+
+        $date7From = Carbon::parse($dateTo)->subDays(6)->format('Y-m-d');
+        $historyLast7 = array_values(array_filter(
+            $historyAnomalies,
+            fn ($row) => ($row['date'] ?? '') >= $date7From && ($row['date'] ?? '') <= $dateTo
+        ));
+
+        $orphanValueCount = 0;
+        $absoluteHighStockCount = 0;
+        $negativeMacStockCount = 0;
+        foreach ($stockAnomalies as $row) {
+            $types = $row['anomaly_types'] ?? [];
+            if (in_array('orphan_value', $types, true)) {
+                $orphanValueCount++;
+            }
+            if (in_array('absolute_high', $types, true)) {
+                $absoluteHighStockCount++;
+            }
+            if (in_array('negative_mac', $types, true)) {
+                $negativeMacStockCount++;
+            }
+        }
+
+        $all = array_merge($historyAnomalies, $stockAnomalies);
+        $typeBreakdown = $this->buildTypeBreakdown($all);
+        $moduleBreakdown = $this->buildModuleBreakdown($all);
+
+        return [
+            'kpis' => [
+                'orphan_value' => $orphanValueCount,
+                'absolute_high_stock' => $absoluteHighStockCount,
+                'negative_mac_stock' => $negativeMacStockCount,
+                'current_stock_anomalies' => count($stockAnomalies),
+                'history_last_7_days' => count($historyLast7),
+                'history_in_period' => count($historyAnomalies),
+                'total_anomalies' => count($all),
+            ],
+            'type_breakdown' => $typeBreakdown,
+            'module_breakdown' => $moduleBreakdown,
+            'top_warehouses' => $this->buildTopWarehouses($all, 10),
+            'top_items' => $this->buildTopItems($all, 15),
+            'summary' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'date_7_from' => $date7From,
+                'history_rows_in_period' => $historyScan['rows_in_period'],
+                'history_rows_total_scope' => $historyScan['rows_total_scope'],
+                'stock_rows_checked' => $stockScan['stock_rows_checked'],
+                'filters' => [
+                    'warehouse_id' => $warehouseId ?: null,
+                    'min_spike_percent' => $minSpikePercent,
+                    'spike_multiplier' => $spikeMultiplier,
+                    'max_mac' => $maxMac,
+                ],
+                'history_cutoff_date' => MacAnomalyHistoryCutoff::DATE,
+            ],
+        ];
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $anomalies
+     * @return list<array<string, mixed>>
+     */
+    private function buildTopWarehouses(array $anomalies, int $limit = 10): array
+    {
+        $counts = [];
+        foreach ($anomalies as $row) {
+            $id = (int) ($row['warehouse_id'] ?? 0);
+            if ($id <= 0) {
+                continue;
+            }
+            if (!isset($counts[$id])) {
+                $counts[$id] = [
+                    'warehouse_id' => $id,
+                    'warehouse_name' => $row['warehouse_name'] ?? '-',
+                    'count' => 0,
+                    'orphan_value' => 0,
+                    'history' => 0,
+                    'current_stock' => 0,
+                ];
+            }
+            $counts[$id]['count']++;
+            if (($row['source'] ?? '') === 'current_stock') {
+                $counts[$id]['current_stock']++;
+                if (in_array('orphan_value', $row['anomaly_types'] ?? [], true)) {
+                    $counts[$id]['orphan_value']++;
+                }
+            } else {
+                $counts[$id]['history']++;
+            }
+        }
+
+        $list = array_values($counts);
+        usort($list, fn ($a, $b) => $b['count'] <=> $a['count']);
+
+        return array_slice($list, 0, $limit);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $anomalies
+     * @return list<array<string, mixed>>
+     */
+    private function buildTopItems(array $anomalies, int $limit = 15): array
+    {
+        $items = [];
+        foreach ($anomalies as $row) {
+            $itemId = (int) ($row['item_id'] ?? 0);
+            $warehouseId = (int) ($row['warehouse_id'] ?? 0);
+            $key = $warehouseId . '|' . ($itemId ?: ('inv:' . ($row['inventory_item_id'] ?? 0)));
+            if (!isset($items[$key])) {
+                $items[$key] = [
+                    'item_id' => $itemId ?: null,
+                    'inventory_item_id' => (int) ($row['inventory_item_id'] ?? 0),
+                    'item_name' => $row['item_name'] ?? '-',
+                    'item_code' => $row['item_code'] ?? null,
+                    'warehouse_id' => $warehouseId,
+                    'warehouse_name' => $row['warehouse_name'] ?? '-',
+                    'count' => 0,
+                    'max_mac' => 0.0,
+                    'orphan_value' => false,
+                    'stock_value' => null,
+                    'flags' => [],
+                ];
+            }
+            $items[$key]['count']++;
+            $mac = (float) ($row['mac'] ?? 0);
+            if ($mac > $items[$key]['max_mac']) {
+                $items[$key]['max_mac'] = $mac;
+            }
+            if (in_array('orphan_value', $row['anomaly_types'] ?? [], true)) {
+                $items[$key]['orphan_value'] = true;
+                $items[$key]['stock_value'] = $row['stock_value'] ?? $items[$key]['stock_value'];
+            }
+            foreach ($row['anomaly_types'] ?? [] as $flag) {
+                if (!in_array($flag, $items[$key]['flags'], true)) {
+                    $items[$key]['flags'][] = $flag;
+                }
+            }
+        }
+
+        $list = array_values($items);
+        usort($list, function ($a, $b) {
+            if ($a['orphan_value'] !== $b['orphan_value']) {
+                return $a['orphan_value'] ? -1 : 1;
+            }
+            if ($a['max_mac'] !== $b['max_mac']) {
+                return $b['max_mac'] <=> $a['max_mac'];
+            }
+
+            return $b['count'] <=> $a['count'];
+        });
+
+        $sliced = array_slice($list, 0, $limit);
+        foreach ($sliced as &$item) {
+            $item['max_mac'] = number_format((float) $item['max_mac'], 4, '.', '');
+        }
+        unset($item);
+
+        return $sliced;
+    }
+
+    /**
      * @param  list<string>  $types
      * @return array{anomalies: list<array<string, mixed>>, rows_in_period: int, rows_total_scope: int}
      */

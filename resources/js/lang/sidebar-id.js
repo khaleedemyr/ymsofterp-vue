@@ -231,6 +231,7 @@ export default {
     "report_po_gr": "Laporan PO GR",
     "report_purchase_order_ops": "Laporan Purchase Order Ops",
     "purchase_requisition_foods": "Purchase Requisition Foods",
+    "warehouse_cost_health_dashboard": "Dashboard Kesehatan Cost Gudang",
     "good_receive": "Penerimaan Barang",
     "food_good_receive_report": "Laporan Penerimaan Barang Food",
     "pindah_gudang": "Pindah Gudang",
