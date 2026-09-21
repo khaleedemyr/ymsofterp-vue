@@ -89,12 +89,25 @@
               @click="openCard(card)"
             >
               <div class="flex items-start justify-between gap-2">
-                <div>
+                <div class="min-w-0 flex-1">
                   <p class="text-xs font-medium text-gray-500 leading-tight">{{ card.label }}</p>
                   <p class="text-2xl font-bold text-gray-900 mt-1">{{ formatNumber(card.count) }}</p>
-                  <p v-if="card.amount != null" class="text-xs text-emerald-700 mt-1">{{ formatCurrency(card.amount) }}</p>
+                  <p v-if="card.amount != null" class="text-xs text-emerald-700 mt-1 font-medium">{{ formatCurrency(card.amount) }}</p>
+                  <div
+                    v-if="card.amount_breakdown?.length"
+                    class="mt-1.5 space-y-0.5"
+                  >
+                    <p
+                      v-for="row in card.amount_breakdown"
+                      :key="row.type"
+                      class="text-[10px] text-slate-500 flex justify-between gap-2 leading-snug"
+                    >
+                      <span class="truncate">{{ row.label }}<span v-if="row.count" class="text-slate-400"> · {{ row.count }}</span></span>
+                      <span class="tabular-nums text-slate-600 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                    </p>
+                  </div>
                 </div>
-                <i :class="[card.icon, 'text-blue-500 text-lg']"></i>
+                <i :class="[card.icon, 'text-blue-500 text-lg shrink-0']"></i>
               </div>
               <p v-if="card.note" class="text-[10px] text-amber-600 mt-2">{{ card.note }}</p>
               <p class="mt-2 text-[11px] font-medium text-blue-600">Klik untuk lihat transaksi</p>

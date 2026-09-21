@@ -2092,18 +2092,69 @@ class WarehouseDashboardOpsService
             ->pluck('cnt', 'type')
             ->all();
 
-        $amountQ = DB::table('food_inventory_cards')
-            ->where('reference_type', 'internal_use_waste')
-            ->whereBetween('date', [$from, $to]);
-        if ($warehouseId > 0) {
-            $amountQ->where('warehouse_id', $warehouseId);
+        $whFilter = $warehouseId > 0 ? ' AND c.warehouse_id = ' . (int) $warehouseId : '';
+        $amountRows = DB::select(
+            "SELECT type, SUM(amount) as amount FROM (
+                SELECT i.type, c.value_out as amount
+                FROM food_inventory_cards c
+                INNER JOIN internal_use_wastes i ON i.id = c.reference_id
+                WHERE c.reference_type = 'internal_use_waste'
+                  AND c.date BETWEEN ? AND ?
+                  {$whFilter}
+                UNION ALL
+                SELECT h.type, c.value_out as amount
+                FROM food_inventory_cards c
+                INNER JOIN internal_use_waste_headers h ON h.id = c.reference_id
+                LEFT JOIN internal_use_wastes i ON i.id = c.reference_id
+                WHERE c.reference_type = 'internal_use_waste'
+                  AND i.id IS NULL
+                  AND c.date BETWEEN ? AND ?
+                  {$whFilter}
+            ) t
+            GROUP BY type
+            ORDER BY amount DESC",
+            [$from, $to, $from, $to]
+        );
+
+        $amountByType = [];
+        $amount = 0.0;
+        $breakdown = [];
+        foreach ($amountRows as $row) {
+            $type = (string) ($row->type ?? 'other');
+            $amt = round((float) $row->amount, 2);
+            $amountByType[$type] = $amt;
+            $amount += $amt;
+            $breakdown[] = [
+                'type' => $type,
+                'label' => $this->formatIuwTypeLabel($type),
+                'amount' => $amt,
+                'count' => (int) ($byType[$type] ?? 0),
+            ];
         }
-        $amount = (float) $amountQ->sum('value_out');
 
         $card = $this->card('internal_use_waste', 'Pemakaian Internal & Waste', $count, '/internal-use-waste', 'fa-solid fa-recycle', $byType);
         $card['amount'] = round($amount, 2);
+        $card['amount_by_type'] = $amountByType;
+        $card['amount_breakdown'] = $breakdown;
 
         return $card;
+    }
+
+    private function formatIuwTypeLabel(string $type): string
+    {
+        return match ($type) {
+            'internal_use' => 'Internal Use',
+            'waste' => 'Waste',
+            'spoil' => 'Spoil',
+            'r_and_d' => 'R&D',
+            'usage' => 'Usage',
+            'marketing' => 'Marketing',
+            'training' => 'Training',
+            'guest_supplies' => 'Guest Supplies',
+            'non_commodity' => 'Non Commodity',
+            'wrong_maker' => 'Wrong Maker',
+            default => str_replace('_', ' ', ucwords($type, '_')),
+        };
     }
 
     /**
