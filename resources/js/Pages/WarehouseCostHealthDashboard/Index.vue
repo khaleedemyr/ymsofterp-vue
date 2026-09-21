@@ -369,7 +369,7 @@
               <input
                 v-model="modalSearch"
                 type="text"
-                placeholder="Cari nomor / warehouse / status / approver..."
+                :placeholder="modalSearchPlaceholder"
                 class="flex-1 min-w-[180px] rounded-xl border-slate-200 text-sm"
                 @keyup.enter="() => { modalPage = 1; fetchModal(); }"
               />
@@ -396,7 +396,7 @@
                     <th class="px-4 py-3 text-left">Warehouse</th>
                     <th class="px-4 py-3 text-left">Keterangan</th>
                     <th class="px-4 py-3 text-left">Status</th>
-                    <th class="px-4 py-3 text-left">Approver</th>
+                    <th class="px-4 py-3 text-left">{{ modalUserLabel }}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -417,7 +417,7 @@
                       <span v-else class="text-slate-300">—</span>
                     </td>
                     <td class="px-4 py-2.5 text-slate-600">
-                      <span v-if="txn.approver">{{ txn.approver }}</span>
+                      <span v-if="txn.user || txn.approver">{{ txn.user || txn.approver }}</span>
                       <span v-else class="text-slate-300">—</span>
                     </td>
                   </tr>
@@ -495,6 +495,9 @@
           <div v-else>
             <div class="bg-slate-50 rounded-xl px-4 py-3 mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
               <div v-if="detailHeader?.party"><span class="text-slate-500">Keterangan:</span> <strong>{{ detailHeader.party }}</strong></div>
+              <div v-if="detailHeader?.user"><span class="text-slate-500">{{ detailUserLabel }}:</span> <strong>{{ detailHeader.user }}</strong></div>
+              <div v-if="detailHeader?.warehouse"><span class="text-slate-500">Warehouse:</span> <strong>{{ detailHeader.warehouse }}</strong></div>
+              <div v-if="detailHeader?.status"><span class="text-slate-500">Status:</span> <strong>{{ detailHeader.status }}</strong></div>
               <div v-if="detailHeader?.note"><span class="text-slate-500">Catatan:</span> <strong>{{ detailHeader.note }}</strong></div>
               <div class="ml-auto text-slate-500">{{ detailItems.length }} item</div>
             </div>
@@ -620,6 +623,19 @@ const periodLabel = computed(() => periodMeta.value?.label || monthLabel(selecte
 const hasData = computed(() => (transactions.value.summary || []).length > 0 || Object.keys(kpis.value).length > 0);
 const costShortcuts = computed(() => props.shortcuts.filter((s) => s.group === 'cost'));
 const opsShortcuts = computed(() => props.shortcuts.filter((s) => s.group === 'ops'));
+const modalUserLabel = computed(() => {
+  if (modalType.value === 'food_good_receive') return 'User GR';
+  if (modalType.value === 'pr_foods') return 'Approver';
+  return 'User';
+});
+const modalSearchPlaceholder = computed(() => {
+  if (modalType.value === 'food_good_receive') return 'Cari nomor / warehouse / status / user GR...';
+  if (modalType.value === 'pr_foods') return 'Cari nomor / warehouse / status / approver...';
+  return 'Cari nomor / warehouse / status / user...';
+});
+const detailUserLabel = computed(() =>
+  modalType.value === 'food_good_receive' ? 'User GR' : 'User'
+);
 
 const formatNumber = (value) => new Intl.NumberFormat('id-ID').format(Number(value) || 0);
 const formatCurrency = (value) =>

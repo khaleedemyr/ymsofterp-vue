@@ -279,52 +279,109 @@ class WarehouseDashboardOpsService
         $h = DB::table('food_good_receives as g')
             ->leftJoin('suppliers as s', 's.id', '=', 'g.supplier_id')
             ->leftJoin('users as u', 'u.id', '=', 'g.received_by')
+            ->leftJoin('purchase_order_foods as po', 'po.id', '=', 'g.po_id')
             ->where('g.id', $id)
             ->first([
-                'g.id', 'g.gr_number as number', 'g.receive_date as date',
-                's.name as supplier_name', 'u.nama_lengkap as user_name', 'g.notes',
+                'g.id', 'g.gr_number as number', 'g.receive_date as date', 'g.notes', 'g.po_id',
+                's.name as supplier_name', 'u.nama_lengkap as user_name',
+                'po.number as po_number', 'po.status as po_status',
             ]);
         if (!$h) {
             throw new \InvalidArgumentException('Good Receive tidak ditemukan');
         }
 
-        $items = DB::table('food_good_receive_items as gi')
-            ->leftJoin('items as i', 'i.id', '=', 'gi.item_id')
-            ->leftJoin('units as un', 'un.id', '=', 'gi.unit_id')
-            ->where('gi.good_receive_id', $id)
-            ->get([
-                'i.name as item_name', 'i.sku as item_code',
-                'gi.qty_ordered', 'gi.qty_received', 'gi.qty_rejected',
-                'un.name as unit_name', 'gi.notes',
-            ])
-            ->map(fn ($r) => [
+        $rows = DB::select(
+            "SELECT
+                i.name as item_name,
+                i.sku as item_code,
+                gi.qty_ordered,
+                gi.qty_received,
+                gi.qty_rejected,
+                un.name as unit_name,
+                gi.notes,
+                poi.price as po_price,
+                poi.total as po_total,
+                poi.subtotal as po_subtotal,
+                COALESCE(poi.purchase_order_food_id, poi.purchase_order_id, ?) as po_id,
+                po.number as po_number,
+                po.date as po_date,
+                u_po.nama_lengkap as po_creator,
+                COALESCE(s_item.name, s_po.name) as po_supplier,
+                w.name as warehouse_name
+            FROM food_good_receive_items gi
+            LEFT JOIN items i ON i.id = gi.item_id
+            LEFT JOIN units un ON un.id = gi.unit_id
+            LEFT JOIN purchase_order_food_items poi ON poi.id = gi.po_item_id
+            LEFT JOIN purchase_order_foods po
+                ON po.id = COALESCE(poi.purchase_order_food_id, poi.purchase_order_id, ?)
+            LEFT JOIN pr_food_items pfi ON pfi.id = poi.pr_food_item_id
+            LEFT JOIN pr_foods pf ON pf.id = pfi.pr_food_id
+            LEFT JOIN warehouses w ON w.id = pf.warehouse_id
+            LEFT JOIN users u_po ON u_po.id = po.created_by
+            LEFT JOIN suppliers s_po ON s_po.id = po.supplier_id
+            LEFT JOIN suppliers s_item ON s_item.id = poi.supplier_id
+            WHERE gi.good_receive_id = ?
+            ORDER BY gi.id ASC",
+            [$h->po_id, $h->po_id, $id]
+        );
+
+        $items = [];
+        $grand = 0.0;
+        $hasAmount = false;
+        $warehouseName = null;
+        foreach ($rows as $r) {
+            if (!$warehouseName && $r->warehouse_name) {
+                $warehouseName = $r->warehouse_name;
+            }
+            $price = $r->po_price !== null ? (float) $r->po_price : null;
+            $subtotal = null;
+            if ($r->po_total !== null) {
+                $subtotal = (float) $r->po_total;
+            } elseif ($r->po_subtotal !== null) {
+                $subtotal = (float) $r->po_subtotal;
+            } elseif ($price !== null) {
+                $subtotal = $price * (float) $r->qty_received;
+            }
+            if ($subtotal !== null) {
+                $grand += $subtotal;
+                $hasAmount = true;
+            }
+
+            $items[] = [
                 'name' => $r->item_name ?? '-',
                 'code' => $r->item_code,
                 'qty' => (float) $r->qty_received,
                 'unit' => $r->unit_name ?? '-',
-                'price' => null,
-                'subtotal' => null,
+                'price' => $price,
+                'subtotal' => $subtotal,
                 'note' => trim(sprintf(
                     'Ordered %s · Rejected %s%s',
                     $r->qty_ordered,
                     $r->qty_rejected,
                     $r->notes ? ' · ' . $r->notes : ''
                 )),
-            ])->all();
+                'po_number' => $r->po_number ?: $h->po_number,
+                'po_date' => $r->po_date,
+                'po_creator' => $r->po_creator,
+                'po_supplier' => $r->po_supplier ?: $h->supplier_name,
+                'po_url' => $r->po_id ? ('/po-foods/' . $r->po_id) : ($h->po_id ? ('/po-foods/' . $h->po_id) : null),
+            ];
+        }
 
         return [
             'header' => [
                 'type' => 'Penerimaan Barang',
                 'number' => $h->number,
                 'date' => $h->date,
-                'status' => null,
-                'warehouse' => null,
-                'party' => $h->supplier_name ?? $h->user_name,
+                'status' => $h->po_status,
+                'warehouse' => $warehouseName,
+                'party' => $h->supplier_name,
+                'user' => $h->user_name,
                 'note' => $h->notes,
                 'url' => '/food-good-receive/' . $id,
             ],
             'items' => $items,
-            'grand_total' => null,
+            'grand_total' => $hasAmount ? $grand : null,
         ];
     }
 
@@ -872,6 +929,7 @@ class WarehouseDashboardOpsService
                 'warehouse_name' => $r->warehouse_name ?? '—',
                 'party' => $r->user_name ?? '—',
                 'approver' => $approver,
+                'user' => $approver,
                 'amount' => null,
                 'url' => '/pr-foods/' . $r->id,
             ];
@@ -886,12 +944,26 @@ class WarehouseDashboardOpsService
         $q = DB::table('food_good_receives as g')
             ->leftJoin('suppliers as s', 's.id', '=', 'g.supplier_id')
             ->leftJoin('users as u', 'u.id', '=', 'g.received_by')
-            ->whereBetween('g.receive_date', [$from, $to])
+            ->leftJoin('purchase_order_foods as po', 'po.id', '=', 'g.po_id')
+            ->whereDate('g.receive_date', '>=', $from)
+            ->whereDate('g.receive_date', '<=', $to)
             ->when($search !== '', function ($qq) use ($search) {
                 $qq->where(function ($q2) use ($search) {
                     $q2->where('g.gr_number', 'like', "%{$search}%")
                         ->orWhere('s.name', 'like', "%{$search}%")
-                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%");
+                        ->orWhere('u.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('po.number', 'like', "%{$search}%")
+                        ->orWhere('po.status', 'like', "%{$search}%")
+                        ->orWhereExists(function ($ex) use ($search) {
+                            $ex->select(DB::raw(1))
+                                ->from('food_good_receive_items as gi')
+                                ->leftJoin('purchase_order_food_items as poi', 'poi.id', '=', 'gi.po_item_id')
+                                ->leftJoin('pr_food_items as pfi', 'pfi.id', '=', 'poi.pr_food_item_id')
+                                ->leftJoin('pr_foods as pf', 'pf.id', '=', 'pfi.pr_food_id')
+                                ->leftJoin('warehouses as w', 'w.id', '=', 'pf.warehouse_id')
+                                ->whereColumn('gi.good_receive_id', 'g.id')
+                                ->where('w.name', 'like', "%{$search}%");
+                        });
                 });
             })
             ->orderByDesc('g.receive_date')
@@ -899,18 +971,44 @@ class WarehouseDashboardOpsService
             ->get([
                 'g.id',
                 'g.gr_number as number',
-                'g.receive_date as date',
+                DB::raw('DATE(g.receive_date) as date'),
                 's.name as supplier_name',
                 'u.nama_lengkap as user_name',
+                'po.status as po_status',
+                'po.number as po_number',
             ]);
+
+        // Warehouse diambil dari PR terkait via item PO (satu query batch)
+        $ids = $q->pluck('id')->all();
+        $warehouseByGr = [];
+        if (!empty($ids)) {
+            $whRows = DB::select(
+                "SELECT gi.good_receive_id, w.name as warehouse_name
+                 FROM food_good_receive_items gi
+                 LEFT JOIN purchase_order_food_items poi ON poi.id = gi.po_item_id
+                 LEFT JOIN pr_food_items pfi ON pfi.id = poi.pr_food_item_id
+                 LEFT JOIN pr_foods pf ON pf.id = pfi.pr_food_id
+                 LEFT JOIN warehouses w ON w.id = pf.warehouse_id
+                 WHERE gi.good_receive_id IN (" . implode(',', array_map('intval', $ids)) . ")
+                   AND w.name IS NOT NULL
+                 GROUP BY gi.good_receive_id, w.name"
+            );
+            foreach ($whRows as $row) {
+                if (!isset($warehouseByGr[$row->good_receive_id])) {
+                    $warehouseByGr[$row->good_receive_id] = $row->warehouse_name;
+                }
+            }
+        }
 
         return $q->map(fn ($r) => [
             'id' => (int) $r->id,
             'number' => $r->number,
             'date' => $r->date,
-            'status' => null,
-            'warehouse_name' => '—',
-            'party' => $r->supplier_name ?? ($r->user_name ?? '—'),
+            'status' => $r->po_status,
+            'warehouse_name' => $warehouseByGr[$r->id] ?? '—',
+            'party' => $r->supplier_name ?? '—',
+            'user' => $r->user_name ?? '—',
+            'approver' => null,
             'amount' => null,
             'url' => '/food-good-receive/' . $r->id,
         ]);
