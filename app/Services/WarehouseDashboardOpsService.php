@@ -139,6 +139,629 @@ class WarehouseDashboardOpsService
     }
 
     /**
+     * Detail satu transaksi + items untuk modal nested.
+     *
+     * @return array{
+     *   header: array<string, mixed>,
+     *   items: list<array<string, mixed>>,
+     *   grand_total: float|null,
+     * }
+     */
+    public function transactionDetail(string $type, int $id): array
+    {
+        return match ($type) {
+            'pr_foods' => $this->detailPrFood($id),
+            'food_good_receive' => $this->detailGoodReceive($id),
+            'warehouse_transfer' => $this->detailTransfer($id),
+            'packing_list' => $this->detailPackingList($id),
+            'delivery_order' => $this->detailDeliveryOrder($id),
+            'retail_warehouse_food' => $this->detailRetailFood($id),
+            'retail_warehouse_sale' => $this->detailRetailSale($id),
+            'stock_adjustment' => $this->detailAdjustment($id),
+            'warehouse_stock_opname' => $this->detailStockOpname($id),
+            'internal_use_waste' => $this->detailInternalUseWaste($id),
+            'warehouse_sales' => $this->detailWarehouseSale($id),
+            'outlet_rejection' => $this->detailOutletRejection($id),
+            default => throw new \InvalidArgumentException('Tipe transaksi tidak dikenal: ' . $type),
+        };
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailPrFood(int $id): array
+    {
+        $h = DB::table('pr_foods as p')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'p.warehouse_id')
+            ->leftJoin('users as u', 'u.id', '=', 'p.requested_by')
+            ->where('p.id', $id)
+            ->first([
+                'p.id', 'p.pr_number as number', 'p.tanggal as date', 'p.status',
+                'w.name as warehouse_name', 'u.nama_lengkap as user_name', 'p.description',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('PR tidak ditemukan');
+        }
+
+        $items = DB::table('pr_food_items as pi')
+            ->leftJoin('items as i', 'i.id', '=', 'pi.item_id')
+            ->where('pi.pr_food_id', $id)
+            ->get(['i.name as item_name', 'i.sku as item_code', 'pi.qty', 'pi.unit', 'pi.note'])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty,
+                'unit' => $r->unit ?? '-',
+                'price' => null,
+                'subtotal' => null,
+                'note' => $r->note,
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Purchase Requisition',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => $h->user_name,
+                'note' => $h->description,
+                'url' => '/pr-foods/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailGoodReceive(int $id): array
+    {
+        $h = DB::table('food_good_receives as g')
+            ->leftJoin('suppliers as s', 's.id', '=', 'g.supplier_id')
+            ->leftJoin('users as u', 'u.id', '=', 'g.received_by')
+            ->where('g.id', $id)
+            ->first([
+                'g.id', 'g.gr_number as number', 'g.receive_date as date',
+                's.name as supplier_name', 'u.nama_lengkap as user_name', 'g.notes',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Good Receive tidak ditemukan');
+        }
+
+        $items = DB::table('food_good_receive_items as gi')
+            ->leftJoin('items as i', 'i.id', '=', 'gi.item_id')
+            ->leftJoin('units as un', 'un.id', '=', 'gi.unit_id')
+            ->where('gi.good_receive_id', $id)
+            ->get([
+                'i.name as item_name', 'i.sku as item_code',
+                'gi.qty_ordered', 'gi.qty_received', 'gi.qty_rejected',
+                'un.name as unit_name', 'gi.notes',
+            ])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty_received,
+                'unit' => $r->unit_name ?? '-',
+                'price' => null,
+                'subtotal' => null,
+                'note' => trim(sprintf(
+                    'Ordered %s · Rejected %s%s',
+                    $r->qty_ordered,
+                    $r->qty_rejected,
+                    $r->notes ? ' · ' . $r->notes : ''
+                )),
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Penerimaan Barang',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => null,
+                'warehouse' => null,
+                'party' => $h->supplier_name ?? $h->user_name,
+                'note' => $h->notes,
+                'url' => '/food-good-receive/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailTransfer(int $id): array
+    {
+        $h = DB::table('warehouse_transfers as t')
+            ->leftJoin('warehouses as wf', 'wf.id', '=', 't.warehouse_from_id')
+            ->leftJoin('warehouses as wt', 'wt.id', '=', 't.warehouse_to_id')
+            ->where('t.id', $id)
+            ->first([
+                't.id', 't.transfer_number as number', 't.transfer_date as date',
+                't.transfer_mode as status', 't.notes',
+                DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Transfer tidak ditemukan');
+        }
+
+        $items = DB::table('warehouse_transfer_items as ti')
+            ->leftJoin('items as i', 'i.id', '=', 'ti.item_id')
+            ->leftJoin('units as un', 'un.id', '=', 'ti.unit_id')
+            ->where('ti.warehouse_transfer_id', $id)
+            ->get(['i.name as item_name', 'i.sku as item_code', 'ti.quantity', 'ti.qty_small', 'un.name as unit_name', 'ti.note', 'ti.notes'])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) ($r->quantity ?? $r->qty_small ?? 0),
+                'unit' => $r->unit_name ?? '-',
+                'price' => null,
+                'subtotal' => null,
+                'note' => $r->note ?? $r->notes,
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Pindah Gudang',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => null,
+                'note' => $h->notes,
+                'url' => '/warehouse-transfer/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailPackingList(int $id): array
+    {
+        $h = DB::table('packing_lists as p')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'p.warehouse_id')
+            ->where('p.id', $id)
+            ->first([
+                'p.id', 'p.pl_number as number', DB::raw('DATE(p.created_at) as date'),
+                'p.status', 'w.name as warehouse_name', 'p.notes',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Packing List tidak ditemukan');
+        }
+
+        $items = DB::table('packing_list_items as pi')
+            ->leftJoin('items as i', 'i.id', '=', 'pi.item_id')
+            ->where('pi.packing_list_id', $id)
+            ->get(['i.name as item_name', 'i.sku as item_code', 'pi.quantity'])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->quantity,
+                'unit' => '-',
+                'price' => null,
+                'subtotal' => null,
+                'note' => null,
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Packing List',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => null,
+                'note' => $h->notes,
+                'url' => '/packing-list/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailDeliveryOrder(int $id): array
+    {
+        $h = DB::table('delivery_orders as do')
+            ->leftJoin('packing_lists as pl', 'pl.id', '=', 'do.packing_list_id')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'pl.warehouse_id')
+            ->where('do.id', $id)
+            ->first([
+                'do.id', 'do.number', DB::raw('DATE(do.created_at) as date'),
+                'pl.pl_number', 'w.name as warehouse_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Delivery Order tidak ditemukan');
+        }
+
+        $items = DB::table('delivery_order_items as di')
+            ->leftJoin('items as i', 'i.id', '=', 'di.item_id')
+            ->where('di.delivery_order_id', $id)
+            ->get([
+                'i.name as item_name', 'i.sku as item_code',
+                'di.qty_packing_list', 'di.qty_scan', 'di.unit',
+            ])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) ($r->qty_scan ?? $r->qty_packing_list ?? 0),
+                'unit' => $r->unit ?? '-',
+                'price' => null,
+                'subtotal' => null,
+                'note' => 'PL qty: ' . ($r->qty_packing_list ?? 0),
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Delivery Order',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => null,
+                'warehouse' => $h->warehouse_name,
+                'party' => $h->pl_number ? ('PL: ' . $h->pl_number) : null,
+                'note' => null,
+                'url' => '/delivery-order/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailRetailFood(int $id): array
+    {
+        $h = DB::table('retail_warehouse_food as r')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->leftJoin('suppliers as s', 's.id', '=', 'r.supplier_id')
+            ->where('r.id', $id)
+            ->first([
+                'r.id', 'r.retail_number as number', 'r.transaction_date as date',
+                'r.status', 'r.total_amount', 'r.notes',
+                'w.name as warehouse_name', 's.name as supplier_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Retail Food tidak ditemukan');
+        }
+
+        $items = DB::table('retail_warehouse_food_items as ri')
+            ->leftJoin('items as i', 'i.id', '=', 'ri.item_id')
+            ->where('ri.retail_warehouse_food_id', $id)
+            ->get([
+                'ri.item_name', 'i.name as item_name_join', 'i.sku as item_code',
+                'ri.qty', 'ri.unit', 'ri.price', 'ri.subtotal',
+            ])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?: ($r->item_name_join ?? '-'),
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty,
+                'unit' => $r->unit ?? '-',
+                'price' => $r->price !== null ? (float) $r->price : null,
+                'subtotal' => $r->subtotal !== null ? (float) $r->subtotal : null,
+                'note' => null,
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Warehouse Retail Food',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => $h->supplier_name,
+                'note' => $h->notes,
+                'url' => '/retail-warehouse-food/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => $h->total_amount !== null ? (float) $h->total_amount : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailRetailSale(int $id): array
+    {
+        $h = DB::table('retail_warehouse_sales as r')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->where('r.id', $id)
+            ->first([
+                'r.id', 'r.number', 'r.sale_date as date', 'r.status',
+                'r.total_amount', 'r.notes', 'w.name as warehouse_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Retail Sale tidak ditemukan');
+        }
+
+        $items = DB::table('retail_warehouse_sale_items as ri')
+            ->leftJoin('items as i', 'i.id', '=', 'ri.item_id')
+            ->where('ri.retail_warehouse_sale_id', $id)
+            ->get(['i.name as item_name', 'i.sku as item_code', 'ri.qty', 'ri.unit', 'ri.price', 'ri.subtotal'])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty,
+                'unit' => $r->unit ?? '-',
+                'price' => $r->price !== null ? (float) $r->price : null,
+                'subtotal' => $r->subtotal !== null ? (float) $r->subtotal : null,
+                'note' => null,
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Penjualan Warehouse Retail',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => null,
+                'note' => $h->notes,
+                'url' => '/retail-warehouse-sale/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => $h->total_amount !== null ? (float) $h->total_amount : null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailAdjustment(int $id): array
+    {
+        $h = DB::table('food_inventory_adjustments as a')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'a.warehouse_id')
+            ->where('a.id', $id)
+            ->first([
+                'a.id', 'a.number', 'a.date', 'a.status', 'a.type', 'a.reason',
+                'w.name as warehouse_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Adjustment tidak ditemukan');
+        }
+
+        $items = DB::table('food_inventory_adjustment_items as ai')
+            ->leftJoin('items as i', 'i.id', '=', 'ai.item_id')
+            ->where('ai.adjustment_id', $id)
+            ->get(['i.name as item_name', 'i.sku as item_code', 'ai.qty', 'ai.unit', 'ai.note'])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty,
+                'unit' => $r->unit ?? '-',
+                'price' => null,
+                'subtotal' => null,
+                'note' => $r->note,
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Penyesuaian Stok',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => $h->type,
+                'note' => $h->reason,
+                'url' => '/food-inventory-adjustment/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailStockOpname(int $id): array
+    {
+        $h = DB::table('warehouse_stock_opnames as s')
+            ->leftJoin('warehouses as w', 'w.id', '=', 's.warehouse_id')
+            ->where('s.id', $id)
+            ->first([
+                's.id', 's.opname_number as number', 's.opname_date as date',
+                's.status', 's.notes', 'w.name as warehouse_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Stock Opname tidak ditemukan');
+        }
+
+        $items = DB::table('warehouse_stock_opname_items as si')
+            ->leftJoin('food_inventory_items as fii', 'fii.id', '=', 'si.inventory_item_id')
+            ->leftJoin('items as i', 'i.id', '=', 'fii.item_id')
+            ->where('si.stock_opname_id', $id)
+            ->get([
+                'i.name as item_name', 'i.sku as item_code',
+                'si.qty_system_small', 'si.qty_physical_small', 'si.qty_diff_small',
+                'si.mac_before', 'si.value_adjustment', 'si.reason',
+            ])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty_physical_small,
+                'unit' => 'small',
+                'price' => $r->mac_before !== null ? (float) $r->mac_before : null,
+                'subtotal' => $r->value_adjustment !== null ? (float) $r->value_adjustment : null,
+                'note' => trim(sprintf(
+                    'Sys %s · Diff %s%s',
+                    $r->qty_system_small,
+                    $r->qty_diff_small,
+                    $r->reason ? ' · ' . $r->reason : ''
+                )),
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Stock Opname',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => null,
+                'note' => $h->notes,
+                'url' => '/warehouse-stock-opnames/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailInternalUseWaste(int $id): array
+    {
+        $h = DB::table('internal_use_wastes as i')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'i.warehouse_id')
+            ->leftJoin('items as it', 'it.id', '=', 'i.item_id')
+            ->leftJoin('units as un', 'un.id', '=', 'i.unit_id')
+            ->where('i.id', $id)
+            ->first([
+                'i.id', 'i.type', 'i.date', 'i.qty', 'i.notes',
+                'w.name as warehouse_name', 'it.name as item_name', 'it.sku as item_code',
+                'un.name as unit_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Internal use/waste tidak ditemukan');
+        }
+
+        $items = [[
+            'name' => $h->item_name ?? '-',
+            'code' => $h->item_code,
+            'qty' => (float) $h->qty,
+            'unit' => $h->unit_name ?? '-',
+            'price' => null,
+            'subtotal' => null,
+            'note' => $h->notes,
+        ]];
+
+        return [
+            'header' => [
+                'type' => 'Pemakaian Internal & Sampah',
+                'number' => '#' . $h->id,
+                'date' => $h->date,
+                'status' => $h->type,
+                'warehouse' => $h->warehouse_name,
+                'party' => null,
+                'note' => $h->notes,
+                'url' => '/internal-use-waste',
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailWarehouseSale(int $id): array
+    {
+        $h = DB::table('warehouse_sales as s')
+            ->leftJoin('warehouses as wf', 'wf.id', '=', 's.source_warehouse_id')
+            ->leftJoin('warehouses as wt', 'wt.id', '=', 's.target_warehouse_id')
+            ->where('s.id', $id)
+            ->first([
+                's.id', 's.number', 's.date', 's.status', 's.note',
+                DB::raw("CONCAT(COALESCE(wf.name,'?'), ' → ', COALESCE(wt.name,'?')) as warehouse_name"),
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Warehouse Sale tidak ditemukan');
+        }
+
+        $items = DB::table('warehouse_sale_items as si')
+            ->leftJoin('items as i', 'i.id', '=', 'si.item_id')
+            ->where('si.warehouse_sale_id', $id)
+            ->whereNull('si.deleted_at')
+            ->get(['i.name as item_name', 'i.sku as item_code', 'si.qty_small', 'si.price', 'si.total', 'si.note'])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty_small,
+                'unit' => 'small',
+                'price' => $r->price !== null ? (float) $r->price : null,
+                'subtotal' => $r->total !== null ? (float) $r->total : null,
+                'note' => $r->note,
+            ])->all();
+
+        $grand = array_sum(array_map(fn ($i) => (float) ($i['subtotal'] ?? 0), $items));
+
+        return [
+            'header' => [
+                'type' => 'Penjualan Antar Gudang',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => null,
+                'note' => $h->note,
+                'url' => '/warehouse-sales/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => $grand ?: null,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function detailOutletRejection(int $id): array
+    {
+        $h = DB::table('outlet_rejections as r')
+            ->leftJoin('warehouses as w', 'w.id', '=', 'r.warehouse_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'r.outlet_id')
+            ->where('r.id', $id)
+            ->first([
+                'r.id', 'r.number', 'r.rejection_date as date', 'r.status', 'r.notes',
+                'w.name as warehouse_name', 'o.nama_outlet as outlet_name',
+            ]);
+        if (!$h) {
+            throw new \InvalidArgumentException('Outlet Rejection tidak ditemukan');
+        }
+
+        $items = DB::table('outlet_rejection_items as ri')
+            ->leftJoin('items as i', 'i.id', '=', 'ri.item_id')
+            ->leftJoin('units as un', 'un.id', '=', 'ri.unit_id')
+            ->where('ri.outlet_rejection_id', $id)
+            ->get([
+                'i.name as item_name', 'i.sku as item_code',
+                'ri.qty_rejected', 'un.name as unit_name',
+                'ri.mac_cost', 'ri.rejection_reason', 'ri.item_condition',
+            ])
+            ->map(fn ($r) => [
+                'name' => $r->item_name ?? '-',
+                'code' => $r->item_code,
+                'qty' => (float) $r->qty_rejected,
+                'unit' => $r->unit_name ?? '-',
+                'price' => $r->mac_cost !== null ? (float) $r->mac_cost : null,
+                'subtotal' => ($r->mac_cost !== null) ? ((float) $r->mac_cost * (float) $r->qty_rejected) : null,
+                'note' => trim(($r->rejection_reason ?? '') . ' ' . ($r->item_condition ?? '')),
+            ])->all();
+
+        return [
+            'header' => [
+                'type' => 'Penolakan Outlet',
+                'number' => $h->number,
+                'date' => $h->date,
+                'status' => $h->status,
+                'warehouse' => $h->warehouse_name,
+                'party' => $h->outlet_name,
+                'note' => $h->notes,
+                'url' => '/outlet-rejections/' . $id,
+            ],
+            'items' => $items,
+            'grand_total' => null,
+        ];
+    }
+
+    /**
      * @return \Illuminate\Support\Collection<int, array<string, mixed>>
      */
     private function queryPrFoods(string $from, string $to, int $warehouseId, string $search)

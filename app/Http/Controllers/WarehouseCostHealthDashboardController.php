@@ -126,6 +126,38 @@ class WarehouseCostHealthDashboardController extends Controller
         }
     }
 
+    public function transactionDetail(Request $request)
+    {
+        $validated = $request->validate([
+            'type' => ['required', 'string'],
+            'id' => ['required', 'integer', 'min:1'],
+        ]);
+
+        try {
+            $result = $this->opsService->transactionDetail(
+                $validated['type'],
+                (int) $validated['id'],
+            );
+
+            return response()->json([
+                'status' => 'success',
+                ...$result,
+            ]);
+        } catch (\InvalidArgumentException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage(),
+            ], 422);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Gagal memuat detail transaksi: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     /**
      * @return list<array{label: string, route: string, icon: string, group: string}>
      */

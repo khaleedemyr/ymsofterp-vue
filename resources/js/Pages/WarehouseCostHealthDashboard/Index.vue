@@ -417,7 +417,7 @@
               </table>
             </div>
 
-            <p class="text-xs text-slate-500">Klik baris untuk buka detail transaksi</p>
+            <p class="text-xs text-slate-500">Klik baris untuk lihat detail item (modal)</p>
 
             <div v-if="modalPagination.total_pages > 1" class="flex justify-between items-center text-sm">
               <span class="text-slate-500">{{ formatNumber(modalPagination.total) }} transaksi</span>
@@ -439,6 +439,90 @@
             </div>
             <p v-else class="text-sm text-slate-500">{{ formatNumber(modalPagination.total) }} transaksi</p>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Nested detail modal (item lines) -->
+    <div
+      v-if="detailOpen"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      @click.self="closeDetail"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">
+              {{ detailHeader?.type || 'Detail' }} · {{ detailHeader?.number || '—' }}
+            </h2>
+            <p class="text-sm text-slate-500 mt-1">
+              {{ detailHeader?.date || '—' }}
+              <span v-if="detailHeader?.warehouse"> · {{ detailHeader.warehouse }}</span>
+              <span v-if="detailHeader?.status"> · {{ detailHeader.status }}</span>
+              <span v-if="detailGrandTotal != null"> · {{ formatCurrency(detailGrandTotal) }}</span>
+            </p>
+          </div>
+          <div class="flex items-center gap-2">
+            <a
+              v-if="detailHeader?.url"
+              :href="detailHeader.url"
+              class="text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"
+            >
+              Buka halaman
+            </a>
+            <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="closeDetail">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="detailLoading" class="py-12 text-center text-slate-500">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat detail...
+          </div>
+          <div v-else-if="detailError" class="py-8 text-center text-rose-600">{{ detailError }}</div>
+          <div v-else>
+            <div class="bg-slate-50 rounded-xl px-4 py-3 mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm">
+              <div v-if="detailHeader?.party"><span class="text-slate-500">Keterangan:</span> <strong>{{ detailHeader.party }}</strong></div>
+              <div v-if="detailHeader?.note"><span class="text-slate-500">Catatan:</span> <strong>{{ detailHeader.note }}</strong></div>
+              <div class="ml-auto text-slate-500">{{ detailItems.length }} item</div>
+            </div>
+
+            <div class="overflow-x-auto border border-slate-200 rounded-xl">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="bg-white border-b text-slate-600">
+                    <th class="px-4 py-2 text-left">Item</th>
+                    <th class="px-4 py-2 text-right">Qty</th>
+                    <th class="px-4 py-2 text-left">Unit</th>
+                    <th class="px-4 py-2 text-right">Harga</th>
+                    <th class="px-4 py-2 text-right">Subtotal</th>
+                    <th class="px-4 py-2 text-left">Catatan</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(item, idx) in detailItems" :key="idx" class="border-t border-slate-100">
+                    <td class="px-4 py-2">
+                      <p class="font-medium text-slate-800">{{ item.name }}</p>
+                      <p v-if="item.code" class="text-xs text-slate-400">{{ item.code }}</p>
+                    </td>
+                    <td class="px-4 py-2 text-right">{{ formatNum(item.qty) }}</td>
+                    <td class="px-4 py-2">{{ item.unit || '—' }}</td>
+                    <td class="px-4 py-2 text-right">{{ item.price != null ? formatCurrency(item.price) : '—' }}</td>
+                    <td class="px-4 py-2 text-right font-semibold">{{ item.subtotal != null ? formatCurrency(item.subtotal) : '—' }}</td>
+                    <td class="px-4 py-2 text-xs text-slate-500">{{ item.note || '—' }}</td>
+                  </tr>
+                  <tr v-if="!detailItems.length">
+                    <td colspan="6" class="px-4 py-10 text-center text-slate-400">Tidak ada item</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <p v-if="detailGrandTotal != null" class="mt-4 text-right text-sm text-slate-700">
+              Grand total: <strong>{{ formatCurrency(detailGrandTotal) }}</strong>
+            </p>
+          </div>
         </div>
       </div>
     </div>
@@ -497,6 +581,13 @@ const modalTxns = ref([]);
 const modalPagination = ref({ current_page: 1, per_page: 20, total: 0, total_pages: 1 });
 const modalError = ref('');
 
+const detailOpen = ref(false);
+const detailLoading = ref(false);
+const detailError = ref('');
+const detailHeader = ref(null);
+const detailItems = ref([]);
+const detailGrandTotal = ref(null);
+
 const periodLabel = computed(() => periodMeta.value?.label || monthLabel(selectedMonth.value));
 const hasData = computed(() => (transactions.value.summary || []).length > 0 || Object.keys(kpis.value).length > 0);
 const costShortcuts = computed(() => props.shortcuts.filter((s) => s.group === 'cost'));
@@ -534,10 +625,37 @@ const closeModal = () => {
   modalError.value = '';
 };
 
-const openTxn = (txn) => {
-  if (txn?.url) {
-    window.open(txn.url, '_blank');
+const openTxn = async (txn) => {
+  if (!txn?.id || !modalType.value) return;
+  detailOpen.value = true;
+  detailLoading.value = true;
+  detailError.value = '';
+  detailHeader.value = null;
+  detailItems.value = [];
+  detailGrandTotal.value = null;
+  try {
+    const { data } = await axios.get('/api/warehouse-cost-health-dashboard/transaction-detail', {
+      params: { type: modalType.value, id: txn.id },
+    });
+    if (data.status !== 'success') {
+      throw new Error(data.message || 'Gagal memuat detail');
+    }
+    detailHeader.value = data.header || null;
+    detailItems.value = data.items || [];
+    detailGrandTotal.value = data.grand_total ?? null;
+  } catch (e) {
+    detailError.value = e.response?.data?.message || e.message || 'Gagal memuat detail';
+  } finally {
+    detailLoading.value = false;
   }
+};
+
+const closeDetail = () => {
+  detailOpen.value = false;
+  detailHeader.value = null;
+  detailItems.value = [];
+  detailGrandTotal.value = null;
+  detailError.value = '';
 };
 
 const fetchModal = async () => {
