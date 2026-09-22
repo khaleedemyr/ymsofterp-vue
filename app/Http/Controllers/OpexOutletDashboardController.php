@@ -94,8 +94,8 @@ class OpexOutletDashboardController extends Controller
         $dateTo = $period['date_to'];
         $page = max(1, (int) $request->get('page', 1));
         $purchaseBudgetTypes = ['kitchen_purchase', 'bar_purchase', 'service_purchase'];
-        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', ...$purchaseBudgetTypes], true) ? 62 : 20;
-        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', ...$purchaseBudgetTypes], true) ? 93 : 50;
+        $defaultPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', ...$purchaseBudgetTypes], true) ? 62 : 20;
+        $maxPerPage = in_array($type, ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', ...$purchaseBudgetTypes], true) ? 93 : 50;
         $perPage = min($maxPerPage, max(10, (int) $request->get('per_page', $defaultPerPage)));
         $search = trim((string) $request->get('search', ''));
         $category = trim((string) $request->get('category', ''));
@@ -131,6 +131,36 @@ class OpexOutletDashboardController extends Controller
                     'current_page' => 1,
                     'per_page' => count($detail['groups']),
                     'total' => count($detail['groups']),
+                    'total_pages' => 1,
+                ],
+            ]);
+        }
+
+        if ($type === 'ending_inventory') {
+            $warehouseId = $request->filled('warehouse_id') ? (int) $request->get('warehouse_id') : null;
+            $detail = $this->opexService->buildEndingInventoryDetail(
+                $outletId,
+                $dateFrom,
+                $dateTo,
+                $search,
+                $warehouseId
+            );
+
+            return response()->json([
+                'trend' => [],
+                'transactions' => [],
+                'sheet_meta' => [
+                    'as_of' => $detail['as_of'],
+                    'source' => $detail['source'],
+                    'total_value' => $detail['total_value'],
+                    'formula' => $detail['formula'],
+                    'warehouse_options' => $detail['warehouse_options'],
+                    'warehouses' => $detail['warehouses'],
+                ],
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page' => count($detail['warehouses']),
+                    'total' => count($detail['warehouses']),
                     'total_pages' => 1,
                 ],
             ]);

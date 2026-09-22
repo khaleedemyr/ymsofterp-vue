@@ -177,6 +177,10 @@ class OpexOutletDashboardService
             'stock_cut' => $this->vsMetric($current['stock_cut'], $previous['stock_cut']),
             'category_cost' => $this->vsMetric($current['category_cost'], $previous['category_cost']),
             'begin_inventory' => $this->vsMetric($current['begin_inventory'], $previous['begin_inventory']),
+            'ending_inventory' => $this->vsMetric(
+                (float) ($current['ending_inventory'] ?? 0),
+                (float) ($previous['ending_inventory'] ?? 0)
+            ),
             'mcs_purchase' => $this->vsMetric($current['mcs_purchase'], $previous['mcs_purchase']),
             'outlet_city_ledger' => $this->vsMetric($current['outlet_city_ledger'], $previous['outlet_city_ledger']),
         ];
@@ -209,6 +213,7 @@ class OpexOutletDashboardService
         $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
         $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
         $beginInventory = $this->sumBeginInventory($outletId, $dateFrom);
+        $inventoryMovement = $this->buildInventoryMovementSummary($outletId, $dateFrom, $dateTo);
         $mcsPurchase = $this->sumMcsPurchase($outletId, $dateFrom, $dateTo);
         $cityLedger = $this->sumOutletCityLedger($qrCode, $dateFrom, $dateTo);
         $monthlyBudget = $this->sumMonthlyRevenueBudget($outletId, $dateFrom, $dateTo);
@@ -221,6 +226,14 @@ class OpexOutletDashboardService
         $pctOfRevenue = static function (float $amount) use ($revenue): ?float {
             return $revenue['total'] > 0 ? round(($amount / $revenue['total']) * 100, 2) : null;
         };
+
+        $endingInventory = round(
+            (float) $beginInventory['total']
+            + (float) $inventoryMovement['purchased_total']
+            - (float) $stockCut['total']
+            - (float) $categoryCost['total'],
+            2
+        );
 
         return [
             'revenue' => $revenue['total'],
@@ -271,14 +284,29 @@ class OpexOutletDashboardService
             'stock_cut' => $stockCut['total'],
             'stock_cut_count' => $stockCut['count'],
             'stock_cut_revenue_pct' => $pctOfRevenue($stockCut['total']),
+            'stock_cut_by_warehouse' => $inventoryMovement['stock_cut_by_warehouse'],
             'category_cost' => $categoryCost['total'],
             'category_cost_count' => $categoryCost['count'],
             'category_cost_by_type' => $categoryCost['by_type'],
             'category_cost_revenue_pct' => $pctOfRevenue($categoryCost['total']),
+            'category_cost_by_warehouse' => $inventoryMovement['category_cost_by_warehouse'],
             'begin_inventory' => $beginInventory['total'],
             'begin_inventory_count' => $beginInventory['count'],
             'begin_inventory_source' => $beginInventory['source'],
             'begin_inventory_revenue_pct' => $pctOfRevenue($beginInventory['total']),
+            'begin_inventory_by_warehouse' => $inventoryMovement['begin_by_warehouse'],
+            'purchased_inventory' => $inventoryMovement['purchased_total'],
+            'purchased_inventory_by_warehouse' => $inventoryMovement['purchased_by_warehouse'],
+            'ending_inventory' => $endingInventory,
+            'ending_inventory_revenue_pct' => $pctOfRevenue($endingInventory),
+            'ending_inventory_by_warehouse' => $inventoryMovement['ending_by_warehouse'],
+            'ending_inventory_formula' => [
+                'begin' => round((float) $beginInventory['total'], 2),
+                'purchased' => round((float) $inventoryMovement['purchased_total'], 2),
+                'stock_cut' => round((float) $stockCut['total'], 2),
+                'category_cost' => round((float) $categoryCost['total'], 2),
+                'ending' => $endingInventory,
+            ],
             'mcs_purchase' => $mcsPurchase['total'],
             'mcs_purchase_count' => $mcsPurchase['count'],
             'mcs_purchase_by_category' => $mcsPurchase['by_category'],
@@ -2961,6 +2989,557 @@ class OpexOutletDashboardService
             'total_value' => $totalValue,
             'groups' => $groups,
         ];
+    }
+
+    /**
+     * Ending = begin + purchased − (stock_cut + category_cost), plus breakdown per warehouse.
+     *
+     * @return array{
+     *   begin_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   purchased_total: float,
+     *   purchased_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   stock_cut_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   category_cost_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   ending_total: float,
+     *   ending_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   formula: array{begin: float, purchased: float, stock_cut: float, category_cost: float, ending: float}
+     * }
+     */
+    public function buildInventoryMovementSummary(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $warehouses = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $warehouseIds = $warehouses->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $emptyList = [];
+        $emptyFormula = [
+            'begin' => 0.0,
+            'purchased' => 0.0,
+            'stock_cut' => 0.0,
+            'category_cost' => 0.0,
+            'ending' => 0.0,
+        ];
+
+        if ($warehouseIds === []) {
+            return [
+                'begin_by_warehouse' => $emptyList,
+                'purchased_total' => 0.0,
+                'purchased_by_warehouse' => $emptyList,
+                'stock_cut_by_warehouse' => $emptyList,
+                'category_cost_by_warehouse' => $emptyList,
+                'ending_total' => 0.0,
+                'ending_by_warehouse' => $emptyList,
+                'formula' => $emptyFormula,
+            ];
+        }
+
+        $beginMap = $this->beginInventoryAmountByWarehouse($outletId, $dateFrom, $warehouseIds);
+        $purchasedMap = $this->purchasedAmountByWarehouse($outletId, $dateFrom, $dateTo, $warehouses);
+        $stockCutMap = $this->stockCutAmountByWarehouse($outletId, $dateFrom, $dateTo);
+        $categoryCostMap = $this->categoryCostAmountByWarehouse($outletId, $dateFrom, $dateTo);
+
+        $beginByWh = [];
+        $purchasedByWh = [];
+        $stockCutByWh = [];
+        $categoryCostByWh = [];
+        $endingByWh = [];
+        $beginTotal = 0.0;
+        $purchasedTotal = 0.0;
+        $stockCutTotal = 0.0;
+        $categoryCostTotal = 0.0;
+        $endingTotal = 0.0;
+
+        foreach ($warehouses as $wh) {
+            $id = (int) $wh->id;
+            $name = (string) $wh->name;
+            $begin = round((float) ($beginMap[$id] ?? 0), 2);
+            $purchased = round((float) ($purchasedMap[$id] ?? 0), 2);
+            $stockCut = round((float) ($stockCutMap[$id] ?? 0), 2);
+            $categoryCost = round((float) ($categoryCostMap[$id] ?? 0), 2);
+            $ending = round($begin + $purchased - $stockCut - $categoryCost, 2);
+
+            $beginByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $begin];
+            $purchasedByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $purchased];
+            $stockCutByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $stockCut];
+            $categoryCostByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $categoryCost];
+            $endingByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $ending];
+
+            $beginTotal += $begin;
+            $purchasedTotal += $purchased;
+            $stockCutTotal += $stockCut;
+            $categoryCostTotal += $categoryCost;
+            $endingTotal += $ending;
+        }
+
+        return [
+            'begin_by_warehouse' => $beginByWh,
+            'purchased_total' => round($purchasedTotal, 2),
+            'purchased_by_warehouse' => $purchasedByWh,
+            'stock_cut_by_warehouse' => $stockCutByWh,
+            'category_cost_by_warehouse' => $categoryCostByWh,
+            'ending_total' => round($endingTotal, 2),
+            'ending_by_warehouse' => $endingByWh,
+            'formula' => [
+                'begin' => round($beginTotal, 2),
+                'purchased' => round($purchasedTotal, 2),
+                'stock_cut' => round($stockCutTotal, 2),
+                'category_cost' => round($categoryCostTotal, 2),
+                'ending' => round($endingTotal, 2),
+            ],
+        ];
+    }
+
+    /**
+     * Ending inventory stock report: per warehouse → categories (expand) → items.
+     *
+     * @return array{
+     *   as_of: string,
+     *   source: string,
+     *   total_value: float,
+     *   formula: array<string, float>,
+     *   warehouse_options: list<array{id: int, name: string}>,
+     *   warehouses: list<array{
+     *     warehouse_id: int,
+     *     warehouse_name: string,
+     *     total_value: float,
+     *     item_count: int,
+     *     categories: list<array{category: string, item_count: int, total_value: float, items: list<array<string, mixed>>}>
+     *   }>
+     * }
+     */
+    public function buildEndingInventoryDetail(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        string $search = '',
+        ?int $warehouseId = null
+    ): array {
+        $search = trim($search);
+        $movement = $this->buildInventoryMovementSummary($outletId, $dateFrom, $dateTo);
+        $beginTotal = (float) $this->sumBeginInventory($outletId, $dateFrom)['total'];
+        $stockCutTotal = (float) $this->sumStockCut($outletId, $dateFrom, $dateTo)['total'];
+        $categoryCostTotal = (float) $this->sumCategoryCost($outletId, $dateFrom, $dateTo)['total'];
+        $purchasedTotal = (float) $movement['purchased_total'];
+        $formulaEnding = round($beginTotal + $purchasedTotal - $stockCutTotal - $categoryCostTotal, 2);
+        $formula = [
+            'begin' => round($beginTotal, 2),
+            'purchased' => round($purchasedTotal, 2),
+            'stock_cut' => round($stockCutTotal, 2),
+            'category_cost' => round($categoryCostTotal, 2),
+            'ending' => $formulaEnding,
+        ];
+
+        $warehouses = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $warehouseOptions = $warehouses->map(fn ($w) => [
+            'id' => (int) $w->id,
+            'name' => (string) $w->name,
+        ])->values()->all();
+
+        $warehouseIds = $warehouses->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if ($warehouseId !== null && $warehouseId > 0) {
+            $warehouseIds = array_values(array_filter($warehouseIds, fn ($id) => $id === $warehouseId));
+        }
+
+        $empty = [
+            'as_of' => $dateTo,
+            'source' => 'none',
+            'total_value' => 0.0,
+            'formula' => $formula,
+            'warehouse_options' => $warehouseOptions,
+            'warehouses' => [],
+        ];
+
+        if ($warehouseIds === []) {
+            return $empty;
+        }
+
+        // Prefer latest inventory card on/before dateTo; fallback to current stocks for missing rows.
+        $latest = DB::table('outlet_food_inventory_cards as card')
+            ->where('card.id_outlet', $outletId)
+            ->whereIn('card.warehouse_outlet_id', $warehouseIds)
+            ->whereDate('card.date', '<=', $dateTo)
+            ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
+            ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
+
+        $cardRows = DB::table('outlet_food_inventory_cards as card')
+            ->joinSub($latest, 'latest_card', function ($join) {
+                $join->on('latest_card.inventory_item_id', '=', 'card.inventory_item_id')
+                    ->on('latest_card.warehouse_outlet_id', '=', 'card.warehouse_outlet_id');
+            })
+            ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key")
+            ->where('card.id_outlet', $outletId)
+            ->join('outlet_food_inventory_items as fi', 'card.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->join('warehouse_outlets as wo', 'card.warehouse_outlet_id', '=', 'wo.id')
+            ->whereIn('card.warehouse_outlet_id', $warehouseIds)
+            ->where(function ($q) {
+                $q->where('card.saldo_value', '!=', 0)
+                    ->orWhere('card.saldo_qty_small', '!=', 0);
+            })
+            ->selectRaw("
+                card.warehouse_outlet_id as warehouse_id,
+                wo.name as warehouse_name,
+                card.inventory_item_id,
+                COALESCE(c.name, 'Tanpa Kategori') as category_name,
+                i.name as item_name,
+                i.sku as item_sku,
+                COALESCE(card.saldo_qty_small, 0) as qty,
+                COALESCE(card.cost_per_small, 0) as mac,
+                COALESCE(card.saldo_value, 0) as value
+            ");
+
+        if ($search !== '') {
+            $cardRows->where(function ($q) use ($search) {
+                $q->where('i.name', 'like', '%'.$search.'%')
+                    ->orWhere('i.sku', 'like', '%'.$search.'%')
+                    ->orWhere('c.name', 'like', '%'.$search.'%')
+                    ->orWhere('wo.name', 'like', '%'.$search.'%');
+            });
+        }
+
+        $rows = $cardRows
+            ->orderBy('warehouse_name')
+            ->orderBy('category_name')
+            ->orderBy('item_name')
+            ->get();
+
+        $seenKeys = [];
+        foreach ($rows as $row) {
+            $seenKeys[(int) $row->warehouse_id.'|'.(int) $row->inventory_item_id] = true;
+        }
+
+        // Fallback stocks for items without cards in period
+        $stockQuery = DB::table('outlet_food_inventory_stocks as s')
+            ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->where('s.id_outlet', $outletId)
+            ->whereIn('s.warehouse_outlet_id', $warehouseIds)
+            ->where('wo.status', 'active')
+            ->where(function ($q) {
+                $q->whereRaw('COALESCE(s.qty_small, 0) * COALESCE(s.last_cost_small, 0) != 0')
+                    ->orWhere('s.qty_small', '!=', 0);
+            })
+            ->selectRaw("
+                s.warehouse_outlet_id as warehouse_id,
+                wo.name as warehouse_name,
+                s.inventory_item_id,
+                COALESCE(c.name, 'Tanpa Kategori') as category_name,
+                i.name as item_name,
+                i.sku as item_sku,
+                COALESCE(s.qty_small, 0) as qty,
+                COALESCE(s.last_cost_small, 0) as mac,
+                COALESCE(s.qty_small, 0) * COALESCE(s.last_cost_small, 0) as value
+            ");
+
+        if ($search !== '') {
+            $stockQuery->where(function ($q) use ($search) {
+                $q->where('i.name', 'like', '%'.$search.'%')
+                    ->orWhere('i.sku', 'like', '%'.$search.'%')
+                    ->orWhere('c.name', 'like', '%'.$search.'%')
+                    ->orWhere('wo.name', 'like', '%'.$search.'%');
+            });
+        }
+
+        $stockRows = $stockQuery->get();
+        $usedCards = $rows->isNotEmpty();
+        foreach ($stockRows as $row) {
+            $key = (int) $row->warehouse_id.'|'.(int) $row->inventory_item_id;
+            if (isset($seenKeys[$key])) {
+                continue;
+            }
+            $rows->push($row);
+        }
+
+        $byWarehouse = [];
+        $grandTotal = 0.0;
+        foreach ($rows as $row) {
+            $wid = (int) $row->warehouse_id;
+            $wname = (string) ($row->warehouse_name ?: '-');
+            $category = (string) ($row->category_name ?: 'Tanpa Kategori');
+            $value = round((float) ($row->value ?? 0), 2);
+            $qty = round((float) ($row->qty ?? 0), 4);
+            $mac = round((float) ($row->mac ?? 0), 4);
+
+            if (! isset($byWarehouse[$wid])) {
+                $byWarehouse[$wid] = [
+                    'warehouse_id' => $wid,
+                    'warehouse_name' => $wname,
+                    'total_value' => 0.0,
+                    'item_count' => 0,
+                    'categories' => [],
+                ];
+            }
+            if (! isset($byWarehouse[$wid]['categories'][$category])) {
+                $byWarehouse[$wid]['categories'][$category] = [
+                    'category' => $category,
+                    'item_count' => 0,
+                    'total_value' => 0.0,
+                    'items' => [],
+                ];
+            }
+
+            $byWarehouse[$wid]['categories'][$category]['items'][] = [
+                'item_name' => $row->item_name,
+                'item_sku' => $row->item_sku,
+                'qty' => $qty,
+                'mac' => $mac,
+                'value' => $value,
+            ];
+            $byWarehouse[$wid]['categories'][$category]['item_count']++;
+            $byWarehouse[$wid]['categories'][$category]['total_value'] = round(
+                $byWarehouse[$wid]['categories'][$category]['total_value'] + $value,
+                2
+            );
+            $byWarehouse[$wid]['item_count']++;
+            $byWarehouse[$wid]['total_value'] = round($byWarehouse[$wid]['total_value'] + $value, 2);
+            $grandTotal = round($grandTotal + $value, 2);
+        }
+
+        $warehouseList = [];
+        foreach ($byWarehouse as $wh) {
+            $cats = array_values($wh['categories']);
+            usort($cats, fn ($a, $b) => $b['total_value'] <=> $a['total_value']);
+            $wh['categories'] = $cats;
+            $warehouseList[] = $wh;
+        }
+        usort($warehouseList, fn ($a, $b) => $b['total_value'] <=> $a['total_value']);
+
+        return [
+            'as_of' => $dateTo,
+            'source' => $usedCards ? 'inventory_cards' : 'current_stock',
+            'total_value' => $grandTotal,
+            'formula' => $formula,
+            'warehouse_options' => $warehouseOptions,
+            'warehouses' => $warehouseList,
+        ];
+    }
+
+    /**
+     * @param  list<int>  $warehouseIds
+     * @return array<int, float>
+     */
+    private function beginInventoryAmountByWarehouse(int $outletId, string $dateFrom, array $warehouseIds): array
+    {
+        $bulan = Carbon::parse($dateFrom)->format('Y-m');
+        $tanggal1BulanIni = $bulan.'-01';
+        $out = array_fill_keys($warehouseIds, 0.0);
+
+        $hasInitialBalance = DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $warehouseIds)
+            ->where('reference_type', 'initial_balance')
+            ->whereDate('date', $tanggal1BulanIni)
+            ->exists();
+
+        if ($hasInitialBalance) {
+            $latest = DB::table('outlet_food_inventory_cards as card')
+                ->where('card.id_outlet', $outletId)
+                ->whereIn('card.warehouse_outlet_id', $warehouseIds)
+                ->where('card.reference_type', 'initial_balance')
+                ->whereDate('card.date', $tanggal1BulanIni)
+                ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
+                ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
+
+            $rows = DB::table('outlet_food_inventory_cards as card')
+                ->joinSub($latest, 'latest_card', function ($join) {
+                    $join->on('latest_card.inventory_item_id', '=', 'card.inventory_item_id')
+                        ->on('latest_card.warehouse_outlet_id', '=', 'card.warehouse_outlet_id');
+                })
+                ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key")
+                ->where('card.id_outlet', $outletId)
+                ->selectRaw('card.warehouse_outlet_id as warehouse_id, COALESCE(SUM(COALESCE(card.saldo_value, 0)), 0) as total_value')
+                ->groupBy('card.warehouse_outlet_id')
+                ->get();
+
+            foreach ($rows as $row) {
+                $out[(int) $row->warehouse_id] = round((float) $row->total_value, 2);
+            }
+
+            return $out;
+        }
+
+        $rows = DB::table('outlet_food_inventory_stocks as s')
+            ->where('s.id_outlet', $outletId)
+            ->whereIn('s.warehouse_outlet_id', $warehouseIds)
+            ->selectRaw('s.warehouse_outlet_id as warehouse_id, COALESCE(SUM(COALESCE(s.qty_small, 0) * COALESCE(s.last_cost_small, 0)), 0) as total_value')
+            ->groupBy('s.warehouse_outlet_id')
+            ->get();
+
+        foreach ($rows as $row) {
+            $out[(int) $row->warehouse_id] = round((float) $row->total_value, 2);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  \Illuminate\Support\Collection<int, object>  $warehouses
+     * @return array<int, float>
+     */
+    private function purchasedAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo, $warehouses): array
+    {
+        $out = [];
+        $bucketToWarehouseId = [];
+        foreach ($warehouses as $wh) {
+            $id = (int) $wh->id;
+            $out[$id] = 0.0;
+            $bucket = $this->warehouseOutletBucketName($wh->name ?? null);
+            if ($bucket !== 'other' && ! isset($bucketToWarehouseId[$bucket])) {
+                $bucketToWarehouseId[$bucket] = $id;
+            }
+        }
+
+        $add = function (int $warehouseId, float $amount) use (&$out): void {
+            if (! array_key_exists($warehouseId, $out)) {
+                $out[$warehouseId] = 0.0;
+            }
+            $out[$warehouseId] = round($out[$warehouseId] + $amount, 2);
+        };
+
+        if ($this->hasSerialGrTables()) {
+            $priceSql = $this->serialGrPriceSql('it');
+            $gsrRows = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->where('h.outlet_id', $outletId)
+                ->whereBetween(DB::raw('DATE(h.receive_date)'), [$dateFrom, $dateTo])
+                ->whereNotNull('si.warehouse_outlet_id')
+                ->selectRaw('si.warehouse_outlet_id as warehouse_id, SUM(si.qty * ('.$priceSql.')) as total')
+                ->groupBy('si.warehouse_outlet_id')
+                ->get();
+
+            foreach ($gsrRows as $row) {
+                $add((int) $row->warehouse_id, (float) $row->total);
+            }
+        }
+
+        $grRows = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
+            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
+                    ->where(function ($q) {
+                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
+                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
+                    });
+            })
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(ofgr.receive_date)'), [$dateFrom, $dateTo])
+            ->whereRaw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id) IS NOT NULL')
+            ->selectRaw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id) as warehouse_id, SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
+            ->groupBy(DB::raw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id)'))
+            ->get();
+
+        foreach ($grRows as $row) {
+            $add((int) $row->warehouse_id, (float) $row->total);
+        }
+
+        $retailFoodRows = DB::table('retail_food as rf')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$dateFrom, $dateTo])
+            ->whereNotNull('rf.warehouse_outlet_id')
+            ->selectRaw('rf.warehouse_outlet_id as warehouse_id, SUM(rf.total_amount) as total')
+            ->groupBy('rf.warehouse_outlet_id')
+            ->get();
+
+        foreach ($retailFoodRows as $row) {
+            $add((int) $row->warehouse_id, (float) $row->total);
+        }
+
+        $rwsRows = DB::table('retail_warehouse_sales as rws')
+            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
+            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
+            ->leftJoin('warehouses as w', function ($join) {
+                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
+            })
+            ->where('rws.status', 'completed')
+            ->where('c.type', 'branch')
+            ->where('c.id_outlet', $outletId)
+            ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$dateFrom, $dateTo])
+            ->selectRaw('COALESCE(w.name, \'\') as warehouse_name, SUM(COALESCE(rws.total_amount, 0)) as total')
+            ->groupBy('w.name')
+            ->get();
+
+        foreach ($rwsRows as $row) {
+            $bucket = $this->rwsPurchaseBucketName($row->warehouse_name);
+            $wid = $bucketToWarehouseId[$bucket] ?? ($bucketToWarehouseId['kitchen'] ?? null);
+            if ($wid !== null) {
+                $add((int) $wid, (float) $row->total);
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    private function stockCutAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
+            return [];
+        }
+
+        $rows = DB::table('stock_cut_details as d')
+            ->join('stock_cut_logs as l', 'd.stock_cut_log_id', '=', 'l.id')
+            ->where('l.outlet_id', $outletId)
+            ->where('l.status', 'success')
+            ->whereDate('l.tanggal', '>=', $dateFrom)
+            ->whereDate('l.tanggal', '<=', $dateTo)
+            ->whereNotNull('d.warehouse_outlet_id')
+            ->selectRaw('d.warehouse_outlet_id as warehouse_id, COALESCE(SUM(d.value_out), 0) as total')
+            ->groupBy('d.warehouse_outlet_id')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->warehouse_id] = round((float) $row->total, 2);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<int, float>
+     */
+    private function categoryCostAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('outlet_internal_use_waste_headers')) {
+            return [];
+        }
+
+        $rows = $this->categoryCostHeaderQuery($outletId, $dateFrom, $dateTo)
+            ->whereNotNull('h.warehouse_outlet_id')
+            ->selectRaw('h.warehouse_outlet_id as warehouse_id, COALESCE(SUM(h.subtotal_mac), 0) as total')
+            ->groupBy('h.warehouse_outlet_id')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->warehouse_id] = round((float) $row->total, 2);
+        }
+
+        return $out;
     }
 
     /**
