@@ -93,7 +93,7 @@
             <span class="font-semibold text-slate-800">{{ data.remaining_weekdays }}</span> weekday sisa
           </span>
           <span class="inline-flex items-center gap-1.5 rounded-xl bg-indigo-50 px-3 py-1.5 text-indigo-800">
-            <span class="font-semibold">{{ data.remaining_weekends }}</span> weekend sisa
+            <span class="font-semibold">{{ data.remaining_weekends }}</span> weekend sisa (Sabtu–Minggu)
           </span>
           <span class="inline-flex items-center gap-1.5 rounded-xl bg-amber-50 px-3 py-1.5 text-amber-800">
             <span class="font-semibold">{{ data.remaining_holidays }}</span> libur/event sisa
@@ -191,16 +191,39 @@ const error = ref(null)
 const data = ref(null)
 const chartSeries = ref([])
 const chartOptions = ref({
-  chart: { id: 'opex-rolling-forecast', toolbar: { show: true }, fontFamily: 'inherit' },
+  chart: {
+    id: 'opex-rolling-forecast',
+    toolbar: { show: true },
+    fontFamily: 'inherit',
+    zoom: { enabled: false },
+  },
   stroke: { width: [3, 3, 2], curve: 'smooth', dashArray: [0, 4, 6] },
   colors: ['#0284c7', '#f59e0b', '#94a3b8'],
-  xaxis: { categories: [] },
+  grid: { padding: { bottom: 8 } },
+  xaxis: {
+    categories: [],
+    tickAmount: 10,
+    labels: {
+      rotate: 0,
+      hideOverlappingLabels: true,
+      trim: false,
+      style: { fontSize: '11px' },
+    },
+    title: { text: 'Tanggal', style: { fontSize: '11px', fontWeight: 500 } },
+  },
   legend: { position: 'top' },
-  tooltip: { y: { formatter: (val) => formatCurrency(val) } },
-  yaxis: { labels: { formatter: (val) => formatCompact(val) } },
+  tooltip: {
+    shared: true,
+    intersect: false,
+    y: { formatter: (val) => formatCurrency(val) },
+  },
+  yaxis: { labels: { formatter: (val) => formatCompact(val), style: { fontSize: '11px' } } },
 })
 
 const gapPositive = computed(() => (data.value?.gap_vs_target ?? 0) >= 0)
+
+/** Full ISO dates for tooltip (index-aligned with chart categories). */
+const chartDayDates = ref([])
 
 watch(
   () => [props.outletId, props.month],
@@ -214,6 +237,7 @@ async function fetchForecast() {
   if (!props.outletId || !props.month) {
     data.value = null
     chartSeries.value = []
+    chartDayDates.value = []
     error.value = null
     return
   }
@@ -233,6 +257,7 @@ async function fetchForecast() {
     error.value = err?.response?.data?.message || err?.message || 'Gagal memuat rolling forecast.'
     data.value = err?.response?.data || null
     chartSeries.value = []
+    chartDayDates.value = []
   } finally {
     loading.value = false
   }
@@ -242,13 +267,37 @@ function buildChart(payload) {
   const days = payload?.days || []
   if (!days.length) {
     chartSeries.value = []
+    chartDayDates.value = []
     return
   }
+
+  chartDayDates.value = days.map((d) => d.forecast_date)
+  // Label pendek: 1, 2, … 30 — hindari tumpukan YYYY-MM-DD
+  const shortLabels = days.map((d) => String(Number(String(d.forecast_date).slice(8, 10))))
+
   chartOptions.value = {
     ...chartOptions.value,
     xaxis: {
-      categories: days.map((d) => d.forecast_date),
-      labels: { rotate: -45, hideOverlappingLabels: true },
+      ...chartOptions.value.xaxis,
+      categories: shortLabels,
+      tickAmount: Math.min(15, days.length),
+      labels: {
+        rotate: 0,
+        hideOverlappingLabels: true,
+        style: { fontSize: '11px' },
+      },
+      title: { text: 'Tanggal', style: { fontSize: '11px', fontWeight: 500 } },
+    },
+    tooltip: {
+      shared: true,
+      intersect: false,
+      x: {
+        formatter: (_val, opts) => {
+          const idx = opts?.dataPointIndex ?? 0
+          return chartDayDates.value[idx] || String(_val)
+        },
+      },
+      y: { formatter: (val) => formatCurrency(val) },
     },
   }
   chartSeries.value = [

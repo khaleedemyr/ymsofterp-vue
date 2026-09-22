@@ -13,7 +13,8 @@ class OutletRollingForecastService
 {
     private const PACE_MIN = 0.45;
     private const PACE_MAX = 1.55;
-    private const CAP_HIGH = 1.25;
+    /** Ceiling vs hist average — boleh di atas baseline agar EOM bisa > monthly target. */
+    private const CAP_HIGH = 1.50;
     /** Hari awal bulan: jika MTD masih sangat kecil, pakai baseline penuh. */
     private const MIN_DAYS_FOR_PACE = 2;
 
@@ -490,13 +491,13 @@ class OutletRollingForecastService
 
     private function capAchievable(float $value, float $histAvg, float $baseline = 0.0): float
     {
-        // Batasi upside heroik saja — jangan naikkan hari yang memang lemah (MTD jelek).
-        // Ceiling = max(1.25× hist DoW, baseline) agar baseline target tidak dihancurkan.
+        // Batasi upside heroik, tapi izinkan di atas baseline jika pace > 1
+        // (projected EOM boleh > monthly target saat MTD bagus).
         if ($histAvg <= 0) {
             return max(0, round($value, 2));
         }
 
-        $high = max($histAvg * self::CAP_HIGH, $baseline);
+        $high = max($histAvg * self::CAP_HIGH, $baseline * self::PACE_MAX);
 
         return round(max(0, min($high, $value)), 2);
     }
