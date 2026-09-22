@@ -310,11 +310,22 @@ class OpexOutletDashboardService
             2
         );
         $cogsAktual = round($availableGoods - (float) $endingStock['total'], 2);
-        $salesBefore = (float) $revenue['gross_before_discount'];
-        $salesAfter = (float) $revenue['total'];
+        // Denominator sama Cost Report: before = Σ(qty×price); after = before − discount.
+        // Jangan pakai grand_total (bisa lebih besar karena pajak → % after disc jadi aneh / lebih kecil).
+        $salesBefore = $this->sumSalesBeforeDiscountForCogs($qrCode, $dateFrom, $dateTo);
+        if ($salesBefore <= 0) {
+            $salesBefore = (float) $revenue['gross_before_discount'];
+        }
+        $salesAfter = max(0.0, round($salesBefore - (float) $revenue['discount'], 2));
         $pctOrNull = static function (float $num, float $den): ?float {
             return $den > 0 ? round(($num / $den) * 100, 2) : null;
         };
+        $deviasi = round($cogsPembanding - $cogsAktual, 2);
+        $pctDeviasiSigned = $salesAfter > 0 ? round(($deviasi / $salesAfter) * 100, 2) : null;
+        $toleransiMaxAmount = round($salesAfter * 0.02, 2);
+        $withinToleransi = $pctDeviasiSigned === null
+            ? true
+            : abs($pctDeviasiSigned) <= 2.0;
         $cogsSummary = [
             'cogs_foods' => $cogsFoods,
             'category_cost' => $categoryCostForCogs,
@@ -325,7 +336,11 @@ class OpexOutletDashboardService
             'ending_stock' => round((float) $endingStock['total'], 2),
             'sales_before_discount' => round($salesBefore, 2),
             'sales_after_discount' => round($salesAfter, 2),
-            'deviasi' => round($cogsPembanding - $cogsAktual, 2),
+            'deviasi' => $deviasi,
+            'pct_deviasi' => $pctDeviasiSigned,
+            'toleransi_max_pct' => 2.0,
+            'toleransi_max_amount' => $toleransiMaxAmount,
+            'within_toleransi' => $withinToleransi,
             'pct_cogs_foods' => $pctOrNull($cogsFoods, $salesBefore),
             'pct_cogs_pembanding' => $pctOrNull($cogsPembanding, $salesBefore),
             'pct_cogs_actual_before_disc' => $pctOrNull($cogsAktual, $salesBefore),
@@ -1595,6 +1610,29 @@ class OpexOutletDashboardService
             'discount_count' => (int) ($row->discount_count ?? 0),
             'gross_before_discount' => $gross,
         ];
+    }
+
+    /**
+     * Sales before discount untuk % COGS — sama Cost Report / Item Engineering: Σ(qty × price).
+     */
+    private function sumSalesBeforeDiscountForCogs(?string $qrCode, string $dateFrom, string $dateTo): float
+    {
+        $qrCode = trim((string) $qrCode);
+        if ($qrCode === '' || ! Schema::hasTable('order_items')) {
+            return 0.0;
+        }
+
+        $total = DB::table('orders')
+            ->join('order_items', 'order_items.order_id', '=', 'orders.id')
+            ->where('orders.kode_outlet', $qrCode)
+            ->whereDate('orders.created_at', '>=', $dateFrom)
+            ->whereDate('orders.created_at', '<=', $dateTo)
+            ->where('orders.status', '!=', 'cancelled')
+            ->where('orders.grand_total', '>', 0)
+            ->selectRaw('COALESCE(SUM(order_items.qty * order_items.price), 0) as total_sales')
+            ->value('total_sales');
+
+        return round((float) ($total ?? 0), 2);
     }
 
     /**
