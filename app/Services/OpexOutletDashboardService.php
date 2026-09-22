@@ -5428,7 +5428,7 @@ class OpexOutletDashboardService
                 't.status',
                 't.notes',
                 't.created_by',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'wf.id as from_warehouse_id',
                 'wf.name as from_warehouse_name',
                 'wt.id as to_warehouse_id',
@@ -5445,7 +5445,7 @@ class OpexOutletDashboardService
                 $qq->where('t.transfer_number', 'like', $like)
                     ->orWhere('ofrom.nama_outlet', 'like', $like)
                     ->orWhere('oto.nama_outlet', 'like', $like)
-                    ->orWhere('u.name', 'like', $like)
+                    ->orWhere('u.nama_lengkap', 'like', $like)
                     ->orWhere('wf.name', 'like', $like)
                     ->orWhere('wt.name', 'like', $like);
             });
@@ -5516,7 +5516,7 @@ class OpexOutletDashboardService
                 't.transfer_date',
                 't.status',
                 't.notes',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'wf.name as from_warehouse_name',
                 'wt.name as to_warehouse_name',
                 'ofrom.nama_outlet as from_outlet_name',
@@ -5626,7 +5626,7 @@ class OpexOutletDashboardService
                 'a.type',
                 'a.reason',
                 'a.status',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'wo.id as warehouse_id',
                 'wo.name as warehouse_name',
             ]);
@@ -5636,7 +5636,7 @@ class OpexOutletDashboardService
                 $qq->where('a.number', 'like', $like)
                     ->orWhere('a.reason', 'like', $like)
                     ->orWhere('wo.name', 'like', $like)
-                    ->orWhere('u.name', 'like', $like);
+                    ->orWhere('u.nama_lengkap', 'like', $like);
             });
         }
         $rows = $q->limit(200)->get();
@@ -5692,7 +5692,7 @@ class OpexOutletDashboardService
             ->where('a.id', $adjustmentId)
             ->first([
                 'a.id', 'a.number', 'a.date', 'a.type', 'a.reason', 'a.status',
-                'u.name as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
+                'u.nama_lengkap as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
             ]);
         $vals = DB::table('outlet_food_inventory_cards')
             ->where('reference_type', 'outlet_stock_adjustment')
@@ -5768,7 +5768,7 @@ class OpexOutletDashboardService
                 't.transfer_number',
                 't.transfer_date',
                 't.notes',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'wf.id as from_warehouse_id',
                 'wf.name as from_warehouse_name',
                 'wt.id as to_warehouse_id',
@@ -5786,7 +5786,7 @@ class OpexOutletDashboardService
                 $qq->where('t.transfer_number', 'like', $like)
                     ->orWhere('wf.name', 'like', $like)
                     ->orWhere('wt.name', 'like', $like)
-                    ->orWhere('u.name', 'like', $like);
+                    ->orWhere('u.nama_lengkap', 'like', $like);
             });
         }
         $rows = $q->limit(200)->get();
@@ -5846,7 +5846,7 @@ class OpexOutletDashboardService
             ->where('t.id', $transferId)
             ->first([
                 't.id', 't.transfer_number', 't.transfer_date', 't.notes',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'wf.id as from_warehouse_id', 'wf.name as from_warehouse_name',
                 'wt.id as to_warehouse_id', 'wt.name as to_warehouse_name',
             ]);
@@ -5905,7 +5905,7 @@ class OpexOutletDashboardService
                 'h.batch_number',
                 'h.status',
                 'h.notes',
-                'u.name as created_by_name',
+                'u.nama_lengkap as created_by_name',
                 'wo.id as warehouse_id',
                 'wo.name as warehouse_name',
             ]);
@@ -5915,7 +5915,7 @@ class OpexOutletDashboardService
                 $qq->where('h.number', 'like', $like)
                     ->orWhere('h.batch_number', 'like', $like)
                     ->orWhere('wo.name', 'like', $like)
-                    ->orWhere('u.name', 'like', $like);
+                    ->orWhere('u.nama_lengkap', 'like', $like);
             });
         }
         $rows = $q->limit(200)->get();
@@ -5970,7 +5970,7 @@ class OpexOutletDashboardService
             ->where('h.id', $headerId)
             ->first([
                 'h.id', 'h.number', 'h.production_date', 'h.batch_number', 'h.status', 'h.notes',
-                'u.name as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
+                'u.nama_lengkap as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
             ]);
         $vals = DB::table('outlet_food_inventory_cards')
             ->where('reference_type', 'outlet_wip_production')
