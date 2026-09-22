@@ -194,6 +194,10 @@ class OpexOutletDashboardService
                 (float) ($current['outlet_adjustment'] ?? 0),
                 (float) ($previous['outlet_adjustment'] ?? 0)
             ),
+            'stock_opname_cutoff' => $this->vsMetric(
+                (float) ($current['stock_opname_cutoff'] ?? 0),
+                (float) ($previous['stock_opname_cutoff'] ?? 0)
+            ),
             'wip_finished_cost' => $this->vsMetric(
                 (float) ($current['wip_finished_cost'] ?? 0),
                 (float) ($previous['wip_finished_cost'] ?? 0)
@@ -252,15 +256,16 @@ class OpexOutletDashboardService
         $wipSummary = $this->sumOutletWipMovements($outletId, $dateFrom, $dateTo);
 
         // Rollforward level outlet (buku):
-        // + transfer net + adjustment.
-        // Opname EOM / tgl 1 = balancing ke qty fisik (bukan inbound). Tidak dijumlah ke
-        // formula seperti purchased — selisih formula vs stok itulah yang di-rapikan opname.
-        // Mid-month: opname tgl 1 awal periode biasanya closing bulan lalu (sudah di begin).
+        // Begin card = IB (Cost Report). Formula + cutoff koreksi fisik tgl 1
+        // untuk item tanpa IB (saldo_value opname) supaya selaras stok periode.
+        // Opname EOM / mid-month lain = balancing — tidak dijumlah ke formula.
         // IWT net antar gudang ≈ 0 di level outlet.
         // Stock cut di formula = potongan FISIK (kartu), bukan HPP full (detail + shortfall minus).
         $stockCutPhysical = (float) ($stockCut['physical_total'] ?? $stockCut['total']);
+        $day1Cutoff = $this->sumDay1OpnameCutoffWithoutIb($outletId, $dateFrom);
         $formulaEnding = round(
             (float) $beginInventory['total']
+            + (float) $day1Cutoff['total']
             + (float) $inventoryMovement['purchased_total']
             + (float) $outletTransferSummary['net_total']
             + (float) $adjustmentSummary['total']
@@ -343,6 +348,16 @@ class OpexOutletDashboardService
             'purchased_inventory_by_warehouse' => $inventoryMovement['purchased_by_warehouse'],
             'opname_inventory' => $inventoryMovement['opname_total'] ?? 0,
             'opname_inventory_by_warehouse' => $inventoryMovement['opname_by_warehouse'] ?? [],
+            'stock_opname_cutoff' => round((float) $day1Cutoff['total'], 2),
+            'stock_opname_cutoff_count' => (int) $day1Cutoff['count'],
+            'stock_opname_cutoff_by_warehouse' => $this->mapWarehouseAmounts(
+                $outletId,
+                $day1Cutoff['by_warehouse'] ?? []
+            ),
+            'stock_opname_period_net' => round((float) ($inventoryMovement['opname_total'] ?? 0), 2),
+            'stock_opname_period_by_warehouse' => $inventoryMovement['opname_by_warehouse'] ?? [],
+            'stock_opname_count' => $this->countStockOpnameTransactions($outletId, $dateFrom, $dateTo),
+            'stock_opname_revenue_pct' => $pctOfRevenue((float) $day1Cutoff['total']),
             'transfer_inventory' => $inventoryMovement['transfer_total'] ?? 0,
             'transfer_inventory_by_warehouse' => $inventoryMovement['transfer_by_warehouse'] ?? [],
             'ending_inventory' => $endingInventory,
@@ -353,6 +368,8 @@ class OpexOutletDashboardService
             'ending_inventory_stock_by_warehouse' => $endingStock['by_warehouse'],
             'ending_inventory_formula' => [
                 'begin' => round((float) $beginInventory['total'], 2),
+                'day1_opname_cutoff' => round((float) $day1Cutoff['total'], 2),
+                'day1_opname_cutoff_count' => (int) $day1Cutoff['count'],
                 'purchased' => round((float) $inventoryMovement['purchased_total'], 2),
                 'outlet_transfer_net' => round((float) $outletTransferSummary['net_total'], 2),
                 'outlet_adjustment' => round((float) $adjustmentSummary['total'], 2),
@@ -2805,6 +2822,90 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Latest stock_opname (koreksi fisik) card id per item+warehouse on day-1.
+     *
+     * @param  list<int>  $warehouseOutletIds
+     * @return list<int>
+     */
+    private function latestDay1StockOpnameCardIds(int $outletId, string $tanggal1, array $warehouseOutletIds): array
+    {
+        if ($warehouseOutletIds === []) {
+            return [];
+        }
+
+        return DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $warehouseOutletIds)
+            ->where('reference_type', 'stock_opname')
+            ->whereDate('date', $tanggal1)
+            ->groupBy('inventory_item_id', 'warehouse_outlet_id')
+            ->selectRaw('MAX(id) as id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Cutoff koreksi fisik tgl 1 untuk item TANPA IB — dipakai di formula ending saja.
+     * Begin Inventory card tetap IB-only (parity Cost Report).
+     *
+     * @return array{total: float, count: int, by_warehouse: array<int, float>}
+     */
+    private function sumDay1OpnameCutoffWithoutIb(int $outletId, string $dateFrom): array
+    {
+        $bulan = Carbon::parse($dateFrom)->format('Y-m');
+        $tanggal1 = $bulan.'-01';
+        $warehouseOutletIds = $this->activeWarehouseOutletIds($outletId);
+        $empty = ['total' => 0.0, 'count' => 0, 'by_warehouse' => []];
+
+        if ($warehouseOutletIds === []) {
+            return $empty;
+        }
+
+        $ibIds = $this->latestInitialBalanceCardIds($outletId, $tanggal1, $warehouseOutletIds);
+        $opIds = $this->latestDay1StockOpnameCardIds($outletId, $tanggal1, $warehouseOutletIds);
+        if ($opIds === []) {
+            return $empty;
+        }
+
+        $ibKeySet = [];
+        if ($ibIds !== []) {
+            foreach (DB::table('outlet_food_inventory_cards')
+                ->whereIn('id', $ibIds)
+                ->get(['warehouse_outlet_id', 'inventory_item_id']) as $row) {
+                $ibKeySet[((int) $row->warehouse_outlet_id).'|'.((int) $row->inventory_item_id)] = true;
+            }
+        }
+
+        $byWh = [];
+        $total = 0.0;
+        $count = 0;
+        foreach (DB::table('outlet_food_inventory_cards')
+            ->whereIn('id', $opIds)
+            ->get(['warehouse_outlet_id', 'inventory_item_id', 'saldo_value']) as $row) {
+            $wid = (int) $row->warehouse_outlet_id;
+            $key = $wid.'|'.((int) $row->inventory_item_id);
+            if (isset($ibKeySet[$key])) {
+                continue;
+            }
+            $value = (float) ($row->saldo_value ?? 0);
+            $byWh[$wid] = ($byWh[$wid] ?? 0.0) + $value;
+            $total += $value;
+            $count++;
+        }
+
+        foreach ($byWh as $wid => $amount) {
+            $byWh[$wid] = round((float) $amount, 2);
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => $count,
+            'by_warehouse' => $byWh,
+        ];
+    }
+
+    /**
      * Begin Inventory (Total MAC) — sama formula Cost Report kolom Begin Inventory.
      * Hanya initial_balance tgl 1 (latest per item+WH); tanpa stock_opname.
      * Fast path: aggregate SQL + cache (tanpa load semua stock rows ke PHP).
@@ -3069,6 +3170,7 @@ class OpexOutletDashboardService
         }
 
         $beginMap = $this->beginInventoryAmountByWarehouse($outletId, $dateFrom, $warehouseIds);
+        $day1CutoffMap = $this->sumDay1OpnameCutoffWithoutIb($outletId, $dateFrom)['by_warehouse'];
         $purchasedMap = $this->purchasedAmountByWarehouse($outletId, $dateFrom, $dateTo, $warehouses);
         $opnameMap = $this->cardMovementNetByWarehouse(
             $outletId,
@@ -3099,17 +3201,21 @@ class OpexOutletDashboardService
         $stockCutTotal = 0.0;
         $categoryCostTotal = 0.0;
         $endingTotal = 0.0;
+        $day1CutoffTotal = 0.0;
 
         foreach ($warehouses as $wh) {
             $id = (int) $wh->id;
             $name = (string) $wh->name;
             $begin = round((float) ($beginMap[$id] ?? 0), 2);
+            $day1Cutoff = round((float) ($day1CutoffMap[$id] ?? 0), 2);
             $purchased = round((float) ($purchasedMap[$id] ?? 0), 2);
             $opname = round((float) ($opnameMap[$id] ?? 0), 2);
             $transfer = round((float) ($transferMap[$id] ?? 0), 2);
             $stockCut = round((float) ($stockCutMap[$id] ?? 0), 2);
             $categoryCost = round((float) ($categoryCostMap[$id] ?? 0), 2);
-            $ending = round($begin + $purchased + $opname + $transfer - $stockCut - $categoryCost, 2);
+            // Formula WH: IB + cutoff koreksi tgl 1 (tanpa IB) + purchased + transfer − cut − cat.
+            // Full-period opname net tetap di-report, tidak dijumlah ke ending formula.
+            $ending = round($begin + $day1Cutoff + $purchased + $transfer - $stockCut - $categoryCost, 2);
 
             $beginByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $begin];
             $purchasedByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $purchased];
@@ -3120,6 +3226,7 @@ class OpexOutletDashboardService
             $endingByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $ending];
 
             $beginTotal += $begin;
+            $day1CutoffTotal += $day1Cutoff;
             $purchasedTotal += $purchased;
             $opnameTotal += $opname;
             $transferTotal += $transfer;
@@ -3142,6 +3249,7 @@ class OpexOutletDashboardService
             'ending_by_warehouse' => $endingByWh,
             'formula' => [
                 'begin' => round($beginTotal, 2),
+                'day1_opname_cutoff' => round($day1CutoffTotal, 2),
                 'purchased' => round($purchasedTotal, 2),
                 'opname' => round($opnameTotal, 2),
                 'transfer' => round($transferTotal, 2),
@@ -3180,6 +3288,7 @@ class OpexOutletDashboardService
         $search = trim($search);
         $movement = $this->buildInventoryMovementSummary($outletId, $dateFrom, $dateTo);
         $beginTotal = (float) $this->sumBeginInventory($outletId, $dateFrom)['total'];
+        $day1Cutoff = $this->sumDay1OpnameCutoffWithoutIb($outletId, $dateFrom);
         $stockCutHpp = $this->sumStockCut($outletId, $dateFrom, $dateTo);
         $stockCutPhysical = (float) ($stockCutHpp['physical_total'] ?? $stockCutHpp['total']);
         $categoryCostTotal = (float) $this->sumCategoryCost($outletId, $dateFrom, $dateTo)['total'];
@@ -3187,14 +3296,22 @@ class OpexOutletDashboardService
         $transferNet = (float) $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo)['net_total'];
         $adjustmentNet = (float) $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo)['total'];
         $opnameTotal = (float) ($movement['opname_total'] ?? 0);
-        // Opname EOM = balancing fisik (bukan inbound) — tidak dijumlah ke formula buku.
-        // Stock cut formula = fisik (bukan HPP full + shortfall minus).
+        // Begin = IB (Cost Report). + cutoff koreksi fisik tgl 1 item tanpa IB.
+        // Opname EOM/mid-month lain = balancing — tidak dijumlah ke formula buku.
         $formulaEnding = round(
-            $beginTotal + $purchasedTotal + $transferNet + $adjustmentNet - $stockCutPhysical - $categoryCostTotal,
+            $beginTotal
+            + (float) $day1Cutoff['total']
+            + $purchasedTotal
+            + $transferNet
+            + $adjustmentNet
+            - $stockCutPhysical
+            - $categoryCostTotal,
             2
         );
         $formula = [
             'begin' => round($beginTotal, 2),
+            'day1_opname_cutoff' => round((float) $day1Cutoff['total'], 2),
+            'day1_opname_cutoff_count' => (int) $day1Cutoff['count'],
             'purchased' => round($purchasedTotal, 2),
             'outlet_transfer_net' => round($transferNet, 2),
             'outlet_adjustment' => round($adjustmentNet, 2),
@@ -5702,6 +5819,197 @@ class OpexOutletDashboardService
                 'cost_per_small' => (float) $r->cost_per_small,
                 'value_in' => (float) $r->value_in,
                 'value_out' => (float) $r->value_out,
+                'amount' => round((float) $r->value_in - (float) $r->value_out, 2),
+            ])
+            ->values()
+            ->all();
+
+        return ['transaction' => $txn, 'items' => $items];
+    }
+
+    private function countStockOpnameTransactions(int $outletId, string $dateFrom, string $dateTo): int
+    {
+        if (! Schema::hasTable('outlet_stock_opnames')) {
+            return 0;
+        }
+
+        return (int) DB::table('outlet_stock_opnames')
+            ->where('outlet_id', $outletId)
+            ->whereBetween('opname_date', [$dateFrom, $dateTo])
+            ->whereIn('status', ['COMPLETED', 'APPROVED'])
+            ->count();
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listStockOpnameTransactions(int $outletId, string $dateFrom, string $dateTo, string $search = ''): array
+    {
+        if (! Schema::hasTable('outlet_stock_opnames')) {
+            return [];
+        }
+
+        $search = trim($search);
+        $tanggal1 = Carbon::parse($dateFrom)->format('Y-m-01');
+        $q = DB::table('outlet_stock_opnames as o')
+            ->leftJoin('warehouse_outlets as wo', 'o.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'o.created_by', '=', 'u.id')
+            ->where('o.outlet_id', $outletId)
+            ->whereBetween('o.opname_date', [$dateFrom, $dateTo])
+            ->whereIn('o.status', ['COMPLETED', 'APPROVED'])
+            ->orderByDesc('o.opname_date')
+            ->orderByDesc('o.id')
+            ->select([
+                'o.id',
+                'o.opname_number',
+                'o.opname_date',
+                'o.status',
+                'o.notes',
+                'u.nama_lengkap as created_by_name',
+                'wo.id as warehouse_id',
+                'wo.name as warehouse_name',
+            ]);
+
+        if ($search !== '') {
+            $like = '%'.$search.'%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('o.opname_number', 'like', $like)
+                    ->orWhere('o.notes', 'like', $like)
+                    ->orWhere('wo.name', 'like', $like)
+                    ->orWhere('u.nama_lengkap', 'like', $like);
+            });
+        }
+
+        $rows = $q->limit(200)->get();
+        $ids = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $valueMap = [];
+        if ($ids !== []) {
+            foreach (
+                DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'stock_opname')
+                    ->whereIn('reference_id', $ids)
+                    ->where('id_outlet', $outletId)
+                    ->groupBy('reference_id')
+                    ->selectRaw('
+                        reference_id,
+                        SUM(COALESCE(value_in,0)-COALESCE(value_out,0)) as net,
+                        SUM(COALESCE(value_in,0)) as vin,
+                        SUM(COALESCE(value_out,0)) as vout,
+                        SUM(COALESCE(saldo_value,0)) as saldo_sum,
+                        COUNT(*) as item_count
+                    ')
+                    ->get() as $v
+            ) {
+                $valueMap[(int) $v->reference_id] = [
+                    'amount' => round((float) $v->net, 2),
+                    'value_in' => round((float) $v->vin, 2),
+                    'value_out' => round((float) $v->vout, 2),
+                    'saldo_sum' => round((float) $v->saldo_sum, 2),
+                    'item_count' => (int) $v->item_count,
+                ];
+            }
+        }
+
+        return $rows->map(function ($r) use ($valueMap, $tanggal1) {
+            $vals = $valueMap[(int) $r->id] ?? [
+                'amount' => 0.0,
+                'value_in' => 0.0,
+                'value_out' => 0.0,
+                'saldo_sum' => 0.0,
+                'item_count' => 0,
+            ];
+            $date = (string) $r->opname_date;
+            $isDay1 = substr($date, 0, 10) === $tanggal1;
+
+            return [
+                'id' => (int) $r->id,
+                'number' => (string) $r->opname_number,
+                'date' => $date,
+                'status' => (string) ($r->status ?? ''),
+                'notes' => (string) ($r->notes ?? ''),
+                'created_by' => (string) ($r->created_by_name ?? '-'),
+                'warehouse_id' => (int) ($r->warehouse_id ?? 0),
+                'warehouse_name' => (string) ($r->warehouse_name ?? '-'),
+                'amount' => $vals['amount'],
+                'value_in' => $vals['value_in'],
+                'value_out' => $vals['value_out'],
+                'saldo_sum' => $vals['saldo_sum'],
+                'item_count' => $vals['item_count'],
+                'is_day1' => $isDay1,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array{transaction: array<string, mixed>|null, items: list<array<string, mixed>>}
+     */
+    public function detailStockOpnameTransaction(int $outletId, int $opnameId): array
+    {
+        if (! Schema::hasTable('outlet_stock_opnames')) {
+            return ['transaction' => null, 'items' => []];
+        }
+
+        $header = DB::table('outlet_stock_opnames as o')
+            ->leftJoin('warehouse_outlets as wo', 'o.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'o.created_by', '=', 'u.id')
+            ->where('o.outlet_id', $outletId)
+            ->where('o.id', $opnameId)
+            ->first([
+                'o.id', 'o.opname_number', 'o.opname_date', 'o.status', 'o.notes',
+                'u.nama_lengkap as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
+            ]);
+
+        $vals = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'stock_opname')
+            ->where('reference_id', $opnameId)
+            ->where('id_outlet', $outletId)
+            ->selectRaw('
+                SUM(COALESCE(value_in,0)-COALESCE(value_out,0)) as net,
+                SUM(COALESCE(value_in,0)) as vin,
+                SUM(COALESCE(value_out,0)) as vout,
+                SUM(COALESCE(saldo_value,0)) as saldo_sum
+            ')
+            ->first();
+
+        $txn = $header ? [
+            'id' => (int) $header->id,
+            'number' => (string) $header->opname_number,
+            'date' => (string) $header->opname_date,
+            'status' => (string) ($header->status ?? ''),
+            'notes' => (string) ($header->notes ?? ''),
+            'created_by' => (string) ($header->created_by_name ?? '-'),
+            'warehouse_id' => (int) ($header->warehouse_id ?? 0),
+            'warehouse_name' => (string) ($header->warehouse_name ?? '-'),
+            'amount' => round((float) ($vals->net ?? 0), 2),
+            'value_in' => round((float) ($vals->vin ?? 0), 2),
+            'value_out' => round((float) ($vals->vout ?? 0), 2),
+            'saldo_sum' => round((float) ($vals->saldo_sum ?? 0), 2),
+            'is_day1' => substr((string) $header->opname_date, 0, 10) === Carbon::parse((string) $header->opname_date)->format('Y-m-01'),
+        ] : null;
+
+        $items = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->where('c.reference_type', 'stock_opname')
+            ->where('c.reference_id', $opnameId)
+            ->where('c.id_outlet', $outletId)
+            ->orderBy('i.name')
+            ->get([
+                'c.id', 'i.name as item_name', 'i.sku',
+                'c.in_qty_small', 'c.out_qty_small', 'c.cost_per_small',
+                'c.value_in', 'c.value_out', 'c.saldo_qty_small', 'c.saldo_value',
+            ])
+            ->map(fn ($r) => [
+                'id' => (int) $r->id,
+                'item_name' => (string) $r->item_name,
+                'sku' => (string) ($r->sku ?? ''),
+                'qty_in' => (float) $r->in_qty_small,
+                'qty_out' => (float) $r->out_qty_small,
+                'cost_per_small' => (float) $r->cost_per_small,
+                'value_in' => (float) $r->value_in,
+                'value_out' => (float) $r->value_out,
+                'saldo_qty' => (float) $r->saldo_qty_small,
+                'saldo_value' => (float) $r->saldo_value,
                 'amount' => round((float) $r->value_in - (float) $r->value_out, 2),
             ])
             ->values()

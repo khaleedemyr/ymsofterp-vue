@@ -168,7 +168,7 @@ class OpexOutletDashboardController extends Controller
             ]);
         }
 
-        $inventoryTxnTypes = ['outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'];
+        $inventoryTxnTypes = ['outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip', 'stock_opname'];
         if (in_array($type, $inventoryTxnTypes, true)) {
             $transactionId = $request->filled('transaction_id') ? (int) $request->get('transaction_id') : null;
             if ($transactionId) {
@@ -177,6 +177,7 @@ class OpexOutletDashboardController extends Controller
                     'outlet_adjustment' => $this->opexService->detailOutletAdjustmentTransaction($outletId, $transactionId),
                     'internal_warehouse_transfer' => $this->opexService->detailInternalWarehouseTransferTransaction($outletId, $transactionId),
                     'outlet_wip' => $this->opexService->detailOutletWipTransaction($outletId, $transactionId),
+                    'stock_opname' => $this->opexService->detailStockOpnameTransaction($outletId, $transactionId),
                 };
 
                 return response()->json([
@@ -210,6 +211,7 @@ class OpexOutletDashboardController extends Controller
                     $toWh
                 )),
                 'outlet_wip' => collect($this->opexService->listOutletWipTransactions($outletId, $dateFrom, $dateTo, $search)),
+                'stock_opname' => collect($this->opexService->listStockOpnameTransactions($outletId, $dateFrom, $dateTo, $search)),
             };
 
             return response()->json([

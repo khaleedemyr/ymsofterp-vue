@@ -856,7 +856,7 @@
                   <CardHelpTip :text="cardHelps.ending_inventory" />
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
-                <p class="mt-1 text-sm text-slate-500">Begin + Purchased ± Xfer ± Adj − Cut − Category</p>
+                <p class="mt-1 text-sm text-slate-500">Begin + Koreksi tgl 1* + Purchased ± Xfer ± Adj − Cut − Category</p>
                 <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                   {{ ov.ending_inventory_revenue_pct }}% dari revenue
                 </p>
@@ -865,6 +865,13 @@
                   <div class="flex items-center justify-between gap-2 text-xs">
                     <span class="text-slate-500">Cost di stok</span>
                     <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_stock) }}</span>
+                  </div>
+                  <div
+                    v-if="(ov.ending_inventory_formula?.day1_opname_cutoff || 0) !== 0"
+                    class="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span class="text-slate-500">Koreksi fisik tgl 1 (tanpa IB)</span>
+                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_formula?.day1_opname_cutoff) }}</span>
                   </div>
                   <div class="flex items-center justify-between gap-2 text-xs">
                     <span class="text-slate-500">Selisih (formula − stok)</span>
@@ -954,6 +961,45 @@
               </div>
               <div class="w-12 h-12 rounded-2xl bg-violet-50 text-violet-700 flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-sliders text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('stock_opname')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-orange-700 inline-flex items-center gap-1">
+                  Stock Opname
+                  <CardHelpTip :text="cardHelps.stock_opname" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.stock_opname_cutoff) }}</p>
+                <p class="mt-2 text-sm text-slate-500">
+                  Koreksi tgl 1 tanpa IB · {{ ov.stock_opname_cutoff_count || 0 }} item
+                </p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ ov.stock_opname_count || 0 }} dokumen periode · net
+                  {{ formatCurrency(ov.stock_opname_period_net) }}
+                  <span class="text-slate-400">(balancing, tidak masuk formula)</span>
+                </p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.stock_opname_cutoff, true)">{{ vsLabel(vs.stock_opname_cutoff) }}</p>
+                <div v-if="(ov.stock_opname_cutoff_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-orange-50 pt-2">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Cutoff per warehouse</p>
+                  <div
+                    v-for="row in ov.stock_opname_cutoff_by_warehouse"
+                    :key="'op-wh-' + row.warehouse_id"
+                    class="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-orange-50 text-orange-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-clipboard-check text-xl"></i>
               </div>
             </div>
           </button>
@@ -1307,7 +1353,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -1324,7 +1370,7 @@
             <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
           </div>
           <template v-else>
-            <apexchart v-if="!['begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+            <apexchart v-if="!['begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
 
             <!-- Begin Inventory: group by category, expand/collapse + search -->
             <template v-if="modalType === 'begin_inventory'">
@@ -1561,7 +1607,7 @@
             </template>
 
             <!-- Inventory movement cards: transfer / adjustment / IWT / WIP -->
-            <template v-else-if="['outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)">
+            <template v-else-if="['outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)">
               <div v-if="invTxnDetail" class="space-y-4">
                 <button
                   type="button"
@@ -1589,6 +1635,13 @@
                     · Bahan {{ formatCurrency(invTxnDetail.transaction?.material_cost) }}
                     · Jadi {{ formatCurrency(invTxnDetail.transaction?.finished_cost) }}
                   </p>
+                  <p v-else-if="modalType === 'stock_opname'" class="text-slate-600">
+                    {{ invTxnDetail.transaction?.warehouse_name }}
+                    · Net {{ formatCurrency(invTxnDetail.transaction?.amount) }}
+                    · Saldo kartu {{ formatCurrency(invTxnDetail.transaction?.saldo_sum) }}
+                    <span v-if="invTxnDetail.transaction?.is_day1" class="ml-1 inline-flex rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold uppercase text-orange-800">Tgl 1</span>
+                    <span v-if="invTxnDetail.transaction?.notes" class="block text-slate-500 mt-1">{{ invTxnDetail.transaction.notes }}</span>
+                  </p>
                   <p v-else class="text-slate-600">
                     {{ invTxnDetail.transaction?.warehouse_name }}
                     · {{ formatCurrency(invTxnDetail.transaction?.amount) }}
@@ -1605,6 +1658,7 @@
                         <th class="px-4 py-2.5 text-right">Qty Out</th>
                         <th class="px-4 py-2.5 text-right">Cost</th>
                         <th class="px-4 py-2.5 text-right">Value</th>
+                        <th v-if="modalType === 'stock_opname'" class="px-4 py-2.5 text-right">Saldo</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1616,6 +1670,7 @@
                         <td class="px-4 py-2 text-right">{{ formatDecimal(item.qty_out || 0) }}</td>
                         <td class="px-4 py-2 text-right">{{ formatCurrency(item.cost_per_small) }}</td>
                         <td class="px-4 py-2 text-right font-semibold">{{ formatCurrency(item.amount) }}</td>
+                        <td v-if="modalType === 'stock_opname'" class="px-4 py-2 text-right">{{ formatCurrency(item.saldo_value) }}</td>
                       </tr>
                       <tr v-if="!(invTxnDetail.items || []).length">
                         <td colspan="7" class="px-4 py-8 text-center text-slate-400">Tidak ada item</td>
@@ -1657,7 +1712,13 @@
                         class="border-t border-slate-100 hover:bg-fuchsia-50/40 cursor-pointer"
                         @click="openInvTxnDetail(txn.id)"
                       >
-                        <td class="px-4 py-2.5 text-slate-700">{{ txn.date }}</td>
+                        <td class="px-4 py-2.5 text-slate-700">
+                          {{ txn.date }}
+                          <span
+                            v-if="modalType === 'stock_opname' && txn.is_day1"
+                            class="ml-1 inline-flex rounded-full bg-orange-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-orange-800"
+                          >Tgl 1</span>
+                        </td>
                         <td class="px-4 py-2.5 font-semibold text-slate-900">{{ txn.number }}</td>
                         <td class="px-4 py-2.5 text-slate-600">
                           <template v-if="modalType === 'outlet_transfer'">
@@ -1668,6 +1729,7 @@
                           </template>
                           <template v-else>
                             {{ txn.warehouse_name || '-' }}
+                            <span v-if="modalType === 'stock_opname' && txn.notes" class="block text-xs text-slate-400 truncate max-w-[14rem]">{{ txn.notes }}</span>
                           </template>
                         </td>
                         <td class="px-4 py-2.5 text-slate-600">{{ txn.created_by || '-' }}</td>
@@ -2625,11 +2687,13 @@ const cardHelps = {
   begin_inventory:
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance saja (tanpa stock_opname).\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nOpname EOM / tgl 1 = balancing qty ke fisik (bukan inbound/tambah purchased). Tidak dijumlah ke formula buku.\nSelisih formula vs stok itulah yang biasanya di-rapikan opname akhir bulan (kadang dieksekusi tgl 1 bulan berikutnya).\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
+    'Nilai utama = Begin (IB / Cost Report) + Koreksi fisik tgl 1 untuk item tanpa IB + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nBegin Inventory card tetap sama Cost Report (IB saja).\nKoreksi fisik tgl 1 hanya masuk formula ending (bukan begin card), supaya stok item yang dikoreksi tanpa IB tidak hilang dari rollforward.\nOpname EOM / mid-month lain = balancing qty ke fisik — tidak dijumlah ke formula buku.\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
   outlet_transfer:
     'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:
     'Stock adjustment outlet (net value_in − value_out) per periode.\nBreakdown per warehouse di card.\nKlik → daftar transaksi → detail item + cost.',
+  stock_opname:
+    'Stock Opname / koreksi fisik.\n\nNilai utama card = cutoff tgl 1 untuk item tanpa IB (saldo kartu) — ini yang masuk formula Ending Inventory.\nBegin Inventory tetap sama Cost Report (IB saja).\n\nNet periode = value_in − value_out semua opname di filter (balancing fisik) — tidak dijumlah ke formula buku.\nKlik → daftar dokumen opname → detail item (qty in/out, value, saldo).',
   internal_warehouse_transfer:
     'Transfer antar gudang dalam outlet yang sama.\nCard menampilkan nilai per alur (mis. Service → Kitchen).\nKlik → daftar transaksi → detail item + cost.',
   outlet_wip:
@@ -3336,6 +3400,7 @@ const modalTitle = computed(() => {
     ending_inventory: 'Ending Inventory',
     outlet_transfer: 'Transfer Outlet',
     outlet_adjustment: 'Adjustment',
+    stock_opname: 'Stock Opname',
     internal_warehouse_transfer: 'Internal Warehouse Transfer',
     outlet_wip: 'WIP Production',
     mcs_purchase: mcsCategoryFilter.value
@@ -3793,7 +3858,7 @@ const fetchModal = async () => {
       ...filterParams(),
       search: modalSearch.value,
       page: modalPage.value,
-      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'kitchen_purchase', 'bar_purchase', 'service_purchase', 'outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType.value) ? 62 : 20,
+      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'kitchen_purchase', 'bar_purchase', 'service_purchase', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType.value) ? 62 : 20,
     }
     if (['mcs_purchase', 'purchase_category'].includes(modalType.value) && mcsCategoryFilter.value) {
       params.category = mcsCategoryFilter.value
