@@ -118,8 +118,11 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - [x] Mass repair stock cost MK1 / MK2 / Main Store (script)
 - [x] Pass 3 residual repair (Oxtail, Sauce, Coating, Kuah, Butter, Jamur, zero-qty poison)
 - [x] Guard runtime: `FoodInventoryCostGuard` di MK Production + Warehouse Transfer
-- [ ] Audit DO / Internal Transfer / Adjustment untuk update `value` saat OUT
-- [ ] Rebuild kartu historis (opsional; stock aktif sudah di-repair)
+- [x] Fix transfer outlet / internal WH: jangan salin `latestNewCost` rusak; pakai MAC tersanitasi + trusted GR
+- [x] Fix OUT `saldo_value` transfer memakai MAC tersanitasi (`stockTotalValue`)
+- [x] Repair cost outlet meledak via transfer (`scripts/repair_outlet_transfer_exploded_costs.php`)
+- [ ] Audit DO / Adjustment untuk update `value` saat OUT
+- [ ] Rebuild kartu historis transfer (opsional; stock aktif sudah di-repair)
 
 ---
 
@@ -129,6 +132,7 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - `scripts/repair_mass_inventory_costs.php` — mass repair pass 1 (MK1/MK2/Main Store)
 - `scripts/repair_mass_inventory_costs_pass2.php` — pass 2 (orphan cost reset, sauce re-deflate, leftovers)
 - `scripts/repair_mass_inventory_costs_pass3.php` — pass 3 (residual high cost + value realign)
+- `scripts/repair_outlet_transfer_exploded_costs.php` — trace+repair cost outlet meledak (transfer / orphan MAC)
 
 ## Hasil mass repair (21 Sep 2026)
 
@@ -137,6 +141,24 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - Pass 3: 26 baris — Whole Beef Oxtail 6869→150, Beef Oxtail FG 634k→75k, Kuah/Sauce/Coating/Butter/Jamur ke IB/GR, zero-qty poison dibersihkan
 - Sisa cost tinggi yang **wajar**: Plastik Wrap roll, Duck Confit/Crispy portion, Beef Dice portion, bulk meat value tinggi × cost/gram rendah
 
+## Outlet transfer cost explosion (22 Sep 2026)
+
+**Akar:** `OutletInventoryCostResolver::resolveInboundUnitSmallCost` memakai `latestNewCost` sembarangan → MAC transfer/opname rusak ikut tersalin. OUT `saldo_value` juga × `last_cost_small` mentah.
+
+**Gejala Cipete:** Guest Supply SH cost **81 → 320.048** lewat internal WH transfer (Mar–Mei 2026); kartu value_in/out puluhan juta; Service ending −48 jt.
+
+**Perbaikan code:**
+- Transfer inbound: MAC stok tersanitasi → trusted GR/IB → last_cost ≤ soft cap → histori (guarded)
+- Soft reject cost > 500rb tanpa trusted anchor
+- OUT saldo_value / stock.value = `stockTotalValue(qty, fromMac)`
+
+**Repair data Cipete (outlet 20):** 9 stock diperbaiki ke trusted GR/IB
+- Guest Supply SH Kitchen: 320.048 → 81,70 (akar transfer spike)
+- Beef Bone In Rib Eye: 888.000 → 888
+- Spray Coating: 39.200 → 280
+- Buah Alpukat / Anggur / Strawberry (Kitchen): cost transfer 2,6–11k → GR ~42–75
+- Sticker Nutmeg, Dehydrated Sunkist, Sate Maranggi SH
+- Kartu historis transfer Guest Supply tetap mencatat value_in/out lama (opsional rebuild)
 ## Pencegahan (runtime)
 
 - `app/Support/FoodInventoryCostGuard.php`

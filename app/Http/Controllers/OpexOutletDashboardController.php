@@ -153,6 +153,8 @@ class OpexOutletDashboardController extends Controller
                     'as_of' => $detail['as_of'],
                     'source' => $detail['source'],
                     'total_value' => $detail['total_value'],
+                    'stock_total' => $detail['stock_total'] ?? 0,
+                    'orphan_skipped' => $detail['orphan_skipped'] ?? 0,
                     'formula' => $detail['formula'],
                     'warehouse_options' => $detail['warehouse_options'],
                     'warehouses' => $detail['warehouses'],
@@ -161,6 +163,68 @@ class OpexOutletDashboardController extends Controller
                     'current_page' => 1,
                     'per_page' => count($detail['warehouses']),
                     'total' => count($detail['warehouses']),
+                    'total_pages' => 1,
+                ],
+            ]);
+        }
+
+        $inventoryTxnTypes = ['outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'];
+        if (in_array($type, $inventoryTxnTypes, true)) {
+            $transactionId = $request->filled('transaction_id') ? (int) $request->get('transaction_id') : null;
+            if ($transactionId) {
+                $detail = match ($type) {
+                    'outlet_transfer' => $this->opexService->detailOutletTransferTransaction($outletId, $transactionId),
+                    'outlet_adjustment' => $this->opexService->detailOutletAdjustmentTransaction($outletId, $transactionId),
+                    'internal_warehouse_transfer' => $this->opexService->detailInternalWarehouseTransferTransaction($outletId, $transactionId),
+                    'outlet_wip' => $this->opexService->detailOutletWipTransaction($outletId, $transactionId),
+                };
+
+                return response()->json([
+                    'trend' => [],
+                    'transactions' => [],
+                    'sheet_meta' => [
+                        'mode' => 'transaction_detail',
+                        'transaction' => $detail['transaction'],
+                        'items' => $detail['items'],
+                    ],
+                    'pagination' => [
+                        'current_page' => 1,
+                        'per_page' => count($detail['items']),
+                        'total' => count($detail['items']),
+                        'total_pages' => 1,
+                    ],
+                ]);
+            }
+
+            $fromWh = $request->filled('from_warehouse_id') ? (int) $request->get('from_warehouse_id') : null;
+            $toWh = $request->filled('to_warehouse_id') ? (int) $request->get('to_warehouse_id') : null;
+            $transactions = match ($type) {
+                'outlet_transfer' => collect($this->opexService->listOutletTransferTransactions($outletId, $dateFrom, $dateTo, $search)),
+                'outlet_adjustment' => collect($this->opexService->listOutletAdjustmentTransactions($outletId, $dateFrom, $dateTo, $search)),
+                'internal_warehouse_transfer' => collect($this->opexService->listInternalWarehouseTransferTransactions(
+                    $outletId,
+                    $dateFrom,
+                    $dateTo,
+                    $search,
+                    $fromWh,
+                    $toWh
+                )),
+                'outlet_wip' => collect($this->opexService->listOutletWipTransactions($outletId, $dateFrom, $dateTo, $search)),
+            };
+
+            return response()->json([
+                'trend' => [],
+                'transactions' => $transactions->values()->all(),
+                'sheet_meta' => [
+                    'mode' => 'transaction_list',
+                    'type' => $type,
+                    'from_warehouse_id' => $fromWh,
+                    'to_warehouse_id' => $toWh,
+                ],
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page' => $transactions->count(),
+                    'total' => $transactions->count(),
                     'total_pages' => 1,
                 ],
             ]);

@@ -702,7 +702,7 @@
             </span>
             <div>
               <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-fuchsia-700">Inventory</h2>
-              <p class="text-xs text-slate-500">Begin, stock cut, category cost, dan ending inventory</p>
+              <p class="text-xs text-slate-500">Begin, cut, category, ending, transfer, adjustment, WIP</p>
             </div>
           </div>
 
@@ -838,18 +838,30 @@
                   <CardHelpTip :text="cardHelps.ending_inventory" />
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
-                <p class="mt-2 text-sm text-slate-500">Begin + Purchased − Cut − Category</p>
+                <p class="mt-1 text-sm text-slate-500">Begin + Purchased − Cut − Category</p>
                 <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                   {{ ov.ending_inventory_revenue_pct }}% dari revenue
                 </p>
                 <p class="mt-1 text-xs font-medium" :class="vsClass(vs.ending_inventory, true)">{{ vsLabel(vs.ending_inventory) }}</p>
-                <p class="mt-1 text-[10px] text-slate-400 leading-relaxed">
-                  Purchased {{ formatCurrency(ov.purchased_inventory) }}
-                </p>
-                <div v-if="(ov.ending_inventory_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-amber-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                <div class="mt-3 rounded-2xl bg-amber-50/70 border border-amber-100 px-3 py-2 space-y-1">
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="text-slate-500">Cost di stok</span>
+                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_stock) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="text-slate-500">Selisih (formula − stok)</span>
+                    <span
+                      class="font-semibold"
+                      :class="(ov.ending_inventory_formula?.variance || 0) === 0 ? 'text-emerald-700' : 'text-rose-700'"
+                    >
+                      {{ formatCurrency(ov.ending_inventory_formula?.variance) }}
+                    </span>
+                  </div>
+                </div>
+                <div v-if="(ov.ending_inventory_stock_by_warehouse || ov.ending_inventory_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-amber-50 pt-2">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse (stok)</p>
                   <div
-                    v-for="row in ov.ending_inventory_by_warehouse"
+                    v-for="row in (ov.ending_inventory_stock_by_warehouse || ov.ending_inventory_by_warehouse)"
                     :key="'end-wh-' + row.warehouse_id"
                     class="flex items-center justify-between gap-2 text-xs"
                   >
@@ -860,6 +872,151 @@
               </div>
               <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
                 <i class="fa-solid fa-clipboard-check text-xl"></i>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-sky-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('outlet_transfer')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-sky-700 inline-flex items-center gap-1">
+                  Transfer Outlet
+                  <CardHelpTip :text="cardHelps.outlet_transfer" />
+                </p>
+                <div class="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Transfer In</p>
+                    <p class="text-xl font-bold text-emerald-700">{{ formatCurrency(ov.outlet_transfer_in) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Transfer Out</p>
+                    <p class="text-xl font-bold text-rose-700">{{ formatCurrency(ov.outlet_transfer_out) }}</p>
+                  </div>
+                </div>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.outlet_transfer_count || 0 }} transaksi</p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_transfer_in, true)">{{ vsLabel(vs.outlet_transfer_in) }}</p>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-right-left text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('outlet_adjustment')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-violet-700 inline-flex items-center gap-1">
+                  Adjustment
+                  <CardHelpTip :text="cardHelps.outlet_adjustment" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.outlet_adjustment) }}</p>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.outlet_adjustment_count || 0 }} transaksi · net value</p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_adjustment, true)">{{ vsLabel(vs.outlet_adjustment) }}</p>
+                <div v-if="(ov.outlet_adjustment_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-violet-50 pt-2">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                  <div
+                    v-for="row in ov.outlet_adjustment_by_warehouse"
+                    :key="'adj-wh-' + row.warehouse_id"
+                    class="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-violet-50 text-violet-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-sliders text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('internal_warehouse_transfer')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
+                  Internal WH Transfer
+                  <CardHelpTip :text="cardHelps.internal_warehouse_transfer" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.internal_warehouse_transfer_total) }}</p>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.internal_warehouse_transfer_count || 0 }} transaksi</p>
+                <div v-if="(ov.internal_warehouse_transfer_flows || []).length" class="mt-3 space-y-1 border-t border-cyan-50 pt-2">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per alur gudang</p>
+                  <div
+                    v-for="(row, idx) in ov.internal_warehouse_transfer_flows"
+                    :key="'iwt-flow-' + idx"
+                    class="flex items-center justify-between gap-2 text-xs"
+                  >
+                    <span class="text-slate-500 truncate">{{ row.from_warehouse_name }} → {{ row.to_warehouse_name }}</span>
+                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-arrows-turn-right text-xl"></i>
+              </div>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            class="rounded-3xl bg-white border border-lime-100 shadow-sm p-5 text-left hover:shadow-md transition"
+            @click="openCard('outlet_wip')"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-lime-700 inline-flex items-center gap-1">
+                  WIP
+                  <CardHelpTip :text="cardHelps.outlet_wip" />
+                </p>
+                <div class="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Cost Bahan</p>
+                    <p class="text-lg font-bold text-slate-900">{{ formatCurrency(ov.wip_material_cost) }}</p>
+                  </div>
+                  <div>
+                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Barang Jadi</p>
+                    <p class="text-lg font-bold text-slate-900">{{ formatCurrency(ov.wip_finished_cost) }}</p>
+                  </div>
+                </div>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.wip_count || 0 }} produksi</p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.wip_finished_cost, true)">{{ vsLabel(vs.wip_finished_cost) }}</p>
+                <div v-if="(ov.wip_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-lime-50 pt-2">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                  <div
+                    v-for="row in ov.wip_by_warehouse"
+                    :key="'wip-wh-' + row.warehouse_id"
+                    class="text-xs space-y-0.5"
+                  >
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-slate-500 truncate font-medium">{{ row.warehouse_name }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pl-1 text-slate-500">
+                      <span>Bahan</span>
+                      <span class="font-semibold text-slate-700">{{ formatCurrency(row.material_cost) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 pl-1 text-slate-500">
+                      <span>Jadi</span>
+                      <span class="font-semibold text-slate-700">{{ formatCurrency(row.finished_cost) }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-lime-50 text-lime-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-flask text-xl"></i>
               </div>
             </div>
           </button>
@@ -1132,7 +1289,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -1149,7 +1306,7 @@
             <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
           </div>
           <template v-else>
-            <apexchart v-if="modalType !== 'begin_inventory' && modalType !== 'ending_inventory'" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+            <apexchart v-if="!['begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
 
             <!-- Begin Inventory: group by category, expand/collapse + search -->
             <template v-if="modalType === 'begin_inventory'">
@@ -1237,20 +1394,27 @@
 
             <!-- Ending Inventory: per warehouse → category expand + filter/search -->
             <template v-else-if="modalType === 'ending_inventory'">
-              <div class="rounded-2xl border border-amber-100 bg-amber-50/40 px-4 py-3 text-xs text-slate-600 space-y-1">
-                <p class="font-semibold text-amber-800">Formula card</p>
+              <div class="rounded-2xl border border-amber-100 bg-amber-50/40 px-4 py-3 text-xs text-slate-600 space-y-1.5">
+                <p class="font-semibold text-amber-800">Formula vs stok</p>
                 <p>
                   Begin {{ formatCurrency(modalSheetMeta?.formula?.begin) }}
                   + Purchased {{ formatCurrency(modalSheetMeta?.formula?.purchased) }}
                   − Stock Cut {{ formatCurrency(modalSheetMeta?.formula?.stock_cut) }}
                   − Category Cost {{ formatCurrency(modalSheetMeta?.formula?.category_cost) }}
                   =
-                  <span class="font-bold text-slate-900">{{ formatCurrency(modalSheetMeta?.formula?.ending) }}</span>
+                  <span class="font-bold text-slate-900">{{ formatCurrency(modalSheetMeta?.formula?.ending ?? modalSheetMeta?.formula?.formula_ending) }}</span>
                 </p>
-                <p class="text-slate-500">
-                  Report di bawah = stok item as-of {{ modalSheetMeta?.as_of || filters.date_to }}
-                  ({{ modalSheetMeta?.source === 'inventory_cards' ? 'kartu inventory' : 'stok sistem' }}).
-                  Total stock: <span class="font-semibold text-slate-700">{{ formatCurrency(modalSheetMeta?.total_value) }}</span>
+                <p>
+                  Detail list = stok kartu as-of {{ modalSheetMeta?.as_of || filters.date_to }}
+                  (qty≈0 + value yatim diabaikan{{ modalSheetMeta?.orphan_skipped ? ` · ${modalSheetMeta.orphan_skipped} item` : '' }})
+                  =
+                  <span class="font-bold text-slate-900">{{ formatCurrency(modalSheetMeta?.total_value) }}</span>
+                  <span v-if="endingStockVariance != null" class="ml-1">
+                    · selisih
+                    <span :class="endingStockVariance === 0 ? 'text-emerald-700' : 'text-rose-700 font-semibold'">
+                      {{ formatCurrency(endingStockVariance) }}
+                    </span>
+                  </span>
                 </p>
               </div>
 
@@ -1290,7 +1454,7 @@
               </div>
 
               <div v-if="!(modalSheetMeta?.warehouses || []).length" class="py-12 text-center text-slate-400 text-sm">
-                Tidak ada item ending inventory.
+                Tidak ada data ending inventory.
               </div>
               <div v-else class="space-y-3">
                 <div
@@ -1301,9 +1465,18 @@
                   <div class="flex items-center justify-between gap-3 px-4 py-3 bg-amber-50/80 border-b border-amber-100">
                     <div class="min-w-0">
                       <p class="font-bold text-slate-900 truncate">{{ wh.warehouse_name }}</p>
-                      <p class="text-xs text-slate-500">{{ wh.item_count }} item · {{ (wh.categories || []).length }} kategori</p>
+                      <p class="text-xs text-slate-500">
+                        {{ wh.item_count }} item · {{ (wh.categories || []).length }} kategori
+                        · formula {{ formatCurrency(wh.formula_ending) }}
+                        <span v-if="wh.variance != null && wh.variance !== 0" class="text-rose-600">
+                          · selisih {{ formatCurrency(wh.variance) }}
+                        </span>
+                      </p>
                     </div>
-                    <span class="font-bold text-amber-800 shrink-0">{{ formatCurrency(wh.total_value) }}</span>
+                    <div class="text-right shrink-0">
+                      <p class="text-[10px] uppercase tracking-wide text-amber-700/80">Stok kartu</p>
+                      <span class="font-bold text-amber-800">{{ formatCurrency(wh.total_value) }}</span>
+                    </div>
                   </div>
                   <div class="divide-y divide-slate-100">
                     <div v-for="group in (wh.categories || [])" :key="wh.warehouse_id + '-' + group.category">
@@ -1349,7 +1522,136 @@
                         </table>
                       </div>
                     </div>
+                    <div v-if="!(wh.categories || []).length" class="px-4 py-6 text-center text-slate-400 text-sm">
+                      Tidak ada item stok untuk warehouse ini.
+                    </div>
                   </div>
+                </div>
+              </div>
+            </template>
+
+            <!-- Inventory movement cards: transfer / adjustment / IWT / WIP -->
+            <template v-else-if="['outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)">
+              <div v-if="invTxnDetail" class="space-y-4">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 text-sm text-slate-600 hover:text-slate-900"
+                  @click="closeInvTxnDetail"
+                >
+                  <i class="fa-solid fa-arrow-left"></i> Kembali ke daftar transaksi
+                </button>
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm space-y-1">
+                  <p class="font-bold text-slate-900">{{ invTxnDetail.transaction?.number || ('#' + invTxnDetail.transaction?.id) }}</p>
+                  <p class="text-slate-600">
+                    {{ invTxnDetail.transaction?.date }}
+                    <span v-if="invTxnDetail.transaction?.created_by"> · {{ invTxnDetail.transaction.created_by }}</span>
+                    <span v-if="invTxnDetail.transaction?.status"> · {{ invTxnDetail.transaction.status }}</span>
+                  </p>
+                  <p v-if="modalType === 'outlet_transfer'" class="text-slate-600">
+                    {{ invTxnDetail.transaction?.from_outlet }} / {{ invTxnDetail.transaction?.from_warehouse }}
+                    → {{ invTxnDetail.transaction?.to_outlet }} / {{ invTxnDetail.transaction?.to_warehouse }}
+                  </p>
+                  <p v-else-if="modalType === 'internal_warehouse_transfer'" class="text-slate-600">
+                    {{ invTxnDetail.transaction?.from_warehouse }} → {{ invTxnDetail.transaction?.to_warehouse }}
+                  </p>
+                  <p v-else-if="modalType === 'outlet_wip'" class="text-slate-600">
+                    {{ invTxnDetail.transaction?.warehouse_name }}
+                    · Bahan {{ formatCurrency(invTxnDetail.transaction?.material_cost) }}
+                    · Jadi {{ formatCurrency(invTxnDetail.transaction?.finished_cost) }}
+                  </p>
+                  <p v-else class="text-slate-600">
+                    {{ invTxnDetail.transaction?.warehouse_name }}
+                    · {{ formatCurrency(invTxnDetail.transaction?.amount) }}
+                  </p>
+                </div>
+                <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table class="min-w-full text-sm">
+                    <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th class="px-4 py-2.5 text-left">Item</th>
+                        <th class="px-4 py-2.5 text-left">SKU</th>
+                        <th v-if="modalType === 'outlet_wip'" class="px-4 py-2.5 text-left">Role</th>
+                        <th class="px-4 py-2.5 text-right">Qty In</th>
+                        <th class="px-4 py-2.5 text-right">Qty Out</th>
+                        <th class="px-4 py-2.5 text-right">Cost</th>
+                        <th class="px-4 py-2.5 text-right">Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="item in (invTxnDetail.items || [])" :key="'inv-item-' + item.id" class="border-t border-slate-100">
+                        <td class="px-4 py-2 font-medium text-slate-800">{{ item.item_name }}</td>
+                        <td class="px-4 py-2 text-slate-500">{{ item.sku }}</td>
+                        <td v-if="modalType === 'outlet_wip'" class="px-4 py-2 text-slate-600 capitalize">{{ item.role }}</td>
+                        <td class="px-4 py-2 text-right">{{ formatDecimal(item.qty_in ?? item.qty_small ?? 0) }}</td>
+                        <td class="px-4 py-2 text-right">{{ formatDecimal(item.qty_out || 0) }}</td>
+                        <td class="px-4 py-2 text-right">{{ formatCurrency(item.cost_per_small) }}</td>
+                        <td class="px-4 py-2 text-right font-semibold">{{ formatCurrency(item.amount) }}</td>
+                      </tr>
+                      <tr v-if="!(invTxnDetail.items || []).length">
+                        <td colspan="7" class="px-4 py-8 text-center text-slate-400">Tidak ada item</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+              <div v-else class="space-y-4">
+                <div class="relative">
+                  <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                  <input
+                    v-model="modalSearch"
+                    type="search"
+                    placeholder="Cari nomor, outlet, warehouse, user..."
+                    class="w-full rounded-xl border border-slate-200 pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-fuchsia-200"
+                    @input="queueInvTxnSearch"
+                  />
+                </div>
+                <div class="overflow-x-auto rounded-2xl border border-slate-200">
+                  <table class="min-w-full text-sm">
+                    <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th class="px-4 py-2.5 text-left">Tanggal</th>
+                        <th class="px-4 py-2.5 text-left">Nomor</th>
+                        <th class="px-4 py-2.5 text-left">{{ invTxnPartyLabel }}</th>
+                        <th class="px-4 py-2.5 text-left">User</th>
+                        <th v-if="modalType === 'outlet_wip'" class="px-4 py-2.5 text-right">Bahan</th>
+                        <th v-if="modalType === 'outlet_wip'" class="px-4 py-2.5 text-right">Jadi</th>
+                        <th v-if="modalType === 'outlet_transfer'" class="px-4 py-2.5 text-right">In</th>
+                        <th v-if="modalType === 'outlet_transfer'" class="px-4 py-2.5 text-right">Out</th>
+                        <th v-if="modalType !== 'outlet_wip' && modalType !== 'outlet_transfer'" class="px-4 py-2.5 text-right">Nilai</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="txn in modalTxns"
+                        :key="'inv-txn-' + txn.id"
+                        class="border-t border-slate-100 hover:bg-fuchsia-50/40 cursor-pointer"
+                        @click="openInvTxnDetail(txn.id)"
+                      >
+                        <td class="px-4 py-2.5 text-slate-700">{{ txn.date }}</td>
+                        <td class="px-4 py-2.5 font-semibold text-slate-900">{{ txn.number }}</td>
+                        <td class="px-4 py-2.5 text-slate-600">
+                          <template v-if="modalType === 'outlet_transfer'">
+                            {{ txn.from_outlet }} → {{ txn.to_outlet }}
+                          </template>
+                          <template v-else-if="modalType === 'internal_warehouse_transfer'">
+                            {{ txn.from_warehouse }} → {{ txn.to_warehouse }}
+                          </template>
+                          <template v-else>
+                            {{ txn.warehouse_name || '-' }}
+                          </template>
+                        </td>
+                        <td class="px-4 py-2.5 text-slate-600">{{ txn.created_by || '-' }}</td>
+                        <td v-if="modalType === 'outlet_wip'" class="px-4 py-2.5 text-right font-semibold">{{ formatCurrency(txn.material_cost) }}</td>
+                        <td v-if="modalType === 'outlet_wip'" class="px-4 py-2.5 text-right font-semibold">{{ formatCurrency(txn.finished_cost) }}</td>
+                        <td v-if="modalType === 'outlet_transfer'" class="px-4 py-2.5 text-right text-emerald-700 font-semibold">{{ formatCurrency(txn.value_in) }}</td>
+                        <td v-if="modalType === 'outlet_transfer'" class="px-4 py-2.5 text-right text-rose-700 font-semibold">{{ formatCurrency(txn.value_out) }}</td>
+                        <td v-if="modalType !== 'outlet_wip' && modalType !== 'outlet_transfer'" class="px-4 py-2.5 text-right font-semibold">{{ formatCurrency(txn.amount) }}</td>
+                      </tr>
+                      <tr v-if="!modalTxns.length">
+                        <td colspan="8" class="px-4 py-10 text-center text-slate-400">Tidak ada transaksi</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </template>
@@ -2295,7 +2597,15 @@ const cardHelps = {
   begin_inventory:
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance.\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Ending Inventory = Begin + Purchased − (Stock Cut + Category Cost).\nPurchased = GSR + GR + Retail Food + RWS.\nBreakdown per warehouse memakai formula yang sama.\nKlik card → report stok semua barang per warehouse, kategori expand/collapse, filter warehouse + search.',
+    'Nilai utama = Begin + Purchased − Stock Cut − Category Cost.\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).\nKlik card → detail item stok per warehouse/kategori.',
+  outlet_transfer:
+    'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
+  outlet_adjustment:
+    'Stock adjustment outlet (net value_in − value_out) per periode.\nBreakdown per warehouse di card.\nKlik → daftar transaksi → detail item + cost.',
+  internal_warehouse_transfer:
+    'Transfer antar gudang dalam outlet yang sama.\nCard menampilkan nilai per alur (mis. Service → Kitchen).\nKlik → daftar transaksi → detail item + cost.',
+  outlet_wip:
+    'WIP production outlet.\nCost bahan = value_out kartu.\nBarang jadi = value_in kartu.\nBreakdown per warehouse.\nKlik → daftar produksi → detail item + cost.',
   employee_overtime:
     'OT Submission = jam & nilai dari Overtime Submission approved.\nOT Real = jam lembur aktual (absensi + Extra Off OT, dikurangi 1+1) seperti Attendance Report per outlet.\nRata-rata / karyawan = total ÷ jumlah karyawan yang punya absensi di periode 26–25.\nKlik card → per karyawan. Klik nama → per tanggal.',
   late_absen:
@@ -2884,6 +3194,15 @@ const endingWarehouseFilter = ref('')
 const mcsCategoryFilter = ref('')
 let beginInventorySearchTimer = null
 let endingInventorySearchTimer = null
+let invTxnSearchTimer = null
+const invTxnDetail = ref(null)
+const invTxnDetailLoading = ref(false)
+
+const invTxnPartyLabel = computed(() => {
+  if (modalType.value === 'outlet_transfer') return 'Outlet'
+  if (modalType.value === 'internal_warehouse_transfer') return 'Gudang'
+  return 'Warehouse'
+})
 
 const spendDetailOpen = ref(false)
 const spendDetailLoading = ref(false)
@@ -2895,6 +3214,14 @@ const beginInventoryGroupCount = computed(() => (modalSheetMeta.value?.groups ||
 const beginInventoryItemCount = computed(() =>
   (modalSheetMeta.value?.groups || []).reduce((acc, g) => acc + (Number(g.item_count) || 0), 0)
 )
+
+const endingStockVariance = computed(() => {
+  if (!modalSheetMeta.value || modalType.value !== 'ending_inventory') return null
+  const formula = Number(modalSheetMeta.value.formula?.ending)
+  const stock = Number(modalSheetMeta.value.total_value ?? modalSheetMeta.value.stock_total)
+  if (Number.isNaN(formula) || Number.isNaN(stock)) return null
+  return Math.round((formula - stock) * 100) / 100
+})
 
 const endingCategoryKey = (warehouseId, category) => `${warehouseId}::${category}`
 
@@ -2989,6 +3316,10 @@ const modalTitle = computed(() => {
     category_cost: 'Category Cost',
     begin_inventory: 'Begin Inventory',
     ending_inventory: 'Ending Inventory',
+    outlet_transfer: 'Transfer Outlet',
+    outlet_adjustment: 'Adjustment',
+    internal_warehouse_transfer: 'Internal Warehouse Transfer',
+    outlet_wip: 'WIP Production',
     mcs_purchase: mcsCategoryFilter.value
       ? `Pembelian MCS · ${mcsCategoryFilter.value}`
       : 'Pembelian MCS',
@@ -3176,6 +3507,7 @@ const openCard = async (type) => {
   expandedBeginCategories.value = {}
   expandedEndingCategories.value = {}
   endingWarehouseFilter.value = ''
+  invTxnDetail.value = null
   if (type !== 'mcs_purchase' && type !== 'purchase_category') {
     mcsCategoryFilter.value = ''
   }
@@ -3197,6 +3529,7 @@ const closeModal = () => {
   expandedEndingCategories.value = {}
   endingWarehouseFilter.value = ''
   mcsCategoryFilter.value = ''
+  invTxnDetail.value = null
   closeSpendCellDetail()
 }
 
@@ -3442,7 +3775,7 @@ const fetchModal = async () => {
       ...filterParams(),
       search: modalSearch.value,
       page: modalPage.value,
-      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value) ? 62 : 20,
+      per_page: ['revenue', 'total_spend', 'stock_cut', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'kitchen_purchase', 'bar_purchase', 'service_purchase', 'outlet_transfer', 'outlet_adjustment', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType.value) ? 62 : 20,
     }
     if (['mcs_purchase', 'purchase_category'].includes(modalType.value) && mcsCategoryFilter.value) {
       params.category = mcsCategoryFilter.value
@@ -3455,6 +3788,7 @@ const fetchModal = async () => {
     modalTxns.value = data.transactions || []
     modalSheetMeta.value = data.sheet_meta || null
     modalPagination.value = data.pagination || { total: 0, total_pages: 1 }
+    invTxnDetail.value = null
 
     if (modalType.value === 'begin_inventory') {
       // Saat search aktif: expand semua hasil. Saat pertama buka: collapse.
@@ -3475,6 +3809,39 @@ const fetchModal = async () => {
   } finally {
     modalLoading.value = false
   }
+}
+
+const queueInvTxnSearch = () => {
+  if (invTxnSearchTimer) window.clearTimeout(invTxnSearchTimer)
+  invTxnSearchTimer = window.setTimeout(() => {
+    fetchModal()
+  }, 350)
+}
+
+const openInvTxnDetail = async (transactionId) => {
+  invTxnDetailLoading.value = true
+  try {
+    const { data } = await axios.get('/opex-outlet-dashboard/card-detail', {
+      params: {
+        type: modalType.value,
+        transaction_id: transactionId,
+        ...filterParams(),
+      },
+    })
+    invTxnDetail.value = {
+      transaction: data.sheet_meta?.transaction || null,
+      items: data.sheet_meta?.items || [],
+    }
+  } catch (e) {
+    console.error(e)
+    alert('Gagal memuat detail transaksi')
+  } finally {
+    invTxnDetailLoading.value = false
+  }
+}
+
+const closeInvTxnDetail = () => {
+  invTxnDetail.value = null
 }
 
 const formatCurrency = (value) =>

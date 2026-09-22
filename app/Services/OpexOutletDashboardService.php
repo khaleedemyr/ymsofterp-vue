@@ -181,6 +181,22 @@ class OpexOutletDashboardService
                 (float) ($current['ending_inventory'] ?? 0),
                 (float) ($previous['ending_inventory'] ?? 0)
             ),
+            'outlet_transfer_in' => $this->vsMetric(
+                (float) ($current['outlet_transfer_in'] ?? 0),
+                (float) ($previous['outlet_transfer_in'] ?? 0)
+            ),
+            'outlet_transfer_out' => $this->vsMetric(
+                (float) ($current['outlet_transfer_out'] ?? 0),
+                (float) ($previous['outlet_transfer_out'] ?? 0)
+            ),
+            'outlet_adjustment' => $this->vsMetric(
+                (float) ($current['outlet_adjustment'] ?? 0),
+                (float) ($previous['outlet_adjustment'] ?? 0)
+            ),
+            'wip_finished_cost' => $this->vsMetric(
+                (float) ($current['wip_finished_cost'] ?? 0),
+                (float) ($previous['wip_finished_cost'] ?? 0)
+            ),
             'mcs_purchase' => $this->vsMetric($current['mcs_purchase'], $previous['mcs_purchase']),
             'outlet_city_ledger' => $this->vsMetric($current['outlet_city_ledger'], $previous['outlet_city_ledger']),
         ];
@@ -227,13 +243,20 @@ class OpexOutletDashboardService
             return $revenue['total'] > 0 ? round(($amount / $revenue['total']) * 100, 2) : null;
         };
 
-        $endingInventory = round(
+        // Card formula sederhana (tanpa opname/transfer) — gerakan lain punya card sendiri
+        $formulaEnding = round(
             (float) $beginInventory['total']
             + (float) $inventoryMovement['purchased_total']
             - (float) $stockCut['total']
             - (float) $categoryCost['total'],
             2
         );
+        $endingStock = $this->sumEndingStockSanitized($outletId, $dateTo);
+        $endingInventory = $formulaEnding;
+        $outletTransferSummary = $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo);
+        $adjustmentSummary = $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo);
+        $iwtSummary = $this->sumInternalWarehouseTransferMovements($outletId, $dateFrom, $dateTo);
+        $wipSummary = $this->sumOutletWipMovements($outletId, $dateFrom, $dateTo);
 
         return [
             'revenue' => $revenue['total'],
@@ -297,16 +320,40 @@ class OpexOutletDashboardService
             'begin_inventory_by_warehouse' => $inventoryMovement['begin_by_warehouse'],
             'purchased_inventory' => $inventoryMovement['purchased_total'],
             'purchased_inventory_by_warehouse' => $inventoryMovement['purchased_by_warehouse'],
+            'opname_inventory' => $inventoryMovement['opname_total'] ?? 0,
+            'opname_inventory_by_warehouse' => $inventoryMovement['opname_by_warehouse'] ?? [],
+            'transfer_inventory' => $inventoryMovement['transfer_total'] ?? 0,
+            'transfer_inventory_by_warehouse' => $inventoryMovement['transfer_by_warehouse'] ?? [],
             'ending_inventory' => $endingInventory,
             'ending_inventory_revenue_pct' => $pctOfRevenue($endingInventory),
-            'ending_inventory_by_warehouse' => $inventoryMovement['ending_by_warehouse'],
+            // Per warehouse di card = nilai stok (bukan formula movement)
+            'ending_inventory_by_warehouse' => $endingStock['by_warehouse'],
+            'ending_inventory_stock' => $endingStock['total'],
+            'ending_inventory_stock_by_warehouse' => $endingStock['by_warehouse'],
             'ending_inventory_formula' => [
                 'begin' => round((float) $beginInventory['total'], 2),
                 'purchased' => round((float) $inventoryMovement['purchased_total'], 2),
                 'stock_cut' => round((float) $stockCut['total'], 2),
                 'category_cost' => round((float) $categoryCost['total'], 2),
+                'formula_ending' => $formulaEnding,
+                'stock_ending' => round((float) $endingStock['total'], 2),
+                'variance' => round($formulaEnding - (float) $endingStock['total'], 2),
                 'ending' => $endingInventory,
             ],
+            'outlet_transfer_in' => $outletTransferSummary['in_total'],
+            'outlet_transfer_out' => $outletTransferSummary['out_total'],
+            'outlet_transfer_net' => $outletTransferSummary['net_total'],
+            'outlet_transfer_count' => $outletTransferSummary['count'],
+            'outlet_adjustment' => $adjustmentSummary['total'],
+            'outlet_adjustment_count' => $adjustmentSummary['count'],
+            'outlet_adjustment_by_warehouse' => $adjustmentSummary['by_warehouse'],
+            'internal_warehouse_transfer_total' => $iwtSummary['total'],
+            'internal_warehouse_transfer_count' => $iwtSummary['count'],
+            'internal_warehouse_transfer_flows' => $iwtSummary['flows'],
+            'wip_material_cost' => $wipSummary['material_total'],
+            'wip_finished_cost' => $wipSummary['finished_total'],
+            'wip_count' => $wipSummary['count'],
+            'wip_by_warehouse' => $wipSummary['by_warehouse'],
             'mcs_purchase' => $mcsPurchase['total'],
             'mcs_purchase_count' => $mcsPurchase['count'],
             'mcs_purchase_by_category' => $mcsPurchase['by_category'],
@@ -2992,17 +3039,22 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Ending = begin + purchased − (stock_cut + category_cost), plus breakdown per warehouse.
+     * Ending = begin + purchased + opname + transfer − (stock_cut + category_cost), per warehouse.
+     * Opname/transfer dari kartu inventory (value_in − value_out) pada periode.
      *
      * @return array{
      *   begin_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
      *   purchased_total: float,
      *   purchased_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   opname_total: float,
+     *   opname_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   transfer_total: float,
+     *   transfer_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
      *   stock_cut_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
      *   category_cost_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
      *   ending_total: float,
      *   ending_by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
-     *   formula: array{begin: float, purchased: float, stock_cut: float, category_cost: float, ending: float}
+     *   formula: array{begin: float, purchased: float, opname: float, transfer: float, stock_cut: float, category_cost: float, ending: float}
      * }
      */
     public function buildInventoryMovementSummary(int $outletId, string $dateFrom, string $dateTo): array
@@ -3018,6 +3070,8 @@ class OpexOutletDashboardService
         $emptyFormula = [
             'begin' => 0.0,
             'purchased' => 0.0,
+            'opname' => 0.0,
+            'transfer' => 0.0,
             'stock_cut' => 0.0,
             'category_cost' => 0.0,
             'ending' => 0.0,
@@ -3028,6 +3082,10 @@ class OpexOutletDashboardService
                 'begin_by_warehouse' => $emptyList,
                 'purchased_total' => 0.0,
                 'purchased_by_warehouse' => $emptyList,
+                'opname_total' => 0.0,
+                'opname_by_warehouse' => $emptyList,
+                'transfer_total' => 0.0,
+                'transfer_by_warehouse' => $emptyList,
                 'stock_cut_by_warehouse' => $emptyList,
                 'category_cost_by_warehouse' => $emptyList,
                 'ending_total' => 0.0,
@@ -3038,16 +3096,32 @@ class OpexOutletDashboardService
 
         $beginMap = $this->beginInventoryAmountByWarehouse($outletId, $dateFrom, $warehouseIds);
         $purchasedMap = $this->purchasedAmountByWarehouse($outletId, $dateFrom, $dateTo, $warehouses);
+        $opnameMap = $this->cardMovementNetByWarehouse(
+            $outletId,
+            $dateFrom,
+            $dateTo,
+            ['stock_opname']
+        );
+        $transferMap = $this->cardMovementNetByWarehouse(
+            $outletId,
+            $dateFrom,
+            $dateTo,
+            ['internal_warehouse_transfer', 'outlet_transfer', 'outlet_stock_adjustment']
+        );
         $stockCutMap = $this->stockCutAmountByWarehouse($outletId, $dateFrom, $dateTo);
         $categoryCostMap = $this->categoryCostAmountByWarehouse($outletId, $dateFrom, $dateTo);
 
         $beginByWh = [];
         $purchasedByWh = [];
+        $opnameByWh = [];
+        $transferByWh = [];
         $stockCutByWh = [];
         $categoryCostByWh = [];
         $endingByWh = [];
         $beginTotal = 0.0;
         $purchasedTotal = 0.0;
+        $opnameTotal = 0.0;
+        $transferTotal = 0.0;
         $stockCutTotal = 0.0;
         $categoryCostTotal = 0.0;
         $endingTotal = 0.0;
@@ -3057,18 +3131,24 @@ class OpexOutletDashboardService
             $name = (string) $wh->name;
             $begin = round((float) ($beginMap[$id] ?? 0), 2);
             $purchased = round((float) ($purchasedMap[$id] ?? 0), 2);
+            $opname = round((float) ($opnameMap[$id] ?? 0), 2);
+            $transfer = round((float) ($transferMap[$id] ?? 0), 2);
             $stockCut = round((float) ($stockCutMap[$id] ?? 0), 2);
             $categoryCost = round((float) ($categoryCostMap[$id] ?? 0), 2);
-            $ending = round($begin + $purchased - $stockCut - $categoryCost, 2);
+            $ending = round($begin + $purchased + $opname + $transfer - $stockCut - $categoryCost, 2);
 
             $beginByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $begin];
             $purchasedByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $purchased];
+            $opnameByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $opname];
+            $transferByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $transfer];
             $stockCutByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $stockCut];
             $categoryCostByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $categoryCost];
             $endingByWh[] = ['warehouse_id' => $id, 'warehouse_name' => $name, 'amount' => $ending];
 
             $beginTotal += $begin;
             $purchasedTotal += $purchased;
+            $opnameTotal += $opname;
+            $transferTotal += $transfer;
             $stockCutTotal += $stockCut;
             $categoryCostTotal += $categoryCost;
             $endingTotal += $ending;
@@ -3078,6 +3158,10 @@ class OpexOutletDashboardService
             'begin_by_warehouse' => $beginByWh,
             'purchased_total' => round($purchasedTotal, 2),
             'purchased_by_warehouse' => $purchasedByWh,
+            'opname_total' => round($opnameTotal, 2),
+            'opname_by_warehouse' => $opnameByWh,
+            'transfer_total' => round($transferTotal, 2),
+            'transfer_by_warehouse' => $transferByWh,
             'stock_cut_by_warehouse' => $stockCutByWh,
             'category_cost_by_warehouse' => $categoryCostByWh,
             'ending_total' => round($endingTotal, 2),
@@ -3085,6 +3169,8 @@ class OpexOutletDashboardService
             'formula' => [
                 'begin' => round($beginTotal, 2),
                 'purchased' => round($purchasedTotal, 2),
+                'opname' => round($opnameTotal, 2),
+                'transfer' => round($transferTotal, 2),
                 'stock_cut' => round($stockCutTotal, 2),
                 'category_cost' => round($categoryCostTotal, 2),
                 'ending' => round($endingTotal, 2),
@@ -3123,7 +3209,10 @@ class OpexOutletDashboardService
         $stockCutTotal = (float) $this->sumStockCut($outletId, $dateFrom, $dateTo)['total'];
         $categoryCostTotal = (float) $this->sumCategoryCost($outletId, $dateFrom, $dateTo)['total'];
         $purchasedTotal = (float) $movement['purchased_total'];
-        $formulaEnding = round($beginTotal + $purchasedTotal - $stockCutTotal - $categoryCostTotal, 2);
+        $formulaEnding = round(
+            $beginTotal + $purchasedTotal - $stockCutTotal - $categoryCostTotal,
+            2
+        );
         $formula = [
             'begin' => round($beginTotal, 2),
             'purchased' => round($purchasedTotal, 2),
@@ -3152,6 +3241,7 @@ class OpexOutletDashboardService
             'as_of' => $dateTo,
             'source' => 'none',
             'total_value' => 0.0,
+            'stock_total' => 0.0,
             'formula' => $formula,
             'warehouse_options' => $warehouseOptions,
             'warehouses' => [],
@@ -3159,6 +3249,39 @@ class OpexOutletDashboardService
 
         if ($warehouseIds === []) {
             return $empty;
+        }
+
+        // Seed warehouse shells from formula breakdown (for side-by-side compare), but item totals = stock.
+        $byWarehouse = [];
+        foreach ($movement['ending_by_warehouse'] as $row) {
+            $wid = (int) ($row['warehouse_id'] ?? 0);
+            if ($wid <= 0 || ! in_array($wid, $warehouseIds, true)) {
+                continue;
+            }
+            $byWarehouse[$wid] = [
+                'warehouse_id' => $wid,
+                'warehouse_name' => (string) ($row['warehouse_name'] ?? '-'),
+                'formula_ending' => round((float) ($row['amount'] ?? 0), 2),
+                'total_value' => 0.0,
+                'item_count' => 0,
+                'categories' => [],
+            ];
+        }
+        foreach ($warehouses as $wh) {
+            $wid = (int) $wh->id;
+            if (! in_array($wid, $warehouseIds, true)) {
+                continue;
+            }
+            if (! isset($byWarehouse[$wid])) {
+                $byWarehouse[$wid] = [
+                    'warehouse_id' => $wid,
+                    'warehouse_name' => (string) $wh->name,
+                    'formula_ending' => 0.0,
+                    'total_value' => 0.0,
+                    'item_count' => 0,
+                    'categories' => [],
+                ];
+            }
         }
 
         // Prefer latest inventory card on/before dateTo; fallback to current stocks for missing rows.
@@ -3261,25 +3384,28 @@ class OpexOutletDashboardService
             $rows->push($row);
         }
 
-        $byWarehouse = [];
-        $grandTotal = 0.0;
+        $stockGrandTotal = 0.0;
+        $orphanSkipped = 0;
         foreach ($rows as $row) {
             $wid = (int) $row->warehouse_id;
-            $wname = (string) ($row->warehouse_name ?: '-');
+            if (! isset($byWarehouse[$wid])) {
+                continue;
+            }
             $category = (string) ($row->category_name ?: 'Tanpa Kategori');
-            $value = round((float) ($row->value ?? 0), 2);
             $qty = round((float) ($row->qty ?? 0), 4);
             $mac = round((float) ($row->mac ?? 0), 4);
+            $rawValue = round((float) ($row->value ?? 0), 2);
 
-            if (! isset($byWarehouse[$wid])) {
-                $byWarehouse[$wid] = [
-                    'warehouse_id' => $wid,
-                    'warehouse_name' => $wname,
-                    'total_value' => 0.0,
-                    'item_count' => 0,
-                    'categories' => [],
-                ];
+            // Value yatim: qty ≈ 0 tapi saldo_value ≠ 0 → abaikan dari report ending
+            if (abs($qty) < 0.00005) {
+                if (abs($rawValue) >= 0.01) {
+                    $orphanSkipped++;
+                }
+                continue;
             }
+
+            $value = $rawValue;
+
             if (! isset($byWarehouse[$wid]['categories'][$category])) {
                 $byWarehouse[$wid]['categories'][$category] = [
                     'category' => $category,
@@ -3303,14 +3429,19 @@ class OpexOutletDashboardService
             );
             $byWarehouse[$wid]['item_count']++;
             $byWarehouse[$wid]['total_value'] = round($byWarehouse[$wid]['total_value'] + $value, 2);
-            $grandTotal = round($grandTotal + $value, 2);
+            $stockGrandTotal = round($stockGrandTotal + $value, 2);
         }
 
         $warehouseList = [];
         foreach ($byWarehouse as $wh) {
+            // Saat search: sembunyikan gudang tanpa item match (kecuali filter warehouse spesifik)
+            if ($search !== '' && $wh['item_count'] === 0 && ($warehouseId === null || $warehouseId <= 0)) {
+                continue;
+            }
             $cats = array_values($wh['categories']);
             usort($cats, fn ($a, $b) => $b['total_value'] <=> $a['total_value']);
             $wh['categories'] = $cats;
+            $wh['variance'] = round(((float) $wh['formula_ending']) - ((float) $wh['total_value']), 2);
             $warehouseList[] = $wh;
         }
         usort($warehouseList, fn ($a, $b) => $b['total_value'] <=> $a['total_value']);
@@ -3318,11 +3449,159 @@ class OpexOutletDashboardService
         return [
             'as_of' => $dateTo,
             'source' => $usedCards ? 'inventory_cards' : 'current_stock',
-            'total_value' => $grandTotal,
-            'formula' => $formula,
+            // total_value = stok fisik (detail), formula.ending = nilai card (formula)
+            'total_value' => $stockGrandTotal,
+            'stock_total' => $stockGrandTotal,
+            'orphan_skipped' => $orphanSkipped,
+            'formula' => array_merge($formula, [
+                'formula_ending' => $formulaEnding,
+                'stock_ending' => $stockGrandTotal,
+                'variance' => round($formulaEnding - $stockGrandTotal, 2),
+            ]),
             'warehouse_options' => $warehouseOptions,
             'warehouses' => $warehouseList,
         ];
+    }
+
+    /**
+     * Ending stock as-of dateTo dari kartu terbaru; abaikan value yatim (qty≈0).
+     *
+     * @return array{
+     *   total: float,
+     *   by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>,
+     *   orphan_skipped: int
+     * }
+     */
+    private function sumEndingStockSanitized(int $outletId, string $dateTo): array
+    {
+        $warehouses = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $warehouseIds = $warehouses->pluck('id')->map(fn ($id) => (int) $id)->all();
+        if ($warehouseIds === []) {
+            return ['total' => 0.0, 'by_warehouse' => [], 'orphan_skipped' => 0];
+        }
+
+        $latest = DB::table('outlet_food_inventory_cards as card')
+            ->where('card.id_outlet', $outletId)
+            ->whereIn('card.warehouse_outlet_id', $warehouseIds)
+            ->whereDate('card.date', '<=', $dateTo)
+            ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
+            ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
+
+        $cardRows = DB::table('outlet_food_inventory_cards as card')
+            ->joinSub($latest, 'latest_card', function ($join) {
+                $join->on('latest_card.inventory_item_id', '=', 'card.inventory_item_id')
+                    ->on('latest_card.warehouse_outlet_id', '=', 'card.warehouse_outlet_id');
+            })
+            ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key")
+            ->where('card.id_outlet', $outletId)
+            ->whereIn('card.warehouse_outlet_id', $warehouseIds)
+            ->get([
+                'card.warehouse_outlet_id',
+                'card.inventory_item_id',
+                'card.saldo_qty_small',
+                'card.saldo_value',
+            ]);
+
+        $cardKeys = [];
+        $byWh = [];
+        foreach ($warehouses as $wh) {
+            $byWh[(int) $wh->id] = 0.0;
+        }
+        $orphanSkipped = 0;
+
+        foreach ($cardRows as $row) {
+            $wid = (int) $row->warehouse_outlet_id;
+            $iid = (int) $row->inventory_item_id;
+            $cardKeys[$wid.'|'.$iid] = true;
+            $qty = (float) ($row->saldo_qty_small ?? 0);
+            $value = (float) ($row->saldo_value ?? 0);
+            if (abs($qty) < 0.00005) {
+                if (abs($value) >= 0.01) {
+                    $orphanSkipped++;
+                }
+                continue;
+            }
+            $byWh[$wid] = ($byWh[$wid] ?? 0) + $value;
+        }
+
+        $stockRows = DB::table('outlet_food_inventory_stocks')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $warehouseIds)
+            ->get(['warehouse_outlet_id', 'inventory_item_id', 'qty_small', 'last_cost_small']);
+
+        foreach ($stockRows as $row) {
+            $wid = (int) $row->warehouse_outlet_id;
+            $iid = (int) $row->inventory_item_id;
+            if (isset($cardKeys[$wid.'|'.$iid])) {
+                continue;
+            }
+            $qty = (float) ($row->qty_small ?? 0);
+            if (abs($qty) < 0.00005) {
+                continue;
+            }
+            $byWh[$wid] = ($byWh[$wid] ?? 0) + ($qty * (float) ($row->last_cost_small ?? 0));
+        }
+
+        $list = [];
+        $total = 0.0;
+        foreach ($warehouses as $wh) {
+            $id = (int) $wh->id;
+            $amount = round((float) ($byWh[$id] ?? 0), 2);
+            $list[] = [
+                'warehouse_id' => $id,
+                'warehouse_name' => (string) $wh->name,
+                'amount' => $amount,
+            ];
+            $total += $amount;
+        }
+
+        return [
+            'total' => round($total, 2),
+            'by_warehouse' => $list,
+            'orphan_skipped' => $orphanSkipped,
+        ];
+    }
+
+    /**
+     * Net kartu inventory (value_in − value_out) per warehouse untuk reference_type tertentu.
+     *
+     * @param  list<string>  $referenceTypes
+     * @return array<int, float>
+     */
+    private function cardMovementNetByWarehouse(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        array $referenceTypes
+    ): array {
+        if ($referenceTypes === [] || ! Schema::hasTable('outlet_food_inventory_cards')) {
+            return [];
+        }
+
+        $rows = DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('reference_type', $referenceTypes)
+            ->whereDate('date', '>=', $dateFrom)
+            ->whereDate('date', '<=', $dateTo)
+            ->whereNotNull('warehouse_outlet_id')
+            ->selectRaw('
+                warehouse_outlet_id as warehouse_id,
+                COALESCE(SUM(COALESCE(value_in, 0) - COALESCE(value_out, 0)), 0) as net
+            ')
+            ->groupBy('warehouse_outlet_id')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->warehouse_id] = round((float) $row->net, 2);
+        }
+
+        return $out;
     }
 
     /**
@@ -4882,5 +5161,871 @@ class OpexOutletDashboardService
         }
 
         return $dates;
+    }
+
+    /**
+     * Transfer antar outlet: IN (masuk ke WH outlet ini) / OUT (keluar dari WH outlet ini).
+     *
+     * @return array{in_total: float, out_total: float, net_total: float, count: int}
+     */
+    public function sumOutletTransferMovements(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $whIds = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+        if ($whIds === []) {
+            return ['in_total' => 0.0, 'out_total' => 0.0, 'net_total' => 0.0, 'count' => 0];
+        }
+
+        $inTotal = (float) DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $whIds)
+            ->where('reference_type', 'outlet_transfer')
+            ->whereBetween('date', [$dateFrom, $dateTo])
+            ->sum('value_in');
+        $outTotal = (float) DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $whIds)
+            ->where('reference_type', 'outlet_transfer')
+            ->whereBetween('date', [$dateFrom, $dateTo])
+            ->sum('value_out');
+
+        $count = (int) DB::table('outlet_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->where(function ($q) use ($outletId) {
+                $q->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
+            })
+            ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+            ->count();
+        if ($count === 0) {
+            $count = (int) DB::table('outlet_food_inventory_cards')
+                ->where('id_outlet', $outletId)
+                ->where('reference_type', 'outlet_transfer')
+                ->whereBetween('date', [$dateFrom, $dateTo])
+                ->selectRaw('COUNT(DISTINCT reference_id) as c')
+                ->value('c');
+        }
+
+        return [
+            'in_total' => round($inTotal, 2),
+            'out_total' => round($outTotal, 2),
+            'net_total' => round($inTotal - $outTotal, 2),
+            'count' => $count,
+        ];
+    }
+
+    /**
+     * @return array{total: float, count: int, by_warehouse: list<array{warehouse_id: int, warehouse_name: string, amount: float}>}
+     */
+    public function sumOutletAdjustmentMovements(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $rows = DB::table('outlet_food_inventory_cards as c')
+            ->join('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
+            ->where('c.id_outlet', $outletId)
+            ->where('c.reference_type', 'outlet_stock_adjustment')
+            ->whereBetween('c.date', [$dateFrom, $dateTo])
+            ->groupBy('c.warehouse_outlet_id', 'wo.name')
+            ->orderBy('wo.name')
+            ->selectRaw('c.warehouse_outlet_id as warehouse_id, wo.name as warehouse_name, COALESCE(SUM(COALESCE(c.value_in,0) - COALESCE(c.value_out,0)),0) as amount')
+            ->get();
+
+        $byWh = [];
+        $total = 0.0;
+        foreach ($rows as $r) {
+            $amt = round((float) $r->amount, 2);
+            $byWh[] = [
+                'warehouse_id' => (int) $r->warehouse_id,
+                'warehouse_name' => (string) $r->warehouse_name,
+                'amount' => $amt,
+            ];
+            $total += $amt;
+        }
+
+        $count = (int) DB::table('outlet_food_inventory_adjustments')
+            ->where('id_outlet', $outletId)
+            ->whereBetween('date', [$dateFrom, $dateTo])
+            ->count();
+        if ($count === 0) {
+            $count = (int) DB::table('outlet_food_inventory_cards')
+                ->where('id_outlet', $outletId)
+                ->where('reference_type', 'outlet_stock_adjustment')
+                ->whereBetween('date', [$dateFrom, $dateTo])
+                ->selectRaw('COUNT(DISTINCT reference_id) as c')
+                ->value('c');
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => $count,
+            'by_warehouse' => $byWh,
+        ];
+    }
+
+    /**
+     * @return array{total: float, count: int, flows: list<array{from_warehouse_id: int, from_warehouse_name: string, to_warehouse_id: int, to_warehouse_name: string, amount: float, count: int}>}
+     */
+    public function sumInternalWarehouseTransferMovements(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $transfers = DB::table('internal_warehouse_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('outlet_food_inventory_cards as c', function ($join) use ($outletId) {
+                $join->on('c.reference_id', '=', 't.id')
+                    ->where('c.reference_type', '=', 'internal_warehouse_transfer')
+                    ->where('c.id_outlet', '=', $outletId)
+                    ->whereColumn('c.warehouse_outlet_id', 't.warehouse_outlet_from_id');
+            })
+            ->where('t.outlet_id', $outletId)
+            ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+            ->groupBy('t.warehouse_outlet_from_id', 'wf.name', 't.warehouse_outlet_to_id', 'wt.name')
+            ->orderBy('wf.name')
+            ->orderBy('wt.name')
+            ->selectRaw('
+                t.warehouse_outlet_from_id as from_warehouse_id,
+                wf.name as from_warehouse_name,
+                t.warehouse_outlet_to_id as to_warehouse_id,
+                wt.name as to_warehouse_name,
+                COALESCE(SUM(COALESCE(c.value_out, 0)), 0) as amount,
+                COUNT(DISTINCT t.id) as cnt
+            ')
+            ->get();
+
+        // Fallback ke total_cost item bila kartu kosong
+        if ($transfers->sum(fn ($r) => (float) $r->amount) <= 0) {
+            $transfers = DB::table('internal_warehouse_transfers as t')
+                ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+                ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+                ->leftJoin('internal_warehouse_transfer_items as i', 'i.internal_warehouse_transfer_id', '=', 't.id')
+                ->where('t.outlet_id', $outletId)
+                ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+                ->groupBy('t.warehouse_outlet_from_id', 'wf.name', 't.warehouse_outlet_to_id', 'wt.name')
+                ->orderBy('wf.name')
+                ->orderBy('wt.name')
+                ->selectRaw('
+                    t.warehouse_outlet_from_id as from_warehouse_id,
+                    wf.name as from_warehouse_name,
+                    t.warehouse_outlet_to_id as to_warehouse_id,
+                    wt.name as to_warehouse_name,
+                    COALESCE(SUM(COALESCE(i.total_cost, 0)), 0) as amount,
+                    COUNT(DISTINCT t.id) as cnt
+                ')
+                ->get();
+        }
+
+        $flows = [];
+        $total = 0.0;
+        $count = 0;
+        foreach ($transfers as $r) {
+            $amt = round((float) $r->amount, 2);
+            $cnt = (int) $r->cnt;
+            $flows[] = [
+                'from_warehouse_id' => (int) $r->from_warehouse_id,
+                'from_warehouse_name' => (string) $r->from_warehouse_name,
+                'to_warehouse_id' => (int) $r->to_warehouse_id,
+                'to_warehouse_name' => (string) $r->to_warehouse_name,
+                'amount' => $amt,
+                'count' => $cnt,
+            ];
+            $total += $amt;
+            $count += $cnt;
+        }
+
+        return [
+            'total' => round($total, 2),
+            'count' => $count,
+            'flows' => $flows,
+        ];
+    }
+
+    /**
+     * @return array{
+     *   material_total: float,
+     *   finished_total: float,
+     *   count: int,
+     *   by_warehouse: list<array{warehouse_id: int, warehouse_name: string, material_cost: float, finished_cost: float}>
+     * }
+     */
+    public function sumOutletWipMovements(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $rows = DB::table('outlet_food_inventory_cards as c')
+            ->join('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
+            ->where('c.id_outlet', $outletId)
+            ->where('c.reference_type', 'outlet_wip_production')
+            ->whereBetween('c.date', [$dateFrom, $dateTo])
+            ->groupBy('c.warehouse_outlet_id', 'wo.name')
+            ->orderBy('wo.name')
+            ->selectRaw('
+                c.warehouse_outlet_id as warehouse_id,
+                wo.name as warehouse_name,
+                COALESCE(SUM(COALESCE(c.value_out,0)),0) as material_cost,
+                COALESCE(SUM(COALESCE(c.value_in,0)),0) as finished_cost
+            ')
+            ->get();
+
+        $byWh = [];
+        $mat = 0.0;
+        $fin = 0.0;
+        foreach ($rows as $r) {
+            $m = round((float) $r->material_cost, 2);
+            $f = round((float) $r->finished_cost, 2);
+            $byWh[] = [
+                'warehouse_id' => (int) $r->warehouse_id,
+                'warehouse_name' => (string) $r->warehouse_name,
+                'material_cost' => $m,
+                'finished_cost' => $f,
+            ];
+            $mat += $m;
+            $fin += $f;
+        }
+
+        $count = (int) DB::table('outlet_wip_production_headers')
+            ->where('outlet_id', $outletId)
+            ->whereBetween('production_date', [$dateFrom, $dateTo])
+            ->count();
+        if ($count === 0) {
+            $count = (int) DB::table('outlet_food_inventory_cards')
+                ->where('id_outlet', $outletId)
+                ->where('reference_type', 'outlet_wip_production')
+                ->whereBetween('date', [$dateFrom, $dateTo])
+                ->selectRaw('COUNT(DISTINCT reference_id) as c')
+                ->value('c');
+        }
+
+        return [
+            'material_total' => round($mat, 2),
+            'finished_total' => round($fin, 2),
+            'count' => $count,
+            'by_warehouse' => $byWh,
+        ];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listOutletTransferTransactions(int $outletId, string $dateFrom, string $dateTo, string $search = ''): array
+    {
+        $search = trim($search);
+        $q = DB::table('outlet_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('tbl_data_outlet as ofrom', 'wf.outlet_id', '=', 'ofrom.id_outlet')
+            ->leftJoin('tbl_data_outlet as oto', 'wt.outlet_id', '=', 'oto.id_outlet')
+            ->leftJoin('users as u', 't.created_by', '=', 'u.id')
+            ->where(function ($qq) use ($outletId) {
+                $qq->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
+            })
+            ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+            ->orderByDesc('t.transfer_date')
+            ->orderByDesc('t.id')
+            ->select([
+                't.id',
+                't.transfer_number',
+                't.transfer_date',
+                't.status',
+                't.notes',
+                't.created_by',
+                'u.name as created_by_name',
+                'wf.id as from_warehouse_id',
+                'wf.name as from_warehouse_name',
+                'wt.id as to_warehouse_id',
+                'wt.name as to_warehouse_name',
+                'ofrom.id_outlet as from_outlet_id',
+                'ofrom.nama_outlet as from_outlet_name',
+                'oto.id_outlet as to_outlet_id',
+                'oto.nama_outlet as to_outlet_name',
+            ]);
+
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('t.transfer_number', 'like', $like)
+                    ->orWhere('ofrom.nama_outlet', 'like', $like)
+                    ->orWhere('oto.nama_outlet', 'like', $like)
+                    ->orWhere('u.name', 'like', $like)
+                    ->orWhere('wf.name', 'like', $like)
+                    ->orWhere('wt.name', 'like', $like);
+            });
+        }
+
+        $rows = $q->limit(200)->get();
+        $ids = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $valueMap = [];
+        if ($ids !== []) {
+            $vals = DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'outlet_transfer')
+                ->whereIn('reference_id', $ids)
+                ->where('id_outlet', $outletId)
+                ->groupBy('reference_id')
+                ->selectRaw('reference_id, SUM(COALESCE(value_in,0)) as vin, SUM(COALESCE(value_out,0)) as vout')
+                ->get();
+            foreach ($vals as $v) {
+                $valueMap[(int) $v->reference_id] = [
+                    'value_in' => round((float) $v->vin, 2),
+                    'value_out' => round((float) $v->vout, 2),
+                ];
+            }
+        }
+
+        return $rows->map(function ($r) use ($valueMap, $outletId) {
+            $vals = $valueMap[(int) $r->id] ?? ['value_in' => 0.0, 'value_out' => 0.0];
+            $direction = (int) $r->to_outlet_id === $outletId && (int) $r->from_outlet_id !== $outletId
+                ? 'in'
+                : ((int) $r->from_outlet_id === $outletId && (int) $r->to_outlet_id !== $outletId ? 'out' : 'internal');
+
+            return [
+                'id' => (int) $r->id,
+                'number' => (string) $r->transfer_number,
+                'date' => (string) $r->transfer_date,
+                'status' => (string) ($r->status ?? ''),
+                'notes' => (string) ($r->notes ?? ''),
+                'created_by' => (string) ($r->created_by_name ?? '-'),
+                'from_outlet' => (string) ($r->from_outlet_name ?? '-'),
+                'to_outlet' => (string) ($r->to_outlet_name ?? '-'),
+                'from_warehouse' => (string) ($r->from_warehouse_name ?? '-'),
+                'to_warehouse' => (string) ($r->to_warehouse_name ?? '-'),
+                'value_in' => $vals['value_in'],
+                'value_out' => $vals['value_out'],
+                'amount' => round(max($vals['value_in'], $vals['value_out']), 2),
+                'direction' => $direction,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array{transaction: array<string, mixed>|null, items: list<array<string, mixed>>}
+     */
+    public function detailOutletTransferTransaction(int $outletId, int $transferId): array
+    {
+        $header = DB::table('outlet_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('tbl_data_outlet as ofrom', 'wf.outlet_id', '=', 'ofrom.id_outlet')
+            ->leftJoin('tbl_data_outlet as oto', 'wt.outlet_id', '=', 'oto.id_outlet')
+            ->leftJoin('users as u', 't.created_by', '=', 'u.id')
+            ->where('t.id', $transferId)
+            ->where(function ($qq) use ($outletId) {
+                $qq->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
+            })
+            ->first([
+                't.id',
+                't.transfer_number',
+                't.transfer_date',
+                't.status',
+                't.notes',
+                'u.name as created_by_name',
+                'wf.name as from_warehouse_name',
+                'wt.name as to_warehouse_name',
+                'ofrom.nama_outlet as from_outlet_name',
+                'oto.nama_outlet as to_outlet_name',
+                'ofrom.id_outlet as from_outlet_id',
+                'oto.id_outlet as to_outlet_id',
+            ]);
+
+        $vals = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_transfer')
+            ->where('reference_id', $transferId)
+            ->where('id_outlet', $outletId)
+            ->selectRaw('SUM(COALESCE(value_in,0)) as vin, SUM(COALESCE(value_out,0)) as vout')
+            ->first();
+
+        $txn = $header ? [
+            'id' => (int) $header->id,
+            'number' => (string) $header->transfer_number,
+            'date' => (string) $header->transfer_date,
+            'status' => (string) ($header->status ?? ''),
+            'notes' => (string) ($header->notes ?? ''),
+            'created_by' => (string) ($header->created_by_name ?? '-'),
+            'from_outlet' => (string) ($header->from_outlet_name ?? '-'),
+            'to_outlet' => (string) ($header->to_outlet_name ?? '-'),
+            'from_warehouse' => (string) ($header->from_warehouse_name ?? '-'),
+            'to_warehouse' => (string) ($header->to_warehouse_name ?? '-'),
+            'value_in' => round((float) ($vals->vin ?? 0), 2),
+            'value_out' => round((float) ($vals->vout ?? 0), 2),
+            'amount' => round(max((float) ($vals->vin ?? 0), (float) ($vals->vout ?? 0)), 2),
+        ] : null;
+
+        $items = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->leftJoin('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
+            ->where('c.reference_type', 'outlet_transfer')
+            ->where('c.reference_id', $transferId)
+            ->where('c.id_outlet', $outletId)
+            ->orderBy('i.name')
+            ->get([
+                'c.id',
+                'i.name as item_name',
+                'i.sku',
+                'wo.name as warehouse_name',
+                'c.in_qty_small',
+                'c.out_qty_small',
+                'c.cost_per_small',
+                'c.value_in',
+                'c.value_out',
+            ])
+            ->map(fn ($r) => [
+                'id' => (int) $r->id,
+                'item_name' => (string) $r->item_name,
+                'sku' => (string) ($r->sku ?? ''),
+                'warehouse_name' => (string) ($r->warehouse_name ?? ''),
+                'qty_in' => (float) $r->in_qty_small,
+                'qty_out' => (float) $r->out_qty_small,
+                'cost_per_small' => (float) $r->cost_per_small,
+                'value_in' => (float) $r->value_in,
+                'value_out' => (float) $r->value_out,
+                'amount' => round((float) $r->value_in + (float) $r->value_out, 2),
+            ])
+            ->values()
+            ->all();
+
+        if ($items === []) {
+            $items = DB::table('outlet_transfer_items as ti')
+                ->join('items as i', 'ti.item_id', '=', 'i.id')
+                ->where('ti.outlet_transfer_id', $transferId)
+                ->get(['ti.id', 'i.name as item_name', 'i.sku', 'ti.qty_small', 'ti.quantity'])
+                ->map(fn ($r) => [
+                    'id' => (int) $r->id,
+                    'item_name' => (string) $r->item_name,
+                    'sku' => (string) ($r->sku ?? ''),
+                    'warehouse_name' => '',
+                    'qty_in' => 0.0,
+                    'qty_out' => (float) ($r->qty_small ?: $r->quantity),
+                    'cost_per_small' => 0.0,
+                    'value_in' => 0.0,
+                    'value_out' => 0.0,
+                    'amount' => 0.0,
+                ])
+                ->values()
+                ->all();
+        }
+
+        return ['transaction' => $txn, 'items' => $items];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listOutletAdjustmentTransactions(int $outletId, string $dateFrom, string $dateTo, string $search = ''): array
+    {
+        $search = trim($search);
+        $q = DB::table('outlet_food_inventory_adjustments as a')
+            ->leftJoin('warehouse_outlets as wo', 'a.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'a.created_by', '=', 'u.id')
+            ->where('a.id_outlet', $outletId)
+            ->whereBetween('a.date', [$dateFrom, $dateTo])
+            ->orderByDesc('a.date')
+            ->orderByDesc('a.id')
+            ->select([
+                'a.id',
+                'a.number',
+                'a.date',
+                'a.type',
+                'a.reason',
+                'a.status',
+                'u.name as created_by_name',
+                'wo.id as warehouse_id',
+                'wo.name as warehouse_name',
+            ]);
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('a.number', 'like', $like)
+                    ->orWhere('a.reason', 'like', $like)
+                    ->orWhere('wo.name', 'like', $like)
+                    ->orWhere('u.name', 'like', $like);
+            });
+        }
+        $rows = $q->limit(200)->get();
+        $ids = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $valueMap = [];
+        if ($ids !== []) {
+            foreach (
+                DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'outlet_stock_adjustment')
+                    ->whereIn('reference_id', $ids)
+                    ->where('id_outlet', $outletId)
+                    ->groupBy('reference_id')
+                    ->selectRaw('reference_id, SUM(COALESCE(value_in,0)-COALESCE(value_out,0)) as net, SUM(COALESCE(value_in,0)) as vin, SUM(COALESCE(value_out,0)) as vout')
+                    ->get() as $v
+            ) {
+                $valueMap[(int) $v->reference_id] = [
+                    'amount' => round((float) $v->net, 2),
+                    'value_in' => round((float) $v->vin, 2),
+                    'value_out' => round((float) $v->vout, 2),
+                ];
+            }
+        }
+
+        return $rows->map(function ($r) use ($valueMap) {
+            $vals = $valueMap[(int) $r->id] ?? ['amount' => 0.0, 'value_in' => 0.0, 'value_out' => 0.0];
+
+            return [
+                'id' => (int) $r->id,
+                'number' => (string) $r->number,
+                'date' => (string) $r->date,
+                'type' => (string) ($r->type ?? ''),
+                'reason' => (string) ($r->reason ?? ''),
+                'status' => (string) ($r->status ?? ''),
+                'created_by' => (string) ($r->created_by_name ?? '-'),
+                'warehouse_id' => (int) ($r->warehouse_id ?? 0),
+                'warehouse_name' => (string) ($r->warehouse_name ?? '-'),
+                'amount' => $vals['amount'],
+                'value_in' => $vals['value_in'],
+                'value_out' => $vals['value_out'],
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array{transaction: array<string, mixed>|null, items: list<array<string, mixed>>}
+     */
+    public function detailOutletAdjustmentTransaction(int $outletId, int $adjustmentId): array
+    {
+        $header = DB::table('outlet_food_inventory_adjustments as a')
+            ->leftJoin('warehouse_outlets as wo', 'a.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'a.created_by', '=', 'u.id')
+            ->where('a.id_outlet', $outletId)
+            ->where('a.id', $adjustmentId)
+            ->first([
+                'a.id', 'a.number', 'a.date', 'a.type', 'a.reason', 'a.status',
+                'u.name as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
+            ]);
+        $vals = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_stock_adjustment')
+            ->where('reference_id', $adjustmentId)
+            ->where('id_outlet', $outletId)
+            ->selectRaw('SUM(COALESCE(value_in,0)-COALESCE(value_out,0)) as net, SUM(COALESCE(value_in,0)) as vin, SUM(COALESCE(value_out,0)) as vout')
+            ->first();
+        $txn = $header ? [
+            'id' => (int) $header->id,
+            'number' => (string) $header->number,
+            'date' => (string) $header->date,
+            'type' => (string) ($header->type ?? ''),
+            'reason' => (string) ($header->reason ?? ''),
+            'status' => (string) ($header->status ?? ''),
+            'created_by' => (string) ($header->created_by_name ?? '-'),
+            'warehouse_id' => (int) ($header->warehouse_id ?? 0),
+            'warehouse_name' => (string) ($header->warehouse_name ?? '-'),
+            'amount' => round((float) ($vals->net ?? 0), 2),
+            'value_in' => round((float) ($vals->vin ?? 0), 2),
+            'value_out' => round((float) ($vals->vout ?? 0), 2),
+        ] : null;
+
+        $items = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->where('c.reference_type', 'outlet_stock_adjustment')
+            ->where('c.reference_id', $adjustmentId)
+            ->where('c.id_outlet', $outletId)
+            ->orderBy('i.name')
+            ->get([
+                'c.id', 'i.name as item_name', 'i.sku',
+                'c.in_qty_small', 'c.out_qty_small', 'c.cost_per_small', 'c.value_in', 'c.value_out',
+            ])
+            ->map(fn ($r) => [
+                'id' => (int) $r->id,
+                'item_name' => (string) $r->item_name,
+                'sku' => (string) ($r->sku ?? ''),
+                'qty_in' => (float) $r->in_qty_small,
+                'qty_out' => (float) $r->out_qty_small,
+                'cost_per_small' => (float) $r->cost_per_small,
+                'value_in' => (float) $r->value_in,
+                'value_out' => (float) $r->value_out,
+                'amount' => round((float) $r->value_in - (float) $r->value_out, 2),
+            ])
+            ->values()
+            ->all();
+
+        return ['transaction' => $txn, 'items' => $items];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listInternalWarehouseTransferTransactions(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        string $search = '',
+        ?int $fromWarehouseId = null,
+        ?int $toWarehouseId = null
+    ): array {
+        $search = trim($search);
+        $q = DB::table('internal_warehouse_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('users as u', 't.created_by', '=', 'u.id')
+            ->where('t.outlet_id', $outletId)
+            ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+            ->orderByDesc('t.transfer_date')
+            ->orderByDesc('t.id')
+            ->select([
+                't.id',
+                't.transfer_number',
+                't.transfer_date',
+                't.notes',
+                'u.name as created_by_name',
+                'wf.id as from_warehouse_id',
+                'wf.name as from_warehouse_name',
+                'wt.id as to_warehouse_id',
+                'wt.name as to_warehouse_name',
+            ]);
+        if ($fromWarehouseId) {
+            $q->where('t.warehouse_outlet_from_id', $fromWarehouseId);
+        }
+        if ($toWarehouseId) {
+            $q->where('t.warehouse_outlet_to_id', $toWarehouseId);
+        }
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('t.transfer_number', 'like', $like)
+                    ->orWhere('wf.name', 'like', $like)
+                    ->orWhere('wt.name', 'like', $like)
+                    ->orWhere('u.name', 'like', $like);
+            });
+        }
+        $rows = $q->limit(200)->get();
+        $ids = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $costMap = [];
+        if ($ids !== []) {
+            foreach (
+                DB::table('internal_warehouse_transfer_items')
+                    ->whereIn('internal_warehouse_transfer_id', $ids)
+                    ->groupBy('internal_warehouse_transfer_id')
+                    ->selectRaw('internal_warehouse_transfer_id, SUM(COALESCE(total_cost,0)) as amount')
+                    ->get() as $v
+            ) {
+                $costMap[(int) $v->internal_warehouse_transfer_id] = round((float) $v->amount, 2);
+            }
+            foreach (
+                DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'internal_warehouse_transfer')
+                    ->whereIn('reference_id', $ids)
+                    ->where('id_outlet', $outletId)
+                    ->groupBy('reference_id')
+                    ->selectRaw('reference_id, SUM(COALESCE(value_out,0)) as amount')
+                    ->get() as $v
+            ) {
+                $rid = (int) $v->reference_id;
+                $cardAmt = round((float) $v->amount, 2);
+                if (($costMap[$rid] ?? 0) <= 0 && $cardAmt > 0) {
+                    $costMap[$rid] = $cardAmt;
+                }
+            }
+        }
+
+        return $rows->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'number' => (string) $r->transfer_number,
+            'date' => (string) $r->transfer_date,
+            'notes' => (string) ($r->notes ?? ''),
+            'created_by' => (string) ($r->created_by_name ?? '-'),
+            'from_warehouse_id' => (int) $r->from_warehouse_id,
+            'from_warehouse' => (string) $r->from_warehouse_name,
+            'to_warehouse_id' => (int) $r->to_warehouse_id,
+            'to_warehouse' => (string) $r->to_warehouse_name,
+            'amount' => $costMap[(int) $r->id] ?? 0.0,
+        ])->values()->all();
+    }
+
+    /**
+     * @return array{transaction: array<string, mixed>|null, items: list<array<string, mixed>>}
+     */
+    public function detailInternalWarehouseTransferTransaction(int $outletId, int $transferId): array
+    {
+        $header = DB::table('internal_warehouse_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('users as u', 't.created_by', '=', 'u.id')
+            ->where('t.outlet_id', $outletId)
+            ->where('t.id', $transferId)
+            ->first([
+                't.id', 't.transfer_number', 't.transfer_date', 't.notes',
+                'u.name as created_by_name',
+                'wf.id as from_warehouse_id', 'wf.name as from_warehouse_name',
+                'wt.id as to_warehouse_id', 'wt.name as to_warehouse_name',
+            ]);
+        $amount = (float) DB::table('internal_warehouse_transfer_items')
+            ->where('internal_warehouse_transfer_id', $transferId)
+            ->sum('total_cost');
+        $txn = $header ? [
+            'id' => (int) $header->id,
+            'number' => (string) $header->transfer_number,
+            'date' => (string) $header->transfer_date,
+            'notes' => (string) ($header->notes ?? ''),
+            'created_by' => (string) ($header->created_by_name ?? '-'),
+            'from_warehouse_id' => (int) $header->from_warehouse_id,
+            'from_warehouse' => (string) $header->from_warehouse_name,
+            'to_warehouse_id' => (int) $header->to_warehouse_id,
+            'to_warehouse' => (string) $header->to_warehouse_name,
+            'amount' => round($amount, 2),
+        ] : null;
+
+        $items = DB::table('internal_warehouse_transfer_items as i')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->where('i.internal_warehouse_transfer_id', $transferId)
+            ->orderBy('it.name')
+            ->get(['i.id', 'it.name as item_name', 'it.sku', 'i.qty_small', 'i.cost_small', 'i.total_cost'])
+            ->map(fn ($r) => [
+                'id' => (int) $r->id,
+                'item_name' => (string) $r->item_name,
+                'sku' => (string) ($r->sku ?? ''),
+                'qty_small' => (float) $r->qty_small,
+                'cost_per_small' => (float) $r->cost_small,
+                'amount' => round((float) $r->total_cost, 2),
+            ])
+            ->values()
+            ->all();
+
+        return ['transaction' => $txn, 'items' => $items];
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function listOutletWipTransactions(int $outletId, string $dateFrom, string $dateTo, string $search = ''): array
+    {
+        $search = trim($search);
+        $q = DB::table('outlet_wip_production_headers as h')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->where('h.outlet_id', $outletId)
+            ->whereBetween('h.production_date', [$dateFrom, $dateTo])
+            ->orderByDesc('h.production_date')
+            ->orderByDesc('h.id')
+            ->select([
+                'h.id',
+                'h.number',
+                'h.production_date',
+                'h.batch_number',
+                'h.status',
+                'h.notes',
+                'u.name as created_by_name',
+                'wo.id as warehouse_id',
+                'wo.name as warehouse_name',
+            ]);
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $q->where(function ($qq) use ($like) {
+                $qq->where('h.number', 'like', $like)
+                    ->orWhere('h.batch_number', 'like', $like)
+                    ->orWhere('wo.name', 'like', $like)
+                    ->orWhere('u.name', 'like', $like);
+            });
+        }
+        $rows = $q->limit(200)->get();
+        $ids = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $costMap = [];
+        if ($ids !== []) {
+            foreach (
+                DB::table('outlet_food_inventory_cards')
+                    ->where('reference_type', 'outlet_wip_production')
+                    ->whereIn('reference_id', $ids)
+                    ->where('id_outlet', $outletId)
+                    ->groupBy('reference_id')
+                    ->selectRaw('reference_id, SUM(COALESCE(value_out,0)) as material, SUM(COALESCE(value_in,0)) as finished')
+                    ->get() as $v
+            ) {
+                $costMap[(int) $v->reference_id] = [
+                    'material_cost' => round((float) $v->material, 2),
+                    'finished_cost' => round((float) $v->finished, 2),
+                ];
+            }
+        }
+
+        return $rows->map(function ($r) use ($costMap) {
+            $c = $costMap[(int) $r->id] ?? ['material_cost' => 0.0, 'finished_cost' => 0.0];
+
+            return [
+                'id' => (int) $r->id,
+                'number' => (string) $r->number,
+                'date' => (string) $r->production_date,
+                'batch_number' => (string) ($r->batch_number ?? ''),
+                'status' => (string) ($r->status ?? ''),
+                'notes' => (string) ($r->notes ?? ''),
+                'created_by' => (string) ($r->created_by_name ?? '-'),
+                'warehouse_id' => (int) ($r->warehouse_id ?? 0),
+                'warehouse_name' => (string) ($r->warehouse_name ?? '-'),
+                'material_cost' => $c['material_cost'],
+                'finished_cost' => $c['finished_cost'],
+                'amount' => $c['finished_cost'],
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array{transaction: array<string, mixed>|null, items: list<array<string, mixed>>}
+     */
+    public function detailOutletWipTransaction(int $outletId, int $headerId): array
+    {
+        $header = DB::table('outlet_wip_production_headers as h')
+            ->leftJoin('warehouse_outlets as wo', 'h.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoin('users as u', 'h.created_by', '=', 'u.id')
+            ->where('h.outlet_id', $outletId)
+            ->where('h.id', $headerId)
+            ->first([
+                'h.id', 'h.number', 'h.production_date', 'h.batch_number', 'h.status', 'h.notes',
+                'u.name as created_by_name', 'wo.id as warehouse_id', 'wo.name as warehouse_name',
+            ]);
+        $vals = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_wip_production')
+            ->where('reference_id', $headerId)
+            ->where('id_outlet', $outletId)
+            ->selectRaw('SUM(COALESCE(value_out,0)) as material, SUM(COALESCE(value_in,0)) as finished')
+            ->first();
+        $txn = $header ? [
+            'id' => (int) $header->id,
+            'number' => (string) $header->number,
+            'date' => (string) $header->production_date,
+            'batch_number' => (string) ($header->batch_number ?? ''),
+            'status' => (string) ($header->status ?? ''),
+            'notes' => (string) ($header->notes ?? ''),
+            'created_by' => (string) ($header->created_by_name ?? '-'),
+            'warehouse_id' => (int) ($header->warehouse_id ?? 0),
+            'warehouse_name' => (string) ($header->warehouse_name ?? '-'),
+            'material_cost' => round((float) ($vals->material ?? 0), 2),
+            'finished_cost' => round((float) ($vals->finished ?? 0), 2),
+            'amount' => round((float) ($vals->finished ?? 0), 2),
+        ] : null;
+
+        $items = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
+            ->join('items as i', 'fi.item_id', '=', 'i.id')
+            ->where('c.reference_type', 'outlet_wip_production')
+            ->where('c.reference_id', $headerId)
+            ->where('c.id_outlet', $outletId)
+            ->orderByDesc('c.value_out')
+            ->orderByDesc('c.value_in')
+            ->get([
+                'c.id', 'i.name as item_name', 'i.sku',
+                'c.in_qty_small', 'c.out_qty_small', 'c.cost_per_small', 'c.value_in', 'c.value_out',
+            ])
+            ->map(function ($r) {
+                $role = (float) $r->value_in > 0 && (float) $r->value_out <= 0
+                    ? 'finished'
+                    : ((float) $r->value_out > 0 ? 'material' : 'other');
+
+                return [
+                    'id' => (int) $r->id,
+                    'item_name' => (string) $r->item_name,
+                    'sku' => (string) ($r->sku ?? ''),
+                    'role' => $role,
+                    'qty_in' => (float) $r->in_qty_small,
+                    'qty_out' => (float) $r->out_qty_small,
+                    'cost_per_small' => (float) $r->cost_per_small,
+                    'value_in' => (float) $r->value_in,
+                    'value_out' => (float) $r->value_out,
+                    'amount' => round((float) $r->value_in + (float) $r->value_out, 2),
+                ];
+            })
+            ->values()
+            ->all();
+
+        return ['transaction' => $txn, 'items' => $items];
     }
 }

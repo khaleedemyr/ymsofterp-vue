@@ -413,7 +413,7 @@ class InternalWarehouseTransferController extends Controller
                     'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
-                    'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
+                    'saldo_value' => OutletInventoryCostResolver::stockTotalValue($stockFrom->qty_small - $qty_small, $fromMac),
                     'description' => 'Stock Out - Internal Warehouse Transfer',
                     'created_at' => now(),
                 ]);
@@ -1059,7 +1059,7 @@ class InternalWarehouseTransferController extends Controller
                     'saldo_qty_small' => $stockFrom->qty_small - $qty_small,
                     'saldo_qty_medium' => $stockFrom->qty_medium - $qty_medium,
                     'saldo_qty_large' => $stockFrom->qty_large - $qty_large,
-                    'saldo_value' => ($stockFrom->qty_small - $qty_small) * $stockFrom->last_cost_small,
+                    'saldo_value' => OutletInventoryCostResolver::stockTotalValue($stockFrom->qty_small - $qty_small, $fromMac),
                     'description' => 'Stock Out - Internal Warehouse Transfer',
                     'created_at' => now(),
                 ]);
@@ -1384,7 +1384,7 @@ class InternalWarehouseTransferController extends Controller
                 'saldo_qty_small' => ($stockFrom->qty_small ?? 0) - $qty_small,
                 'saldo_qty_medium' => ($stockFrom->qty_medium ?? 0) - $qty_medium,
                 'saldo_qty_large' => ($stockFrom->qty_large ?? 0) - $qty_large,
-                'saldo_value' => (($stockFrom->qty_small ?? 0) - $qty_small) * ($stockFrom->last_cost_small ?? 0),
+                'saldo_value' => OutletInventoryCostResolver::stockTotalValue(($stockFrom->qty_small ?? 0) - $qty_small, $fromMac),
                 'description' => 'Stock Out - IWT Serial: ' . $si['serial_number'],
                 'created_at' => now(),
             ]);

@@ -62,17 +62,57 @@ final class OutletInventoryCostResolver
     }
 
     /**
-     * Satuan biaya masuk per unit kecil untuk transfer (antar outlet / internal WH):
-     * prefer jejak new_cost terbaru di gudang asal, fallback MAC pada stok asal.
+     * Satuan biaya masuk per unit kecil untuk transfer (antar outlet / internal WH).
+     * Jangan pakai new_cost historis sembarangan — sering terkontaminasi MAC transfer/produksi rusak.
+     * Urutan: MAC stok tersanitasi → pembelian terpercaya → last_cost stok → histori (hanya jika <= soft cap).
      */
     public static function resolveInboundUnitSmallCost(int $outletId, int $warehouseOutletId, int $inventoryItemId, object $stockFallbackRow): float
     {
+        // Pastikan resolveMacFromStockRow bisa baca anchor terpercaya
+        if (! isset($stockFallbackRow->id_outlet)) {
+            $stockFallbackRow->id_outlet = $outletId;
+        }
+        if (! isset($stockFallbackRow->warehouse_outlet_id)) {
+            $stockFallbackRow->warehouse_outlet_id = $warehouseOutletId;
+        }
+        if (! isset($stockFallbackRow->inventory_item_id)) {
+            $stockFallbackRow->inventory_item_id = $inventoryItemId;
+        }
+
+        $stockMac = self::resolveMacFromStockRow($stockFallbackRow);
+        $trusted = self::latestTrustedNewCostPerSmallUnit($outletId, $warehouseOutletId, $inventoryItemId);
+
+        if ($stockMac > 0) {
+            if ($trusted !== null && $trusted > 0 && self::macLooksAnomalousVsAnchor($stockMac, $trusted)) {
+                return $trusted;
+            }
+
+            return $stockMac;
+        }
+
+        if ($trusted !== null && $trusted > 0) {
+            return $trusted;
+        }
+
+        $lastCost = (float) ($stockFallbackRow->last_cost_small ?? 0);
+        if ($lastCost > 0 && $lastCost <= 500_000) {
+            return $lastCost;
+        }
+
         $fromHist = self::latestNewCostPerSmallUnit($outletId, $warehouseOutletId, $inventoryItemId);
-        if ($fromHist !== null) {
+        if ($fromHist !== null && $fromHist > 0 && $fromHist <= 500_000) {
+            if ($trusted !== null && $trusted > 0 && self::macLooksAnomalousVsAnchor($fromHist, $trusted)) {
+                return $trusted;
+            }
+
             return $fromHist;
         }
 
-        return (float) ($stockFallbackRow->last_cost_small ?? 0);
+        if ($trusted !== null && $trusted > 0) {
+            return $trusted;
+        }
+
+        return $lastCost > 0 ? $lastCost : 0.0;
     }
 
     /**
@@ -84,7 +124,7 @@ final class OutletInventoryCostResolver
     public static function scaledCostsMediumLargeFromStockRow(float $costSmall, object $stockRow): array
     {
         $base = (float) ($stockRow->last_cost_small ?? 0);
-        if ($base > 0) {
+        if ($base > 0 && $costSmall > 0 && ! self::macLooksAnomalousVsAnchor($base, $costSmall)) {
             return [
                 $costSmall,
                 $costSmall * ((float) ($stockRow->last_cost_medium ?? 0) / $base),
@@ -103,6 +143,14 @@ final class OutletInventoryCostResolver
     public static function transferInboundCostRates(object $stockFrom, int $fromOutletId, int $fromWarehouseOutletId, int $inventoryItemId): array
     {
         $small = self::resolveInboundUnitSmallCost($fromOutletId, $fromWarehouseOutletId, $inventoryItemId, $stockFrom);
+
+        // Soft guard: jangan salin cost absurd ke gudang tujuan
+        if ($small > 500_000) {
+            $trusted = self::latestTrustedNewCostPerSmallUnit($fromOutletId, $fromWarehouseOutletId, $inventoryItemId);
+            if ($trusted !== null && $trusted > 0) {
+                $small = $trusted;
+            }
+        }
 
         return self::scaledCostsMediumLargeFromStockRow($small, $stockFrom);
     }
