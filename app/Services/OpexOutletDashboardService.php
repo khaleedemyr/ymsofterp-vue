@@ -182,6 +182,10 @@ class OpexOutletDashboardService
                 (float) ($current['ending_inventory'] ?? 0),
                 (float) ($previous['ending_inventory'] ?? 0)
             ),
+            'cogs_pct' => $this->vsMetric(
+                (float) ($current['cogs_pct'] ?? 0),
+                (float) ($previous['cogs_pct'] ?? 0)
+            ),
             'outlet_transfer_in' => $this->vsMetric(
                 (float) ($current['outlet_transfer_in'] ?? 0),
                 (float) ($previous['outlet_transfer_in'] ?? 0)
@@ -275,6 +279,58 @@ class OpexOutletDashboardService
         );
         $endingStock = $this->sumEndingStockSanitized($outletId, $dateTo, $dateFrom);
         $endingInventory = $formulaEnding;
+
+        // COGS % — selaras tab COGS Cost Report (periode filter dashboard).
+        // COGS Foods = Stock Cut HPP full
+        // Category Cost (pembanding) = spoil+waste+guest+non_commodity (tanpa internal_use)
+        // Meal Employees = internal_use
+        // COGS Pembanding = Foods + CatCost + Meal Emp
+        // COGS Aktual = (Begin + Koreksi tgl1 + Purchased ± Xfer ± Adj) − Ending Stok
+        $mealEmployees = 0.0;
+        $categoryCostForCogs = 0.0;
+        foreach ($categoryCost['by_type'] ?? [] as $row) {
+            $type = (string) ($row['type'] ?? '');
+            $amount = (float) ($row['amount'] ?? 0);
+            if ($type === 'internal_use') {
+                $mealEmployees += $amount;
+            } elseif (in_array($type, ['spoil', 'waste', 'guest_supplies', 'non_commodity'], true)) {
+                $categoryCostForCogs += $amount;
+            }
+        }
+        $mealEmployees = round($mealEmployees, 2);
+        $categoryCostForCogs = round($categoryCostForCogs, 2);
+        $cogsFoods = round((float) $stockCut['total'], 2);
+        $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
+        $availableGoods = round(
+            (float) $beginInventory['total']
+            + (float) $day1Cutoff['total']
+            + (float) $inventoryMovement['purchased_total']
+            + (float) $outletTransferSummary['net_total']
+            + (float) $adjustmentSummary['total'],
+            2
+        );
+        $cogsAktual = round($availableGoods - (float) $endingStock['total'], 2);
+        $salesBefore = (float) $revenue['gross_before_discount'];
+        $salesAfter = (float) $revenue['total'];
+        $pctOrNull = static function (float $num, float $den): ?float {
+            return $den > 0 ? round(($num / $den) * 100, 2) : null;
+        };
+        $cogsSummary = [
+            'cogs_foods' => $cogsFoods,
+            'category_cost' => $categoryCostForCogs,
+            'meal_employees' => $mealEmployees,
+            'cogs_pembanding' => $cogsPembanding,
+            'cogs_aktual' => $cogsAktual,
+            'available_goods' => $availableGoods,
+            'ending_stock' => round((float) $endingStock['total'], 2),
+            'sales_before_discount' => round($salesBefore, 2),
+            'sales_after_discount' => round($salesAfter, 2),
+            'deviasi' => round($cogsPembanding - $cogsAktual, 2),
+            'pct_cogs_foods' => $pctOrNull($cogsFoods, $salesBefore),
+            'pct_cogs_pembanding' => $pctOrNull($cogsPembanding, $salesBefore),
+            'pct_cogs_actual_before_disc' => $pctOrNull($cogsAktual, $salesBefore),
+            'pct_cogs_actual_after_disc' => $pctOrNull($cogsAktual, $salesAfter),
+        ];
 
         return [
             'revenue' => $revenue['total'],
@@ -384,6 +440,8 @@ class OpexOutletDashboardService
                 'variance' => round($formulaEnding - (float) $endingStock['total'], 2),
                 'ending' => $endingInventory,
             ],
+            'cogs_pct' => $cogsSummary['pct_cogs_actual_after_disc'],
+            'cogs' => $cogsSummary,
             'outlet_transfer_in' => $outletTransferSummary['in_total'],
             'outlet_transfer_out' => $outletTransferSummary['out_total'],
             'outlet_transfer_net' => $outletTransferSummary['net_total'],

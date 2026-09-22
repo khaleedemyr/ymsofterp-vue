@@ -717,7 +717,7 @@
             </span>
             <div>
               <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-fuchsia-700">Inventory</h2>
-              <p class="text-xs text-slate-500">Begin, cut, category, ending, transfer, adjustment, WIP</p>
+              <p class="text-xs text-slate-500">Begin, cut, category, ending, % COGS, transfer, adjustment, WIP</p>
             </div>
           </div>
 
@@ -900,6 +900,64 @@
               </div>
             </div>
           </button>
+
+          <div class="rounded-3xl bg-white border border-rose-100 shadow-sm p-5">
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0 flex-1">
+                <p class="text-xs font-semibold uppercase tracking-wide text-rose-700 inline-flex items-center gap-1">
+                  % COGS
+                  <CardHelpTip :text="cardHelps.cogs_pct" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">
+                  {{ ov.cogs_pct != null ? ov.cogs_pct + '%' : '—' }}
+                </p>
+                <p class="mt-2 text-sm text-slate-500">Actual after discount · sama Cost Report</p>
+                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cogs_pct, true)">{{ vsLabel(vs.cogs_pct, 'decimal') }}</p>
+                <div class="mt-3 rounded-2xl bg-rose-50/70 border border-rose-100 px-3 py-2 space-y-1">
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="text-slate-500">% Actual before disc</span>
+                    <span class="font-semibold text-slate-800">{{ ov.cogs?.pct_cogs_actual_before_disc != null ? ov.cogs.pct_cogs_actual_before_disc + '%' : '—' }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="text-slate-500">% COGS Foods</span>
+                    <span class="font-semibold text-slate-800">{{ ov.cogs?.pct_cogs_foods != null ? ov.cogs.pct_cogs_foods + '%' : '—' }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 text-xs">
+                    <span class="text-slate-500">% COGS Pembanding</span>
+                    <span class="font-semibold text-slate-800">{{ ov.cogs?.pct_cogs_pembanding != null ? ov.cogs.pct_cogs_pembanding + '%' : '—' }}</span>
+                  </div>
+                </div>
+                <div class="mt-3 space-y-1 border-t border-rose-50 pt-2 text-xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-500">COGS Aktual</span>
+                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.cogs?.cogs_aktual) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-500">COGS Foods (Stock Cut)</span>
+                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.cogs?.cogs_foods) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-500">Cat Cost + Meal Emp</span>
+                    <span class="font-semibold text-slate-800">{{ formatCurrency((ov.cogs?.category_cost || 0) + (ov.cogs?.meal_employees || 0)) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-500">COGS Pembanding</span>
+                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.cogs?.cogs_pembanding) }}</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-slate-500">Deviasi</span>
+                    <span
+                      class="font-semibold"
+                      :class="(ov.cogs?.deviasi || 0) === 0 ? 'text-emerald-700' : 'text-rose-700'"
+                    >{{ formatCurrency(ov.cogs?.deviasi) }}</span>
+                  </div>
+                </div>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-percent text-xl"></i>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-if="!sectionLoading.overview" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-4">
@@ -2688,6 +2746,8 @@ const cardHelps = {
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance saja (tanpa stock_opname).\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
     'Nilai utama = Begin (IB / Cost Report) + Koreksi fisik tgl 1 untuk item tanpa IB + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nBegin Inventory card tetap sama Cost Report (IB saja).\nKoreksi fisik tgl 1 hanya masuk formula ending (bukan begin card), supaya stok item yang dikoreksi tanpa IB tidak hilang dari rollforward.\nOpname EOM / mid-month lain = balancing qty ke fisik — tidak dijumlah ke formula buku.\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
+  cogs_pct:
+    '% COGS selaras tab COGS Cost Report (periode filter dashboard).\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ Revenue (grand_total).\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost (pembanding) = spoil + waste + guest supplies + non commodity\nMeal Employees = internal use\nCOGS Pembanding = Foods + Cat Cost + Meal Emp\nCOGS Aktual = (Begin + Koreksi tgl 1 + Purchased ± Xfer ± Adj) − Ending Stok\n\n% Foods / % Pembanding / % Actual Before Disc = ÷ sales before discount (orders.total).',
   outlet_transfer:
     'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:
