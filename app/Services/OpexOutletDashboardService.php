@@ -243,20 +243,25 @@ class OpexOutletDashboardService
             return $revenue['total'] > 0 ? round(($amount / $revenue['total']) * 100, 2) : null;
         };
 
-        // Card formula sederhana (tanpa opname/transfer) — gerakan lain punya card sendiri
+        $outletTransferSummary = $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo);
+        $adjustmentSummary = $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo);
+        $iwtSummary = $this->sumInternalWarehouseTransferMovements($outletId, $dateFrom, $dateTo);
+        $wipSummary = $this->sumOutletWipMovements($outletId, $dateFrom, $dateTo);
+
+        // Rollforward lengkap level outlet.
+        // IWT tidak ditambah di sini (net antar gudang ≈ 0); opname ikut karena mengubah saldo.
         $formulaEnding = round(
             (float) $beginInventory['total']
             + (float) $inventoryMovement['purchased_total']
+            + (float) $outletTransferSummary['net_total']
+            + (float) $adjustmentSummary['total']
+            + (float) ($inventoryMovement['opname_total'] ?? 0)
             - (float) $stockCut['total']
             - (float) $categoryCost['total'],
             2
         );
         $endingStock = $this->sumEndingStockSanitized($outletId, $dateTo);
         $endingInventory = $formulaEnding;
-        $outletTransferSummary = $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo);
-        $adjustmentSummary = $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo);
-        $iwtSummary = $this->sumInternalWarehouseTransferMovements($outletId, $dateFrom, $dateTo);
-        $wipSummary = $this->sumOutletWipMovements($outletId, $dateFrom, $dateTo);
 
         return [
             'revenue' => $revenue['total'],
@@ -333,6 +338,9 @@ class OpexOutletDashboardService
             'ending_inventory_formula' => [
                 'begin' => round((float) $beginInventory['total'], 2),
                 'purchased' => round((float) $inventoryMovement['purchased_total'], 2),
+                'outlet_transfer_net' => round((float) $outletTransferSummary['net_total'], 2),
+                'outlet_adjustment' => round((float) $adjustmentSummary['total'], 2),
+                'opname' => round((float) ($inventoryMovement['opname_total'] ?? 0), 2),
                 'stock_cut' => round((float) $stockCut['total'], 2),
                 'category_cost' => round((float) $categoryCost['total'], 2),
                 'formula_ending' => $formulaEnding,
@@ -3260,13 +3268,19 @@ class OpexOutletDashboardService
         $stockCutTotal = (float) $this->sumStockCut($outletId, $dateFrom, $dateTo)['total'];
         $categoryCostTotal = (float) $this->sumCategoryCost($outletId, $dateFrom, $dateTo)['total'];
         $purchasedTotal = (float) $movement['purchased_total'];
+        $transferNet = (float) $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo)['net_total'];
+        $adjustmentNet = (float) $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo)['total'];
+        $opnameTotal = (float) ($movement['opname_total'] ?? 0);
         $formulaEnding = round(
-            $beginTotal + $purchasedTotal - $stockCutTotal - $categoryCostTotal,
+            $beginTotal + $purchasedTotal + $transferNet + $adjustmentNet + $opnameTotal - $stockCutTotal - $categoryCostTotal,
             2
         );
         $formula = [
             'begin' => round($beginTotal, 2),
             'purchased' => round($purchasedTotal, 2),
+            'outlet_transfer_net' => round($transferNet, 2),
+            'outlet_adjustment' => round($adjustmentNet, 2),
+            'opname' => round($opnameTotal, 2),
             'stock_cut' => round($stockCutTotal, 2),
             'category_cost' => round($categoryCostTotal, 2),
             'ending' => $formulaEnding,
