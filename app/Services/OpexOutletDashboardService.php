@@ -549,25 +549,29 @@ class OpexOutletDashboardService
 
         $purchased = $this->sumPurchasedByBucket($outletId, $monthFrom, $monthTo);
         $outstanding = $this->sumOutstandingRoByBucket($outletId, $monthFrom, $monthTo);
+        $sources = $purchased['by_source'] ?? [];
 
         $poolBudget = round($forecastTotal * self::PURCHASE_BUDGET_POOL_RATIO, 2);
         $kitchen = $this->buildPurchaseBudgetBucket(
             $poolBudget,
             self::KITCHEN_SHARE_OF_POOL,
             (float) ($purchased['kitchen'] ?? 0),
-            (float) ($outstanding['kitchen'] ?? 0)
+            (float) ($outstanding['kitchen'] ?? 0),
+            $sources['kitchen'] ?? []
         );
         $bar = $this->buildPurchaseBudgetBucket(
             $poolBudget,
             self::BAR_SHARE_OF_POOL,
             (float) ($purchased['bar'] ?? 0),
-            (float) ($outstanding['bar'] ?? 0)
+            (float) ($outstanding['bar'] ?? 0),
+            $sources['bar'] ?? []
         );
         $service = $this->buildPurchaseBudgetBucket(
             $poolBudget,
             self::SERVICE_SHARE_OF_POOL,
             (float) ($purchased['service'] ?? 0),
-            (float) ($outstanding['service'] ?? 0)
+            (float) ($outstanding['service'] ?? 0),
+            $sources['service'] ?? []
         );
 
         $hasForecast = $forecastTotal > 0
@@ -598,11 +602,15 @@ class OpexOutletDashboardService
     }
 
     /**
+     * @param  array{gsr?: float, rws?: float, rf?: float}  $sources
      * @return array{
      *   share_of_pool_pct: int,
      *   of_forecast_pct: float,
      *   budget: float,
      *   purchased: float,
+     *   gsr: float,
+     *   rws: float,
+     *   rf: float,
      *   ro_outstanding: float,
      *   remaining: float,
      *   remaining_after_commit: float,
@@ -614,7 +622,8 @@ class OpexOutletDashboardService
         float $poolBudget,
         float $shareOfPool,
         float $purchased,
-        float $outstanding
+        float $outstanding,
+        array $sources = []
     ): array {
         $budget = round($poolBudget * $shareOfPool, 2);
         $remaining = round($budget - $purchased, 2);
@@ -625,6 +634,9 @@ class OpexOutletDashboardService
             'of_forecast_pct' => round(self::PURCHASE_BUDGET_POOL_RATIO * $shareOfPool * 100, 1),
             'budget' => $budget,
             'purchased' => round($purchased, 2),
+            'gsr' => round((float) ($sources['gsr'] ?? 0), 2),
+            'rws' => round((float) ($sources['rws'] ?? 0), 2),
+            'rf' => round((float) ($sources['rf'] ?? 0), 2),
             'ro_outstanding' => round($outstanding, 2),
             'remaining' => $remaining,
             'remaining_after_commit' => $remainingAfterCommit,
@@ -1113,7 +1125,16 @@ class OpexOutletDashboardService
      * Received = GSR (serial receive) + outlet GR, by receive_date and warehouse_outlet.
      * Retail Food by warehouse_outlet. RWS (branch) by warehouse (Main Store/MK → Kitchen).
      *
-     * @return array{kitchen: float, bar: float, service: float}
+     * @return array{
+     *   kitchen: float,
+     *   bar: float,
+     *   service: float,
+     *   by_source: array{
+     *     kitchen: array{gsr: float, rws: float, rf: float},
+     *     bar: array{gsr: float, rws: float, rf: float},
+     *     service: array{gsr: float, rws: float, rf: float}
+     *   }
+     * }
      */
     private function sumPurchasedByBucket(int $outletId, string $dateFrom, string $dateTo): array
     {
@@ -1132,17 +1153,27 @@ class OpexOutletDashboardService
             ELSE 'other'
         END";
 
-        $kitchen = 0.0;
-        $bar = 0.0;
-        $service = 0.0;
+        $totals = [
+            'kitchen' => 0.0,
+            'bar' => 0.0,
+            'service' => 0.0,
+        ];
+        $bySource = [
+            'kitchen' => ['gsr' => 0.0, 'rws' => 0.0, 'rf' => 0.0],
+            'bar' => ['gsr' => 0.0, 'rws' => 0.0, 'rf' => 0.0],
+            'service' => ['gsr' => 0.0, 'rws' => 0.0, 'rf' => 0.0],
+        ];
 
-        $addBucket = function (string $bucket, float $total) use (&$kitchen, &$bar, &$service): void {
-            if ($bucket === 'kitchen') {
-                $kitchen += $total;
-            } elseif ($bucket === 'bar') {
-                $bar += $total;
-            } elseif ($bucket === 'service') {
-                $service += $total;
+        $addBucket = function (string $bucket, float $total, string $source = 'gsr') use (&$totals, &$bySource): void {
+            if (! isset($totals[$bucket])) {
+                return;
+            }
+            $totals[$bucket] += $total;
+            if (isset($bySource[$bucket][$source])) {
+                $bySource[$bucket][$source] += $total;
+            } elseif ($source === 'gr') {
+                // GR digabung ke GSR di tampilan card (sama pool purchased receive)
+                $bySource[$bucket]['gsr'] += $total;
             }
         };
 
@@ -1162,7 +1193,7 @@ class OpexOutletDashboardService
                 ->get();
 
             foreach ($gsrRows as $row) {
-                $addBucket((string) $row->bucket, (float) $row->total);
+                $addBucket((string) $row->bucket, (float) $row->total, 'gsr');
             }
         }
 
@@ -1199,7 +1230,7 @@ class OpexOutletDashboardService
             ->get();
 
         foreach ($grRows as $row) {
-            $addBucket((string) $row->bucket, (float) $row->total);
+            $addBucket((string) $row->bucket, (float) $row->total, 'gr');
         }
 
         // Retail Food — pembelian langsung supplier
@@ -1215,7 +1246,7 @@ class OpexOutletDashboardService
 
         foreach ($retailFoodRows as $rfRow) {
             $bucket = $warehouseBucketById[(int) $rfRow->warehouse_outlet_id] ?? 'other';
-            $addBucket($bucket, (float) $rfRow->total);
+            $addBucket($bucket, (float) $rfRow->total, 'rf');
         }
 
         // RWS — penjualan gudang ke outlet (branch), ikut purchased
@@ -1234,13 +1265,22 @@ class OpexOutletDashboardService
             ->get();
 
         foreach ($rwsRows as $rwsRow) {
-            $addBucket($this->rwsPurchaseBucketName($rwsRow->warehouse_name), (float) $rwsRow->total);
+            $addBucket($this->rwsPurchaseBucketName($rwsRow->warehouse_name), (float) $rwsRow->total, 'rws');
+        }
+
+        foreach (['kitchen', 'bar', 'service'] as $b) {
+            $bySource[$b] = [
+                'gsr' => round($bySource[$b]['gsr'], 2),
+                'rws' => round($bySource[$b]['rws'], 2),
+                'rf' => round($bySource[$b]['rf'], 2),
+            ];
         }
 
         return [
-            'kitchen' => round($kitchen, 2),
-            'bar' => round($bar, 2),
-            'service' => round($service, 2),
+            'kitchen' => round($totals['kitchen'], 2),
+            'bar' => round($totals['bar'], 2),
+            'service' => round($totals['service'], 2),
+            'by_source' => $bySource,
         ];
     }
 
