@@ -717,438 +717,437 @@
             </span>
             <div>
               <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-fuchsia-700">Inventory</h2>
-              <p class="text-xs text-slate-500">Begin, cut, category, ending, % COGS, transfer, adjustment, WIP</p>
+              <p class="text-xs text-slate-500">Stok utama · % COGS · gerakan (transfer, adj, opname, IWT, WIP)</p>
             </div>
           </div>
 
-        <!-- Inventory cards: satu grid agar flow rapat (tanpa baris kosong) -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 items-start">
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('begin_inventory')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 inline-flex items-center gap-1">
-                  Begin Inventory
-                  <CardHelpTip :text="cardHelps.begin_inventory" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.begin_inventory) }}</p>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.begin_inventory_count || 0 }} item · Total MAC</p>
-                <p v-if="ov.begin_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
-                  {{ ov.begin_inventory_revenue_pct }}% dari revenue
-                </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.begin_inventory, true)">{{ vsLabel(vs.begin_inventory) }}</p>
-                <p class="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
-                  Sumber: {{ beginInventorySourceLabel(ov.begin_inventory_source) }}
-                </p>
-                <div v-if="(ov.begin_inventory_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-indigo-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
-                  <div
-                    v-for="row in ov.begin_inventory_by_warehouse"
-                    :key="'begin-wh-' + row.warehouse_id"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
+        <div v-if="!sectionLoading.overview" class="space-y-4">
+          <!-- Row 1: stok utama — 4 card sama tinggi -->
+          <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-indigo-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('begin_inventory')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600 inline-flex items-center gap-1">
+                    Begin Inventory
+                    <CardHelpTip :text="cardHelps.begin_inventory" />
+                  </p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.begin_inventory) }}</p>
+                  <p class="mt-2 text-sm text-slate-500">{{ ov.begin_inventory_count || 0 }} item · Total MAC</p>
+                  <p v-if="ov.begin_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                    {{ ov.begin_inventory_revenue_pct }}% dari revenue
+                  </p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.begin_inventory, true)">{{ vsLabel(vs.begin_inventory) }}</p>
+                  <p class="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
+                    Sumber: {{ beginInventorySourceLabel(ov.begin_inventory_source) }}
+                  </p>
+                </div>
+                <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-boxes-stacked text-xl"></i>
                 </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-boxes-stacked text-xl"></i>
+              <div v-if="(ov.begin_inventory_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-indigo-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                <div
+                  v-for="row in ov.begin_inventory_by_warehouse"
+                  :key="'begin-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
 
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('stock_cut')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600 inline-flex items-center gap-1">
-                  Stock Cut
-                  <CardHelpTip :text="cardHelps.stock_cut" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.stock_cut) }}</p>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.stock_cut_count || 0 }} potong stok · HPP full</p>
-                <p v-if="(ov.stock_cut_shortfall || 0) > 0" class="text-xs text-amber-700 mt-1">
-                  Minus/shortfall {{ formatCurrency(ov.stock_cut_shortfall) }} · fisik {{ formatCurrency(ov.stock_cut_physical) }}
-                </p>
-                <p v-if="ov.stock_cut_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
-                  {{ ov.stock_cut_revenue_pct }}% dari revenue
-                </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.stock_cut, true)">{{ vsLabel(vs.stock_cut) }}</p>
-                <div v-if="(ov.stock_cut_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-fuchsia-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
-                  <div
-                    v-for="row in ov.stock_cut_by_warehouse"
-                    :key="'sc-wh-' + row.warehouse_id"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-fuchsia-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('stock_cut')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-fuchsia-600 inline-flex items-center gap-1">
+                    Stock Cut
+                    <CardHelpTip :text="cardHelps.stock_cut" />
+                  </p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.stock_cut) }}</p>
+                  <p class="mt-2 text-sm text-slate-500">{{ ov.stock_cut_count || 0 }} potong stok · HPP full</p>
+                  <p v-if="(ov.stock_cut_shortfall || 0) > 0" class="text-xs text-amber-700 mt-1">
+                    Minus/shortfall {{ formatCurrency(ov.stock_cut_shortfall) }} · fisik {{ formatCurrency(ov.stock_cut_physical) }}
+                  </p>
+                  <p v-if="ov.stock_cut_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                    {{ ov.stock_cut_revenue_pct }}% dari revenue
+                  </p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.stock_cut, true)">{{ vsLabel(vs.stock_cut) }}</p>
+                </div>
+                <div class="w-12 h-12 rounded-2xl bg-fuchsia-50 text-fuchsia-600 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-scissors text-xl"></i>
                 </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-fuchsia-50 text-fuchsia-600 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-scissors text-xl"></i>
+              <div v-if="(ov.stock_cut_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-fuchsia-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                <div
+                  v-for="row in ov.stock_cut_by_warehouse"
+                  :key="'sc-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
 
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-teal-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('category_cost')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-teal-600 inline-flex items-center gap-1">
-                  Category Cost
-                  <CardHelpTip :text="cardHelps.category_cost" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.category_cost) }}</p>
-                <p class="mt-1 text-sm text-slate-500">{{ ov.category_cost_count || 0 }} dokumen</p>
-                <p v-if="ov.category_cost_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
-                  {{ ov.category_cost_revenue_pct }}% dari revenue
-                </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.category_cost, true)">{{ vsLabel(vs.category_cost) }}</p>
-                <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
-                  <div
-                    v-for="row in categoryCostByType"
-                    :key="row.type"
-                    class="min-w-0"
-                  >
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.label }}</p>
-                    <p class="text-xs font-semibold text-slate-700 truncate">{{ formatCurrency(row.amount) }}</p>
-                  </div>
-                </div>
-                <div v-if="(ov.category_cost_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-teal-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
-                  <div
-                    v-for="row in ov.category_cost_by_warehouse"
-                    :key="'cc-wh-' + row.warehouse_id"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-trash text-xl"></i>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('ending_inventory')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 inline-flex items-center gap-1">
-                  Ending Inventory
-                  <CardHelpTip :text="cardHelps.ending_inventory" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
-                <p class="mt-1 text-sm text-slate-500">Begin + Koreksi tgl 1* + Purchased ± Xfer ± Adj − Cut − Category</p>
-                <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
-                  {{ ov.ending_inventory_revenue_pct }}% dari revenue
-                </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.ending_inventory, true)">{{ vsLabel(vs.ending_inventory) }}</p>
-                <div class="mt-3 rounded-2xl bg-amber-50/70 border border-amber-100 px-3 py-2 space-y-1">
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="text-slate-500">Cost di stok</span>
-                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_stock) }}</span>
-                  </div>
-                  <div
-                    v-if="(ov.ending_inventory_formula?.day1_opname_cutoff || 0) !== 0"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500">Koreksi fisik tgl 1 (tanpa IB)</span>
-                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_formula?.day1_opname_cutoff) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="text-slate-500">Selisih (formula − stok)</span>
-                    <span
-                      class="font-semibold"
-                      :class="(ov.ending_inventory_formula?.variance || 0) === 0 ? 'text-emerald-700' : 'text-rose-700'"
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-teal-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('category_cost')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-teal-600 inline-flex items-center gap-1">
+                    Category Cost
+                    <CardHelpTip :text="cardHelps.category_cost" />
+                  </p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.category_cost) }}</p>
+                  <p class="mt-1 text-sm text-slate-500">{{ ov.category_cost_count || 0 }} dokumen</p>
+                  <p v-if="ov.category_cost_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                    {{ ov.category_cost_revenue_pct }}% dari revenue
+                  </p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.category_cost, true)">{{ vsLabel(vs.category_cost) }}</p>
+                  <div class="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    <div
+                      v-for="row in categoryCostByType"
+                      :key="row.type"
+                      class="min-w-0"
                     >
-                      {{ formatCurrency(ov.ending_inventory_formula?.variance) }}
-                    </span>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.label }}</p>
+                      <p class="text-xs font-semibold text-slate-700 truncate">{{ formatCurrency(row.amount) }}</p>
+                    </div>
                   </div>
                 </div>
-                <div v-if="(ov.ending_inventory_stock_by_warehouse || ov.ending_inventory_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-amber-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse (stok)</p>
-                  <div
-                    v-for="row in (ov.ending_inventory_stock_by_warehouse || ov.ending_inventory_by_warehouse)"
-                    :key="'end-wh-' + row.warehouse_id"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
+                <div class="w-12 h-12 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-trash text-xl"></i>
                 </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-clipboard-check text-xl"></i>
+              <div v-if="(ov.category_cost_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-teal-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                <div
+                  v-for="row in ov.category_cost_by_warehouse"
+                  :key="'cc-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
               </div>
-            </div>
-          </button>
+            </button>
 
-          <div class="rounded-3xl bg-white border border-rose-100 shadow-sm p-5">
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-rose-700 inline-flex items-center gap-1">
-                  % COGS
-                  <CardHelpTip :text="cardHelps.cogs_pct" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">
-                  {{ ov.cogs_pct != null ? ov.cogs_pct + '%' : '—' }}
-                </p>
-                <p class="mt-2 text-sm text-slate-500">Actual after discount</p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cogs_pct, true)">{{ vsLabel(vs.cogs_pct, 'decimal') }}</p>
-                <div class="mt-3 rounded-2xl bg-rose-50/70 border border-rose-100 px-3 py-2 space-y-1">
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="text-slate-500">% Actual before disc</span>
-                    <span class="font-semibold text-slate-800">{{ ov.cogs?.pct_cogs_actual_before_disc != null ? ov.cogs.pct_cogs_actual_before_disc + '%' : '—' }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="text-slate-500">% COGS Foods</span>
-                    <span class="font-semibold text-slate-800">{{ ov.cogs?.pct_cogs_foods != null ? ov.cogs.pct_cogs_foods + '%' : '—' }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2 text-xs">
-                    <span class="text-slate-500">% COGS Pembanding</span>
-                    <span class="font-semibold text-slate-800">{{ ov.cogs?.pct_cogs_pembanding != null ? ov.cogs.pct_cogs_pembanding + '%' : '—' }}</span>
-                  </div>
-                </div>
-                <div class="mt-3 space-y-1 border-t border-rose-50 pt-2 text-xs">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-500">COGS Aktual</span>
-                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.cogs?.cogs_aktual) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-500">COGS Foods (Stock Cut)</span>
-                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.cogs?.cogs_foods) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-500">Cat Cost + Meal Emp</span>
-                    <span class="font-semibold text-slate-800">{{ formatCurrency((ov.cogs?.category_cost || 0) + (ov.cogs?.meal_employees || 0)) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-500">COGS Pembanding</span>
-                    <span class="font-semibold text-slate-800">{{ formatCurrency(ov.cogs?.cogs_pembanding) }}</span>
-                  </div>
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="text-slate-500">Deviasi</span>
-                    <span
-                      class="font-semibold text-right"
-                      :class="ov.cogs?.within_toleransi ? 'text-emerald-700' : 'text-rose-700'"
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-amber-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('ending_inventory')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 inline-flex items-center gap-1">
+                    Ending Inventory
+                    <CardHelpTip :text="cardHelps.ending_inventory" />
+                  </p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
+                  <p class="mt-1 text-sm text-slate-500">Begin + Koreksi tgl 1* + Purchased ± Xfer ± Adj − Cut − Category</p>
+                  <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
+                    {{ ov.ending_inventory_revenue_pct }}% dari revenue
+                  </p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.ending_inventory, true)">{{ vsLabel(vs.ending_inventory) }}</p>
+                  <div class="mt-3 rounded-2xl bg-amber-50/70 border border-amber-100 px-3 py-2 space-y-1">
+                    <div class="flex items-center justify-between gap-2 text-xs">
+                      <span class="text-slate-500">Cost di stok</span>
+                      <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_stock) }}</span>
+                    </div>
+                    <div
+                      v-if="(ov.ending_inventory_formula?.day1_opname_cutoff || 0) !== 0"
+                      class="flex items-center justify-between gap-2 text-xs"
                     >
-                      {{ formatCurrency(ov.cogs?.deviasi) }}
-                      <span v-if="ov.cogs?.pct_deviasi != null">
-                        ({{ ov.cogs.pct_deviasi > 0 ? '+' : '' }}{{ ov.cogs.pct_deviasi }}%)
+                      <span class="text-slate-500">Koreksi tgl 1 (tanpa IB)</span>
+                      <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_formula?.day1_opname_cutoff) }}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-2 text-xs">
+                      <span class="text-slate-500">Selisih (formula − stok)</span>
+                      <span
+                        class="font-semibold"
+                        :class="(ov.ending_inventory_formula?.variance || 0) === 0 ? 'text-emerald-700' : 'text-rose-700'"
+                      >
+                        {{ formatCurrency(ov.ending_inventory_formula?.variance) }}
                       </span>
-                    </span>
+                    </div>
                   </div>
-                  <p class="text-[10px] text-slate-400 pt-0.5">
-                    Max toleransi 2% revenue
+                </div>
+                <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-clipboard-check text-xl"></i>
+                </div>
+              </div>
+              <div v-if="(ov.ending_inventory_stock_by_warehouse || ov.ending_inventory_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-amber-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse (stok)</p>
+                <div
+                  v-for="row in (ov.ending_inventory_stock_by_warehouse || ov.ending_inventory_by_warehouse)"
+                  :key="'end-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
+              </div>
+            </button>
+          </div>
+
+          <!-- Row 2: % COGS full-width (metrik horizontal) -->
+          <div class="rounded-3xl bg-white border border-rose-100 shadow-sm p-5">
+            <div class="flex flex-col xl:flex-row xl:items-stretch gap-5">
+              <div class="flex items-start justify-between gap-3 xl:w-52 shrink-0">
+                <div class="min-w-0">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-rose-700 inline-flex items-center gap-1">
+                    % COGS
+                    <CardHelpTip :text="cardHelps.cogs_pct" />
+                  </p>
+                  <p class="mt-2 text-4xl font-bold text-slate-900">
+                    {{ ov.cogs_pct != null ? ov.cogs_pct + '%' : '—' }}
+                  </p>
+                  <p class="mt-1 text-sm text-slate-500">Actual after discount</p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.cogs_pct, true)">{{ vsLabel(vs.cogs_pct, 'decimal') }}</p>
+                </div>
+                <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-700 flex items-center justify-center shrink-0 xl:hidden">
+                  <i class="fa-solid fa-percent text-xl"></i>
+                </div>
+              </div>
+
+              <div class="flex-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 min-w-0">
+                <div class="rounded-2xl bg-rose-50/70 border border-rose-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">% Before disc</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800">{{ ov.cogs?.pct_cogs_actual_before_disc != null ? ov.cogs.pct_cogs_actual_before_disc + '%' : '—' }}</p>
+                </div>
+                <div class="rounded-2xl bg-rose-50/70 border border-rose-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">% Foods</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800">{{ ov.cogs?.pct_cogs_foods != null ? ov.cogs.pct_cogs_foods + '%' : '—' }}</p>
+                </div>
+                <div class="rounded-2xl bg-rose-50/70 border border-rose-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">% Pembanding</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800">{{ ov.cogs?.pct_cogs_pembanding != null ? ov.cogs.pct_cogs_pembanding + '%' : '—' }}</p>
+                </div>
+                <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">COGS Aktual</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.cogs_aktual) }}</p>
+                </div>
+                <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">COGS Foods</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.cogs_foods) }}</p>
+                </div>
+                <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Cat + Meal Emp</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency((ov.cogs?.category_cost || 0) + (ov.cogs?.meal_employees || 0)) }}</p>
+                </div>
+                <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Pembanding</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.cogs_pembanding) }}</p>
+                </div>
+                <div
+                  class="rounded-2xl border px-3 py-2.5"
+                  :class="ov.cogs?.within_toleransi ? 'bg-emerald-50/80 border-emerald-100' : 'bg-rose-50/80 border-rose-100'"
+                >
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Deviasi</p>
+                  <p
+                    class="mt-1 text-sm font-bold truncate"
+                    :class="ov.cogs?.within_toleransi ? 'text-emerald-700' : 'text-rose-700'"
+                  >
+                    {{ formatCurrency(ov.cogs?.deviasi) }}
+                    <span v-if="ov.cogs?.pct_deviasi != null" class="font-semibold">
+                      ({{ ov.cogs.pct_deviasi > 0 ? '+' : '' }}{{ ov.cogs.pct_deviasi }}%)
+                    </span>
+                  </p>
+                  <p class="mt-0.5 text-[10px] text-slate-400">
+                    Max 2% revenue
                     <span v-if="ov.cogs?.toleransi_max_amount != null">· {{ formatCurrency(ov.cogs.toleransi_max_amount) }}</span>
                   </p>
                 </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-rose-50 text-rose-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-percent text-xl"></i>
-              </div>
             </div>
           </div>
 
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-sky-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('outlet_transfer')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-sky-700 inline-flex items-center gap-1">
-                  Transfer Outlet
-                  <CardHelpTip :text="cardHelps.outlet_transfer" />
-                </p>
-                <div class="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Transfer In</p>
-                    <p class="text-xl font-bold text-emerald-700">{{ formatCurrency(ov.outlet_transfer_in) }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Transfer Out</p>
-                    <p class="text-xl font-bold text-rose-700">{{ formatCurrency(ov.outlet_transfer_out) }}</p>
-                  </div>
-                </div>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.outlet_transfer_count || 0 }} transaksi</p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_transfer_in, true)">{{ vsLabel(vs.outlet_transfer_in) }}</p>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-sky-50 text-sky-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-right-left text-xl"></i>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-violet-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('outlet_adjustment')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-violet-700 inline-flex items-center gap-1">
-                  Adjustment
-                  <CardHelpTip :text="cardHelps.outlet_adjustment" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.outlet_adjustment) }}</p>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.outlet_adjustment_count || 0 }} transaksi · net value</p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_adjustment, true)">{{ vsLabel(vs.outlet_adjustment) }}</p>
-                <div v-if="(ov.outlet_adjustment_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-violet-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
-                  <div
-                    v-for="row in ov.outlet_adjustment_by_warehouse"
-                    :key="'adj-wh-' + row.warehouse_id"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-violet-50 text-violet-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-sliders text-xl"></i>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('stock_opname')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-orange-700 inline-flex items-center gap-1">
-                  Stock Opname
-                  <CardHelpTip :text="cardHelps.stock_opname" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.stock_opname_cutoff) }}</p>
-                <p class="mt-2 text-sm text-slate-500">
-                  Koreksi tgl 1 tanpa IB · {{ ov.stock_opname_cutoff_count || 0 }} item
-                </p>
-                <p class="mt-1 text-xs text-slate-500">
-                  {{ ov.stock_opname_count || 0 }} dokumen periode · net
-                  {{ formatCurrency(ov.stock_opname_period_net) }}
-                  <span class="text-slate-400">(balancing, tidak masuk formula)</span>
-                </p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.stock_opname_cutoff, true)">{{ vsLabel(vs.stock_opname_cutoff) }}</p>
-                <div v-if="(ov.stock_opname_cutoff_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-orange-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Cutoff per warehouse</p>
-                  <div
-                    v-for="row in ov.stock_opname_cutoff_by_warehouse"
-                    :key="'op-wh-' + row.warehouse_id"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-orange-50 text-orange-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-clipboard-check text-xl"></i>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('internal_warehouse_transfer')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
-                  Internal WH Transfer
-                  <CardHelpTip :text="cardHelps.internal_warehouse_transfer" />
-                </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.internal_warehouse_transfer_total) }}</p>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.internal_warehouse_transfer_count || 0 }} transaksi</p>
-                <div v-if="(ov.internal_warehouse_transfer_flows || []).length" class="mt-3 space-y-1 border-t border-cyan-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per alur gudang</p>
-                  <div
-                    v-for="(row, idx) in ov.internal_warehouse_transfer_flows"
-                    :key="'iwt-flow-' + idx"
-                    class="flex items-center justify-between gap-2 text-xs"
-                  >
-                    <span class="text-slate-500 truncate">{{ row.from_warehouse_name }} → {{ row.to_warehouse_name }}</span>
-                    <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
-                  </div>
-                </div>
-              </div>
-              <div class="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-arrows-turn-right text-xl"></i>
-              </div>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            class="rounded-3xl bg-white border border-lime-100 shadow-sm p-5 text-left hover:shadow-md transition"
-            @click="openCard('outlet_wip')"
-          >
-            <div class="flex items-start justify-between gap-3">
-              <div class="min-w-0 flex-1">
-                <p class="text-xs font-semibold uppercase tracking-wide text-lime-700 inline-flex items-center gap-1">
-                  WIP
-                  <CardHelpTip :text="cardHelps.outlet_wip" />
-                </p>
-                <div class="mt-3 grid grid-cols-2 gap-3">
-                  <div>
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Cost Bahan</p>
-                    <p class="text-lg font-bold text-slate-900">{{ formatCurrency(ov.wip_material_cost) }}</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">Barang Jadi</p>
-                    <p class="text-lg font-bold text-slate-900">{{ formatCurrency(ov.wip_finished_cost) }}</p>
-                  </div>
-                </div>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.wip_count || 0 }} produksi</p>
-                <p class="mt-1 text-xs font-medium" :class="vsClass(vs.wip_finished_cost, true)">{{ vsLabel(vs.wip_finished_cost) }}</p>
-                <div v-if="(ov.wip_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-lime-50 pt-2">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
-                  <div
-                    v-for="row in ov.wip_by_warehouse"
-                    :key="'wip-wh-' + row.warehouse_id"
-                    class="text-xs space-y-0.5"
-                  >
-                    <div class="flex items-center justify-between gap-2">
-                      <span class="text-slate-500 truncate font-medium">{{ row.warehouse_name }}</span>
+          <!-- Row 3: gerakan — 5 card sama tinggi -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-sky-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('outlet_transfer')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-sky-700 inline-flex items-center gap-1">
+                    Transfer Outlet
+                    <CardHelpTip :text="cardHelps.outlet_transfer" />
+                  </p>
+                  <div class="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400">In</p>
+                      <p class="text-base font-bold text-emerald-700 truncate">{{ formatCurrency(ov.outlet_transfer_in) }}</p>
                     </div>
-                    <div class="flex items-center justify-between gap-2 pl-1 text-slate-500">
-                      <span>Bahan</span>
-                      <span class="font-semibold text-slate-700">{{ formatCurrency(row.material_cost) }}</span>
-                    </div>
-                    <div class="flex items-center justify-between gap-2 pl-1 text-slate-500">
-                      <span>Jadi</span>
-                      <span class="font-semibold text-slate-700">{{ formatCurrency(row.finished_cost) }}</span>
+                    <div>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400">Out</p>
+                      <p class="text-base font-bold text-rose-700 truncate">{{ formatCurrency(ov.outlet_transfer_out) }}</p>
                     </div>
                   </div>
+                  <p class="mt-2 text-sm text-slate-500">{{ ov.outlet_transfer_count || 0 }} transaksi</p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_transfer_in, true)">{{ vsLabel(vs.outlet_transfer_in) }}</p>
+                </div>
+                <div class="w-10 h-10 rounded-2xl bg-sky-50 text-sky-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-right-left"></i>
                 </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-lime-50 text-lime-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-flask text-xl"></i>
+            </button>
+
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-violet-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('outlet_adjustment')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-violet-700 inline-flex items-center gap-1">
+                    Adjustment
+                    <CardHelpTip :text="cardHelps.outlet_adjustment" />
+                  </p>
+                  <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(ov.outlet_adjustment) }}</p>
+                  <p class="mt-2 text-sm text-slate-500">{{ ov.outlet_adjustment_count || 0 }} transaksi · net</p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.outlet_adjustment, true)">{{ vsLabel(vs.outlet_adjustment) }}</p>
+                </div>
+                <div class="w-10 h-10 rounded-2xl bg-violet-50 text-violet-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-sliders"></i>
+                </div>
               </div>
-            </div>
-          </button>
+              <div v-if="(ov.outlet_adjustment_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-violet-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                <div
+                  v-for="row in ov.outlet_adjustment_by_warehouse"
+                  :key="'adj-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-orange-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('stock_opname')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-orange-700 inline-flex items-center gap-1">
+                    Stock Opname
+                    <CardHelpTip :text="cardHelps.stock_opname" />
+                  </p>
+                  <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(ov.stock_opname_cutoff) }}</p>
+                  <p class="mt-2 text-sm text-slate-500">
+                    Koreksi tgl 1 · {{ ov.stock_opname_cutoff_count || 0 }} item
+                  </p>
+                  <p class="mt-1 text-xs text-slate-500">
+                    {{ ov.stock_opname_count || 0 }} dok · net {{ formatCurrency(ov.stock_opname_period_net) }}
+                  </p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.stock_opname_cutoff, true)">{{ vsLabel(vs.stock_opname_cutoff) }}</p>
+                </div>
+                <div class="w-10 h-10 rounded-2xl bg-orange-50 text-orange-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-clipboard-list"></i>
+                </div>
+              </div>
+              <div v-if="(ov.stock_opname_cutoff_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-orange-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Cutoff / WH</p>
+                <div
+                  v-for="row in ov.stock_opname_cutoff_by_warehouse"
+                  :key="'op-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('internal_warehouse_transfer')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
+                    Internal WH Transfer
+                    <CardHelpTip :text="cardHelps.internal_warehouse_transfer" />
+                  </p>
+                  <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(ov.internal_warehouse_transfer_total) }}</p>
+                  <p class="mt-2 text-sm text-slate-500">{{ ov.internal_warehouse_transfer_count || 0 }} transaksi</p>
+                </div>
+                <div class="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-arrows-turn-right"></i>
+                </div>
+              </div>
+              <div v-if="(ov.internal_warehouse_transfer_flows || []).length" class="mt-auto pt-3 space-y-1 border-t border-cyan-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per alur</p>
+                <div
+                  v-for="(row, idx) in ov.internal_warehouse_transfer_flows"
+                  :key="'iwt-flow-' + idx"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.from_warehouse_name }} → {{ row.to_warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.amount) }}</span>
+                </div>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              class="h-full rounded-3xl bg-white border border-lime-100 shadow-sm p-5 text-left hover:shadow-md transition flex flex-col"
+              @click="openCard('outlet_wip')"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div class="min-w-0 flex-1">
+                  <p class="text-xs font-semibold uppercase tracking-wide text-lime-700 inline-flex items-center gap-1">
+                    WIP
+                    <CardHelpTip :text="cardHelps.outlet_wip" />
+                  </p>
+                  <div class="mt-3 grid grid-cols-2 gap-2">
+                    <div>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400">Bahan</p>
+                      <p class="text-base font-bold text-slate-900 truncate">{{ formatCurrency(ov.wip_material_cost) }}</p>
+                    </div>
+                    <div>
+                      <p class="text-[10px] uppercase tracking-wide text-slate-400">Jadi</p>
+                      <p class="text-base font-bold text-slate-900 truncate">{{ formatCurrency(ov.wip_finished_cost) }}</p>
+                    </div>
+                  </div>
+                  <p class="mt-2 text-sm text-slate-500">{{ ov.wip_count || 0 }} produksi</p>
+                  <p class="mt-1 text-xs font-medium" :class="vsClass(vs.wip_finished_cost, true)">{{ vsLabel(vs.wip_finished_cost) }}</p>
+                </div>
+                <div class="w-10 h-10 rounded-2xl bg-lime-50 text-lime-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-flask"></i>
+                </div>
+              </div>
+              <div v-if="(ov.wip_by_warehouse || []).length" class="mt-auto pt-3 space-y-1 border-t border-lime-50">
+                <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
+                <div
+                  v-for="row in ov.wip_by_warehouse"
+                  :key="'wip-wh-' + row.warehouse_id"
+                  class="flex items-center justify-between gap-2 text-xs"
+                >
+                  <span class="text-slate-500 truncate">{{ row.warehouse_name }}</span>
+                  <span class="font-semibold text-slate-700 shrink-0">{{ formatCurrency(row.finished_cost) }}</span>
+                </div>
+              </div>
+            </button>
+          </div>
         </div>
         </section>
 
