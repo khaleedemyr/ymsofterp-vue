@@ -9,7 +9,7 @@
           <p class="text-xs font-semibold uppercase tracking-[0.2em] text-sky-600 mb-1">Outlet Operations</p>
           <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Outlet Dashboard</h1>
           <p class="text-slate-500 mt-1 text-sm">
-            Ringkasan revenue, GSR/RO, RWS, Retail Food & Non Food
+            Ringkasan revenue, GSR/RO, Retail Food & Non Food
             <span v-if="dashboardData.outlet_name"> · {{ dashboardData.outlet_name }}</span>
           </p>
         </div>
@@ -93,7 +93,7 @@
                 · Forecast = Rolling Realistis
                 · Pool {{ roForecast?.budget_pool_ratio_pct || 43 }}% × Forecast
                 · Kitchen 70% · Bar 20% · Service 10%
-                · Purchased = GSR/GR + RF + RWS · RO outstanding terpisah (bukan MTD)
+                · Purchased = GSR/GR + RF · RO outstanding terpisah (bukan MTD)
               </p>
             </div>
             <a
@@ -188,17 +188,11 @@
                     <p class="font-semibold text-amber-800">{{ formatCurrency(card.data?.ro_outstanding) }}</p>
                   </div>
                 </div>
-                <div class="mt-3 grid grid-cols-3 gap-2 rounded-xl bg-white/70 border border-slate-100/80 px-2.5 py-2">
+                <div class="mt-3 grid grid-cols-2 gap-2 rounded-xl bg-white/70 border border-slate-100/80 px-2.5 py-2">
                   <div class="min-w-0">
                     <p class="text-[10px] uppercase tracking-wide text-slate-400">GSR</p>
                     <p class="text-xs font-semibold text-slate-800 truncate" :title="formatCurrency(card.data?.gsr)">
                       {{ formatCurrency(card.data?.gsr) }}
-                    </p>
-                  </div>
-                  <div class="min-w-0">
-                    <p class="text-[10px] uppercase tracking-wide text-slate-400">RWS</p>
-                    <p class="text-xs font-semibold text-slate-800 truncate" :title="formatCurrency(card.data?.rws)">
-                      {{ formatCurrency(card.data?.rws) }}
                     </p>
                   </div>
                   <div class="min-w-0">
@@ -252,12 +246,12 @@
             </span>
             <div>
               <h2 class="text-sm font-bold uppercase tracking-[0.14em] text-amber-700">Pembelian &amp; Spend Source</h2>
-              <p class="text-xs text-slate-500">GSR · RWS · Retail · Petty Cash · MCS · kategori pembelian</p>
+              <p class="text-xs text-slate-500">GSR · Retail · Petty Cash · MCS · kategori pembelian</p>
             </div>
           </div>
 
-        <!-- Source cards — di bawah Purchased (GSR/RWS/RF/RNF/Petty) -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4 mb-4">
+        <!-- Source cards — di bawah Purchased (GSR/RF/RNF/Petty) -->
+        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
           <button
             v-for="card in sourceCards"
             :key="card.key"
@@ -278,6 +272,7 @@
             <p class="text-2xl font-bold text-slate-900">{{ formatCurrency(card.amount) }}</p>
             <p class="text-xs text-slate-500 mt-1">{{ card.hint }}</p>
             <p v-if="card.paymentHint" class="text-xs text-slate-500 mt-1">{{ card.paymentHint }}</p>
+            <p v-if="card.extraHint" class="text-xs font-medium text-emerald-700 mt-1">{{ card.extraHint }}</p>
             <p class="mt-1 text-xs font-medium" :class="vsClass(card.vs, true)">{{ vsLabel(card.vs) }}</p>
             <div class="mt-3 space-y-2">
               <div>
@@ -316,7 +311,7 @@
                   <CardHelpTip :text="cardHelps.mcs_purchase" />
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.mcs_purchase) }}</p>
-                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · RWS · Retail Food</p>
+                <p class="mt-1 text-sm text-slate-500">{{ ov.mcs_purchase_count || 0 }} transaksi · GSR · Retail Food</p>
                 <p class="mt-1 text-xs font-medium" :class="vsClass(vs.mcs_purchase, true)">{{ vsLabel(vs.mcs_purchase) }}</p>
                 <div class="mt-3 max-w-md space-y-2">
                   <div>
@@ -369,7 +364,7 @@
               Pembelian per Category
               <CardHelpTip :text="cardHelps.purchase_category" />
             </h2>
-            <p class="text-xs text-slate-500 mb-4">Semua category · GSR · RWS · Retail Food — klik slice untuk detail</p>
+            <p class="text-xs text-slate-500 mb-4">Semua category · GSR · Retail Food — klik slice untuk detail</p>
             <div class="max-w-xl mx-auto">
               <apexchart
                 v-if="purchaseCategoryMixSeries.some((v) => v > 0)"
@@ -1081,7 +1076,7 @@
         <div class="grid grid-cols-1 gap-4 mb-6">
           <div class="rounded-3xl bg-white border border-slate-100 shadow-sm p-5">
             <h2 class="text-lg font-bold text-slate-900 mb-1">Spend by Source (Daily)</h2>
-            <p class="text-xs text-slate-500 mb-4">GSR/RO · RWS · Retail Food · Retail Non Food</p>
+            <p class="text-xs text-slate-500 mb-4">GSR/RO · Retail Food · Retail Non Food</p>
             <apexchart type="bar" height="320" :options="stackOptions" :series="stackSeries" />
           </div>
         </div>
@@ -2133,7 +2128,7 @@
                 </div>
               </div>
               <p class="text-xs text-slate-500">
-                {{ modalPagination.total }} transaksi · GSR · RWS · Retail Food
+                {{ modalPagination.total }} transaksi · GSR · Retail Food
                 <span v-if="mcsCategoryFilter"> · filter {{ mcsCategoryFilter }}</span>
               </p>
             </template>
@@ -2567,7 +2562,7 @@ const cardHelps = {
   budget_pool:
     'Pool budget pembelian = 43% × Forecast (Rolling Realistis).\n\nPool ini kemudian dibagi:\n• Kitchen 70% dari pool\n• Bar 20% dari pool\n• Service 10% dari pool\n\nJadi Budget Kitchen ≈ 30,1% dari Forecast, Bar ≈ 8,6%, Service ≈ 4,3%.',
   purchased_field:
-    'Purchased = nilai yang sudah diterima di periode bulan penuh:\n• GSR (serial receive + GR outlet)\n• Retail Food (RF)\n• RWS ke outlet\n\nDihitung per warehouse Kitchen / Bar / Service.\nCard menampilkan breakdown GSR / RWS / RF.\nBukan MTD filter tanggal — selalu full calendar month.',
+    'Purchased = nilai yang sudah diterima di periode bulan penuh:\n• GSR (serial receive + GR outlet)\n• Retail Food (RF)\n\nRWS tidak dijumlah — inlet outlet sudah lewat RF ke Justus Group.\nDihitung per warehouse Kitchen / Bar / Service.\nCard menampilkan breakdown GSR / RF.\nBukan MTD filter tanggal — selalu full calendar month.',
   budget_field:
     'Budget bucket = share × (43% × Forecast Realistis).\n\n• Kitchen = 70% × pool\n• Bar = 20% × pool\n• Service = 10% × pool\n\nIkut bergerak jika Rolling Forecast realistis naik/turun.',
   ro_outstanding_field:
@@ -2575,29 +2570,27 @@ const cardHelps = {
   remaining_budget_field:
     'Sisa budget = Budget − Purchased.\n\nSetelah commit = Budget − Purchased − RO Outstanding.\n\nNegatif = over budget (tampil “Over …”).',
   kitchen_purchase:
-    'Purchased Kitchen = nilai diterima untuk warehouse Kitchen:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS (Main Store / MK → Kitchen)\n\nBudget = 70% × (43% × Forecast Rolling Realistis).\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
+    'Purchased Kitchen = nilai diterima untuk warehouse Kitchen:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n\nRWS tidak dijumlah (sudah di RF Justus Group).\nBudget = 70% × (43% × Forecast Rolling Realistis).\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
   bar_purchase:
-    'Purchased Bar = nilai diterima untuk warehouse Bar:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Bar)\n• RWS jika nama gudang bertema bar\n\nBudget = 20% × (43% × Forecast Rolling Realistis).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
+    'Purchased Bar = nilai diterima untuk warehouse Bar:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Bar)\n\nBudget = 20% × (43% × Forecast Rolling Realistis).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
   service_purchase:
-    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 10% × (43% × Forecast Rolling Realistis).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
+    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n\nBudget = 10% × (43% × Forecast Rolling Realistis).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
   gsr_ro:
     'Nilai penerimaan outlet pada periode filter:\n• GR = Outlet Food Good Receive × harga RO\n• GSR = Serial Goods Receive × cost (cost_small, dikonversi unit)\n\nDua bar:\n• vs Total Spend = nilai ÷ Total Spend\n• vs Revenue = nilai ÷ Revenue',
-  rws:
-    'Retail Warehouse Sales ke customer tipe branch (outlet ini).\nStatus completed, dijumlah dari total_amount.\n\nIkut ke Purchased Kitchen (kecuali gudang bar/service).\nDua bar: vs Total Spend & vs Revenue.',
   retail_food:
-    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nIkut ke Purchased Kitchen/Bar/Service menurut warehouse_outlet.\nDua bar: vs Total Spend & vs Revenue.',
+    'Transaksi Retail Food status approved (Cash + Contra Bon) pada periode filter.\n\nTermasuk pembelian ke Justus Group (mirror RWS gudang → outlet).\nIkut ke Purchased Kitchen/Bar/Service menurut warehouse_outlet.\nDua bar: vs Total Spend & vs Revenue.',
   retail_non_food:
     'Transaksi Retail Non Food status approved (Cash + Contra Bon).\n\nMasuk Total Spend, tetapi tidak masuk Purchased Kitchen/Bar/Service.\nDua bar: vs Total Spend & vs Revenue.',
   petty_cash:
     'Subset cash dari Retail Food + Retail Non Food (payment_method = cash).\nBukan tambahan di luar RF/RNF — hanya ringkasan cash spend.\n\nDua bar: vs Total Spend & vs Revenue.',
   mcs_purchase:
-    'Pembelian item kategori MCS (Marketing, Chemical, Stationary, dll) dari GSR + RWS + Retail Food.\n\nBreakdown per category di bawah nilai total.\nDua bar: vs Total Spend & vs Revenue.',
+    'Pembelian item kategori MCS (Marketing, Chemical, Stationary, dll) dari GSR + Retail Food.\n\nBreakdown per category di bawah nilai total.\nDua bar: vs Total Spend & vs Revenue.',
   purchase_category:
-    'Pie chart komposisi pembelian semua category item dari GSR + RWS + Retail Food.\nKlik slice untuk buka detail transaksi.',
+    'Pie chart komposisi pembelian semua category item dari GSR + Retail Food.\nKlik slice untuk buka detail transaksi.',
   revenue:
     'Total penjualan outlet (orders) pada periode filter.\nBudget & performa dibanding Revenue Target bulanan (jika ada).',
   total_spend:
-    'Total belanja outlet = GSR + GR + RWS + Retail Food + Retail Non Food.\n\nBreakdown di card:\n• GSR / GR\n• RWS\n• RF Cash & RF Contra Bon\n• RNF Cash & RNF Contra Bon\n\nModal detail: tabel harian Receiving Sheet + list Retail Non Food.\n% di bawah = Total Spend ÷ Revenue.',
+    'Total belanja outlet = GSR + GR + Retail Food + Retail Non Food.\n\nRWS tidak dijumlah (sudah di RF Justus Group).\n\nBreakdown di card:\n• GSR / GR\n• RF Cash & RF Contra Bon\n• RNF Cash & RNF Contra Bon\n\nModal detail: tabel harian Receiving Sheet + list Retail Non Food.\n% di bawah = Total Spend ÷ Revenue.',
   net:
     'Net = Revenue − Total Spend.\nBar menunjukkan rasio spend terhadap revenue.',
   cover:
@@ -2987,6 +2980,7 @@ const sourceCards = computed(() => [
     amount: ov.value.gsr_ro || 0,
     hint: `GR ${formatCurrency(ov.value.gsr_ro_gr || 0)} · GSR ${formatCurrency(ov.value.gsr_ro_gsr || 0)}`,
     paymentHint: null,
+    extraHint: null,
     vs: vs.value.gsr_ro,
     help: cardHelps.gsr_ro,
     icon: 'fa-solid fa-truck',
@@ -2996,25 +2990,14 @@ const sourceCards = computed(() => [
     bar: 'bg-amber-400',
   },
   {
-    key: 'rws',
-    label: 'RWS',
-    amount: ov.value.rws || 0,
-    hint: `${ov.value.rws_count || 0} transaksi warehouse`,
-    paymentHint: null,
-    vs: vs.value.rws,
-    help: cardHelps.rws,
-    icon: 'fa-solid fa-warehouse',
-    tone: 'text-violet-600',
-    iconBg: 'bg-violet-50',
-    border: 'border-violet-100',
-    bar: 'bg-violet-400',
-  },
-  {
     key: 'retail_food',
     label: 'Retail Food',
     amount: ov.value.retail_food || 0,
     hint: `${ov.value.retail_food_count || 0} transaksi`,
     paymentHint: `Cash ${ov.value.retail_food_cash_count || 0} · Contra Bon ${ov.value.retail_food_contra_bon_count || 0}`,
+    extraHint: (Number(ov.value.retail_food_justus_group_total) || 0) > 0
+      ? `Justus Group ${formatCurrency(ov.value.retail_food_justus_group_total)} · ${ov.value.retail_food_justus_group_count || 0} trx`
+      : null,
     vs: vs.value.retail_food,
     help: cardHelps.retail_food,
     icon: 'fa-solid fa-utensils',
@@ -3029,6 +3012,7 @@ const sourceCards = computed(() => [
     amount: ov.value.retail_non_food || 0,
     hint: `${ov.value.retail_non_food_count || 0} transaksi`,
     paymentHint: `Cash ${ov.value.retail_non_food_cash_count || 0} · Contra Bon ${ov.value.retail_non_food_contra_bon_count || 0}`,
+    extraHint: null,
     vs: vs.value.retail_non_food,
     help: cardHelps.retail_non_food,
     icon: 'fa-solid fa-bag-shopping',
@@ -3043,6 +3027,7 @@ const sourceCards = computed(() => [
     amount: ov.value.petty_cash || 0,
     hint: `RF cash ${formatCurrency(ov.value.petty_cash_rf || 0)} · RNF cash ${formatCurrency(ov.value.petty_cash_rnf || 0)}`,
     paymentHint: `${ov.value.petty_cash_count || 0} trx cash (RF+RNF)`,
+    extraHint: null,
     vs: vs.value.petty_cash,
     help: cardHelps.petty_cash,
     icon: 'fa-solid fa-wallet',
@@ -3056,13 +3041,12 @@ const sourceCards = computed(() => [
 const categoryCostByType = computed(() => ov.value.category_cost_by_type || [])
 const mcsPurchaseByCategory = computed(() => ov.value.mcs_purchase_by_category || [])
 
-/** Breakdown Total Spend di card (GSR/GR + RWS + RF/RNF cash & contra bon). */
+/** Breakdown Total Spend di card (GSR/GR + RF/RNF cash & contra bon). */
 const totalSpendBreakdown = computed(() => {
   const o = ov.value || {}
   const rows = [
     { key: 'gsr', label: 'GSR', amount: Number(o.gsr_ro_gsr) || 0 },
     { key: 'gr', label: 'GR', amount: Number(o.gsr_ro_gr) || 0 },
-    { key: 'rws', label: 'RWS', amount: Number(o.rws) || 0 },
     { key: 'rf_cash', label: 'RF Cash', amount: Number(o.retail_food_cash_total) || 0 },
     { key: 'rf_cb', label: 'RF Contra Bon', amount: Number(o.retail_food_contra_bon_total) || 0 },
     { key: 'rnf_cash', label: 'RNF Cash', amount: Number(o.retail_non_food_cash_total) || 0 },
@@ -3193,14 +3177,13 @@ const paymentMixOptions = computed(() => ({
 
 const stackSeries = computed(() => [
   { name: 'GSR / RO', data: trendRows.value.map((r) => Number(r.gsr_ro) || 0) },
-  { name: 'RWS', data: trendRows.value.map((r) => Number(r.rws) || 0) },
   { name: 'Retail Food', data: trendRows.value.map((r) => Number(r.retail_food) || 0) },
   { name: 'Retail Non Food', data: trendRows.value.map((r) => Number(r.retail_non_food) || 0) },
 ])
 
 const stackOptions = computed(() => ({
   chart: { stacked: true, toolbar: { show: false }, fontFamily: 'inherit' },
-  colors: ['#f59e0b', '#8b5cf6', '#10b981', '#f97316'],
+  colors: ['#f59e0b', '#10b981', '#f97316'],
   plotOptions: { bar: { columnWidth: '55%', borderRadius: 4 } },
   dataLabels: { enabled: false },
   xaxis: { categories: categories.value, labels: { rotate: -35, style: { fontSize: '11px' } } },
@@ -3401,7 +3384,7 @@ const modalShowsPurchaseBucket = computed(() =>
   ['kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value)
 )
 const modalTxnClickable = computed(() =>
-  ['gsr_ro', 'rws', 'retail_food', 'retail_non_food', 'petty_cash', 'kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value)
+  ['gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash', 'kitchen_purchase', 'bar_purchase', 'service_purchase'].includes(modalType.value)
 )
 
 const modalTxnColspan = computed(() => {

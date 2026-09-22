@@ -9,7 +9,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * Outlet spend & revenue summary for Opex Outlet Dashboard.
- * Sources: Revenue (orders), GSR/RO (food GR + serial GSR), RWS, Retail Food, Retail Non Food.
+ * Sources: Revenue (orders), GSR/RO (food GR + serial GSR), Retail Food, Retail Non Food.
+ * RWS tidak ditampilkan/dijumlah ke spend/purchased — inlet outlet lewat Retail Food (Justus Group).
  * No PR / non-food payment.
  */
 class OpexOutletDashboardService
@@ -213,9 +214,11 @@ class OpexOutletDashboardService
         $gsrRo = $this->sumGsrRo($outletId, $dateFrom, $dateTo);
         $rws = $this->sumRws($outletId, $dateFrom, $dateTo);
         $rf = $this->sumRetailFood($outletId, $dateFrom, $dateTo);
+        $rfJustus = $this->sumRetailFoodJustusGroup($outletId, $dateFrom, $dateTo);
         $rnf = $this->sumRetailNonFood($outletId, $dateFrom, $dateTo);
 
-        $totalSpend = round($gsrRo['total'] + $rws['total'] + $rf['total'] + $rnf['total'], 2);
+        // Total spend tanpa RWS: inlet outlet sudah di Retail Food (mirror penjualan gudang).
+        $totalSpend = round($gsrRo['total'] + $rf['total'] + $rnf['total'], 2);
         $spendRatio = $revenue['total'] > 0 ? round(($totalSpend / $revenue['total']) * 100, 2) : null;
         $discountRatio = $revenue['gross_before_discount'] > 0
             ? round(($revenue['discount'] / $revenue['gross_before_discount']) * 100, 2)
@@ -298,6 +301,8 @@ class OpexOutletDashboardService
             'retail_food_cash_count' => $rf['cash_count'],
             'retail_food_contra_bon_total' => $rf['contra_bon_total'],
             'retail_food_contra_bon_count' => $rf['contra_bon_count'],
+            'retail_food_justus_group_total' => $rfJustus['total'],
+            'retail_food_justus_group_count' => $rfJustus['count'],
             'retail_food_revenue_pct' => $pctOfRevenue($rf['total']),
             'retail_non_food' => $rnf['total'],
             'retail_non_food_count' => $rnf['count'],
@@ -492,16 +497,14 @@ class OpexOutletDashboardService
 
         $trend = $this->buildTrend($outletId, $outlet?->qr_code, $dateFrom, $dateTo);
 
-        // Spend mix dari agregat trend (hindari query GSR/RWS/RF/RNF ulang).
+        // Spend mix tanpa RWS (mirror Retail Food / Justus Group).
         $mix = [
             'gsr_ro' => 0.0,
-            'rws' => 0.0,
             'retail_food' => 0.0,
             'retail_non_food' => 0.0,
         ];
         foreach ($trend as $row) {
             $mix['gsr_ro'] += (float) ($row['gsr_ro'] ?? 0);
-            $mix['rws'] += (float) ($row['rws'] ?? 0);
             $mix['retail_food'] += (float) ($row['retail_food'] ?? 0);
             $mix['retail_non_food'] += (float) ($row['retail_non_food'] ?? 0);
         }
@@ -513,7 +516,6 @@ class OpexOutletDashboardService
             'trend' => $trend,
             'spend_mix' => [
                 ['key' => 'gsr_ro', 'label' => 'GSR / RO', 'amount' => round($mix['gsr_ro'], 2)],
-                ['key' => 'rws', 'label' => 'RWS', 'amount' => round($mix['rws'], 2)],
                 ['key' => 'retail_food', 'label' => 'Retail Food', 'amount' => round($mix['retail_food'], 2)],
                 ['key' => 'retail_non_food', 'label' => 'Retail Non Food', 'amount' => round($mix['retail_non_food'], 2)],
             ],
@@ -528,7 +530,8 @@ class OpexOutletDashboardService
      * fallback ke sum daily revenue target jika rolling belum tersedia.
      * Pool budget 43% × Forecast, dibagi Kitchen 70% / Bar 20% / Service 10%.
      * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
-     * Purchased = GSR + GR (nilai diterima) + Retail Food + RWS, bucket per warehouse Kitchen / Bar / Service.
+     * Purchased = GSR + GR (nilai diterima) + Retail Food, bucket per warehouse Kitchen / Bar / Service.
+     * RWS tidak dijumlah: outflow gudang; inlet outlet sudah lewat Retail Food (supplier Justus Group).
      *
      * @return array<string, mixed>
      */
@@ -672,8 +675,9 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Transaksi Purchased (GSR/GR + Retail Food + RWS) untuk satu warehouse bucket.
+     * Transaksi Purchased (GSR/GR + Retail Food) untuk satu warehouse bucket.
      * Dipakai drill-down card Budget Kitchen / Bar / Service.
+     * RWS sengaja tidak di-list (sudah terwakili Retail Food).
      *
      * @param  'kitchen'|'bar'|'service'  $bucket
      * @return list<object{
@@ -930,104 +934,7 @@ class OpexOutletDashboardService
             }
         }
 
-        // —— RWS ——
-        $rwsHeaders = DB::table('retail_warehouse_sales as rws')
-            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', function ($join) {
-                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
-            })
-            ->leftJoin('users as usr', 'rws.created_by', '=', 'usr.id')
-            ->where('rws.status', 'completed')
-            ->where('c.type', 'branch')
-            ->where('c.id_outlet', $outletId)
-            ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$monthFrom, $monthTo])
-            ->get([
-                'rws.id',
-                'rws.number',
-                'rws.sale_date as date',
-                'rws.total_amount',
-                DB::raw("COALESCE(w.name, '') as warehouse_name"),
-                'usr.nama_lengkap as creator_name',
-            ])
-            ->filter(fn ($row) => $this->rwsPurchaseBucketName($row->warehouse_name) === $bucket)
-            ->values();
-
-        $rwsIds = $rwsHeaders->pluck('id')->all();
-        $rwsItemsByHeader = collect();
-        if ($rwsIds !== []) {
-            $lines = collect();
-            if (Schema::hasTable('retail_warehouse_sale_items')) {
-                $lines = $lines->concat(
-                    DB::table('retail_warehouse_sale_items as rwsi')
-                        ->leftJoin('items as it', 'rwsi.item_id', '=', 'it.id')
-                        ->whereIn('rwsi.retail_warehouse_sale_id', $rwsIds)
-                        ->get([
-                            'rwsi.retail_warehouse_sale_id as header_id',
-                            'it.name as item_name',
-                            'rwsi.unit as unit_name',
-                            'rwsi.qty',
-                            DB::raw('COALESCE(rwsi.price, 0) as price'),
-                            DB::raw('COALESCE(rwsi.subtotal, rwsi.qty * rwsi.price, 0) as subtotal'),
-                        ])
-                );
-            }
-            if (Schema::hasTable('retail_warehouse_sale_serial_items')) {
-                $lines = $lines->concat(
-                    DB::table('retail_warehouse_sale_serial_items as rwss')
-                        ->leftJoin('items as it', 'rwss.item_id', '=', 'it.id')
-                        ->whereIn('rwss.retail_warehouse_sale_id', $rwsIds)
-                        ->get([
-                            'rwss.retail_warehouse_sale_id as header_id',
-                            'it.name as item_name',
-                            'rwss.unit_name as unit_name',
-                            'rwss.qty',
-                            DB::raw('COALESCE(rwss.price, 0) as price'),
-                            DB::raw('COALESCE(rwss.subtotal, rwss.qty * rwss.price, 0) as subtotal'),
-                        ])
-                );
-            }
-            $rwsItemsByHeader = $lines->groupBy('header_id');
-        }
-
-        foreach ($rwsHeaders as $header) {
-            $items = $rwsItemsByHeader->get($header->id) ?? collect();
-            if ($items->isEmpty()) {
-                $addLine(
-                    'rws-'.$header->id,
-                    (string) ($header->number ?? '-'),
-                    (string) $header->date,
-                    'RWS',
-                    (string) ($header->creator_name ?? ''),
-                    (string) ($header->warehouse_name !== '' ? $header->warehouse_name : 'Main Store'),
-                    [
-                        'name' => 'Total transaksi',
-                        'qty' => 1,
-                        'unit' => '-',
-                        'price' => $header->total_amount,
-                        'subtotal' => $header->total_amount,
-                    ]
-                );
-                continue;
-            }
-            foreach ($items as $item) {
-                $addLine(
-                    'rws-'.$header->id,
-                    (string) ($header->number ?? '-'),
-                    (string) $header->date,
-                    'RWS',
-                    (string) ($header->creator_name ?? ''),
-                    (string) ($header->warehouse_name !== '' ? $header->warehouse_name : 'Main Store'),
-                    [
-                        'name' => $item->item_name,
-                        'qty' => $item->qty,
-                        'unit' => $item->unit_name,
-                        'price' => $item->price,
-                        'subtotal' => $item->subtotal,
-                    ]
-                );
-            }
-        }
+        // RWS tidak di-list di purchased drill-down (sudah terwakili Retail Food).
 
         $rows = array_values($grouped);
         foreach ($rows as $row) {
@@ -1132,9 +1039,10 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Kitchen / Bar / Service purchase from received goods + Retail Food + RWS.
+     * Kitchen / Bar / Service purchase from received goods + Retail Food.
      * Received = GSR (serial receive) + outlet GR, by receive_date and warehouse_outlet.
-     * Retail Food by warehouse_outlet. RWS (branch) by warehouse (Main Store/MK → Kitchen).
+     * Retail Food by warehouse_outlet.
+     * RWS tidak dijumlah (double dengan RF: gudang keluar RWS, outlet masuk RF).
      *
      * @return array{
      *   kitchen: float,
@@ -1260,29 +1168,13 @@ class OpexOutletDashboardService
             $addBucket($bucket, (float) $rfRow->total, 'rf');
         }
 
-        // RWS — penjualan gudang ke outlet (branch), ikut purchased
-        $rwsRows = DB::table('retail_warehouse_sales as rws')
-            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', function ($join) {
-                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
-            })
-            ->where('rws.status', 'completed')
-            ->where('c.type', 'branch')
-            ->where('c.id_outlet', $outletId)
-            ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$dateFrom, $dateTo])
-            ->selectRaw('COALESCE(w.name, \'\') as warehouse_name, SUM(COALESCE(rws.total_amount, 0)) as total')
-            ->groupBy('w.name')
-            ->get();
-
-        foreach ($rwsRows as $rwsRow) {
-            $addBucket($this->rwsPurchaseBucketName($rwsRow->warehouse_name), (float) $rwsRow->total, 'rws');
-        }
+        // RWS tidak dijumlah ke purchased: mirror Retail Food (supplier Justus Group).
+        // Kartu RWS standalone tetap ada di summary metrics.
 
         foreach (['kitchen', 'bar', 'service'] as $b) {
             $bySource[$b] = [
                 'gsr' => round($bySource[$b]['gsr'], 2),
-                'rws' => round($bySource[$b]['rws'], 2),
+                'rws' => 0.0,
                 'rf' => round($bySource[$b]['rf'], 2),
             ];
         }
@@ -2165,6 +2057,33 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Retail Food ke supplier Justus Group / Yuditama (mirror RWS gudang → outlet).
+     *
+     * @return array{total: float, count: int}
+     */
+    public function sumRetailFoodJustusGroup(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $row = DB::table('retail_food as rf')
+            ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
+            ->where('rf.outlet_id', $outletId)
+            ->where('rf.status', 'approved')
+            ->whereNull('rf.deleted_at')
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->where(function ($q) {
+                $q->where('s.name', 'like', '%Justus%')
+                    ->orWhere('s.name', 'like', '%Yuditama%');
+            })
+            ->selectRaw('COALESCE(SUM(rf.total_amount), 0) as total, COUNT(*) as cnt')
+            ->first();
+
+        return [
+            'total' => round((float) ($row->total ?? 0), 2),
+            'count' => (int) ($row->cnt ?? 0),
+        ];
+    }
+
+    /**
      * @return array{
      *   total: float,
      *   count: int,
@@ -2268,7 +2187,8 @@ class OpexOutletDashboardService
             $rws = (float) ($rwsByDate[$date] ?? 0);
             $rf = (float) ($rfByDate[$date] ?? 0);
             $rnf = (float) ($rnfByDate[$date] ?? 0);
-            $spend = $gsrRo + $rws + $rf + $rnf;
+            // Spend tanpa RWS: RWS = outflow gudang, inlet outlet sudah di Retail Food.
+            $spend = $gsrRo + $rf + $rnf;
             $revenue = (float) ($revenueByDate[$date] ?? 0);
             $rows[] = [
                 'date' => $date,
@@ -2708,29 +2628,7 @@ class OpexOutletDashboardService
             }
         }
 
-        $rwsSpendQuery = DB::table('retail_warehouse_sales as rws')
-            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', function ($join) {
-                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
-            })
-            ->where('rws.status', 'completed')
-            ->where('c.type', 'branch')
-            ->where('c.id_outlet', $outletId)
-            ->whereDate('rws.sale_date', '>=', $dateFrom)
-            ->whereDate('rws.sale_date', '<=', $dateTo)
-            ->whereNotNull('w.id')
-            ->select(
-                'rws.sale_date as tanggal',
-                'w.name as warehouse_name',
-                DB::raw('SUM(COALESCE(rws.total_amount, 0)) as total')
-            )
-            ->groupBy('rws.sale_date', 'w.name')
-            ->get();
-
-        foreach ($rwsSpendQuery as $row) {
-            $addWarehouseSpend($warehouseSpendByDate, $row->tanggal, $row->warehouse_name, $row->total);
-        }
+        // RWS tidak masuk warehouse spend (sudah terwakili Retail Food / supplier Justus).
 
         $retailSupplierData = DB::table('retail_food as rf')
             ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
@@ -3721,14 +3619,8 @@ class OpexOutletDashboardService
     private function purchasedAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo, $warehouses): array
     {
         $out = [];
-        $bucketToWarehouseId = [];
         foreach ($warehouses as $wh) {
-            $id = (int) $wh->id;
-            $out[$id] = 0.0;
-            $bucket = $this->warehouseOutletBucketName($wh->name ?? null);
-            if ($bucket !== 'other' && ! isset($bucketToWarehouseId[$bucket])) {
-                $bucketToWarehouseId[$bucket] = $id;
-            }
+            $out[(int) $wh->id] = 0.0;
         }
 
         $add = function (int $warehouseId, float $amount) use (&$out): void {
@@ -3797,27 +3689,7 @@ class OpexOutletDashboardService
             $add((int) $row->warehouse_id, (float) $row->total);
         }
 
-        $rwsRows = DB::table('retail_warehouse_sales as rws')
-            ->join('customers as c', 'rws.customer_id', '=', 'c.id')
-            ->leftJoin('warehouse_division as wd', 'rws.warehouse_division_id', '=', 'wd.id')
-            ->leftJoin('warehouses as w', function ($join) {
-                $join->on('w.id', '=', DB::raw('COALESCE(wd.warehouse_id, rws.warehouse_id)'));
-            })
-            ->where('rws.status', 'completed')
-            ->where('c.type', 'branch')
-            ->where('c.id_outlet', $outletId)
-            ->whereBetween(DB::raw('DATE(rws.sale_date)'), [$dateFrom, $dateTo])
-            ->selectRaw('COALESCE(w.name, \'\') as warehouse_name, SUM(COALESCE(rws.total_amount, 0)) as total')
-            ->groupBy('w.name')
-            ->get();
-
-        foreach ($rwsRows as $row) {
-            $bucket = $this->rwsPurchaseBucketName($row->warehouse_name);
-            $wid = $bucketToWarehouseId[$bucket] ?? ($bucketToWarehouseId['kitchen'] ?? null);
-            if ($wid !== null) {
-                $add((int) $wid, (float) $row->total);
-            }
-        }
+        // RWS tidak dijumlah: inlet stok outlet sudah lewat Retail Food (mirror RWS).
 
         return $out;
     }
@@ -4497,7 +4369,7 @@ class OpexOutletDashboardService
 
     /**
      * Pembelian item sub-category Marketing / Chemical / Stationary
-     * dari GSR + RWS + Retail Food.
+     * dari GSR + Retail Food (RWS di-skip: mirror RF).
      *
      * @return array{
      *   total: float,
@@ -4636,8 +4508,6 @@ class OpexOutletDashboardService
     private function mcsAllLines(int $outletId, string $dateFrom, string $dateTo)
     {
         return $this->mcsSerialGrLines($outletId, $dateFrom, $dateTo)
-            ->concat($this->mcsRwsLines($outletId, $dateFrom, $dateTo))
-            ->concat($this->mcsRwsSerialLines($outletId, $dateFrom, $dateTo))
             ->concat($this->mcsRetailFoodLines($outletId, $dateFrom, $dateTo));
     }
 
@@ -4810,7 +4680,7 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Pembelian semua sub-category dari GSR + RWS + Retail Food (untuk pie chart).
+     * Pembelian semua sub-category dari GSR + Retail Food (untuk pie chart).
      *
      * @return array{
      *   total: float,
@@ -4963,15 +4833,14 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Semua line pembelian GSR + RWS + Retail Food (tanpa filter MCS).
+     * Semua line pembelian GSR + Retail Food (tanpa filter MCS).
+     * RWS di-skip agar tidak double dengan Retail Food.
      *
      * @return \Illuminate\Support\Collection<int, object>
      */
     private function allPurchaseLines(int $outletId, string $dateFrom, string $dateTo)
     {
         return $this->allPurchaseSerialGrLines($outletId, $dateFrom, $dateTo)
-            ->concat($this->allPurchaseRwsLines($outletId, $dateFrom, $dateTo))
-            ->concat($this->allPurchaseRwsSerialLines($outletId, $dateFrom, $dateTo))
             ->concat($this->allPurchaseRetailFoodLines($outletId, $dateFrom, $dateTo));
     }
 
