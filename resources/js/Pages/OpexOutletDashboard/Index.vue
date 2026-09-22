@@ -67,6 +67,11 @@
           Memuat data dashboard secara bertahap…
         </div>
 
+        <RollingForecastPanel
+          :outlet-id="filters.outlet_id"
+          :month="rollingForecastMonth"
+        />
+
         <!-- ========== Group: RO Forecast ========== -->
         <section class="mb-8">
           <div class="flex items-center gap-3 mb-3">
@@ -2001,6 +2006,7 @@
 import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import CardHelpTip from '@/Components/CardHelpTip.vue'
+import RollingForecastPanel from './Components/RollingForecastPanel.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 
@@ -2224,6 +2230,12 @@ const filters = ref({
   attendance_date_to: props.filters?.attendance_date_to || defaultPayroll.date_to,
   attendance_period_label: props.filters?.attendance_period_label || '',
   outlet_id: props.filters?.outlet_id || null,
+})
+
+const rollingForecastMonth = computed(() => {
+  const tahun = Number(filters.value.tahun) || new Date().getFullYear()
+  const bulan = Number(filters.value.bulan) || (new Date().getMonth() + 1)
+  return `${tahun}-${String(bulan).padStart(2, '0')}`
 })
 
 const periodLabel = computed(() => {
