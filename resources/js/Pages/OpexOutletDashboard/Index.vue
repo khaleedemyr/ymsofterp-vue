@@ -90,6 +90,7 @@
               <h2 class="text-xl font-bold text-slate-900 mt-0.5">Budget vs Purchase</h2>
               <p class="text-xs text-slate-500 mt-1">
                 Full month {{ roForecast?.period_from || '—' }} s/d {{ roForecast?.period_to || '—' }}
+                · Forecast = Rolling Realistis
                 · Pool {{ roForecast?.budget_pool_ratio_pct || 43 }}% × Forecast
                 · Kitchen 70% · Bar 20% · Service 10%
                 · Purchased = GSR/GR + RF + RWS · RO outstanding terpisah (bukan MTD)
@@ -110,7 +111,7 @@
             Gagal memuat RO Forecast.
           </div>
           <div v-else-if="!roForecast?.has_forecast && !(roForecast?.forecast > 0)" class="rounded-2xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800">
-            Belum ada Revenue Target / Forecast untuk periode ini.
+            Belum ada monthly target / Rolling Forecast realistis untuk periode ini.
           </div>
 
           <div v-else class="space-y-4">
@@ -121,10 +122,16 @@
                   <CardHelpTip :text="cardHelps.forecast" />
                 </p>
                 <p class="mt-2 text-2xl font-bold text-slate-900">{{ formatCurrency(roForecast.forecast) }}</p>
-                <p class="mt-1 text-xs text-slate-500">Total forecast revenue 1 bulan penuh</p>
+                <p class="mt-1 text-xs text-slate-500">
+                  {{ roForecast.forecast_source === 'rolling_realistic' ? 'Rolling Auto Forecast · skenario Realistis' : 'Revenue Target (fallback)' }}
+                  <span v-if="roForecast.pace_factor != null"> · pace {{ roForecast.pace_factor }}</span>
+                </p>
               </div>
               <div class="mt-3 sm:mt-0 sm:text-right">
-                <p class="text-xs text-slate-500">Pool budget {{ roForecast.budget_pool_ratio_pct || 43 }}%</p>
+                <p class="text-xs text-slate-500 inline-flex items-center gap-1 justify-end">
+                  Pool budget {{ roForecast.budget_pool_ratio_pct || 43 }}%
+                  <CardHelpTip :text="cardHelps.budget_pool" />
+                </p>
                 <p class="text-lg font-bold text-slate-800">{{ formatCurrency(roForecast.budget_pool) }}</p>
                 <p class="text-[11px] text-slate-400">Lalu dibagi Kitchen / Bar / Service</p>
               </div>
@@ -151,24 +158,44 @@
                   </span>
                 </div>
                 <div class="mt-3">
-                  <p class="text-slate-500 text-xs">Purchased</p>
+                  <p class="text-slate-500 text-xs inline-flex items-center gap-1">
+                    Purchased
+                    <span @click.stop>
+                      <CardHelpTip :text="cardHelps.purchased_field" />
+                    </span>
+                  </p>
                   <p class="mt-0.5 text-2xl sm:text-3xl font-bold tracking-tight" :class="card.valueClass">
                     {{ formatCurrency(card.data?.purchased) }}
                   </p>
                 </div>
                 <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <p class="text-slate-500 text-xs">Budget</p>
+                    <p class="text-slate-500 text-xs inline-flex items-center gap-1">
+                      Budget
+                      <span @click.stop>
+                        <CardHelpTip :text="cardHelps.budget_field" />
+                      </span>
+                    </p>
                     <p class="font-semibold text-slate-900">{{ formatCurrency(card.data?.budget) }}</p>
                   </div>
                   <div>
-                    <p class="text-slate-500 text-xs">RO Outstanding <span class="text-slate-400">(belum GSR/GR)</span></p>
+                    <p class="text-slate-500 text-xs inline-flex items-center gap-1">
+                      RO Outstanding
+                      <span @click.stop>
+                        <CardHelpTip :text="cardHelps.ro_outstanding_field" />
+                      </span>
+                    </p>
                     <p class="font-semibold text-amber-800">{{ formatCurrency(card.data?.ro_outstanding) }}</p>
                   </div>
                 </div>
                 <div class="mt-3 pt-3 border-t flex items-end justify-between gap-2" :class="card.dividerClass">
                   <div>
-                    <p class="text-xs text-slate-500">Sisa budget</p>
+                    <p class="text-xs text-slate-500 inline-flex items-center gap-1">
+                      Sisa budget
+                      <span @click.stop>
+                        <CardHelpTip :text="cardHelps.remaining_budget_field" />
+                      </span>
+                    </p>
                     <p class="text-xl font-bold" :class="remainingClass(card.data?.remaining)">
                       {{ formatRemaining(card.data?.remaining) }}
                     </p>
@@ -2012,13 +2039,23 @@ import axios from 'axios'
 
 const cardHelps = {
   forecast:
-    'Total forecast revenue 1 bulan penuh dari Revenue Target outlet.\n\nPool budget = 43% × Forecast, lalu dibagi:\n• Kitchen 70%\n• Bar 20%\n• Service 10%\n\nPeriode selalu full calendar month, bukan MTD filter.',
+    'Nilai Forecast di sini diambil dari Rolling Auto Forecast skenario Realistis (projected EOM).\n\nRealistis = Actual MTD + sisa hari dengan blend 50% pace MTD + 50% baseline dari monthly target.\n\nJika rolling belum tersedia, fallback ke total daily forecast di menu Revenue Target.\n\nPool budget = 43% × Forecast ini, lalu dibagi:\n• Kitchen 70%\n• Bar 20%\n• Service 10%\n\nPeriode selalu full calendar month.',
+  budget_pool:
+    'Pool budget pembelian = 43% × Forecast (Rolling Realistis).\n\nPool ini kemudian dibagi:\n• Kitchen 70% dari pool\n• Bar 20% dari pool\n• Service 10% dari pool\n\nJadi Budget Kitchen ≈ 30,1% dari Forecast, Bar ≈ 8,6%, Service ≈ 4,3%.',
+  purchased_field:
+    'Purchased = nilai yang sudah diterima di periode bulan penuh:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS ke outlet\n\nDihitung per warehouse Kitchen / Bar / Service.\nBukan MTD filter tanggal — selalu full calendar month.',
+  budget_field:
+    'Budget bucket = share × (43% × Forecast Realistis).\n\n• Kitchen = 70% × pool\n• Bar = 20% × pool\n• Service = 10% × pool\n\nIkut bergerak jika Rolling Forecast realistis naik/turun.',
+  ro_outstanding_field:
+    'RO Outstanding = qty RO yang belum diterima penuh (belum GSR/GR) × harga RO.\n\nBelum masuk Purchased, tapi sudah “committed”.\nDipakai untuk hitung sisa budget setelah commit.',
+  remaining_budget_field:
+    'Sisa budget = Budget − Purchased.\n\nSetelah commit = Budget − Purchased − RO Outstanding.\n\nNegatif = over budget (tampil “Over …”).',
   kitchen_purchase:
-    'Purchased Kitchen = nilai diterima untuk warehouse Kitchen:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS (Main Store / MK → Kitchen)\n\nBudget = 70% × (43% × Forecast).\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
+    'Purchased Kitchen = nilai diterima untuk warehouse Kitchen:\n• GSR (serial receive)\n• GR outlet (jika ada)\n• Retail Food\n• RWS (Main Store / MK → Kitchen)\n\nBudget = 70% × (43% × Forecast Rolling Realistis).\nRO Outstanding = qty RO belum diterima penuh (belum GSR/GR) × harga RO.\nSisa budget = Budget − Purchased.\nSetelah commit = Budget − Purchased − RO Outstanding.',
   bar_purchase:
-    'Purchased Bar = nilai diterima untuk warehouse Bar:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Bar)\n• RWS jika nama gudang bertema bar\n\nBudget = 20% × (43% × Forecast).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
+    'Purchased Bar = nilai diterima untuk warehouse Bar:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Bar)\n• RWS jika nama gudang bertema bar\n\nBudget = 20% × (43% × Forecast Rolling Realistis).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
   service_purchase:
-    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 10% × (43% × Forecast).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
+    'Purchased Service = nilai diterima untuk warehouse Service:\n• GSR\n• GR outlet (jika ada)\n• Retail Food (warehouse Service)\n• RWS hanya jika gudang bertema service\n\nBudget = 10% × (43% × Forecast Rolling Realistis).\nRO Outstanding / sisa budget sama logikanya dengan Kitchen.',
   gsr_ro:
     'Nilai penerimaan outlet pada periode filter:\n• GR = Outlet Food Good Receive × harga RO\n• GSR = Serial Goods Receive × cost (cost_small, dikonversi unit)\n\nDua bar:\n• vs Total Spend = nilai ÷ Total Spend\n• vs Revenue = nilai ÷ Revenue',
   rws:

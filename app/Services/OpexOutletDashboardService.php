@@ -438,7 +438,9 @@ class OpexOutletDashboardService
 
     /**
      * Ringkas kolom RO Forecast (Floor Order vs Forecast):
-     * Forecast, lalu pool budget 43% × Forecast, dibagi Kitchen 70% / Bar 20% / Service 10%.
+     * Forecast = Rolling Auto Forecast skenario Realistis (projected EOM),
+     * fallback ke sum daily revenue target jika rolling belum tersedia.
+     * Pool budget 43% × Forecast, dibagi Kitchen 70% / Bar 20% / Service 10%.
      * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
      * Purchased = GSR + GR (nilai diterima) + Retail Food + RWS, bucket per warehouse Kitchen / Bar / Service.
      *
@@ -447,8 +449,29 @@ class OpexOutletDashboardService
     public function buildRoForecastSummary(int $outletId, string $dateFrom, string $dateTo): array
     {
         [$monthFrom, $monthTo] = $this->fullMonthBounds($dateFrom, $dateTo);
+        $monthKey = Carbon::parse($monthFrom)->format('Y-m');
 
-        $forecastTotal = $this->sumForecastRevenue($outletId, $monthFrom, $monthTo);
+        $rolling = app(OutletRollingForecastService::class)->build($outletId, $monthKey);
+        $storedForecast = $this->sumForecastRevenue($outletId, $monthFrom, $monthTo);
+
+        $forecastSource = 'revenue_target';
+        $forecastTotal = $storedForecast;
+        $monthlyTarget = null;
+        $paceFactor = null;
+        $scenarios = null;
+
+        if (($rolling['success'] ?? true) !== false
+            && ($rolling['has_target'] ?? false)
+            && (float) ($rolling['projected_eom'] ?? 0) > 0
+        ) {
+            // projected_eom = skenario Realistis (patokan utama rolling forecast)
+            $forecastTotal = (float) $rolling['projected_eom'];
+            $forecastSource = 'rolling_realistic';
+            $monthlyTarget = isset($rolling['monthly_target']) ? (float) $rolling['monthly_target'] : null;
+            $paceFactor = isset($rolling['pace_factor']) ? (float) $rolling['pace_factor'] : null;
+            $scenarios = $rolling['scenarios'] ?? null;
+        }
+
         $purchased = $this->sumPurchasedByBucket($outletId, $monthFrom, $monthTo);
         $outstanding = $this->sumOutstandingRoByBucket($outletId, $monthFrom, $monthTo);
 
@@ -472,12 +495,21 @@ class OpexOutletDashboardService
             (float) ($outstanding['service'] ?? 0)
         );
 
+        $hasForecast = $forecastTotal > 0
+            || $this->hasForecastHeaderForRange($outletId, $monthFrom, $monthTo)
+            || (($rolling['has_target'] ?? false) === true);
+
         return [
-            'has_forecast' => $forecastTotal > 0 || $this->hasForecastHeaderForRange($outletId, $monthFrom, $monthTo),
+            'has_forecast' => $hasForecast,
             'period_from' => $monthFrom,
             'period_to' => $monthTo,
             'is_full_month' => true,
-            'forecast' => $forecastTotal,
+            'forecast' => round($forecastTotal, 2),
+            'forecast_source' => $forecastSource,
+            'stored_forecast' => round($storedForecast, 2),
+            'monthly_target' => $monthlyTarget !== null ? round($monthlyTarget, 2) : null,
+            'pace_factor' => $paceFactor !== null ? round($paceFactor, 4) : null,
+            'scenarios' => $scenarios,
             'budget_pool_ratio_pct' => (int) round(self::PURCHASE_BUDGET_POOL_RATIO * 100),
             'budget_pool' => $poolBudget,
             'kitchen' => $kitchen,
