@@ -741,7 +741,7 @@
                 </p>
                 <p class="mt-1 text-xs font-medium" :class="vsClass(vs.begin_inventory, true)">{{ vsLabel(vs.begin_inventory) }}</p>
                 <p class="mt-1 text-[10px] uppercase tracking-wide text-slate-400">
-                  Sumber: {{ ov.begin_inventory_source === 'initial_balance' ? 'Saldo awal (tgl 1)' : 'Stok sistem' }}
+                  Sumber: {{ beginInventorySourceLabel(ov.begin_inventory_source) }}
                 </p>
                 <div v-if="(ov.begin_inventory_by_warehouse || []).length" class="mt-3 space-y-1 border-t border-indigo-50 pt-2">
                   <p class="text-[10px] uppercase tracking-wide text-slate-400">Per warehouse</p>
@@ -1351,7 +1351,7 @@
               <p class="text-xs text-slate-500">
                 Total MAC: <span class="font-semibold text-slate-700">{{ formatCurrency(modalSheetMeta?.total_value) }}</span>
                 · {{ beginInventoryGroupCount }} kategori · {{ beginInventoryItemCount }} baris
-                · Sumber: {{ modalSheetMeta?.source === 'initial_balance' ? 'Saldo awal tgl 1' : 'Stok sistem' }}
+                · Sumber: {{ beginInventorySourceLabel(modalSheetMeta?.source) }}
               </p>
 
               <div v-if="!(modalSheetMeta?.groups || []).length" class="py-12 text-center text-slate-400 text-sm">
@@ -1432,7 +1432,7 @@
                 </p>
                 <p v-if="(modalSheetMeta?.formula?.opname || 0) !== 0" class="text-amber-700">
                   Opname periode {{ formatCurrency(modalSheetMeta?.formula?.opname) }}
-                  (tidak masuk formula — kartu opname sering tidak selaras dengan saldo)
+                  (balancing fisik — tidak masuk formula buku; selisih formula vs stok yang di-rapikan opname EOM / tgl 1)
                 </p>
                 <p>
                   Detail list = stok kartu as-of {{ modalSheetMeta?.as_of || filters.date_to }}
@@ -2623,9 +2623,9 @@ const cardHelps = {
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.\nCard menampilkan breakdown per type dan per warehouse outlet.',
   begin_inventory:
-    'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance.\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
+    'Begin Inventory (Total MAC) dari snapshot tgl 1 bulan laporan.\n\nPrioritas: saldo awal (IB) → jika item tidak punya IB, pakai stock_opname / koreksi fisik tgl 1 (cutoff supaya tidak menarik saldo bulan sebelumnya).\nJika tidak ada keduanya → qty × MAC stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nOpname tidak dimasukkan ke formula (value_in/out kartu opname sering tidak = perubahan saldo).\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).\nKlik card → detail item stok per warehouse/kategori.',
+    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nOpname EOM / tgl 1 = balancing qty ke fisik (bukan inbound/tambah purchased). Tidak dijumlah ke formula buku.\nSelisih formula vs stok itulah yang biasanya di-rapikan opname akhir bulan (kadang dieksekusi tgl 1 bulan berikutnya).\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1 / begin cutoff), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
   outlet_transfer:
     'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:
@@ -2633,7 +2633,7 @@ const cardHelps = {
   internal_warehouse_transfer:
     'Transfer antar gudang dalam outlet yang sama.\nCard menampilkan nilai per alur (mis. Service → Kitchen).\nKlik → daftar transaksi → detail item + cost.',
   outlet_wip:
-    'WIP production outlet.\nCost bahan = value_out kartu.\nBarang jadi = value_in kartu.\nBreakdown per warehouse.\nKlik → daftar produksi → detail item + cost.',
+    'WIP production outlet.\nCost bahan = value_out kartu (MAC bahan).\nBarang jadi = value_in kartu (= cost bahan batch).\nHarusnya bahan ≈ jadi; selisih kecil = rounding.\nBreakdown per warehouse.\nKlik → daftar produksi → detail item + cost.',
   employee_overtime:
     'OT Submission = jam & nilai dari Overtime Submission approved.\nOT Real = jam lembur aktual (absensi + Extra Off OT, dikurangi 1+1) seperti Attendance Report per outlet.\nRata-rata / karyawan = total ÷ jumlah karyawan yang punya absensi di periode 26–25.\nKlik card → per karyawan. Klik nama → per tanggal.',
   late_absen:
@@ -3880,6 +3880,14 @@ const formatDecimal = (value) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(Number(value) || 0)
+
+const beginInventorySourceLabel = (source) => {
+  if (source === 'initial_balance') return 'Saldo awal (tgl 1)'
+  if (source === 'initial_balance+day1_opname') return 'Saldo awal + koreksi fisik tgl 1'
+  if (source === 'day1_opname') return 'Koreksi fisik tgl 1'
+  if (source === 'none') return '—'
+  return 'Stok sistem'
+}
 
 const vsLabel = (metric, format = 'currency') => {
   if (!metric || metric.previous == null) return 'vs last month —'

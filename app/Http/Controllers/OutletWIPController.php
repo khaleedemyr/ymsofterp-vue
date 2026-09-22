@@ -841,6 +841,8 @@ class OutletWIPController extends Controller
                 $unit_jadi = $prod->unit_id;
                 
                 $bom = DB::table('item_bom')->where('item_id', $item_id)->get();
+                // Cost bahan batch = Σ value_out aktual (bukan recalc MAC setelah stok dipotong).
+                $totalMaterialCost = 0.0;
                 
                 // Validate stock
                 foreach ($bom as $b) {
@@ -899,6 +901,8 @@ class OutletWIPController extends Controller
                     $saldo_qty_medium = $stock->qty_medium - $qty_medium;
                     $saldo_qty_large = $stock->qty_large - $qty_large;
                     $saldo_value = $saldo_qty_small * $stock->last_cost_small;
+                    $valueOut = round($qty_small * (float) $stock->last_cost_small, 4);
+                    $totalMaterialCost += $valueOut;
                     
                     // Update stock (reduce)
                     DB::table('outlet_food_inventory_stocks')
@@ -927,7 +931,7 @@ class OutletWIPController extends Controller
                         'cost_per_small' => $stock->last_cost_small,
                         'cost_per_medium' => $stock->last_cost_medium,
                         'cost_per_large' => $stock->last_cost_large,
-                        'value_out' => $qty_small * $stock->last_cost_small,
+                        'value_out' => $valueOut,
                         'saldo_qty_small' => $saldo_qty_small,
                         'saldo_qty_medium' => $saldo_qty_medium,
                         'saldo_qty_large' => $saldo_qty_large,
@@ -982,42 +986,14 @@ class OutletWIPController extends Controller
                     $qty_small = $qty_jadi;
                 }
                 
-                // Calculate cost (total BOM ÷ qty hasil produksi WIP, bukan jumlah bahan)
-                $total_cost = 0;
-                foreach ($bom as $b) {
-                    $bomInventory = DB::table('outlet_food_inventory_items')->where('item_id', $b->material_item_id)->first();
-                    if ($bomInventory) {
-                        $stock = DB::table('outlet_food_inventory_stocks')
-                            ->where('inventory_item_id', $bomInventory->id)
-                            ->where('id_outlet', $outlet_id)
-                            ->where('warehouse_outlet_id', $warehouse_outlet_id)
-                            ->first();
-                        if ($stock) {
-                            $itemMaster = DB::table('items')->where('id', $b->material_item_id)->first();
-                            $unit = DB::table('units')->where('id', $b->unit_id)->value('name');
-                            $qty_input = $b->qty * $qty_produksi;
-                            $qty_small_bahan = 0;
-                            
-                            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                            
-                            if ($unit === $unitSmall) {
-                                $qty_small_bahan = $qty_input;
-                            } elseif ($unit === $unitMedium) {
-                                $qty_small_bahan = $qty_input * $smallConv;
-                            } elseif ($unit === $unitLarge) {
-                                $qty_small_bahan = $qty_input * $smallConv * $mediumConv;
-                            } else {
-                                $qty_small_bahan = $qty_input;
-                            }
-                            
-                            $macBahan = OutletInventoryCostResolver::resolveMacFromStockRow($stock);
-                            $total_cost += $qty_small_bahan * $macBahan;
-                        }
-                    }
-                }
-                
-                $batchMacPerSmall = $qty_small > 0 ? $total_cost / $qty_small : 0;
+                // Cost barang jadi = total bahan yang baru saja di-OUT (satu sumber).
+                // Jangan pakai MAC blended stok untuk value_in — itu bikin selisih bahan vs jadi.
+                $total_cost = round($totalMaterialCost, 4);
+                $batchMacPerSmall = $qty_small > 0 ? ($total_cost / $qty_small) : 0.0;
+                $batchCostMedium = $smallConv > 0 ? $batchMacPerSmall * $smallConv : $batchMacPerSmall;
+                $batchCostLarge = ($smallConv > 0 && $mediumConv > 0)
+                    ? $batchMacPerSmall * $smallConv * $mediumConv
+                    : $batchMacPerSmall;
                 
                 // Update or insert production result stock
                 $existingStock = DB::table('outlet_food_inventory_stocks')
@@ -1057,10 +1033,8 @@ class OutletWIPController extends Controller
                         ]);
                 } else {
                     $last_cost_small = $batchMacPerSmall;
-                    $last_cost_medium = $smallConv > 0 ? $last_cost_small * $smallConv : $last_cost_small;
-                    $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
-                        ? $last_cost_small * $smallConv * $mediumConv
-                        : $last_cost_small;
+                    $last_cost_medium = $batchCostMedium;
+                    $last_cost_large = $batchCostLarge;
                     DB::table('outlet_food_inventory_stocks')->insert([
                         'inventory_item_id' => $prodInventoryItemId,
                         'id_outlet' => $outlet_id,
@@ -1081,7 +1055,8 @@ class OutletWIPController extends Controller
                     $nilai_baru = $qty_small * $last_cost_small;
                 }
                 
-                // Insert stock card IN
+                // Insert stock card IN — value_in = cost bahan batch; cost_per_* = MAC batch
+                // (saldo_value tetap pakai MAC blended stok setelah WAC)
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $prodInventoryItemId,
                     'id_outlet' => $outlet_id,
@@ -1092,10 +1067,10 @@ class OutletWIPController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $last_cost_small,
-                    'cost_per_medium' => $last_cost_medium,
-                    'cost_per_large' => $last_cost_large,
-                    'value_in' => $qty_small * $last_cost_small,
+                    'cost_per_small' => $batchMacPerSmall,
+                    'cost_per_medium' => $batchCostMedium,
+                    'cost_per_large' => $batchCostLarge,
+                    'value_in' => round($total_cost, 2),
                     'saldo_qty_small' => $qty_baru_small,
                     'saldo_qty_medium' => $qty_baru_medium,
                     'saldo_qty_large' => $qty_baru_large,
@@ -1324,6 +1299,7 @@ class OutletWIPController extends Controller
                 $unit_jadi = $prod->unit_id;
                 
                 $bom = DB::table('item_bom')->where('item_id', $item_id)->get();
+                $totalMaterialCost = 0.0;
                 
                 // Process BOM materials (reduce stock)
                 foreach ($bom as $b) {
@@ -1382,6 +1358,8 @@ class OutletWIPController extends Controller
                     $saldo_qty_medium = $stock->qty_medium - $qty_medium;
                     $saldo_qty_large = $stock->qty_large - $qty_large;
                     $saldo_value = $saldo_qty_small * $stock->last_cost_small;
+                    $valueOut = round($qty_small * (float) $stock->last_cost_small, 4);
+                    $totalMaterialCost += $valueOut;
                     
                     // Update stock (reduce)
                     DB::table('outlet_food_inventory_stocks')
@@ -1410,7 +1388,7 @@ class OutletWIPController extends Controller
                         'cost_per_small' => $stock->last_cost_small,
                         'cost_per_medium' => $stock->last_cost_medium,
                         'cost_per_large' => $stock->last_cost_large,
-                        'value_out' => $qty_small * $stock->last_cost_small,
+                        'value_out' => $valueOut,
                         'saldo_qty_small' => $saldo_qty_small,
                         'saldo_qty_medium' => $saldo_qty_medium,
                         'saldo_qty_large' => $saldo_qty_large,
@@ -1461,46 +1439,13 @@ class OutletWIPController extends Controller
                     $qty_small = $qty_jadi;
                 }
                 
-                // Calculate cost from BOM
-                $total_cost = 0;
-                foreach ($bom as $b) {
-                    $bomInventory = DB::table('outlet_food_inventory_items')->where('item_id', $b->material_item_id)->first();
-                    if ($bomInventory) {
-                        $stock = DB::table('outlet_food_inventory_stocks')
-                            ->where('inventory_item_id', $bomInventory->id)
-                            ->where('id_outlet', $outlet_id)
-                            ->where('warehouse_outlet_id', $warehouse_outlet_id)
-                            ->first();
-                        
-                        if ($stock) {
-                            $itemMasterBom = DB::table('items')->where('id', $b->material_item_id)->first();
-                            $unit = DB::table('units')->where('id', $b->unit_id)->value('name');
-                            $qty_input = $b->qty * $qty_produksi;
-                            $qty_small_bahan = 0;
-                            
-                            $unitSmallBom = DB::table('units')->where('id', $itemMasterBom->small_unit_id)->value('name');
-                            $unitMediumBom = DB::table('units')->where('id', $itemMasterBom->medium_unit_id)->value('name');
-                            $unitLargeBom = DB::table('units')->where('id', $itemMasterBom->large_unit_id)->value('name');
-                            $smallConvBom = $itemMasterBom->small_conversion_qty ?: 1;
-                            $mediumConvBom = $itemMasterBom->medium_conversion_qty ?: 1;
-                            
-                            if ($unit === $unitSmallBom) {
-                                $qty_small_bahan = $qty_input;
-                            } elseif ($unit === $unitMediumBom) {
-                                $qty_small_bahan = $qty_input * $smallConvBom;
-                            } elseif ($unit === $unitLargeBom) {
-                                $qty_small_bahan = $qty_input * $smallConvBom * $mediumConvBom;
-                            } else {
-                                $qty_small_bahan = $qty_input;
-                            }
-                            
-                            $macBahan = OutletInventoryCostResolver::resolveMacFromStockRow($stock);
-                            $total_cost += $qty_small_bahan * $macBahan;
-                        }
-                    }
-                }
-                
-                $batchMacPerSmall = $qty_small > 0 ? $total_cost / $qty_small : 0;
+                // Cost barang jadi = total bahan yang baru saja di-OUT (satu sumber).
+                $total_cost = round($totalMaterialCost, 4);
+                $batchMacPerSmall = $qty_small > 0 ? ($total_cost / $qty_small) : 0.0;
+                $batchCostMedium = $smallConv > 0 ? $batchMacPerSmall * $smallConv : $batchMacPerSmall;
+                $batchCostLarge = ($smallConv > 0 && $mediumConv > 0)
+                    ? $batchMacPerSmall * $smallConv * $mediumConv
+                    : $batchMacPerSmall;
                 
                 // Update or insert production result stock
                 $existingStock = DB::table('outlet_food_inventory_stocks')
@@ -1545,10 +1490,8 @@ class OutletWIPController extends Controller
                         ]);
                 } else {
                     $last_cost_small = $batchMacPerSmall;
-                    $last_cost_medium = $smallConv > 0 ? $last_cost_small * $smallConv : $last_cost_small;
-                    $last_cost_large = ($smallConv > 0 && $mediumConv > 0)
-                        ? $last_cost_small * $smallConv * $mediumConv
-                        : $last_cost_small;
+                    $last_cost_medium = $batchCostMedium;
+                    $last_cost_large = $batchCostLarge;
                     $saldo_qty_small = $qty_small;
                     $saldo_qty_medium = $qty_medium;
                     $saldo_qty_large = $qty_large;
@@ -1570,7 +1513,7 @@ class OutletWIPController extends Controller
                     ]);
                 }
                 
-                // Insert stock card IN
+                // Insert stock card IN — value_in = cost bahan batch
                 DB::table('outlet_food_inventory_cards')->insert([
                     'inventory_item_id' => $prodInventoryItemId,
                     'id_outlet' => $outlet_id,
@@ -1581,10 +1524,10 @@ class OutletWIPController extends Controller
                     'in_qty_small' => $qty_small,
                     'in_qty_medium' => $qty_medium,
                     'in_qty_large' => $qty_large,
-                    'cost_per_small' => $last_cost_small,
-                    'cost_per_medium' => $last_cost_medium,
-                    'cost_per_large' => $last_cost_large,
-                    'value_in' => $qty_small * $last_cost_small,
+                    'cost_per_small' => $batchMacPerSmall,
+                    'cost_per_medium' => $batchCostMedium,
+                    'cost_per_large' => $batchCostLarge,
+                    'value_in' => round($total_cost, 2),
                     'saldo_qty_small' => $saldo_qty_small,
                     'saldo_qty_medium' => $saldo_qty_medium,
                     'saldo_qty_large' => $saldo_qty_large,
