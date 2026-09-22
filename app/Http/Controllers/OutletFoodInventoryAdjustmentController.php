@@ -1731,18 +1731,23 @@ class OutletFoodInventoryAdjustmentController extends Controller
         );
 
         $qty_lama = (float) $stock->qty_small;
-        $mac_lama = $this->resolveMacFromOutletStock($stock);
-        $nilai_lama = $qty_lama * $mac_lama;
+        $mac_lama_raw = $this->resolveMacFromOutletStock($stock);
 
         if ($isIn) {
-            $total_qty = $qty_lama + $qty_small;
-            // Adjustment IN: tambah stok pada MAC yang sudah ada (bukan harga beli baru)
-            $mac = $mac_lama > 0 ? $mac_lama : OutletInventoryCostResolver::resolveInboundUnitSmallCost(
+            // Jangan pakai MAC stok mentah: jika stok/IB sudah meledak, adjustment IN ikut meledak.
+            // Selalu resolve+sanitize lewat inbound resolver (GR/serial lintas WH/outlet).
+            $mac = OutletInventoryCostResolver::resolveInboundUnitSmallCost(
                 (int) $adj->id_outlet,
                 (int) $warehouseOutletId,
                 $inventoryItemId,
                 $stock
             );
+            if ($mac <= 0) {
+                $mac = $mac_lama_raw > 0 ? $mac_lama_raw : 0.0;
+            }
+            $mac_lama = OutletInventoryCostResolver::sanitizeMacForWeightedAverage($mac_lama_raw, $mac);
+            $nilai_lama = OutletInventoryCostResolver::stockTotalValue($qty_lama, $mac_lama);
+            $total_qty = $qty_lama + $qty_small;
             $total_nilai = OutletInventoryCostResolver::stockTotalValue($total_qty, $mac);
             $stock->qty_small = $total_qty;
             $stock->qty_medium += $qty_medium;
@@ -1751,9 +1756,19 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $stock->last_cost_small = $mac;
             $stock->last_cost_medium = $mac * $smallConv;
             $stock->last_cost_large = $stock->last_cost_medium * $mediumConv;
-            $txnCost = $mac_lama;
+            $txnCost = $mac;
+            $valueIn = $qty_small * $mac;
+            $valueOut = 0.0;
         } else {
-            $mac = $mac_lama;
+            $mac = $mac_lama_raw > 0
+                ? $mac_lama_raw
+                : OutletInventoryCostResolver::resolveInboundUnitSmallCost(
+                    (int) $adj->id_outlet,
+                    (int) $warehouseOutletId,
+                    $inventoryItemId,
+                    $stock
+                );
+            $nilai_lama = OutletInventoryCostResolver::stockTotalValue($qty_lama, $mac);
             $nilai_keluar = $qty_small * $mac;
             $total_qty = max(0, $qty_lama - $qty_small);
             $total_nilai = max(0, $nilai_lama - $nilai_keluar);
@@ -1762,6 +1777,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
             $stock->qty_large = max(0, (float) $stock->qty_large - $qty_large);
             $stock->value = $total_nilai;
             $txnCost = $mac;
+            $valueIn = 0.0;
+            $valueOut = $qty_small * $mac;
         }
         $stock->save();
 
@@ -1813,8 +1830,8 @@ class OutletFoodInventoryAdjustmentController extends Controller
             'cost_per_small' => $txnCost,
             'cost_per_medium' => $txnCost * $smallConv,
             'cost_per_large' => $txnCost * $smallConv * $mediumConv,
-            'value_in' => $isIn ? $qty_small * $mac_lama : 0,
-            'value_out' => $isIn ? 0 : $qty_small * $mac_lama,
+            'value_in' => $valueIn,
+            'value_out' => $valueOut,
             'saldo_qty_small' => $stock->qty_small,
             'saldo_qty_medium' => $stock->qty_medium,
             'saldo_qty_large' => $stock->qty_large,

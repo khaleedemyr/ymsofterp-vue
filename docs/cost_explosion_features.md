@@ -121,6 +121,9 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - [x] Fix transfer outlet / internal WH: jangan salin `latestNewCost` rusak; pakai MAC tersanitasi + trusted GR
 - [x] Fix OUT `saldo_value` transfer memakai MAC tersanitasi (`stockTotalValue`)
 - [x] Repair cost outlet meledak via transfer (`scripts/repair_outlet_transfer_exploded_costs.php`)
+- [x] Fix Adjustment IN: jangan pakai MAC stok mentah; sanitize vs GR/serial lintas WH/outlet
+- [x] Deprioritaskan `initial_balance` sebagai trusted anchor (sering ikut cost MK meledak)
+- [x] Repair adj Kuah Garang Asam / Kuah Buntut (`scripts/repair_outlet_adjustment_exploded_costs.php`)
 - [ ] Audit DO / Adjustment untuk update `value` saat OUT
 - [ ] Rebuild kartu historis transfer (opsional; stock aktif sudah di-repair)
 
@@ -133,6 +136,25 @@ Setelah cost MK rusak, transaksi berikut **menyalin** cost itu:
 - `scripts/repair_mass_inventory_costs_pass2.php` — pass 2 (orphan cost reset, sauce re-deflate, leftovers)
 - `scripts/repair_mass_inventory_costs_pass3.php` — pass 3 (residual high cost + value realign)
 - `scripts/repair_outlet_transfer_exploded_costs.php` — trace+repair cost outlet meledak (transfer / orphan MAC)
+- `scripts/repair_outlet_adjustment_exploded_costs.php` — repair adjustment IN yang menyalin MAC IB/stok meledak
+
+## Outlet adjustment cost explosion (22 Sep 2026)
+
+**Akar:** `OutletFoodInventoryAdjustmentController::applyOutletAdjustmentToStock` untuk tipe IN memakai:
+```text
+mac = mac_lama > 0 ? mac_lama : resolveInbound(...)
+value_in = qty × mac_lama   ← MAC stok/IB mentah, tanpa sanitasi
+```
+Jika saldo awal (IB) sudah membawa cost MK meledak (mis. Kuah Garang Asam **15.048** vs GR **43**), adjustment “revisi ending” menambah ribuan unit × cost racun → `value_in` puluhan juta.
+
+**Gejala Lebak Bulus:** OSA202609010004 → +Rp 55,8jt di formula Ending; stok ending sudah ~MAC normal → selisih formula−stok **+Rp 54,6jt**. Pola sama di outlet lain (OSA 7137/7138).
+
+**Perbaikan code:**
+- Adjustment IN selalu lewat `resolveInboundUnitSmallCost` (sanitize vs trusted)
+- Trusted anchor: prioritaskan GR/serial/retail lintas WH/outlet; `initial_balance` deprioritized
+- `OutletInventoryCostGuard` tidak lagi menganggap IB/IWT cukup sebagai satu-satunya referensi harga IN
+
+**Repair data:** `php scripts/repair_outlet_adjustment_exploded_costs.php`
 
 ## Hasil mass repair (21 Sep 2026)
 

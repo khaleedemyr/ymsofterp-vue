@@ -12,14 +12,26 @@ final class OutletInventoryCostResolver
     /** MAC lama dianggap korup jika menyimpang >5x dari biaya masuk / anchor terpercaya. */
     private const MAC_SPIKE_MULTIPLIER = 5.0;
 
-    /** Referensi transaksi masuk yang new_cost-nya dianggap andal untuk anchor MAC. */
+    /** Referensi pembelian/penerimaan — prioritas tertinggi untuk anchor MAC. */
+    private const TRUSTED_PURCHASE_REFERENCE_TYPES = [
+        'serial_receive',
+        'good_receive_outlet',
+        'outlet_food_good_receive',
+        'retail_food',
+        'mac_correction',
+    ];
+
+    /** Referensi masuk yang boleh dipakai, termasuk saldo awal (prioritas lebih rendah). */
     private const TRUSTED_INBOUND_REFERENCE_TYPES = [
         'serial_receive',
         'good_receive_outlet',
         'outlet_food_good_receive',
+        'retail_food',
         'initial_balance',
         'mac_correction',
     ];
+
+    private const TRUSTED_COST_SOFT_CAP = 500_000.0;
     /**
      * new_cost positif terbaru untuk outlet + warehouse + inventory item (urut tanggal lalu id).
      */
@@ -167,25 +179,73 @@ final class OutletInventoryCostResolver
     }
 
     /**
-     * new_cost terbaru dari transaksi masuk terpercaya (GR/serial receive/koreksi MAC).
+     * new_cost terbaru dari transaksi masuk terpercaya.
+     * Prioritas: pembelian/GR/serial (WH sama) → pembelian outlet lain / WH lain
+     * → initial_balance WH sama → initial_balance lintas WH/outlet.
+     * initial_balance sengaja di-deprioritaskan karena sering ikut cost MK/produksi yang meledak.
      */
     public static function latestTrustedNewCostPerSmallUnit(
         int $outletId,
         int $warehouseOutletId,
         int $inventoryItemId
     ): ?float {
-        $row = DB::table('outlet_food_inventory_cost_histories')
-            ->where('id_outlet', $outletId)
-            ->where('warehouse_outlet_id', $warehouseOutletId)
-            ->where('inventory_item_id', $inventoryItemId)
-            ->whereIn('reference_type', self::TRUSTED_INBOUND_REFERENCE_TYPES)
-            ->whereNotNull('new_cost')
-            ->where('new_cost', '>', 0)
-            ->orderByDesc('date')
-            ->orderByDesc('id')
-            ->first(['new_cost']);
+        $purchase = self::TRUSTED_PURCHASE_REFERENCE_TYPES;
+        $allTrusted = self::TRUSTED_INBOUND_REFERENCE_TYPES;
 
-        return $row ? (float) $row->new_cost : null;
+        $scopes = [
+            // 1) Pembelian di WH yang sama
+            fn ($q) => $q->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->whereIn('reference_type', $purchase),
+            // 2) Pembelian di outlet yang sama (WH mana saja)
+            fn ($q) => $q->where('id_outlet', $outletId)
+                ->whereIn('reference_type', $purchase),
+            // 3) Pembelian di outlet mana saja (item yang sama)
+            fn ($q) => $q->whereIn('reference_type', $purchase),
+            // 4) Termasuk IB di WH sama
+            fn ($q) => $q->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->whereIn('reference_type', $allTrusted),
+            // 5) IB / trusted di outlet sama
+            fn ($q) => $q->where('id_outlet', $outletId)
+                ->whereIn('reference_type', $allTrusted),
+        ];
+
+        foreach ($scopes as $scope) {
+            $query = DB::table('outlet_food_inventory_cost_histories')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->whereNotNull('new_cost')
+                ->where('new_cost', '>', 0)
+                ->where('new_cost', '<=', self::TRUSTED_COST_SOFT_CAP);
+            $scope($query);
+            $row = $query->orderByDesc('date')->orderByDesc('id')->first(['new_cost']);
+            if ($row) {
+                return (float) $row->new_cost;
+            }
+        }
+
+        // Fallback kartu inventory (jika histori kosong tapi ada GR/serial di cards)
+        $cardScopes = [
+            fn ($q) => $q->where('id_outlet', $outletId)
+                ->where('warehouse_outlet_id', $warehouseOutletId)
+                ->whereIn('reference_type', $purchase),
+            fn ($q) => $q->where('id_outlet', $outletId)
+                ->whereIn('reference_type', $purchase),
+            fn ($q) => $q->whereIn('reference_type', $purchase),
+        ];
+        foreach ($cardScopes as $scope) {
+            $query = DB::table('outlet_food_inventory_cards')
+                ->where('inventory_item_id', $inventoryItemId)
+                ->where('cost_per_small', '>', 0)
+                ->where('cost_per_small', '<=', self::TRUSTED_COST_SOFT_CAP);
+            $scope($query);
+            $row = $query->orderByDesc('date')->orderByDesc('id')->first(['cost_per_small']);
+            if ($row) {
+                return (float) $row->cost_per_small;
+            }
+        }
+
+        return null;
     }
 
     /**

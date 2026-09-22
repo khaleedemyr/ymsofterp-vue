@@ -21,9 +21,9 @@ final class OutletInventoryCostGuard
         'good_receive_outlet',
         'outlet_food_good_receive',
         'retail_food',
-        'internal_warehouse_transfer',
-        'initial_balance',
         'mac_correction',
+        // initial_balance / internal transfer sengaja tidak cukup sebagai satu-satunya
+        // referensi harga — sering membawa MAC produksi/IB yang sudah meledak.
     ];
 
     /**
