@@ -2844,6 +2844,46 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Active warehouse outlet IDs for an outlet.
+     *
+     * @return list<int>
+     */
+    private function activeWarehouseOutletIds(int $outletId): array
+    {
+        return DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
+     * Latest initial_balance card id per item+warehouse on day-1 of the month.
+     * Satu kartu saja — jangan SUM semua upload IB di tgl 1 (bisa 2×).
+     *
+     * @param  list<int>  $warehouseOutletIds
+     * @return list<int>
+     */
+    private function latestInitialBalanceCardIds(int $outletId, string $tanggal1, array $warehouseOutletIds): array
+    {
+        if ($warehouseOutletIds === []) {
+            return [];
+        }
+
+        return DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->whereIn('warehouse_outlet_id', $warehouseOutletIds)
+            ->where('reference_type', 'initial_balance')
+            ->whereDate('date', $tanggal1)
+            ->groupBy('inventory_item_id', 'warehouse_outlet_id')
+            ->selectRaw('MAX(id) as id')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->all();
+    }
+
+    /**
      * Begin Inventory (Total MAC) — sama formula Cost Report kolom Begin Inventory.
      * Fast path: aggregate SQL + cache (tanpa load semua stock rows ke PHP).
      *
@@ -2856,44 +2896,20 @@ class OpexOutletDashboardService
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($outletId, $bulan) {
             $tanggal1BulanIni = $bulan.'-01';
-
-            $warehouseOutletIds = DB::table('warehouse_outlets')
-                ->where('outlet_id', $outletId)
-                ->where('status', 'active')
-                ->pluck('id')
-                ->map(fn ($id) => (int) $id)
-                ->all();
+            $warehouseOutletIds = $this->activeWarehouseOutletIds($outletId);
 
             if ($warehouseOutletIds === []) {
                 return ['total' => 0.0, 'count' => 0, 'source' => 'none'];
             }
 
-            $hasInitialBalance = DB::table('outlet_food_inventory_cards')
-                ->where('id_outlet', $outletId)
-                ->whereIn('warehouse_outlet_id', $warehouseOutletIds)
-                ->where('reference_type', 'initial_balance')
-                ->whereDate('date', $tanggal1BulanIni)
-                ->exists();
+            $cardIds = $this->latestInitialBalanceCardIds($outletId, $tanggal1BulanIni, $warehouseOutletIds);
 
-            if ($hasInitialBalance) {
-                // Latest initial_balance per item+warehouse pada tgl 1 → SUM(saldo_value)
-                $latest = DB::table('outlet_food_inventory_cards as card')
-                    ->where('card.id_outlet', $outletId)
-                    ->whereIn('card.warehouse_outlet_id', $warehouseOutletIds)
-                    ->where('card.reference_type', 'initial_balance')
-                    ->whereDate('card.date', $tanggal1BulanIni)
-                    ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
-                    ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
-
-                $agg = DB::table('outlet_food_inventory_cards as card')
-                    ->joinSub($latest, 'latest_card', function ($join) {
-                        $join->on('latest_card.inventory_item_id', '=', 'card.inventory_item_id')
-                            ->on('latest_card.warehouse_outlet_id', '=', 'card.warehouse_outlet_id');
-                    })
-                    ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key")
-                    ->where('card.id_outlet', $outletId)
+            if ($cardIds !== []) {
+                // Hanya saldo_value kartu IB terbaru — JANGAN value_in (IB biasanya value_in ≈ saldo_value → 2×).
+                $agg = DB::table('outlet_food_inventory_cards')
+                    ->whereIn('id', $cardIds)
                     ->selectRaw('
-                        COALESCE(SUM(COALESCE(card.saldo_value, 0)), 0) as total_value,
+                        COALESCE(SUM(COALESCE(saldo_value, 0)), 0) as total_value,
                         COUNT(*) as item_count
                     ')
                     ->first();
@@ -2925,7 +2941,7 @@ class OpexOutletDashboardService
 
     /**
      * Detail Begin Inventory: item + qty + MAC, dikelompokkan per category.
-     * Logic item sama Cost Report begin-inventory-detail.
+     * Total MAC = sama persis sumBeginInventory (card) — satu sumber kartu IB terbaru.
      *
      * @return array{
      *   source: string,
@@ -2937,16 +2953,13 @@ class OpexOutletDashboardService
     public function buildBeginInventoryDetail(int $outletId, string $dateFrom, string $search = ''): array
     {
         $bulan = Carbon::parse($dateFrom)->format('Y-m');
-        $reportMonth = Carbon::parse($bulan.'-01');
-        $initialBalanceDate = $reportMonth->format('Y-m-01');
+        $initialBalanceDate = $bulan.'-01';
         $search = trim($search);
 
-        $warehouseOutletIds = DB::table('warehouse_outlets')
-            ->where('outlet_id', $outletId)
-            ->where('status', 'active')
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
+        // Total header selalu ikut card (sumBeginInventory) agar tidak bisa drift.
+        $cardSummary = $this->sumBeginInventory($outletId, $dateFrom);
+
+        $warehouseOutletIds = $this->activeWarehouseOutletIds($outletId);
 
         if ($warehouseOutletIds === []) {
             return [
@@ -2957,30 +2970,12 @@ class OpexOutletDashboardService
             ];
         }
 
-        // Cheap exists — jangan clone full join ke items/categories
-        $hasInitialBalance = DB::table('outlet_food_inventory_cards')
-            ->where('id_outlet', $outletId)
-            ->whereIn('warehouse_outlet_id', $warehouseOutletIds)
-            ->where('reference_type', 'initial_balance')
-            ->whereDate('date', $initialBalanceDate)
-            ->exists();
+        $cardIds = $this->latestInitialBalanceCardIds($outletId, $initialBalanceDate, $warehouseOutletIds);
+        $hasInitialBalance = $cardIds !== [];
 
         if ($hasInitialBalance) {
-            $latestInitialBalance = DB::table('outlet_food_inventory_cards as card')
-                ->where('card.id_outlet', $outletId)
-                ->whereIn('card.warehouse_outlet_id', $warehouseOutletIds)
-                ->where('card.reference_type', 'initial_balance')
-                ->whereDate('card.date', $initialBalanceDate)
-                ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
-                ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
-
             $query = DB::table('outlet_food_inventory_cards as card')
-                ->joinSub($latestInitialBalance, 'latest_card', function ($join) {
-                    $join->on('latest_card.inventory_item_id', '=', 'card.inventory_item_id')
-                        ->on('latest_card.warehouse_outlet_id', '=', 'card.warehouse_outlet_id');
-                })
-                ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key")
-                ->where('card.id_outlet', $outletId)
+                ->whereIn('card.id', $cardIds)
                 ->join('outlet_food_inventory_items as fi', 'card.inventory_item_id', '=', 'fi.id')
                 ->join('items as i', 'fi.item_id', '=', 'i.id')
                 ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
@@ -2991,6 +2986,7 @@ class OpexOutletDashboardService
                         ->orWhere('card.saldo_qty_small', '!=', 0);
                 })
                 ->selectRaw("
+                    card.id as card_id,
                     COALESCE(c.name, 'Tanpa Kategori') as category_name,
                     i.name as item_name,
                     i.sku as item_sku,
@@ -3013,6 +3009,7 @@ class OpexOutletDashboardService
                         ->orWhere('s.qty_small', '!=', 0);
                 })
                 ->selectRaw("
+                    CONCAT('s-', s.id) as card_id,
                     COALESCE(c.name, 'Tanpa Kategori') as category_name,
                     i.name as item_name,
                     i.sku as item_sku,
@@ -3038,8 +3035,17 @@ class OpexOutletDashboardService
             ->get();
 
         $groupsMap = [];
-        $totalValue = 0.0;
+        $seenCardIds = [];
+        $listedTotal = 0.0;
         foreach ($rows as $row) {
+            $cardKey = (string) ($row->card_id ?? '');
+            if ($cardKey !== '' && isset($seenCardIds[$cardKey])) {
+                continue;
+            }
+            if ($cardKey !== '') {
+                $seenCardIds[$cardKey] = true;
+            }
+
             $value = round((float) ($row->value ?? 0), 2);
             $qty = round((float) ($row->qty ?? 0), 4);
             $mac = round((float) ($row->mac ?? 0), 4);
@@ -3064,14 +3070,19 @@ class OpexOutletDashboardService
             ];
             $groupsMap[$category]['item_count']++;
             $groupsMap[$category]['total_value'] = round($groupsMap[$category]['total_value'] + $value, 2);
-            $totalValue = round($totalValue + $value, 2);
+            $listedTotal = round($listedTotal + $value, 2);
         }
 
         $groups = array_values($groupsMap);
         usort($groups, fn ($a, $b) => $b['total_value'] <=> $a['total_value']);
 
+        // Tanpa search: pakai total card. Dengan search: pakai jumlah baris terfilter.
+        $totalValue = $search !== ''
+            ? $listedTotal
+            : (float) $cardSummary['total'];
+
         return [
-            'source' => $hasInitialBalance ? 'initial_balance' : 'current_stock',
+            'source' => $hasInitialBalance ? 'initial_balance' : ($cardSummary['source'] ?? 'current_stock'),
             'initial_balance_date' => $initialBalanceDate,
             'total_value' => $totalValue,
             'groups' => $groups,
@@ -3654,31 +3665,13 @@ class OpexOutletDashboardService
         $tanggal1BulanIni = $bulan.'-01';
         $out = array_fill_keys($warehouseIds, 0.0);
 
-        $hasInitialBalance = DB::table('outlet_food_inventory_cards')
-            ->where('id_outlet', $outletId)
-            ->whereIn('warehouse_outlet_id', $warehouseIds)
-            ->where('reference_type', 'initial_balance')
-            ->whereDate('date', $tanggal1BulanIni)
-            ->exists();
+        $cardIds = $this->latestInitialBalanceCardIds($outletId, $tanggal1BulanIni, $warehouseIds);
 
-        if ($hasInitialBalance) {
-            $latest = DB::table('outlet_food_inventory_cards as card')
-                ->where('card.id_outlet', $outletId)
-                ->whereIn('card.warehouse_outlet_id', $warehouseIds)
-                ->where('card.reference_type', 'initial_balance')
-                ->whereDate('card.date', $tanggal1BulanIni)
-                ->selectRaw("card.inventory_item_id, card.warehouse_outlet_id, MAX(CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0'))) as latest_key")
-                ->groupBy('card.inventory_item_id', 'card.warehouse_outlet_id');
-
-            $rows = DB::table('outlet_food_inventory_cards as card')
-                ->joinSub($latest, 'latest_card', function ($join) {
-                    $join->on('latest_card.inventory_item_id', '=', 'card.inventory_item_id')
-                        ->on('latest_card.warehouse_outlet_id', '=', 'card.warehouse_outlet_id');
-                })
-                ->whereRaw("CONCAT(DATE(card.date), ' ', LPAD(card.id, 20, '0')) = latest_card.latest_key")
-                ->where('card.id_outlet', $outletId)
-                ->selectRaw('card.warehouse_outlet_id as warehouse_id, COALESCE(SUM(COALESCE(card.saldo_value, 0)), 0) as total_value')
-                ->groupBy('card.warehouse_outlet_id')
+        if ($cardIds !== []) {
+            $rows = DB::table('outlet_food_inventory_cards')
+                ->whereIn('id', $cardIds)
+                ->selectRaw('warehouse_outlet_id as warehouse_id, COALESCE(SUM(COALESCE(saldo_value, 0)), 0) as total_value')
+                ->groupBy('warehouse_outlet_id')
                 ->get();
 
             foreach ($rows as $row) {
