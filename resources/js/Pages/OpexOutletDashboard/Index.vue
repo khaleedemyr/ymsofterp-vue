@@ -773,7 +773,10 @@
                   <CardHelpTip :text="cardHelps.stock_cut" />
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.stock_cut) }}</p>
-                <p class="mt-2 text-sm text-slate-500">{{ ov.stock_cut_count || 0 }} potong stok</p>
+                <p class="mt-2 text-sm text-slate-500">{{ ov.stock_cut_count || 0 }} potong stok · HPP full</p>
+                <p v-if="(ov.stock_cut_shortfall || 0) > 0" class="text-xs text-amber-700 mt-1">
+                  Minus/shortfall {{ formatCurrency(ov.stock_cut_shortfall) }} · fisik {{ formatCurrency(ov.stock_cut_physical) }}
+                </p>
                 <p v-if="ov.stock_cut_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                   {{ ov.stock_cut_revenue_pct }}% dari revenue
                 </p>
@@ -2616,13 +2619,13 @@ const cardHelps = {
   member_redeem:
     'Point redeem member.',
   stock_cut:
-    'Nilai stock cut dari menu Stock Cut (value_out, status success).\n\nModal detail harian: kolom Food, Beverage, Total.\nKlik nilai → list item (qty, MAC, subtotal).\nCard menampilkan breakdown per warehouse outlet.',
+    'Nilai Stock Cut = HPP teoritis full BOM (stock_cut_details).\n\nJika stok kurang saat potong:\n• Fisik hanya dipotong sampai 0 (kartu order_items)\n• Shortfall dicatat di Laporan Minus (stock_cut_variances)\n• HPP di detail tetap full — ini desain fitur, bukan kelebihan potong\n\nEnding inventory formula memakai potongan fisik (kartu), supaya selaras cost di stok.\nModal detail harian: Food / Beverage / Total dari HPP full.',
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.\nCard menampilkan breakdown per type dan per warehouse outlet.',
   begin_inventory:
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance.\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut − Category Cost.\nOpname tidak dimasukkan ke formula (value_in/out kartu opname sering tidak = perubahan saldo).\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).\nKlik card → detail item stok per warehouse/kategori.',
+    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nOpname tidak dimasukkan ke formula (value_in/out kartu opname sering tidak = perubahan saldo).\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).\nKlik card → detail item stok per warehouse/kategori.',
   outlet_transfer:
     'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:

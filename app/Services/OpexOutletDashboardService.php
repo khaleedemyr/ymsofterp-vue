@@ -256,12 +256,14 @@ class OpexOutletDashboardService
         // Opname TIDAK dimasukkan: value_in/out kartu opname sering tidak = perubahan saldo
         // (banyak kasus vin besar tapi saldo tetap 0) → malah menjauhkan formula dari stok.
         // IWT net antar gudang ≈ 0 di level outlet.
+        // Stock cut di formula = potongan FISIK (kartu), bukan HPP full (detail + shortfall minus).
+        $stockCutPhysical = (float) ($stockCut['physical_total'] ?? $stockCut['total']);
         $formulaEnding = round(
             (float) $beginInventory['total']
             + (float) $inventoryMovement['purchased_total']
             + (float) $outletTransferSummary['net_total']
             + (float) $adjustmentSummary['total']
-            - (float) $stockCut['total']
+            - $stockCutPhysical
             - (float) $categoryCost['total'],
             2
         );
@@ -318,8 +320,14 @@ class OpexOutletDashboardService
             'petty_cash_revenue_pct' => $pctOfRevenue($pettyCash),
             'stock_cut' => $stockCut['total'],
             'stock_cut_count' => $stockCut['count'],
+            'stock_cut_physical' => $stockCut['physical_total'] ?? $stockCut['total'],
+            'stock_cut_shortfall' => $stockCut['shortfall_total'] ?? 0,
             'stock_cut_revenue_pct' => $pctOfRevenue($stockCut['total']),
-            'stock_cut_by_warehouse' => $inventoryMovement['stock_cut_by_warehouse'],
+            // Breakdown kartu KPI = HPP full (selaras total card), bukan fisik.
+            'stock_cut_by_warehouse' => $this->mapWarehouseAmounts(
+                $outletId,
+                $this->stockCutHppAmountByWarehouse($outletId, $dateFrom, $dateTo)
+            ),
             'category_cost' => $categoryCost['total'],
             'category_cost_count' => $categoryCost['count'],
             'category_cost_by_type' => $categoryCost['by_type'],
@@ -349,7 +357,9 @@ class OpexOutletDashboardService
                 'outlet_adjustment' => round((float) $adjustmentSummary['total'], 2),
                 'opname' => round((float) ($inventoryMovement['opname_total'] ?? 0), 2),
                 'opname_in_formula' => false,
-                'stock_cut' => round((float) $stockCut['total'], 2),
+                'stock_cut' => round($stockCutPhysical, 2),
+                'stock_cut_hpp' => round((float) $stockCut['total'], 2),
+                'stock_cut_shortfall' => round((float) ($stockCut['shortfall_total'] ?? 0), 2),
                 'category_cost' => round((float) $categoryCost['total'], 2),
                 'formula_ending' => $formulaEnding,
                 'stock_ending' => round((float) $endingStock['total'], 2),
@@ -3166,15 +3176,17 @@ class OpexOutletDashboardService
         $search = trim($search);
         $movement = $this->buildInventoryMovementSummary($outletId, $dateFrom, $dateTo);
         $beginTotal = (float) $this->sumBeginInventory($outletId, $dateFrom)['total'];
-        $stockCutTotal = (float) $this->sumStockCut($outletId, $dateFrom, $dateTo)['total'];
+        $stockCutHpp = $this->sumStockCut($outletId, $dateFrom, $dateTo);
+        $stockCutPhysical = (float) ($stockCutHpp['physical_total'] ?? $stockCutHpp['total']);
         $categoryCostTotal = (float) $this->sumCategoryCost($outletId, $dateFrom, $dateTo)['total'];
         $purchasedTotal = (float) $movement['purchased_total'];
         $transferNet = (float) $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo)['net_total'];
         $adjustmentNet = (float) $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo)['total'];
         $opnameTotal = (float) ($movement['opname_total'] ?? 0);
         // Opname diinformasikan di meta, tapi tidak masuk hitungan formula (lihat notes di overview).
+        // Stock cut formula = fisik (bukan HPP full + shortfall minus).
         $formulaEnding = round(
-            $beginTotal + $purchasedTotal + $transferNet + $adjustmentNet - $stockCutTotal - $categoryCostTotal,
+            $beginTotal + $purchasedTotal + $transferNet + $adjustmentNet - $stockCutPhysical - $categoryCostTotal,
             2
         );
         $formula = [
@@ -3184,7 +3196,9 @@ class OpexOutletDashboardService
             'outlet_adjustment' => round($adjustmentNet, 2),
             'opname' => round($opnameTotal, 2),
             'opname_in_formula' => false,
-            'stock_cut' => round($stockCutTotal, 2),
+            'stock_cut' => round($stockCutPhysical, 2),
+            'stock_cut_hpp' => round((float) $stockCutHpp['total'], 2),
+            'stock_cut_shortfall' => round((float) ($stockCutHpp['shortfall_total'] ?? 0), 2),
             'category_cost' => round($categoryCostTotal, 2),
             'ending' => $formulaEnding,
         ];
@@ -3695,9 +3709,69 @@ class OpexOutletDashboardService
     }
 
     /**
+     * @param  array<int, float>  $amountByWarehouseId
+     * @return list<array{warehouse_id: int, warehouse_name: string, amount: float}>
+     */
+    private function mapWarehouseAmounts(int $outletId, array $amountByWarehouseId): array
+    {
+        $warehouses = DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('status', 'active')
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        $list = [];
+        foreach ($warehouses as $wh) {
+            $id = (int) $wh->id;
+            $amount = round((float) ($amountByWarehouseId[$id] ?? 0), 2);
+            if (abs($amount) < 0.005) {
+                continue;
+            }
+            $list[] = [
+                'warehouse_id' => $id,
+                'warehouse_name' => (string) $wh->name,
+                'amount' => $amount,
+            ];
+        }
+
+        return $list;
+    }
+
+    /**
+     * Potongan fisik per warehouse (kartu order_items) — untuk ending inventory.
+     *
      * @return array<int, float>
      */
     private function stockCutAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        if (! Schema::hasTable('outlet_food_inventory_cards')) {
+            return [];
+        }
+
+        $rows = DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->where('reference_type', 'order_items')
+            ->whereDate('date', '>=', $dateFrom)
+            ->whereDate('date', '<=', $dateTo)
+            ->whereNotNull('warehouse_outlet_id')
+            ->selectRaw('warehouse_outlet_id as warehouse_id, COALESCE(SUM(value_out), 0) as total')
+            ->groupBy('warehouse_outlet_id')
+            ->get();
+
+        $out = [];
+        foreach ($rows as $row) {
+            $out[(int) $row->warehouse_id] = round((float) $row->total, 2);
+        }
+
+        return $out;
+    }
+
+    /**
+     * HPP full Stock Cut per warehouse (stock_cut_details) — untuk kartu KPI.
+     *
+     * @return array<int, float>
+     */
+    private function stockCutHppAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo): array
     {
         if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
             return [];
@@ -3746,14 +3820,21 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Stock Cut value from stock_cut_details.value_out (success logs only).
+     * Stock Cut (kartu KPI) = HPP teoritis full BOM dari stock_cut_details.
+     * Saat stok kurang: fisik dipotong sampai 0, shortfall ke stock_cut_variances (Laporan Minus),
+     * tapi value_out detail tetap full — ini sengaja, bukan kelebihan potong.
      *
-     * @return array{total: float, count: int}
+     * @return array{total: float, count: int, physical_total: float, shortfall_total: float}
      */
     public function sumStockCut(int $outletId, string $dateFrom, string $dateTo): array
     {
         if (! Schema::hasTable('stock_cut_details') || ! Schema::hasTable('stock_cut_logs')) {
-            return ['total' => 0.0, 'count' => 0];
+            return [
+                'total' => 0.0,
+                'count' => 0,
+                'physical_total' => 0.0,
+                'shortfall_total' => 0.0,
+            ];
         }
 
         $row = DB::table('stock_cut_details as d')
@@ -3765,10 +3846,35 @@ class OpexOutletDashboardService
             ->selectRaw('COALESCE(SUM(d.value_out), 0) as total, COUNT(DISTINCT l.id) as cnt')
             ->first();
 
+        $physical = $this->sumStockCutPhysical($outletId, $dateFrom, $dateTo);
+        $hpp = round((float) ($row->total ?? 0), 2);
+
         return [
-            'total' => round((float) ($row->total ?? 0), 2),
+            'total' => $hpp,
             'count' => (int) ($row->cnt ?? 0),
+            'physical_total' => $physical,
+            'shortfall_total' => round(max(0.0, $hpp - $physical), 2),
         ];
+    }
+
+    /**
+     * Potongan fisik yang benar-benar keluar kartu stok (order_items).
+     * Dipakai ending inventory formula supaya selaras dengan cost di stok.
+     */
+    public function sumStockCutPhysical(int $outletId, string $dateFrom, string $dateTo): float
+    {
+        if (! Schema::hasTable('outlet_food_inventory_cards')) {
+            return 0.0;
+        }
+
+        $total = DB::table('outlet_food_inventory_cards')
+            ->where('id_outlet', $outletId)
+            ->where('reference_type', 'order_items')
+            ->whereDate('date', '>=', $dateFrom)
+            ->whereDate('date', '<=', $dateTo)
+            ->sum('value_out');
+
+        return round((float) $total, 2);
     }
 
     /**
