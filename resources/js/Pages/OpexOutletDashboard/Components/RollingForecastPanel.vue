@@ -32,11 +32,17 @@
       <template v-else>
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <div class="rounded-2xl bg-slate-50 border border-slate-100 p-4">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Monthly Target</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500 inline-flex items-center gap-1">
+              Monthly Target
+              <CardHelpTip :text="helpTips.monthly_target" />
+            </p>
             <p class="mt-2 text-xl font-bold text-slate-900">{{ formatCurrency(data.monthly_target) }}</p>
           </div>
           <div class="rounded-2xl bg-sky-50 border border-sky-100 p-4">
-            <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Actual MTD</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-sky-600 inline-flex items-center gap-1">
+              Actual MTD
+              <CardHelpTip :text="helpTips.actual_mtd" />
+            </p>
             <p class="mt-2 text-xl font-bold text-sky-900">{{ formatCurrency(data.actual_mtd) }}</p>
             <p class="text-xs text-sky-500 mt-1">s/d {{ data.as_of }} · pace {{ data.pace_factor }}</p>
           </div>
@@ -46,10 +52,11 @@
           >
             <div class="flex items-center justify-between gap-2">
               <p
-                class="text-xs font-semibold uppercase tracking-wide"
+                class="text-xs font-semibold uppercase tracking-wide inline-flex items-center gap-1"
                 :class="gapPositive ? 'text-emerald-700' : 'text-rose-700'"
               >
                 Projected EOM (Realistis)
+                <CardHelpTip :text="helpTips.projected_eom" />
               </p>
               <span
                 class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
@@ -78,14 +85,16 @@
             :class="sc.cardClass"
           >
             <div class="flex items-center justify-between gap-2">
-              <p class="text-xs font-bold uppercase tracking-wide" :class="sc.titleClass">{{ sc.label }}</p>
+              <p class="text-xs font-bold uppercase tracking-wide inline-flex items-center gap-1" :class="sc.titleClass">
+                {{ sc.label }}
+                <CardHelpTip :text="helpTips[sc.key] || sc.note || ''" />
+              </p>
               <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full" :class="sc.badgeClass">
                 {{ sc.pct }}%
               </span>
             </div>
             <p class="mt-2 text-lg font-bold" :class="sc.valueClass">{{ formatCurrency(sc.eom) }}</p>
             <p class="text-xs mt-1" :class="sc.gapClass">Gap {{ formatCurrency(sc.gap) }}</p>
-            <p class="text-[11px] text-slate-500 mt-2 leading-snug">{{ sc.note }}</p>
           </div>
         </div>
 
@@ -183,6 +192,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import axios from 'axios'
+import CardHelpTip from '@/Components/CardHelpTip.vue'
 
 const props = defineProps({
   outletId: { type: [Number, String], default: null },
@@ -224,6 +234,21 @@ const chartOptions = ref({
 })
 
 const gapPositive = computed(() => (data.value?.gap_vs_target ?? 0) >= 0)
+
+const helpTips = {
+  monthly_target:
+    'Monthly target dari menu Revenue Target outlet untuk bulan ini.\n\nDipakai sebagai acuan baseline harian (dibagi weekday / weekend / libur).\nTidak diubah oleh Rolling Forecast.',
+  actual_mtd:
+    'Actual MTD = total revenue orders sampai kemarin (as_of).\n\nPace = Actual MTD ÷ expected-to-date (sum baseline s/d as_of).\nPace < 1 = di bawah plan; > 1 = di atas plan.',
+  projected_eom:
+    'Projected EOM patokan utama = skenario Realistis.\n\n= Actual MTD + sisa hari (blend 50% pace MTD + 50% baseline).\nGap = Projected EOM − Monthly Target.',
+  pessimistic:
+    'Pesimis: sisa hari lanjut di pace MTD saat ini.\n\nJika MTD lemah, sisa hari juga diasumsikan lemah (baseline × pace).\nPaling konservatif dari tiga skenario.',
+  realistic:
+    'Realistis: patokan utama untuk dashboard & budget RO.\n\nSisa hari = blend 50% pace MTD + 50% baseline plan.\nLebih seimbang antara tren aktual dan target harian.',
+  optimistic:
+    'Optimis: jika pace < 1, sisa hari kembali ke baseline plan.\n\nTidak memaksa catch-up di atas plan harian.\nJika pace > 1, upside pace tetap dipertahankan (boleh > monthly target).',
+}
 
 const scenarioCards = computed(() => {
   const sc = data.value?.scenarios || {}
