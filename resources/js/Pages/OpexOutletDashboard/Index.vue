@@ -2623,9 +2623,9 @@ const cardHelps = {
   category_cost:
     'Category Cost outlet (Internal Use, Spoil, Waste, dll) berdasarkan subtotal MAC dokumen terkait.\nCard menampilkan breakdown per type dan per warehouse outlet.',
   begin_inventory:
-    'Begin Inventory (Total MAC) dari snapshot tgl 1 bulan laporan.\n\nPrioritas: saldo awal (IB) → jika item tidak punya IB, pakai stock_opname / koreksi fisik tgl 1 (cutoff supaya tidak menarik saldo bulan sebelumnya).\nJika tidak ada keduanya → qty × MAC stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
+    'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance saja (tanpa stock_opname).\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nOpname EOM / tgl 1 = balancing qty ke fisik (bukan inbound/tambah purchased). Tidak dijumlah ke formula buku.\nSelisih formula vs stok itulah yang biasanya di-rapikan opname akhir bulan (kadang dieksekusi tgl 1 bulan berikutnya).\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1 / begin cutoff), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
+    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nOpname EOM / tgl 1 = balancing qty ke fisik (bukan inbound/tambah purchased). Tidak dijumlah ke formula buku.\nSelisih formula vs stok itulah yang biasanya di-rapikan opname akhir bulan (kadang dieksekusi tgl 1 bulan berikutnya).\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
   outlet_transfer:
     'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:
@@ -3883,8 +3883,6 @@ const formatDecimal = (value) =>
 
 const beginInventorySourceLabel = (source) => {
   if (source === 'initial_balance') return 'Saldo awal (tgl 1)'
-  if (source === 'initial_balance+day1_opname') return 'Saldo awal + koreksi fisik tgl 1'
-  if (source === 'day1_opname') return 'Koreksi fisik tgl 1'
   if (source === 'none') return '—'
   return 'Stok sistem'
 }

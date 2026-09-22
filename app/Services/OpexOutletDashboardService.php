@@ -2781,6 +2781,7 @@ class OpexOutletDashboardService
     /**
      * Latest initial_balance card id per item+warehouse on day-1 of the month.
      * Satu kartu saja — jangan SUM semua upload IB di tgl 1 (bisa 2×).
+     * Sama aturan Cost Report kolom Begin Inventory.
      *
      * @param  list<int>  $warehouseOutletIds
      * @return list<int>
@@ -2804,82 +2805,8 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Latest stock_opname (koreksi fisik) card id per item+warehouse on day-1.
-     * Dipakai sebagai snapshot begin jika item tidak punya IB tgl 1 —
-     * supaya cutoff bulan tidak menarik saldo bulan sebelumnya.
-     *
-     * @param  list<int>  $warehouseOutletIds
-     * @return list<int>
-     */
-    private function latestDay1StockOpnameCardIds(int $outletId, string $tanggal1, array $warehouseOutletIds): array
-    {
-        if ($warehouseOutletIds === []) {
-            return [];
-        }
-
-        return DB::table('outlet_food_inventory_cards')
-            ->where('id_outlet', $outletId)
-            ->whereIn('warehouse_outlet_id', $warehouseOutletIds)
-            ->where('reference_type', 'stock_opname')
-            ->whereDate('date', $tanggal1)
-            ->groupBy('inventory_item_id', 'warehouse_outlet_id')
-            ->selectRaw('MAX(id) as id')
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->all();
-    }
-
-    /**
-     * Kartu snapshot begin tgl 1: IB dulu; item tanpa IB diisi stock_opname tgl 1 bila ada.
-     *
-     * @param  list<int>  $warehouseOutletIds
-     * @return array{card_ids: list<int>, source: string}
-     */
-    private function resolveBeginSnapshotCardIds(int $outletId, string $tanggal1, array $warehouseOutletIds): array
-    {
-        $ibIds = $this->latestInitialBalanceCardIds($outletId, $tanggal1, $warehouseOutletIds);
-        $opIds = $this->latestDay1StockOpnameCardIds($outletId, $tanggal1, $warehouseOutletIds);
-
-        if ($ibIds === [] && $opIds === []) {
-            return ['card_ids' => [], 'source' => 'none'];
-        }
-
-        $ibKeySet = [];
-        if ($ibIds !== []) {
-            foreach (DB::table('outlet_food_inventory_cards')
-                ->whereIn('id', $ibIds)
-                ->get(['warehouse_outlet_id', 'inventory_item_id']) as $row) {
-                $ibKeySet[((int) $row->warehouse_outlet_id).'|'.((int) $row->inventory_item_id)] = true;
-            }
-        }
-
-        $extraIds = [];
-        if ($opIds !== []) {
-            foreach (DB::table('outlet_food_inventory_cards')
-                ->whereIn('id', $opIds)
-                ->get(['id', 'warehouse_outlet_id', 'inventory_item_id']) as $row) {
-                $key = ((int) $row->warehouse_outlet_id).'|'.((int) $row->inventory_item_id);
-                if (! isset($ibKeySet[$key])) {
-                    $extraIds[] = (int) $row->id;
-                }
-            }
-        }
-
-        $cardIds = array_values(array_merge($ibIds, $extraIds));
-        if ($ibIds !== [] && $extraIds !== []) {
-            $source = 'initial_balance+day1_opname';
-        } elseif ($ibIds !== []) {
-            $source = 'initial_balance';
-        } else {
-            $source = 'day1_opname';
-        }
-
-        return ['card_ids' => $cardIds, 'source' => $source];
-    }
-
-    /**
-     * Begin Inventory (Total MAC) — sama formula Cost Report kolom Begin Inventory,
-     * plus stock_opname tgl 1 untuk item yang tidak punya IB (cutoff koreksi fisik).
+     * Begin Inventory (Total MAC) — sama formula Cost Report kolom Begin Inventory.
+     * Hanya initial_balance tgl 1 (latest per item+WH); tanpa stock_opname.
      * Fast path: aggregate SQL + cache (tanpa load semua stock rows ke PHP).
      *
      * @return array{total: float, count: int, source: string}
@@ -2887,7 +2814,8 @@ class OpexOutletDashboardService
     public function sumBeginInventory(int $outletId, string $dateFrom): array
     {
         $bulan = Carbon::parse($dateFrom)->format('Y-m');
-        $cacheKey = "opex_outlet:begin_inv:{$outletId}:{$bulan}:v2";
+        // v3: begin = IB only (parity Cost Report); day1 opname tidak dijumlah ke begin
+        $cacheKey = "opex_outlet:begin_inv:{$outletId}:{$bulan}:v3";
 
         return Cache::remember($cacheKey, now()->addMinutes(10), function () use ($outletId, $bulan) {
             $tanggal1BulanIni = $bulan.'-01';
@@ -2897,11 +2825,10 @@ class OpexOutletDashboardService
                 return ['total' => 0.0, 'count' => 0, 'source' => 'none'];
             }
 
-            $resolved = $this->resolveBeginSnapshotCardIds($outletId, $tanggal1BulanIni, $warehouseOutletIds);
-            $cardIds = $resolved['card_ids'];
+            $cardIds = $this->latestInitialBalanceCardIds($outletId, $tanggal1BulanIni, $warehouseOutletIds);
 
             if ($cardIds !== []) {
-                // Hanya saldo_value kartu snapshot — JANGAN value_in (IB biasanya value_in ≈ saldo_value → 2×).
+                // Hanya saldo_value kartu IB terbaru — JANGAN value_in (IB biasanya value_in ≈ saldo_value → 2×).
                 $agg = DB::table('outlet_food_inventory_cards')
                     ->whereIn('id', $cardIds)
                     ->selectRaw('
@@ -2913,7 +2840,7 @@ class OpexOutletDashboardService
                 return [
                     'total' => round((float) ($agg->total_value ?? 0), 2),
                     'count' => (int) ($agg->item_count ?? 0),
-                    'source' => $resolved['source'],
+                    'source' => 'initial_balance',
                 ];
             }
 
@@ -2966,11 +2893,10 @@ class OpexOutletDashboardService
             ];
         }
 
-        $resolved = $this->resolveBeginSnapshotCardIds($outletId, $initialBalanceDate, $warehouseOutletIds);
-        $cardIds = $resolved['card_ids'];
-        $hasSnapshot = $cardIds !== [];
+        $cardIds = $this->latestInitialBalanceCardIds($outletId, $initialBalanceDate, $warehouseOutletIds);
+        $hasInitialBalance = $cardIds !== [];
 
-        if ($hasSnapshot) {
+        if ($hasInitialBalance) {
             $query = DB::table('outlet_food_inventory_cards as card')
                 ->whereIn('card.id', $cardIds)
                 ->join('outlet_food_inventory_items as fi', 'card.inventory_item_id', '=', 'fi.id')
@@ -3079,9 +3005,7 @@ class OpexOutletDashboardService
             : (float) $cardSummary['total'];
 
         return [
-            'source' => $hasSnapshot
-                ? ($resolved['source'] ?? 'initial_balance')
-                : ($cardSummary['source'] ?? 'current_stock'),
+            'source' => $hasInitialBalance ? 'initial_balance' : ($cardSummary['source'] ?? 'current_stock'),
             'initial_balance_date' => $initialBalanceDate,
             'total_value' => $totalValue,
             'groups' => $groups,
@@ -3612,7 +3536,7 @@ class OpexOutletDashboardService
         $tanggal1BulanIni = $bulan.'-01';
         $out = array_fill_keys($warehouseIds, 0.0);
 
-        $cardIds = $this->resolveBeginSnapshotCardIds($outletId, $tanggal1BulanIni, $warehouseIds)['card_ids'];
+        $cardIds = $this->latestInitialBalanceCardIds($outletId, $tanggal1BulanIni, $warehouseIds);
 
         if ($cardIds !== []) {
             $rows = DB::table('outlet_food_inventory_cards')
