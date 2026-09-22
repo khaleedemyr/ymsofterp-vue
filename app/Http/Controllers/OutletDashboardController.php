@@ -2,12 +2,45 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\OutletRollingForecastService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 
 class OutletDashboardController extends Controller
 {
+    public function rollingForecast(Request $request, OutletRollingForecastService $service)
+    {
+        $user = auth()->user();
+        $isAdminOutlet = !$user || (int) ($user->id_outlet ?? 0) === 1;
+
+        $outletId = (int) $request->input('id_outlet', 0);
+        if ($user && !$isAdminOutlet) {
+            $outletId = (int) ($user->id_outlet ?? 0);
+        }
+
+        if ($outletId <= 0) {
+            return response()->json([
+                'success' => false,
+                'has_target' => false,
+                'message' => 'Outlet wajib dipilih.',
+            ], 422);
+        }
+
+        $month = $request->input('month', now()->format('Y-m'));
+        if (!is_string($month) || !preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = now()->format('Y-m');
+        }
+
+        $payload = $service->build($outletId, $month);
+
+        if (($payload['success'] ?? true) === false) {
+            $code = (int) ($payload['error_code'] ?? 422);
+            return response()->json($payload, $code);
+        }
+
+        return response()->json($payload);
+    }
+
     public function index(Request $request)
     {
         $from = $request->input('from', now()->startOfMonth()->toDateString());

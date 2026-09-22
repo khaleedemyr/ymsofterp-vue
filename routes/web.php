@@ -2544,6 +2544,7 @@ Route::get('/stock-cut/form', function () {
 
 // Route API untuk data dashboard outlet
 Route::get('/api/outlet-dashboard', [\App\Http\Controllers\OutletDashboardController::class, 'index']);
+Route::get('/api/outlet-dashboard/rolling-forecast', [\App\Http\Controllers\OutletDashboardController::class, 'rollingForecast']);
 // Route page inertia untuk dashboard outlet
 Route::get('/outlet-dashboard', function () {
     return Inertia::render('OutletDashboard');

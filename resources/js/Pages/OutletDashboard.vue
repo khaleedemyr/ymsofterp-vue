@@ -38,6 +38,166 @@
           <div class="text-white text-sm mt-1 font-semibold tracking-wide uppercase drop-shadow">{{ val.label }}</div>
         </div>
       </div>
+
+      <!-- Rolling Auto Forecast -->
+      <div class="mb-8 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 px-5 py-4 border-b border-slate-100 bg-slate-50/80">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <i class="fa-solid fa-chart-line text-blue-600"></i>
+              Rolling Auto Forecast
+            </h2>
+            <p class="text-sm text-slate-500 mt-0.5">
+              Proyeksi bergerak (tidak mengubah Revenue Target). Acuan awal dari monthly target, menyesuaikan MTD + sisa weekday/weekend/libur.
+            </p>
+          </div>
+          <div class="flex items-end gap-2">
+            <div>
+              <label class="block text-xs font-medium text-slate-600 mb-1">Bulan Forecast</label>
+              <input
+                type="month"
+                v-model="forecastMonth"
+                class="rounded border-gray-300 px-2 py-1 text-sm"
+                @change="fetchRollingForecast"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div class="p-5">
+          <div v-if="forecastLoading" class="py-10 text-center text-slate-400 text-sm">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Menghitung forecast…
+          </div>
+
+          <div v-else-if="forecastError" class="rounded-xl bg-rose-50 border border-rose-100 px-4 py-3 text-sm text-rose-700">
+            {{ forecastError }}
+          </div>
+
+          <div v-else-if="!rollingForecast?.has_target" class="rounded-xl bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800">
+            {{ rollingForecast?.message || 'Belum ada monthly target di menu Revenue Target untuk bulan ini.' }}
+          </div>
+
+          <template v-else>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
+                <div class="text-xs font-medium text-slate-500 uppercase tracking-wide">Monthly Target</div>
+                <div class="mt-1 text-xl font-bold text-slate-900">{{ formatRupiah(rollingForecast.monthly_target) }}</div>
+              </div>
+              <div class="rounded-xl bg-blue-50 border border-blue-100 p-4">
+                <div class="text-xs font-medium text-blue-600 uppercase tracking-wide">Actual MTD</div>
+                <div class="mt-1 text-xl font-bold text-blue-900">{{ formatRupiah(rollingForecast.actual_mtd) }}</div>
+                <div class="text-xs text-blue-500 mt-1">s/d {{ rollingForecast.as_of }}</div>
+              </div>
+              <div class="rounded-xl border p-4" :class="projectedCardClass">
+                <div class="text-xs font-medium uppercase tracking-wide" :class="gapPositive ? 'text-emerald-700' : 'text-rose-700'">Projected EOM</div>
+                <div class="mt-1 text-xl font-bold" :class="gapPositive ? 'text-emerald-900' : 'text-rose-900'">{{ formatRupiah(rollingForecast.projected_eom) }}</div>
+                <div class="text-xs mt-1" :class="gapPositive ? 'text-emerald-600' : 'text-rose-600'">
+                  {{ rollingForecast.pct_of_target }}% dari target · pace {{ rollingForecast.pace_factor }}
+                </div>
+              </div>
+              <div class="rounded-xl border p-4" :class="gapPositive ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'">
+                <div class="flex items-center justify-between">
+                  <div class="text-xs font-medium uppercase tracking-wide" :class="gapPositive ? 'text-emerald-700' : 'text-rose-700'">Gap vs Target</div>
+                  <span
+                    class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
+                    :class="gapPositive ? 'bg-emerald-200 text-emerald-800' : 'bg-rose-200 text-rose-800'"
+                  >
+                    {{ gapPositive ? 'On track+' : 'Under' }}
+                  </span>
+                </div>
+                <div class="mt-1 text-xl font-bold" :class="gapPositive ? 'text-emerald-900' : 'text-rose-900'">
+                  {{ formatRupiah(rollingForecast.gap_vs_target) }}
+                </div>
+                <div class="text-xs text-slate-500 mt-1">mode: {{ rollingForecast.mode }}</div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap gap-3 mb-5 text-sm text-slate-600">
+              <span class="inline-flex items-center gap-1.5 rounded-lg bg-slate-100 px-3 py-1.5">
+                <span class="font-semibold text-slate-800">{{ rollingForecast.remaining_weekdays }}</span> weekday sisa
+              </span>
+              <span class="inline-flex items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-indigo-800">
+                <span class="font-semibold">{{ rollingForecast.remaining_weekends }}</span> weekend sisa
+              </span>
+              <span class="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-amber-800">
+                <span class="font-semibold">{{ rollingForecast.remaining_holidays }}</span> libur/event sisa
+              </span>
+            </div>
+
+            <div class="mb-6">
+              <h3 class="font-semibold text-slate-800 mb-2">Actual vs Projected vs Baseline</h3>
+              <apexchart
+                v-if="forecastChartSeries.length"
+                type="line"
+                height="280"
+                :options="forecastChartOptions"
+                :series="forecastChartSeries"
+              />
+            </div>
+
+            <div v-if="rollingForecast.history_compare?.length" class="mb-6">
+              <h3 class="font-semibold text-slate-800 mb-2">Compare 3 Bulan Belakang</h3>
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div
+                  v-for="h in rollingForecast.history_compare"
+                  :key="h.month"
+                  class="rounded-xl border border-slate-100 bg-slate-50 p-4"
+                >
+                  <div class="font-semibold text-slate-800">{{ h.label }}</div>
+                  <div class="text-lg font-bold text-slate-900 mt-1">{{ formatRupiah(h.total) }}</div>
+                  <div class="mt-2 grid grid-cols-3 gap-1 text-xs text-slate-500">
+                    <div>WD avg<br><span class="font-medium text-slate-700">{{ formatRupiahShort(h.avg_weekday) }}</span></div>
+                    <div>WE avg<br><span class="font-medium text-slate-700">{{ formatRupiahShort(h.avg_weekend) }}</span></div>
+                    <div>Libur avg<br><span class="font-medium text-slate-700">{{ formatRupiahShort(h.avg_holiday) }}</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <h3 class="font-semibold text-slate-800 mb-2">Day-by-day</h3>
+              <div class="overflow-x-auto max-h-80 overflow-y-auto rounded-xl border border-slate-100">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-slate-50 sticky top-0">
+                    <tr class="text-left text-xs uppercase text-slate-500">
+                      <th class="px-3 py-2">Tanggal</th>
+                      <th class="px-3 py-2">Hari</th>
+                      <th class="px-3 py-2">Tipe</th>
+                      <th class="px-3 py-2 text-right">Actual</th>
+                      <th class="px-3 py-2 text-right">Projected</th>
+                      <th class="px-3 py-2 text-right">Baseline</th>
+                      <th class="px-3 py-2 text-right">Hist Avg</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="d in rollingForecast.days"
+                      :key="d.forecast_date"
+                      class="border-t border-slate-50"
+                      :class="d.status === 'forecast' ? 'bg-blue-50/40' : ''"
+                    >
+                      <td class="px-3 py-1.5 tabular-nums">{{ d.forecast_date }}</td>
+                      <td class="px-3 py-1.5">{{ d.day_name }}</td>
+                      <td class="px-3 py-1.5">
+                        <span
+                          class="inline-block text-[10px] font-semibold uppercase px-1.5 py-0.5 rounded"
+                          :class="dayTypeBadge(d.day_type)"
+                        >{{ d.day_type }}</span>
+                        <span v-if="d.holiday_name" class="ml-1 text-xs text-slate-400">{{ d.holiday_name }}</span>
+                      </td>
+                      <td class="px-3 py-1.5 text-right tabular-nums">{{ d.actual != null ? formatRupiahShort(d.actual) : '—' }}</td>
+                      <td class="px-3 py-1.5 text-right tabular-nums font-medium">{{ formatRupiahShort(d.projected) }}</td>
+                      <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">{{ formatRupiahShort(d.baseline) }}</td>
+                      <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">{{ formatRupiahShort(d.hist_avg) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div class="bg-white rounded-xl shadow p-4 md:col-span-2">
           <h2 class="font-bold mb-2">Grafik Penjualan Harian</h2>
@@ -163,7 +323,7 @@
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue'
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import axios from 'axios'
 import VueApexCharts from 'vue3-apexcharts'
 import { usePage } from '@inertiajs/vue3'
@@ -176,6 +336,10 @@ function getLastDayOfMonth() {
   const now = new Date()
   return new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().slice(0, 10)
 }
+function getCurrentMonth() {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+}
 
 const page = usePage()
 const user = page.props.auth?.user || { id_outlet: 1, nama_outlet: 'Outlet Demo' }
@@ -183,6 +347,7 @@ const outlets = ref([])
 const selectedOutlet = ref(user.id_outlet)
 const dateFrom = ref(getFirstDayOfMonth())
 const dateTo = ref(getLastDayOfMonth())
+const forecastMonth = ref(getCurrentMonth())
 
 const summary = ref({})
 const salesChart = ref([])
@@ -195,6 +360,29 @@ const activePromosList = ref([])
 const investors = ref([])
 const salesPerMode = ref([])
 const waiterLeaderboard = ref([])
+
+const rollingForecast = ref(null)
+const forecastLoading = ref(false)
+const forecastError = ref(null)
+const forecastChartOptions = ref({
+  chart: { id: 'rolling-forecast', toolbar: { show: true } },
+  stroke: { width: [3, 3, 2], curve: 'smooth', dashArray: [0, 4, 6] },
+  colors: ['#2563eb', '#f59e0b', '#94a3b8'],
+  xaxis: { categories: [] },
+  legend: { position: 'top' },
+  tooltip: { y: { formatter: (val) => formatRupiah(val) } },
+  yaxis: {
+    labels: {
+      formatter: (val) => formatRupiahShort(val),
+    },
+  },
+})
+const forecastChartSeries = ref([])
+
+const gapPositive = computed(() => (rollingForecast.value?.gap_vs_target ?? 0) >= 0)
+const projectedCardClass = computed(() =>
+  gapPositive.value ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'
+)
 
 const summaryCards = ref({})
 const salesChartOptions = ref({ chart: { id: 'sales' }, xaxis: { categories: [] } })
@@ -311,9 +499,91 @@ function getDateRange(from, to) {
   return arr
 }
 
+function syncForecastMonthFromRange() {
+  if (dateFrom.value && /^\d{4}-\d{2}/.test(dateFrom.value)) {
+    forecastMonth.value = dateFrom.value.slice(0, 7)
+  }
+}
+
+async function fetchRollingForecast() {
+  if (!selectedOutlet.value) {
+    rollingForecast.value = null
+    forecastError.value = 'Pilih outlet terlebih dahulu.'
+    return
+  }
+
+  forecastLoading.value = true
+  forecastError.value = null
+  try {
+    const res = await axios.get('/api/outlet-dashboard/rolling-forecast', {
+      params: {
+        id_outlet: selectedOutlet.value,
+        month: forecastMonth.value,
+      },
+    })
+    rollingForecast.value = res.data
+    buildForecastChart(res.data)
+  } catch (err) {
+    const msg = err?.response?.data?.message || err?.message || 'Gagal memuat rolling forecast.'
+    forecastError.value = msg
+    rollingForecast.value = err?.response?.data || null
+    forecastChartSeries.value = []
+  } finally {
+    forecastLoading.value = false
+  }
+}
+
+function buildForecastChart(data) {
+  const days = data?.days || []
+  if (!days.length) {
+    forecastChartSeries.value = []
+    return
+  }
+
+  const categories = days.map((d) => d.forecast_date)
+  const actualSeries = days.map((d) => (d.actual != null ? Number(d.actual) : null))
+  const projectedSeries = days.map((d) => Number(d.projected) || 0)
+  const baselineSeries = days.map((d) => Number(d.baseline) || 0)
+  const histSeries = days.map((d) => Number(d.hist_avg) || 0)
+
+  forecastChartOptions.value = {
+    ...forecastChartOptions.value,
+    xaxis: {
+      categories,
+      labels: { rotate: -45, hideOverlappingLabels: true },
+    },
+    tooltip: { y: { formatter: (val) => (val == null ? '—' : formatRupiah(val)) } },
+  }
+
+  forecastChartSeries.value = [
+    { name: 'Actual / Projected', data: days.map((d) => Number(d.projected) || 0) },
+    { name: 'Baseline Target', data: baselineSeries },
+    { name: 'Hist Avg 3bln', data: histSeries },
+  ]
+
+  // Keep actualSeries available conceptually; chart uses continuous projected line
+  // (past = actual, future = forecast) which is already in `projected`.
+  void actualSeries
+  void projectedSeries
+}
+
+function dayTypeBadge(type) {
+  switch (type) {
+    case 'weekend':
+      return 'bg-indigo-100 text-indigo-800'
+    case 'holiday':
+      return 'bg-amber-100 text-amber-800'
+    case 'ramadan':
+      return 'bg-violet-100 text-violet-800'
+    default:
+      return 'bg-slate-100 text-slate-700'
+  }
+}
+
 async function fetchDashboard() {
   loading.value = true
   try {
+    syncForecastMonthFromRange()
     const params = {
       id_outlet: selectedOutlet.value,
       from: dateFrom.value,
@@ -372,6 +642,8 @@ async function fetchDashboard() {
       }
     }
     salesPerModeSeries.value = salesPerMode.value.map(x => Number(x.total) || 0)
+
+    await fetchRollingForecast()
   } finally {
     loading.value = false
   }
@@ -380,6 +652,14 @@ async function fetchDashboard() {
 function formatRupiah(val) {
   if (typeof val !== 'number') val = Number(val) || 0
   return 'Rp ' + val.toLocaleString('id-ID')
+}
+
+function formatRupiahShort(val) {
+  if (typeof val !== 'number') val = Number(val) || 0
+  if (Math.abs(val) >= 1_000_000) {
+    return 'Rp ' + (val / 1_000_000).toLocaleString('id-ID', { maximumFractionDigits: 1 }) + 'jt'
+  }
+  return 'Rp ' + val.toLocaleString('id-ID', { maximumFractionDigits: 0 })
 }
 </script>
 
