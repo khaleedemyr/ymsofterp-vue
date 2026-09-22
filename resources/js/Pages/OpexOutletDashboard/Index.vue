@@ -858,7 +858,7 @@
                   <CardHelpTip :text="cardHelps.ending_inventory" />
                 </p>
                 <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
-                <p class="mt-1 text-sm text-slate-500">Begin + Purchased ± Xfer ± Adj ± Opname − Cut − Category</p>
+                <p class="mt-1 text-sm text-slate-500">Begin + Purchased ± Xfer ± Adj − Cut − Category</p>
                 <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                   {{ ov.ending_inventory_revenue_pct }}% dari revenue
                 </p>
@@ -1427,14 +1427,14 @@
                     {{ (modalSheetMeta?.formula?.outlet_adjustment || 0) >= 0 ? '+' : '−' }}
                     Adj {{ formatCurrency(Math.abs(modalSheetMeta?.formula?.outlet_adjustment || 0)) }}
                   </template>
-                  <template v-if="(modalSheetMeta?.formula?.opname || 0) !== 0">
-                    {{ (modalSheetMeta?.formula?.opname || 0) >= 0 ? '+' : '−' }}
-                    Opname {{ formatCurrency(Math.abs(modalSheetMeta?.formula?.opname || 0)) }}
-                  </template>
                   − Stock Cut {{ formatCurrency(modalSheetMeta?.formula?.stock_cut) }}
                   − Category Cost {{ formatCurrency(modalSheetMeta?.formula?.category_cost) }}
                   =
                   <span class="font-bold text-slate-900">{{ formatCurrency(modalSheetMeta?.formula?.ending ?? modalSheetMeta?.formula?.formula_ending) }}</span>
+                </p>
+                <p v-if="(modalSheetMeta?.formula?.opname || 0) !== 0" class="text-amber-700">
+                  Opname periode {{ formatCurrency(modalSheetMeta?.formula?.opname) }}
+                  (tidak masuk formula — kartu opname sering tidak selaras dengan saldo)
                 </p>
                 <p>
                   Detail list = stok kartu as-of {{ modalSheetMeta?.as_of || filters.date_to }}
@@ -2629,7 +2629,7 @@ const cardHelps = {
   begin_inventory:
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance.\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment ± Opname − Stock Cut − Category Cost.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).\nKlik card → detail item stok per warehouse/kategori.',
+    'Nilai utama = Begin + Purchased ± Transfer Outlet (net) ± Adjustment − Stock Cut − Category Cost.\nOpname tidak dimasukkan ke formula (value_in/out kartu opname sering tidak = perubahan saldo).\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).\nKlik card → detail item stok per warehouse/kategori.',
   outlet_transfer:
     'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:

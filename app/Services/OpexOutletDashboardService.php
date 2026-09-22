@@ -248,14 +248,16 @@ class OpexOutletDashboardService
         $iwtSummary = $this->sumInternalWarehouseTransferMovements($outletId, $dateFrom, $dateTo);
         $wipSummary = $this->sumOutletWipMovements($outletId, $dateFrom, $dateTo);
 
-        // Rollforward lengkap level outlet.
-        // IWT tidak ditambah di sini (net antar gudang ≈ 0); opname ikut karena mengubah saldo.
+        // Rollforward level outlet:
+        // + transfer net + adjustment (gerakan stok nyata).
+        // Opname TIDAK dimasukkan: value_in/out kartu opname sering tidak = perubahan saldo
+        // (banyak kasus vin besar tapi saldo tetap 0) → malah menjauhkan formula dari stok.
+        // IWT net antar gudang ≈ 0 di level outlet.
         $formulaEnding = round(
             (float) $beginInventory['total']
             + (float) $inventoryMovement['purchased_total']
             + (float) $outletTransferSummary['net_total']
             + (float) $adjustmentSummary['total']
-            + (float) ($inventoryMovement['opname_total'] ?? 0)
             - (float) $stockCut['total']
             - (float) $categoryCost['total'],
             2
@@ -341,6 +343,7 @@ class OpexOutletDashboardService
                 'outlet_transfer_net' => round((float) $outletTransferSummary['net_total'], 2),
                 'outlet_adjustment' => round((float) $adjustmentSummary['total'], 2),
                 'opname' => round((float) ($inventoryMovement['opname_total'] ?? 0), 2),
+                'opname_in_formula' => false,
                 'stock_cut' => round((float) $stockCut['total'], 2),
                 'category_cost' => round((float) $categoryCost['total'], 2),
                 'formula_ending' => $formulaEnding,
@@ -3271,8 +3274,9 @@ class OpexOutletDashboardService
         $transferNet = (float) $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo)['net_total'];
         $adjustmentNet = (float) $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo)['total'];
         $opnameTotal = (float) ($movement['opname_total'] ?? 0);
+        // Opname diinformasikan di meta, tapi tidak masuk hitungan formula (lihat notes di overview).
         $formulaEnding = round(
-            $beginTotal + $purchasedTotal + $transferNet + $adjustmentNet + $opnameTotal - $stockCutTotal - $categoryCostTotal,
+            $beginTotal + $purchasedTotal + $transferNet + $adjustmentNet - $stockCutTotal - $categoryCostTotal,
             2
         );
         $formula = [
@@ -3281,6 +3285,7 @@ class OpexOutletDashboardService
             'outlet_transfer_net' => round($transferNet, 2),
             'outlet_adjustment' => round($adjustmentNet, 2),
             'opname' => round($opnameTotal, 2),
+            'opname_in_formula' => false,
             'stock_cut' => round($stockCutTotal, 2),
             'category_cost' => round($categoryCostTotal, 2),
             'ending' => $formulaEnding,
