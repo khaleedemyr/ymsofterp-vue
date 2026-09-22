@@ -15,6 +15,8 @@ class OutletRollingForecastService
     private const PACE_MAX = 1.55;
     /** Ceiling vs hist average — boleh di atas baseline agar EOM bisa > monthly target. */
     private const CAP_HIGH = 1.50;
+    /** Realistis = blend antara pace MTD dan baseline plan. */
+    private const REALISTIC_PACE_WEIGHT = 0.50;
     /** Hari awal bulan: jika MTD masih sangat kecil, pakai baseline penuh. */
     private const MIN_DAYS_FOR_PACE = 2;
 
@@ -162,7 +164,9 @@ class OutletRollingForecastService
         $remainingWeekends = 0;
         $remainingHolidays = 0;
         $days = [];
-        $projectedRemaining = 0.0;
+        $sumPesimis = 0.0;
+        $sumRealistis = 0.0;
+        $sumOptimis = 0.0;
 
         foreach ($baselineRows as $row) {
             $dateKey = $row['forecast_date'];
@@ -176,6 +180,10 @@ class OutletRollingForecastService
             $isPastOrToday = $dateKey <= $asOf->toDateString();
             $isFutureDay = $dateKey > $asOf->toDateString();
 
+            $pesimis = null;
+            $realistis = null;
+            $optimis = null;
+
             if ($isFutureDay) {
                 if ($dayType === 'holiday' || $dayType === 'ramadan') {
                     $remainingHolidays++;
@@ -185,15 +193,26 @@ class OutletRollingForecastService
                     $remainingWeekdays++;
                 }
 
-                $rawProjected = $baseline * $paceFactor;
-                $projected = $this->capAchievable($rawProjected, $histAvg, $baseline);
-                $projectedRemaining += $projected;
+                $scenarios = $this->scenarioDayValues($baseline, $histAvg, $paceFactor);
+                $pesimis = $scenarios['pessimistic'];
+                $realistis = $scenarios['realistic'];
+                $optimis = $scenarios['optimistic'];
+                $sumPesimis += $pesimis;
+                $sumRealistis += $realistis;
+                $sumOptimis += $optimis;
+                $projected = $realistis;
                 $status = 'forecast';
             } elseif ($isPastOrToday) {
                 $projected = $actual !== null ? (float) $actual : 0.0;
+                $pesimis = $projected;
+                $realistis = $projected;
+                $optimis = $projected;
                 $status = 'actual';
             } else {
                 $projected = $baseline;
+                $pesimis = $baseline;
+                $realistis = $baseline;
+                $optimis = $baseline;
                 $status = 'baseline';
             }
 
@@ -205,6 +224,9 @@ class OutletRollingForecastService
                 'actual' => $isPastOrToday ? round((float) ($actual ?? 0), 2) : null,
                 'baseline' => round($baseline, 2),
                 'projected' => round($projected, 2),
+                'projected_pessimistic' => round((float) $pesimis, 2),
+                'projected_realistic' => round((float) $realistis, 2),
+                'projected_optimistic' => round((float) $optimis, 2),
                 'hist_avg' => round($histAvg, 2),
                 'status' => $status,
             ];
@@ -213,9 +235,15 @@ class OutletRollingForecastService
         if ($isFutureMonth) {
             foreach ($days as $idx => $d) {
                 $days[$idx]['projected'] = $d['baseline'];
+                $days[$idx]['projected_pessimistic'] = $d['baseline'];
+                $days[$idx]['projected_realistic'] = $d['baseline'];
+                $days[$idx]['projected_optimistic'] = $d['baseline'];
                 $days[$idx]['status'] = 'baseline';
             }
-            $projectedEom = round(array_sum(array_column($days, 'baseline')), 2);
+            $eomAll = round(array_sum(array_column($days, 'baseline')), 2);
+            $projectedEomPesimis = $eomAll;
+            $projectedEomRealistis = $eomAll;
+            $projectedEomOptimis = $eomAll;
             $mode = 'baseline';
             $actualMtd = 0.0;
             $remainingWeekdays = 0;
@@ -231,30 +259,66 @@ class OutletRollingForecastService
                 }
             }
         } elseif (!$usePace) {
-            // Awal bulan / MTD kosong → projected ≈ target (baseline sisa + actual)
+            // Awal bulan / MTD kosong → ketiga skenario ≈ baseline
             foreach ($days as $idx => $d) {
                 if ($d['status'] === 'forecast') {
                     $days[$idx]['projected'] = $d['baseline'];
+                    $days[$idx]['projected_pessimistic'] = $d['baseline'];
+                    $days[$idx]['projected_realistic'] = $d['baseline'];
+                    $days[$idx]['projected_optimistic'] = $d['baseline'];
                 }
             }
-            $projectedRemaining = array_sum(array_map(
-                fn ($d) => $d['status'] === 'forecast' ? (float) $d['projected'] : 0.0,
+            $remainingSum = array_sum(array_map(
+                fn ($d) => $d['status'] === 'forecast' ? (float) $d['baseline'] : 0.0,
                 $days
             ));
-            $projectedEom = round($actualMtd + $projectedRemaining, 2);
+            $eom = round($actualMtd + $remainingSum, 2);
+            $projectedEomPesimis = $eom;
+            $projectedEomRealistis = $eom;
+            $projectedEomOptimis = $eom;
             $mode = $actualMtd <= 0 ? 'baseline' : 'early_month';
             $paceFactor = 1.0;
         } else {
-            $projectedEom = round($actualMtd + $projectedRemaining, 2);
+            $projectedEomPesimis = round($actualMtd + $sumPesimis, 2);
+            $projectedEomRealistis = round($actualMtd + $sumRealistis, 2);
+            $projectedEomOptimis = round($actualMtd + $sumOptimis, 2);
             $mode = 'rolling';
         }
 
+        // Primary card = realistis
+        $projectedEom = $projectedEomRealistis;
         $gapVsTarget = round($projectedEom - $monthlyTarget, 2);
         $historyCompare = $this->buildHistoryCompare(
             $monthStart,
             $qrCode,
             $holidaySet
         );
+
+        $scenarios = [
+            'pessimistic' => $this->scenarioSummary(
+                'Pesimis',
+                'Sisa hari lanjut di pace MTD saat ini (performa tetap lemah/kuat seperti kumulatif).',
+                $projectedEomPesimis,
+                $monthlyTarget,
+                $actualMtd
+            ),
+            'realistic' => $this->scenarioSummary(
+                'Realistis',
+                'Blend 50% pace MTD + 50% baseline plan (patokan utama).',
+                $projectedEomRealistis,
+                $monthlyTarget,
+                $actualMtd
+            ),
+            'optimistic' => $this->scenarioSummary(
+                'Optimis',
+                $paceFactor >= 1
+                    ? 'Sisa hari menjaga pace di atas plan (boleh > monthly target).'
+                    : 'Sisa hari kembali ke baseline plan (tidak mengejar full catch-up di atas plan).',
+                $projectedEomOptimis,
+                $monthlyTarget,
+                $actualMtd
+            ),
+        ];
 
         return [
             'success' => true,
@@ -279,8 +343,56 @@ class OutletRollingForecastService
             'remaining_weekdays' => $remainingWeekdays,
             'remaining_weekends' => $remainingWeekends,
             'remaining_holidays' => $remainingHolidays,
+            'scenarios' => $scenarios,
             'days' => $days,
             'history_compare' => $historyCompare,
+        ];
+    }
+
+    /**
+     * @return array{pessimistic: float, realistic: float, optimistic: float}
+     */
+    private function scenarioDayValues(float $baseline, float $histAvg, float $paceFactor): array
+    {
+        $pessimistic = $this->capAchievable($baseline * $paceFactor, $histAvg, $baseline);
+
+        $realisticFactor = (self::REALISTIC_PACE_WEIGHT * $paceFactor)
+            + ((1 - self::REALISTIC_PACE_WEIGHT) * 1.0);
+        $realistic = $this->capAchievable($baseline * $realisticFactor, $histAvg, $baseline);
+
+        // Optimis: jika di bawah plan → sisa hari kembali ke baseline;
+        // jika di atas plan → pertahankan pace (boleh > target).
+        $optimisticRaw = $paceFactor >= 1.0
+            ? ($baseline * $paceFactor)
+            : $baseline;
+        $optimistic = $this->capAchievable($optimisticRaw, $histAvg, $baseline);
+
+        return [
+            'pessimistic' => $pessimistic,
+            'realistic' => $realistic,
+            'optimistic' => $optimistic,
+        ];
+    }
+
+    /**
+     * @return array{key?: string, label: string, note: string, projected_eom: float, gap_vs_target: float, pct_of_target: float, remaining_total: float}
+     */
+    private function scenarioSummary(
+        string $label,
+        string $note,
+        float $projectedEom,
+        float $monthlyTarget,
+        float $actualMtd
+    ): array {
+        return [
+            'label' => $label,
+            'note' => $note,
+            'projected_eom' => round($projectedEom, 2),
+            'gap_vs_target' => round($projectedEom - $monthlyTarget, 2),
+            'pct_of_target' => $monthlyTarget > 0
+                ? round(($projectedEom / $monthlyTarget) * 100, 1)
+                : 0.0,
+            'remaining_total' => round(max(0, $projectedEom - $actualMtd), 2),
         ];
     }
 

@@ -38,30 +38,10 @@
           <div class="rounded-2xl bg-sky-50 border border-sky-100 p-4">
             <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Actual MTD</p>
             <p class="mt-2 text-xl font-bold text-sky-900">{{ formatCurrency(data.actual_mtd) }}</p>
-            <p class="text-xs text-sky-500 mt-1">s/d {{ data.as_of }}</p>
+            <p class="text-xs text-sky-500 mt-1">s/d {{ data.as_of }} · pace {{ data.pace_factor }}</p>
           </div>
           <div
-            class="rounded-2xl border p-4"
-            :class="gapPositive ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'"
-          >
-            <p
-              class="text-xs font-semibold uppercase tracking-wide"
-              :class="gapPositive ? 'text-emerald-700' : 'text-rose-700'"
-            >
-              Projected EOM
-            </p>
-            <p
-              class="mt-2 text-xl font-bold"
-              :class="gapPositive ? 'text-emerald-900' : 'text-rose-900'"
-            >
-              {{ formatCurrency(data.projected_eom) }}
-            </p>
-            <p class="text-xs mt-1" :class="gapPositive ? 'text-emerald-600' : 'text-rose-600'">
-              {{ data.pct_of_target }}% target · pace {{ data.pace_factor }}
-            </p>
-          </div>
-          <div
-            class="rounded-2xl border p-4"
+            class="rounded-2xl border p-4 col-span-2"
             :class="gapPositive ? 'bg-emerald-50 border-emerald-100' : 'bg-rose-50 border-rose-100'"
           >
             <div class="flex items-center justify-between gap-2">
@@ -69,7 +49,7 @@
                 class="text-xs font-semibold uppercase tracking-wide"
                 :class="gapPositive ? 'text-emerald-700' : 'text-rose-700'"
               >
-                Gap vs Target
+                Projected EOM (Realistis)
               </p>
               <span
                 class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-full"
@@ -82,9 +62,30 @@
               class="mt-2 text-xl font-bold"
               :class="gapPositive ? 'text-emerald-900' : 'text-rose-900'"
             >
-              {{ formatCurrency(data.gap_vs_target) }}
+              {{ formatCurrency(data.projected_eom) }}
             </p>
-            <p class="text-xs text-slate-500 mt-1">mode: {{ data.mode }}</p>
+            <p class="text-xs mt-1" :class="gapPositive ? 'text-emerald-600' : 'text-rose-600'">
+              {{ data.pct_of_target }}% target · gap {{ formatCurrency(data.gap_vs_target) }} · mode {{ data.mode }}
+            </p>
+          </div>
+        </div>
+
+        <div v-if="data.scenarios" class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-5">
+          <div
+            v-for="(sc, key) in scenarioCards"
+            :key="key"
+            class="rounded-2xl border p-4"
+            :class="sc.cardClass"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <p class="text-xs font-bold uppercase tracking-wide" :class="sc.titleClass">{{ sc.label }}</p>
+              <span class="text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full" :class="sc.badgeClass">
+                {{ sc.pct }}%
+              </span>
+            </div>
+            <p class="mt-2 text-lg font-bold" :class="sc.valueClass">{{ formatCurrency(sc.eom) }}</p>
+            <p class="text-xs mt-1" :class="sc.gapClass">Gap {{ formatCurrency(sc.gap) }}</p>
+            <p class="text-[11px] text-slate-500 mt-2 leading-snug">{{ sc.note }}</p>
           </div>
         </div>
 
@@ -101,11 +102,11 @@
         </div>
 
         <div class="mb-6">
-          <h3 class="text-sm font-semibold text-slate-800 mb-2">Actual / Projected vs Baseline</h3>
+          <h3 class="text-sm font-semibold text-slate-800 mb-2">Actual / Skenario vs Baseline</h3>
           <apexchart
             v-if="chartSeries.length"
             type="line"
-            height="280"
+            height="300"
             :options="chartOptions"
             :series="chartSeries"
           />
@@ -140,9 +141,10 @@
                   <th class="px-3 py-2">Hari</th>
                   <th class="px-3 py-2">Tipe</th>
                   <th class="px-3 py-2 text-right">Actual</th>
-                  <th class="px-3 py-2 text-right">Projected</th>
+                  <th class="px-3 py-2 text-right">Pesimis</th>
+                  <th class="px-3 py-2 text-right">Realistis</th>
+                  <th class="px-3 py-2 text-right">Optimis</th>
                   <th class="px-3 py-2 text-right">Baseline</th>
-                  <th class="px-3 py-2 text-right">Hist Avg</th>
                 </tr>
               </thead>
               <tbody>
@@ -164,9 +166,10 @@
                   <td class="px-3 py-1.5 text-right tabular-nums">
                     {{ d.actual != null ? formatCompact(d.actual) : '—' }}
                   </td>
-                  <td class="px-3 py-1.5 text-right tabular-nums font-medium">{{ formatCompact(d.projected) }}</td>
+                  <td class="px-3 py-1.5 text-right tabular-nums text-rose-700">{{ formatCompact(d.projected_pessimistic ?? d.projected) }}</td>
+                  <td class="px-3 py-1.5 text-right tabular-nums font-medium text-sky-800">{{ formatCompact(d.projected_realistic ?? d.projected) }}</td>
+                  <td class="px-3 py-1.5 text-right tabular-nums text-emerald-700">{{ formatCompact(d.projected_optimistic ?? d.projected) }}</td>
                   <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">{{ formatCompact(d.baseline) }}</td>
-                  <td class="px-3 py-1.5 text-right tabular-nums text-slate-500">{{ formatCompact(d.hist_avg) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -197,8 +200,8 @@ const chartOptions = ref({
     fontFamily: 'inherit',
     zoom: { enabled: false },
   },
-  stroke: { width: [3, 3, 2], curve: 'smooth', dashArray: [0, 4, 6] },
-  colors: ['#0284c7', '#f59e0b', '#94a3b8'],
+  stroke: { width: [3, 2, 2, 2], curve: 'smooth', dashArray: [0, 0, 4, 6] },
+  colors: ['#0284c7', '#f59e0b', '#ef4444', '#10b981'],
   grid: { padding: { bottom: 8 } },
   xaxis: {
     categories: [],
@@ -221,6 +224,52 @@ const chartOptions = ref({
 })
 
 const gapPositive = computed(() => (data.value?.gap_vs_target ?? 0) >= 0)
+
+const scenarioCards = computed(() => {
+  const sc = data.value?.scenarios || {}
+  const mapStyle = (key, gap) => {
+    const under = gap < 0
+    if (key === 'pessimistic') {
+      return {
+        cardClass: 'border-rose-100 bg-rose-50/50',
+        titleClass: 'text-rose-700',
+        badgeClass: under ? 'bg-rose-200 text-rose-800' : 'bg-emerald-200 text-emerald-800',
+        valueClass: 'text-rose-900',
+        gapClass: under ? 'text-rose-600' : 'text-emerald-600',
+      }
+    }
+    if (key === 'optimistic') {
+      return {
+        cardClass: 'border-emerald-100 bg-emerald-50/50',
+        titleClass: 'text-emerald-700',
+        badgeClass: under ? 'bg-amber-200 text-amber-800' : 'bg-emerald-200 text-emerald-800',
+        valueClass: 'text-emerald-900',
+        gapClass: under ? 'text-amber-700' : 'text-emerald-600',
+      }
+    }
+    return {
+      cardClass: 'border-sky-100 bg-sky-50/60 ring-1 ring-sky-200',
+      titleClass: 'text-sky-700',
+      badgeClass: under ? 'bg-rose-200 text-rose-800' : 'bg-emerald-200 text-emerald-800',
+      valueClass: 'text-sky-900',
+      gapClass: under ? 'text-rose-600' : 'text-emerald-600',
+    }
+  }
+
+  return ['pessimistic', 'realistic', 'optimistic'].map((key) => {
+    const row = sc[key] || {}
+    const gap = Number(row.gap_vs_target || 0)
+    return {
+      key,
+      label: row.label || key,
+      note: row.note || '',
+      eom: row.projected_eom || 0,
+      gap,
+      pct: row.pct_of_target || 0,
+      ...mapStyle(key, gap),
+    }
+  })
+})
 
 /** Full ISO dates for tooltip (index-aligned with chart categories). */
 const chartDayDates = ref([])
@@ -272,7 +321,6 @@ function buildChart(payload) {
   }
 
   chartDayDates.value = days.map((d) => d.forecast_date)
-  // Label pendek: 1, 2, … 30 — hindari tumpukan YYYY-MM-DD
   const shortLabels = days.map((d) => String(Number(String(d.forecast_date).slice(8, 10))))
 
   chartOptions.value = {
@@ -300,10 +348,19 @@ function buildChart(payload) {
       y: { formatter: (val) => formatCurrency(val) },
     },
   }
+
+  // Past days: all scenario lines = actual; future = respective scenario
+  const seriesDay = (field) =>
+    days.map((d) => {
+      if (d.status === 'actual') return Number(d.actual ?? d.projected) || 0
+      return Number(d[field] ?? d.projected) || 0
+    })
+
   chartSeries.value = [
-    { name: 'Actual / Projected', data: days.map((d) => Number(d.projected) || 0) },
+    { name: 'Realistis', data: seriesDay('projected_realistic') },
     { name: 'Baseline Target', data: days.map((d) => Number(d.baseline) || 0) },
-    { name: 'Hist Avg 3bln', data: days.map((d) => Number(d.hist_avg) || 0) },
+    { name: 'Pesimis', data: seriesDay('projected_pessimistic') },
+    { name: 'Optimis', data: seriesDay('projected_optimistic') },
   ]
 }
 
