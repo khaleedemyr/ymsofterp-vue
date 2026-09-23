@@ -283,13 +283,13 @@ class OpexOutletDashboardService
         // Nilai utama card Ending = cost di stok (sama Cost Report MTD). Formula tetap di breakdown.
         $endingInventory = round((float) $endingStock['total'], 2);
 
-        // COGS % — selaras tab COGS Cost Report (periode filter dashboard).
+        // COGS % — selaras tab Actual Cost MTD Cost Report.
         // COGS Foods = Stock Cut HPP full
         // Category Cost (pembanding) = spoil+waste+guest+non_commodity (tanpa internal_use)
         // Meal Employees = internal_use
         // COGS Pembanding = Foods + CatCost + Meal Emp
-        // Barang tersedia = Begin + Koreksi tgl1 + Purchased (excl MCS) − Cost RND ± Xfer ± Adj
-        // COGS Aktual = Barang tersedia − Ending Stok
+        // Barang tersedia = Begin + Official Cost − Cost RND + Outlet Transfer (sama Cost Report)
+        // COGS Aktual = Barang tersedia − Ending Stok (cost di stok / MTD)
         $mealEmployees = 0.0;
         $categoryCostForCogs = 0.0;
         $costRnd = 0.0;
@@ -309,18 +309,12 @@ class OpexOutletDashboardService
         $costRnd = round($costRnd, 2);
         $cogsFoods = round((float) $stockCut['total'], 2);
         $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
-        // Purchased untuk COGS/tersedia: excl MCS (sama Official Cost). Ending formula tetap full.
-        $purchasedForCogs = round(
-            (float) ($inventoryMovement['purchased_excl_mcs_total'] ?? $inventoryMovement['purchased_total'] ?? 0),
-            2
-        );
+        $officialCost = $this->sumOfficialCostForOutlet($outletId, $dateFrom, $dateTo);
         $availableGoods = round(
             (float) $beginInventory['total']
-            + (float) $day1Cutoff['total']
-            + $purchasedForCogs
+            + $officialCost
             - $costRnd
-            + (float) $outletTransferSummary['net_total']
-            + (float) $adjustmentSummary['total'],
+            + (float) $outletTransferSummary['net_total'],
             2
         );
         $cogsAktual = round($availableGoods - (float) $endingStock['total'], 2);
@@ -345,6 +339,7 @@ class OpexOutletDashboardService
             'category_cost' => $categoryCostForCogs,
             'meal_employees' => $mealEmployees,
             'cost_rnd' => $costRnd,
+            'official_cost' => $officialCost,
             'cogs_pembanding' => $cogsPembanding,
             'cogs_aktual' => $cogsAktual,
             'available_goods' => $availableGoods,
@@ -4172,6 +4167,79 @@ class OpexOutletDashboardService
         }
 
         return $out;
+    }
+
+    /**
+     * Official Cost satu outlet — parity Cost Report (GR + GSR + Retail Food, excl MCS).
+     * Dipakai rumus Barang Tersedia / COGS Aktual agar % COGS sama Actual Cost MTD.
+     */
+    private function sumOfficialCostForOutlet(int $outletId, string $dateFrom, string $dateTo): float
+    {
+        $excluded = $this->costReportExcludedSubCategories();
+        $total = 0.0;
+
+        // 1) Food GR — harga FO (sama Cost Report / Invoice Outlet)
+        $gr = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->where('gr.outlet_id', $outletId)
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->whereNull('gr.deleted_at')
+            ->where('gr.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw('COALESCE(SUM(i.received_qty * COALESCE(fo.price, 0)), 0) as total')
+            ->value('total');
+        $total += (float) ($gr ?? 0);
+
+        // 2) GSR
+        if ($this->hasSerialGrTables()) {
+            $priceSql = $this->serialGrPriceSql('it');
+            $gsr = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->where('h.outlet_id', $outletId)
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+                ->selectRaw("COALESCE(SUM(si.qty * ({$priceSql})), 0) as total")
+                ->value('total');
+            $total += (float) ($gsr ?? 0);
+        }
+
+        // 3) Retail Food (item-level, excl MCS)
+        if (Schema::hasTable('retail_food_items')) {
+            $itemNameMap = DB::table('items as im')
+                ->selectRaw('MIN(im.id) as item_id, TRIM(im.name) as item_name_key')
+                ->groupBy(DB::raw('TRIM(im.name)'));
+
+            $retail = DB::table('retail_food as rf')
+                ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+                ->joinSub($itemNameMap, 'map_item', function ($join) {
+                    $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+                })
+                ->join('items as it', 'map_item.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->where('rf.outlet_id', $outletId)
+                ->whereDate('rf.transaction_date', '>=', $dateFrom)
+                ->whereDate('rf.transaction_date', '<=', $dateTo)
+                ->where('rf.status', 'approved')
+                ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+                ->selectRaw('COALESCE(SUM(rfi.subtotal), 0) as total')
+                ->value('total');
+            $total += (float) ($retail ?? 0);
+        }
+
+        return round($total, 2);
     }
 
     /**
