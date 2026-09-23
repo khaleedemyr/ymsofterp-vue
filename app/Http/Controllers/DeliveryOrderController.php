@@ -235,8 +235,8 @@ class DeliveryOrderController extends Controller
         $date = now()->format('ymd');
         $pattern = $prefix.$date.'%';
 
-        // Serialize within the open DO transaction so concurrent stores
-        // cannot mint the same daily sequence.
+        // Caller must hold GET_LOCK('delivery_order_number_'.$date) until the DO
+        // header row is inserted, otherwise two txs can still mint the same number.
         for ($attempt = 0; $attempt < 15; $attempt++) {
             $lastNumber = DB::table('delivery_orders')
                 ->where('number', 'like', $pattern)
@@ -258,6 +258,57 @@ class DeliveryOrderController extends Controller
         }
 
         throw new \Exception('Gagal generate nomor Delivery Order unik. Silakan coba lagi.');
+    }
+
+    /**
+     * Deduct warehouse stock under row lock and return post-update snapshot for kartu stok.
+     * Atomic WHERE qty_small >= needed prevents lost updates across concurrent DOs.
+     */
+    private function applyWarehouseStockOut(
+        int $inventoryItemId,
+        int $warehouseId,
+        float $qtySmall,
+        float $qtyMedium,
+        float $qtyLarge
+    ): object {
+        $stock = DB::table('food_inventory_stocks')
+            ->where('inventory_item_id', $inventoryItemId)
+            ->where('warehouse_id', $warehouseId)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $stock) {
+            throw new \Exception('Stok tidak ditemukan saat update inventory DO');
+        }
+
+        if ($qtySmall > (float) $stock->qty_small + 0.0001) {
+            throw new \Exception('Qty melebihi stok yang tersedia saat commit. Stok tersedia: '.$stock->qty_small);
+        }
+
+        $affected = DB::update(
+            'UPDATE food_inventory_stocks
+             SET qty_small = qty_small - ?,
+                 qty_medium = qty_medium - ?,
+                 qty_large = qty_large - ?,
+                 updated_at = ?
+             WHERE id = ? AND qty_small >= ?',
+            [$qtySmall, $qtyMedium, $qtyLarge, now(), $stock->id, $qtySmall]
+        );
+
+        if ($affected !== 1) {
+            throw new \Exception('Gagal memotong stok (kemungkinan race/stok tidak cukup). Silakan coba lagi.');
+        }
+
+        $updated = DB::table('food_inventory_stocks')
+            ->where('id', $stock->id)
+            ->lockForUpdate()
+            ->first();
+
+        if (! $updated) {
+            throw new \Exception('Stok tidak ditemukan setelah update inventory DO');
+        }
+
+        return $updated;
     }
 
     public function store(Request $request)
@@ -338,27 +389,37 @@ class DeliveryOrderController extends Controller
                 }
             }
 
-            $doNumber = $this->generateDONumber();
-            $insertData = [
-                'number' => $doNumber,
-                'floor_order_id' => $floorOrderId,
-                'scan_mode' => $scanMode,
-                'created_by' => auth()->id(),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
-            
-            if ($isROSupplierGR) {
-                $insertData['ro_supplier_gr_id'] = $grId;
-                $insertData['packing_list_id'] = 0;
-                $insertData['source_type'] = 'ro_supplier_gr';
-            } else {
-                $insertData['packing_list_id'] = $request->packing_list_id;
-                $insertData['ro_supplier_gr_id'] = null;
-                $insertData['source_type'] = 'packing_list';
+            $doNumberLock = 'delivery_order_number_'.now()->format('ymd');
+            $lockAcquired = DB::selectOne('SELECT GET_LOCK(?, 15) AS acquired', [$doNumberLock]);
+            if (! $lockAcquired || (int) $lockAcquired->acquired !== 1) {
+                throw new \Exception('Sistem sibuk membuat nomor Delivery Order. Silakan coba lagi.');
             }
-            
-            $doId = DB::table('delivery_orders')->insertGetId($insertData);
+
+            try {
+                $doNumber = $this->generateDONumber();
+                $insertData = [
+                    'number' => $doNumber,
+                    'floor_order_id' => $floorOrderId,
+                    'scan_mode' => $scanMode,
+                    'created_by' => auth()->id(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+
+                if ($isROSupplierGR) {
+                    $insertData['ro_supplier_gr_id'] = $grId;
+                    $insertData['packing_list_id'] = 0;
+                    $insertData['source_type'] = 'ro_supplier_gr';
+                } else {
+                    $insertData['packing_list_id'] = $request->packing_list_id;
+                    $insertData['ro_supplier_gr_id'] = null;
+                    $insertData['source_type'] = 'packing_list';
+                }
+
+                $doId = DB::table('delivery_orders')->insertGetId($insertData);
+            } finally {
+                DB::selectOne('SELECT RELEASE_LOCK(?) AS released', [$doNumberLock]);
+            }
             
             // OPTIMIZED: Batch process items instead of individual loops
             $this->processDeliveryOrderItemsBatch($doId, $request->items, $isROSupplierGR, $grId, $warehouseId);
@@ -572,12 +633,23 @@ class DeliveryOrderController extends Controller
                     'last_cost_large' => $stockInfo['last_cost_large'],
                 ];
             } catch (\Exception $e) {
-                // Fallback: Use original method for this item
+                // Do not swallow stock/validation failures into fallback (can mask races).
+                $msg = $e->getMessage();
+                if (
+                    str_contains($msg, 'Qty melebihi stok')
+                    || str_contains($msg, 'Stok tersedia')
+                    || str_contains($msg, 'Stok tidak ditemukan')
+                    || str_contains($msg, 'Gagal memotong stok')
+                ) {
+                    throw $e;
+                }
+
+                // Fallback only for item-resolution / conversion edge cases
                 Log::warning('Fallback to original method for item', [
                     'item_id' => $item['id'],
-                    'error' => $e->getMessage()
+                    'error' => $msg,
                 ]);
-                
+
                 $this->processItemFallback($doId, $item, $isROSupplierGR, $grId, $warehouseId);
             }
         }
@@ -587,42 +659,34 @@ class DeliveryOrderController extends Controller
             DB::table('delivery_order_items')->insert($deliveryOrderItems);
         }
         
-        // Apply stock outs sequentially with row locks so concurrent DO
+        // Stable lock order by inventory_item_id to avoid deadlocks across concurrent DOs.
+        usort($inventoryUpdates, function ($a, $b) {
+            $cmp = $a['inventory_item_id'] <=> $b['inventory_item_id'];
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return $a['warehouse_id'] <=> $b['warehouse_id'];
+        });
+
+        // Apply stock outs sequentially with row locks + atomic decrement so concurrent DO
         // (and duplicate SKUs in one DO) cannot overwrite each other's saldo.
         $inventoryCards = [];
         foreach ($inventoryUpdates as $update) {
-            $stock = DB::table('food_inventory_stocks')
-                ->where('inventory_item_id', $update['inventory_item_id'])
-                ->where('warehouse_id', $update['warehouse_id'])
-                ->lockForUpdate()
-                ->first();
+            $stock = $this->applyWarehouseStockOut(
+                (int) $update['inventory_item_id'],
+                (int) $update['warehouse_id'],
+                (float) $update['qty_small'],
+                (float) $update['qty_medium'],
+                (float) $update['qty_large']
+            );
 
-            if (! $stock) {
-                throw new \Exception('Stok tidak ditemukan saat update inventory DO');
-            }
-
-            if ((float) $update['qty_small'] > (float) $stock->qty_small) {
-                throw new \Exception(
-                    'Qty melebihi stok yang tersedia saat commit. Stok tersedia: '.$stock->qty_small
-                );
-            }
-
-            $newSmall = (float) $stock->qty_small - (float) $update['qty_small'];
-            $newMedium = (float) $stock->qty_medium - (float) $update['qty_medium'];
-            $newLarge = (float) $stock->qty_large - (float) $update['qty_large'];
+            $newSmall = (float) $stock->qty_small;
+            $newMedium = (float) $stock->qty_medium;
+            $newLarge = (float) $stock->qty_large;
             $costSmall = (float) ($stock->last_cost_small ?? $update['last_cost_small']);
             $costMedium = (float) ($stock->last_cost_medium ?? $update['last_cost_medium']);
             $costLarge = (float) ($stock->last_cost_large ?? $update['last_cost_large']);
-
-            DB::table('food_inventory_stocks')
-                ->where('inventory_item_id', $update['inventory_item_id'])
-                ->where('warehouse_id', $update['warehouse_id'])
-                ->update([
-                    'qty_small' => $newSmall,
-                    'qty_medium' => $newMedium,
-                    'qty_large' => $newLarge,
-                    'updated_at' => now(),
-                ]);
 
             $inventoryCards[] = [
                 'inventory_item_id' => $update['inventory_item_id'],
@@ -688,29 +752,20 @@ class DeliveryOrderController extends Controller
         if ($warehouseId) {
             $inventoryItem = DB::table('food_inventory_items')->where('item_id', $realItemId)->first();
             if ($inventoryItem) {
-                // Lock stock row so concurrent DO on the same item cannot lost-update saldo.
-                $stock = DB::table('food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('warehouse_id', $warehouseId)
-                    ->lockForUpdate()
-                    ->first();
-                
-                if ($stock) {
-                    // CRITICAL: Use proper unit conversion for fallback too
-                    $itemMaster = DB::table('items')->where('id', $realItemId)->first();
-                    if ($itemMaster) {
+                $itemMaster = DB::table('items')->where('id', $realItemId)->first();
+                if ($itemMaster) {
                     $unit = $item['unit'] ?? null;
                     $qty_input = $item['qty_scan'];
                     $qty_small = 0;
                     $qty_medium = 0;
                     $qty_large = 0;
-                        
+
                     $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
                     $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
                     $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
                     $smallConv = $itemMaster->small_conversion_qty ?: 1;
                     $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-                        
+
                     if ($unit === $unitSmall) {
                         $qty_small = $qty_input;
                         $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
@@ -726,69 +781,24 @@ class DeliveryOrderController extends Controller
                     } else {
                         $qty_small = $qty_input;
                     }
-                        
-                        // DEBUG: Log stock validation details for fallback
-                        Log::info('Fallback stock validation debug', [
-                            'item_id' => $realItemId,
-                            'qty_small_needed' => $qty_small,
-                            'qty_medium_needed' => $qty_medium,
-                            'qty_large_needed' => $qty_large,
-                            'stock_small_available' => $stock->qty_small,
-                            'stock_medium_available' => $stock->qty_medium,
-                            'stock_large_available' => $stock->qty_large,
-                            'input_qty' => $qty_input,
-                            'input_unit' => $item['unit'] ?? 'null'
-                        ]);
-                        
-                        // Validate stock availability
-                    if ($qty_small > $stock->qty_small) {
-                        // Get unit names for better error message
-                        $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                        $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                        
-                        // Show stock in the unit that user is trying to use
-                        $inputUnit = $item['unit'] ?? null;
-                        $availableStock = 0;
-                        $unitName = '';
-                        
-                        if ($inputUnit === $unitSmall) {
-                            $availableStock = $stock->qty_small;
-                            $unitName = $unitSmall;
-                        } elseif ($inputUnit === $unitMedium) {
-                            $availableStock = $stock->qty_medium;
-                            $unitName = $unitMedium;
-                        } elseif ($inputUnit === $unitLarge) {
-                            $availableStock = $stock->qty_large;
-                            $unitName = $unitLarge;
-                        } else {
-                            $availableStock = $stock->qty_small;
-                            $unitName = $unitSmall;
-                        }
-                        
-                        throw new \Exception("Qty melebihi stok yang tersedia. Stok tersedia: {$availableStock} {$unitName}");
-                    }
 
-                    $newSmall = (float) $stock->qty_small - (float) $qty_small;
-                    $newMedium = (float) $stock->qty_medium - (float) $qty_medium;
-                    $newLarge = (float) $stock->qty_large - (float) $qty_large;
+                    $stock = $this->applyWarehouseStockOut(
+                        (int) $inventoryItem->id,
+                        (int) $warehouseId,
+                        (float) $qty_small,
+                        (float) $qty_medium,
+                        (float) $qty_large
+                    );
+
+                    $newSmall = (float) $stock->qty_small;
+                    $newMedium = (float) $stock->qty_medium;
+                    $newLarge = (float) $stock->qty_large;
                     $costSmall = (float) $stock->last_cost_small;
                     $costMedium = (float) $stock->last_cost_medium;
                     $costLarge = (float) $stock->last_cost_large;
-                        
-                        // Update stock from locked snapshot (safe under lockForUpdate)
-                    DB::table('food_inventory_stocks')
-                            ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('warehouse_id', $warehouseId)
-                        ->update([
-                            'qty_small' => $newSmall,
-                            'qty_medium' => $newMedium,
-                            'qty_large' => $newLarge,
-                            'updated_at' => now(),
-                        ]);
-                        
-                        // Insert inventory card with proper conversion
+
                     DB::table('food_inventory_cards')->insert([
-                                'inventory_item_id' => $inventoryItem->id,
+                        'inventory_item_id' => $inventoryItem->id,
                         'warehouse_id' => $warehouseId,
                         'date' => now()->toDateString(),
                         'reference_type' => 'delivery_order',
@@ -804,10 +814,9 @@ class DeliveryOrderController extends Controller
                         'saldo_qty_medium' => $newMedium,
                         'saldo_qty_large' => $newLarge,
                         'saldo_value' => $newSmall * $costSmall,
-                                'description' => 'Stock Out - Delivery Order ' . $this->getDONumber($doId) . ' to ' . ($this->getOutletName($doId) ?: 'Outlet') . ' (Fallback)',
+                        'description' => 'Stock Out - Delivery Order '.$this->getDONumber($doId).' to '.($this->getOutletName($doId) ?: 'Outlet').' (Fallback)',
                         'created_at' => now(),
                     ]);
-                    }
                 }
             }
         }

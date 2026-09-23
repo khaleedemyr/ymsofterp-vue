@@ -631,7 +631,7 @@ class OpexOutletDashboardService
 
     /**
      * Ringkas kolom RO Forecast (Floor Order vs Forecast):
-     * Forecast = Rolling Auto Forecast skenario Realistis (projected EOM),
+     * Forecast = Rolling Auto Forecast skenario Pesimis (projected EOM),
      * fallback ke sum daily revenue target jika rolling belum tersedia.
      * Pool budget 43% × Forecast, dibagi Kitchen 70% / Bar 20% / Service 10%.
      * Selalu dihitung full calendar month (bukan MTD dari filter tanggal).
@@ -654,13 +654,14 @@ class OpexOutletDashboardService
         $paceFactor = null;
         $scenarios = null;
 
+        $pessimisticEom = (float) ($rolling['scenarios']['pessimistic']['projected_eom'] ?? 0);
         if (($rolling['success'] ?? true) !== false
             && ($rolling['has_target'] ?? false)
-            && (float) ($rolling['projected_eom'] ?? 0) > 0
+            && $pessimisticEom > 0
         ) {
-            // projected_eom = skenario Realistis (patokan utama rolling forecast)
-            $forecastTotal = (float) $rolling['projected_eom'];
-            $forecastSource = 'rolling_realistic';
+            // Patokan budget RO di dashboard = skenario Pesimis (konservatif)
+            $forecastTotal = $pessimisticEom;
+            $forecastSource = 'rolling_pessimistic';
             $monthlyTarget = isset($rolling['monthly_target']) ? (float) $rolling['monthly_target'] : null;
             $paceFactor = isset($rolling['pace_factor']) ? (float) $rolling['pace_factor'] : null;
             $scenarios = $rolling['scenarios'] ?? null;

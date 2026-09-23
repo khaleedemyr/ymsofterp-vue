@@ -868,6 +868,450 @@ class CostReportController extends Controller
             ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, COALESCE(rfi.unit, '-') as unit_name, COALESCE(rfi.qty, 0) as qty, CASE WHEN COALESCE(rfi.qty, 0) <> 0 THEN COALESCE(rfi.subtotal, 0) / rfi.qty ELSE 0 END as unit_cost, COALESCE(rfi.subtotal, 0) as amount");
     }
 
+    /**
+     * Level 1 Outlet Transfer: daftar transaksi (in/out) per outlet di bulan laporan.
+     */
+    public function outletTransferTransactions(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'sort_by' => ['nullable', 'in:transaction_date,transaction_number,amount,direction'],
+            'sort_direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        $outletId = (int) $validated['outlet_id'];
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sortBy = $validated['sort_by'] ?? 'amount';
+        $sortDirection = $validated['sort_direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $page = (int) ($validated['page'] ?? 1);
+
+        $rows = $this->buildOutletTransferTransactionRows($outletId, $dateFrom, $dateTo);
+        if ($search !== '') {
+            $needle = mb_strtolower($search);
+            $rows = array_values(array_filter($rows, function ($row) use ($needle) {
+                $hay = mb_strtolower(implode(' ', [
+                    $row['transaction_number'] ?? '',
+                    $row['transaction_date'] ?? '',
+                    $row['from_outlet'] ?? '',
+                    $row['to_outlet'] ?? '',
+                    $row['from_warehouse'] ?? '',
+                    $row['to_warehouse'] ?? '',
+                    $row['direction'] ?? '',
+                ]));
+
+                return str_contains($hay, $needle);
+            }));
+        }
+
+        usort($rows, function ($a, $b) use ($sortBy, $sortDirection) {
+            $av = $a[$sortBy] ?? null;
+            $bv = $b[$sortBy] ?? null;
+            if ($sortBy === 'amount') {
+                $av = abs((float) $av);
+                $bv = abs((float) $bv);
+            }
+            if ($av == $bv) {
+                return ((int) ($b['transaction_id'] ?? 0)) <=> ((int) ($a['transaction_id'] ?? 0));
+            }
+            if ($av < $bv) {
+                return $sortDirection === 'asc' ? -1 : 1;
+            }
+
+            return $sortDirection === 'asc' ? 1 : -1;
+        });
+
+        $total = count($rows);
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min(max(1, $page), $lastPage);
+        $items = array_slice($rows, ($page - 1) * $perPage, $perPage);
+        $netTotal = round(array_sum(array_map(fn ($r) => (float) ($r['amount'] ?? 0), $rows)), 2);
+
+        return response()->json([
+            'success' => true,
+            'net_total' => $netTotal,
+            'items' => $items,
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'per_page' => $perPage,
+                'total' => $total,
+            ],
+        ]);
+    }
+
+    /**
+     * Level 2 Outlet Transfer: detail item dalam satu transaksi.
+     */
+    public function outletTransferTransactionItems(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'transaction_id' => ['required', 'integer', 'min:1'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'sort_by' => ['nullable', 'in:item_name,item_sku,qty,unit_cost,amount,direction'],
+            'sort_direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        $outletId = (int) $validated['outlet_id'];
+        $transferId = (int) $validated['transaction_id'];
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sortBy = $validated['sort_by'] ?? 'amount';
+        $sortDirection = $validated['sort_direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $page = (int) ($validated['page'] ?? 1);
+
+        $header = DB::table('outlet_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('tbl_data_outlet as ofrom', 'wf.outlet_id', '=', 'ofrom.id_outlet')
+            ->leftJoin('tbl_data_outlet as oto', 'wt.outlet_id', '=', 'oto.id_outlet')
+            ->where('t.id', $transferId)
+            ->where('t.status', 'approved')
+            ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+            ->where(function ($q) use ($outletId) {
+                $q->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
+            })
+            ->select(
+                't.id as transaction_id',
+                't.transfer_number as transaction_number',
+                't.transfer_date as transaction_date',
+                't.status',
+                't.notes',
+                'wf.id as from_warehouse_id',
+                'wf.name as from_warehouse',
+                'wt.id as to_warehouse_id',
+                'wt.name as to_warehouse',
+                'ofrom.id_outlet as from_outlet_id',
+                'ofrom.nama_outlet as from_outlet',
+                'oto.id_outlet as to_outlet_id',
+                'oto.nama_outlet as to_outlet'
+            )
+            ->first();
+
+        if (!$header) {
+            return response()->json([
+                'success' => true,
+                'transaction' => null,
+                'items' => [],
+                'pagination' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                ],
+            ]);
+        }
+
+        $fromOutletId = (int) $header->from_outlet_id;
+        $toOutletId = (int) $header->to_outlet_id;
+        $items = $this->buildOutletTransferItemRows(
+            $transferId,
+            $outletId,
+            $fromOutletId,
+            $toOutletId,
+            (int) $header->from_warehouse_id,
+            (string) $header->transaction_date
+        );
+
+        if ($search !== '') {
+            $needle = mb_strtolower($search);
+            $items = array_values(array_filter($items, function ($row) use ($needle) {
+                $hay = mb_strtolower(implode(' ', [
+                    $row['item_name'] ?? '',
+                    $row['item_sku'] ?? '',
+                    $row['direction'] ?? '',
+                    $row['warehouse_name'] ?? '',
+                ]));
+
+                return str_contains($hay, $needle);
+            }));
+        }
+
+        usort($items, function ($a, $b) use ($sortBy, $sortDirection) {
+            $av = $a[$sortBy] ?? null;
+            $bv = $b[$sortBy] ?? null;
+            if (in_array($sortBy, ['amount', 'qty', 'unit_cost'], true)) {
+                $av = abs((float) $av);
+                $bv = abs((float) $bv);
+            }
+            if ($av == $bv) {
+                return strcmp((string) ($a['item_name'] ?? ''), (string) ($b['item_name'] ?? ''));
+            }
+            if ($av < $bv) {
+                return $sortDirection === 'asc' ? -1 : 1;
+            }
+
+            return $sortDirection === 'asc' ? 1 : -1;
+        });
+
+        $total = count($items);
+        $lastPage = max(1, (int) ceil($total / $perPage));
+        $page = min(max(1, $page), $lastPage);
+        $pageItems = array_slice($items, ($page - 1) * $perPage, $perPage);
+        $netAmount = round(array_sum(array_map(fn ($r) => (float) ($r['amount'] ?? 0), $items)), 2);
+
+        $direction = $toOutletId === $outletId && $fromOutletId !== $outletId
+            ? 'in'
+            : ($fromOutletId === $outletId && $toOutletId !== $outletId ? 'out' : 'internal');
+
+        return response()->json([
+            'success' => true,
+            'transaction' => [
+                'transaction_id' => (int) $header->transaction_id,
+                'transaction_number' => $header->transaction_number,
+                'transaction_date' => $header->transaction_date,
+                'status' => $header->status,
+                'notes' => $header->notes,
+                'from_outlet' => $header->from_outlet,
+                'to_outlet' => $header->to_outlet,
+                'from_warehouse' => $header->from_warehouse,
+                'to_warehouse' => $header->to_warehouse,
+                'direction' => $direction,
+                'amount' => $netAmount,
+            ],
+            'items' => $pageItems,
+            'pagination' => [
+                'current_page' => $page,
+                'last_page' => $lastPage,
+                'per_page' => $perPage,
+                'total' => $total,
+            ],
+        ]);
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function buildOutletTransferTransactionRows(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $transfers = DB::table('outlet_transfers as t')
+            ->join('warehouse_outlets as wf', 't.warehouse_outlet_from_id', '=', 'wf.id')
+            ->join('warehouse_outlets as wt', 't.warehouse_outlet_to_id', '=', 'wt.id')
+            ->leftJoin('tbl_data_outlet as ofrom', 'wf.outlet_id', '=', 'ofrom.id_outlet')
+            ->leftJoin('tbl_data_outlet as oto', 'wt.outlet_id', '=', 'oto.id_outlet')
+            ->where('t.status', 'approved')
+            ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
+            ->where(function ($q) use ($outletId) {
+                $q->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
+            })
+            ->select(
+                't.id',
+                't.transfer_number',
+                't.transfer_date',
+                't.warehouse_outlet_from_id',
+                't.warehouse_outlet_to_id',
+                'wf.outlet_id as from_outlet_id',
+                'wt.outlet_id as to_outlet_id',
+                'ofrom.nama_outlet as from_outlet',
+                'oto.nama_outlet as to_outlet',
+                'wf.name as from_warehouse',
+                'wt.name as to_warehouse'
+            )
+            ->orderByDesc('t.transfer_date')
+            ->orderByDesc('t.id')
+            ->get();
+
+        if ($transfers->isEmpty()) {
+            return [];
+        }
+
+        $transferIds = $transfers->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $itemsByTransfer = DB::table('outlet_transfer_items')
+            ->whereIn('outlet_transfer_id', $transferIds)
+            ->get()
+            ->groupBy('outlet_transfer_id');
+
+        $receivedByTransfer = DB::table('outlet_food_inventory_cost_histories as h')
+            ->join('outlet_transfers as t', 't.id', '=', 'h.reference_id')
+            ->join('outlet_transfer_items as d', 'd.outlet_transfer_id', '=', 't.id')
+            ->join('outlet_food_inventory_items as ofii', function ($j) {
+                $j->on('ofii.id', '=', 'h.inventory_item_id')->on('ofii.item_id', '=', 'd.item_id');
+            })
+            ->where('h.reference_type', 'outlet_transfer')
+            ->where('h.id_outlet', $outletId)
+            ->whereIn('t.id', $transferIds)
+            ->groupBy('t.id')
+            ->select('t.id as transfer_id', DB::raw('SUM(d.qty_small * COALESCE(h.mac, 0)) as total_received'))
+            ->pluck('total_received', 'transfer_id');
+
+        $rows = [];
+        foreach ($transfers as $t) {
+            $fromOutletId = (int) $t->from_outlet_id;
+            $toOutletId = (int) $t->to_outlet_id;
+            $amount = 0.0;
+            $direction = 'internal';
+
+            if ($toOutletId === $outletId) {
+                $amount += (float) ($receivedByTransfer[$t->id] ?? 0);
+                $direction = $fromOutletId === $outletId ? 'internal' : 'in';
+            }
+
+            if ($fromOutletId === $outletId) {
+                $sent = 0.0;
+                foreach (($itemsByTransfer[$t->id] ?? collect()) as $item) {
+                    $qtySmall = (float) ($item->qty_small ?? 0);
+                    if ($qtySmall <= 0) {
+                        continue;
+                    }
+                    $ofii = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
+                    if (!$ofii) {
+                        continue;
+                    }
+                    $mac = DB::table('outlet_food_inventory_cost_histories')
+                        ->where('inventory_item_id', $ofii->id)
+                        ->where('id_outlet', $fromOutletId)
+                        ->where('warehouse_outlet_id', $t->warehouse_outlet_from_id)
+                        ->where('date', '<=', $t->transfer_date)
+                        ->orderByDesc('date')
+                        ->orderByDesc('created_at')
+                        ->value('mac');
+                    $sent += $qtySmall * (float) ($mac ?? 0);
+                }
+                $amount -= $sent;
+                if ($direction !== 'internal') {
+                    $direction = 'out';
+                } elseif ($toOutletId !== $outletId) {
+                    $direction = 'out';
+                }
+            }
+
+            $rows[] = [
+                'transaction_id' => (int) $t->id,
+                'transaction_number' => $t->transfer_number,
+                'transaction_date' => $t->transfer_date,
+                'from_outlet' => $t->from_outlet,
+                'to_outlet' => $t->to_outlet,
+                'from_warehouse' => $t->from_warehouse,
+                'to_warehouse' => $t->to_warehouse,
+                'direction' => $direction,
+                'item_count' => count($itemsByTransfer[$t->id] ?? []),
+                'amount' => round($amount, 2),
+            ];
+        }
+
+        return $rows;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function buildOutletTransferItemRows(
+        int $transferId,
+        int $outletId,
+        int $fromOutletId,
+        int $toOutletId,
+        int $fromWarehouseId,
+        string $transferDate
+    ): array {
+        $items = DB::table('outlet_transfer_items as ti')
+            ->join('items as i', 'ti.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('units as u', 'i.small_unit_id', '=', 'u.id')
+            ->where('ti.outlet_transfer_id', $transferId)
+            ->select(
+                'ti.id',
+                'ti.item_id',
+                'ti.qty_small',
+                'i.name as item_name',
+                'i.sku as item_sku',
+                DB::raw("COALESCE(c.name, 'Tanpa Kategori') as category_name"),
+                DB::raw("COALESCE(u.name, '-') as unit_name")
+            )
+            ->get();
+
+        $rows = [];
+        foreach ($items as $item) {
+            $qtySmall = (float) ($item->qty_small ?? 0);
+            $ofii = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
+            $mac = 0.0;
+            $direction = 'out';
+            $amount = 0.0;
+            $warehouseName = '';
+
+            if ($toOutletId === $outletId) {
+                $direction = $fromOutletId === $outletId ? 'internal_in' : 'in';
+                if ($ofii) {
+                    $mac = (float) (DB::table('outlet_food_inventory_cost_histories')
+                        ->where('inventory_item_id', $ofii->id)
+                        ->where('id_outlet', $outletId)
+                        ->where('reference_type', 'outlet_transfer')
+                        ->where('reference_id', $transferId)
+                        ->orderByDesc('date')
+                        ->orderByDesc('created_at')
+                        ->value('mac') ?? 0);
+                }
+                $amount = $qtySmall * $mac;
+                $warehouseName = 'IN';
+            }
+
+            if ($fromOutletId === $outletId && $toOutletId !== $outletId) {
+                $direction = 'out';
+                if ($ofii) {
+                    $mac = (float) (DB::table('outlet_food_inventory_cost_histories')
+                        ->where('inventory_item_id', $ofii->id)
+                        ->where('id_outlet', $fromOutletId)
+                        ->where('warehouse_outlet_id', $fromWarehouseId)
+                        ->where('date', '<=', $transferDate)
+                        ->orderByDesc('date')
+                        ->orderByDesc('created_at')
+                        ->value('mac') ?? 0);
+                }
+                $amount = -1 * ($qtySmall * $mac);
+                $warehouseName = 'OUT';
+            } elseif ($fromOutletId === $outletId && $toOutletId === $outletId) {
+                // Internal: also show OUT side as negative companion if needed; keep net via received mac above.
+                // For detail, show one IN line already; add OUT line with from MAC.
+                if ($ofii) {
+                    $macOut = (float) (DB::table('outlet_food_inventory_cost_histories')
+                        ->where('inventory_item_id', $ofii->id)
+                        ->where('id_outlet', $fromOutletId)
+                        ->where('warehouse_outlet_id', $fromWarehouseId)
+                        ->where('date', '<=', $transferDate)
+                        ->orderByDesc('date')
+                        ->orderByDesc('created_at')
+                        ->value('mac') ?? 0);
+                } else {
+                    $macOut = 0.0;
+                }
+                $rows[] = [
+                    'item_name' => $item->item_name,
+                    'item_sku' => $item->item_sku,
+                    'category_name' => $item->category_name,
+                    'unit_name' => $item->unit_name,
+                    'warehouse_name' => 'OUT',
+                    'direction' => 'internal_out',
+                    'qty' => $qtySmall,
+                    'unit_cost' => round($macOut, 4),
+                    'amount' => round(-1 * ($qtySmall * $macOut), 2),
+                ];
+            }
+
+            $rows[] = [
+                'item_name' => $item->item_name,
+                'item_sku' => $item->item_sku,
+                'category_name' => $item->category_name,
+                'unit_name' => $item->unit_name,
+                'warehouse_name' => $warehouseName ?: ($direction === 'out' ? 'OUT' : 'IN'),
+                'direction' => $direction,
+                'qty' => $qtySmall,
+                'unit_cost' => round($mac, 4),
+                'amount' => round($amount, 2),
+            ];
+        }
+
+        return $rows;
+    }
+
     private function getReportRowsCacheKey(string $bulan): string
     {
         return 'cost_report:report_rows:' . $bulan;

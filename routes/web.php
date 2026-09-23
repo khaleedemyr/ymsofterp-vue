@@ -1307,6 +1307,8 @@ Route::get('/cost-report/official-cost-detail', [\App\Http\Controllers\CostRepor
 Route::get('/cost-report/official-cost-summary', [\App\Http\Controllers\CostReportController::class, 'officialCostSummary'])->name('cost-report.official-cost-summary');
 Route::get('/cost-report/official-cost-transactions', [\App\Http\Controllers\CostReportController::class, 'officialCostTransactions'])->name('cost-report.official-cost-transactions');
 Route::get('/cost-report/official-cost-transaction-items', [\App\Http\Controllers\CostReportController::class, 'officialCostTransactionItems'])->name('cost-report.official-cost-transaction-items');
+Route::get('/cost-report/outlet-transfer-transactions', [\App\Http\Controllers\CostReportController::class, 'outletTransferTransactions'])->name('cost-report.outlet-transfer-transactions');
+Route::get('/cost-report/outlet-transfer-transaction-items', [\App\Http\Controllers\CostReportController::class, 'outletTransferTransactionItems'])->name('cost-report.outlet-transfer-transaction-items');
 Route::get('/cost-report/export', [\App\Http\Controllers\CostReportController::class, 'export'])->name('cost-report.export');
 Route::post('/cost-report/clear-cache', [\App\Http\Controllers\CostReportController::class, 'clearCache'])->name('cost-report.clear-cache');
 

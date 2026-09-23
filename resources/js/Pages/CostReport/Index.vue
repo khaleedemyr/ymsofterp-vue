@@ -130,7 +130,17 @@
                 <button type="button" class="font-medium text-blue-700 hover:text-blue-900 hover:underline" title="Lihat detail official cost" @click="openOfficialCostDetail(row)">{{ formatNumber(row.official_cost) }}</button>
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cost_rnd) }}</td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-right" :class="(row.outlet_transfer || 0) < 0 ? 'text-red-600' : 'text-gray-900'">{{ formatNumber(row.outlet_transfer) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-right">
+                <button
+                  type="button"
+                  class="font-medium hover:underline"
+                  :class="(row.outlet_transfer || 0) < 0 ? 'text-red-600 hover:text-red-800' : 'text-blue-700 hover:text-blue-900'"
+                  title="Lihat detail outlet transfer"
+                  @click="openOutletTransferDetail(row)"
+                >
+                  {{ formatNumber(row.outlet_transfer) }}
+                </button>
+              </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{{ formatNumber(row.total_barang_tersedia) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.ending_inventory) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cogs_aktual) }}</td>
@@ -489,6 +499,173 @@
           </footer>
         </section>
       </div>
+
+      <div v-if="showTransferDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" @click.self="closeOutletTransferDetail">
+        <section class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="outlet-transfer-detail-title">
+          <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+            <div>
+              <h2 id="outlet-transfer-detail-title" class="text-lg font-semibold text-gray-900">{{ transferDetailTitle }}</h2>
+              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <nav v-if="transferLevel === 'items'" class="mt-2 flex flex-wrap items-center gap-1 text-xs text-gray-500">
+                <button type="button" class="text-blue-700 hover:underline" @click="goTransferTransactions">Transaksi</button>
+                <span>/</span>
+                <span class="text-gray-700">{{ transferTransaction?.transaction_number || 'Detail' }}</span>
+              </nav>
+            </div>
+            <button type="button" class="text-gray-500 hover:text-gray-900" title="Tutup detail" @click="closeOutletTransferDetail">
+              <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+          </header>
+
+          <div class="grid grid-cols-1 gap-3 border-b border-gray-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_11rem_8rem_8rem]">
+            <input
+              v-model="transferFilters.search"
+              type="search"
+              :placeholder="transferLevel === 'transactions' ? 'Cari nomor / outlet / gudang...' : 'Cari item, SKU...'"
+              class="w-full border border-gray-300 rounded-md px-3 py-2"
+              @input="queueTransferSearch"
+            />
+            <select v-model="transferFilters.sort_by" class="border border-gray-300 rounded-md px-3 py-2" @change="reloadTransferCurrent(1)">
+              <template v-if="transferLevel === 'transactions'">
+                <option value="amount">Urutkan: Nilai</option>
+                <option value="transaction_date">Urutkan: Tanggal</option>
+                <option value="transaction_number">Urutkan: Nomor</option>
+                <option value="direction">Urutkan: Arah</option>
+              </template>
+              <template v-else>
+                <option value="amount">Urutkan: Nilai</option>
+                <option value="item_name">Urutkan: Nama item</option>
+                <option value="item_sku">Urutkan: SKU</option>
+                <option value="qty">Urutkan: Qty</option>
+                <option value="unit_cost">Urutkan: MAC</option>
+                <option value="direction">Urutkan: Arah</option>
+              </template>
+            </select>
+            <select v-model="transferFilters.sort_direction" class="border border-gray-300 rounded-md px-3 py-2" @change="reloadTransferCurrent(1)">
+              <option value="desc">Terbesar dahulu</option>
+              <option value="asc">Terkecil dahulu</option>
+            </select>
+            <select v-model.number="transferFilters.per_page" class="border border-gray-300 rounded-md px-3 py-2" @change="reloadTransferCurrent(1)">
+              <option :value="10">10 / halaman</option>
+              <option :value="25">25 / halaman</option>
+              <option :value="50">50 / halaman</option>
+              <option :value="100">100 / halaman</option>
+            </select>
+          </div>
+
+          <div class="min-h-48 overflow-y-auto px-5 py-4">
+            <div v-if="transferLoading" class="py-12 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat detail...</div>
+            <div v-else-if="transferError" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ transferError }}</div>
+
+            <div v-else-if="transferLevel === 'transactions'">
+              <div class="mb-3 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                Net Outlet Transfer:
+                <span class="font-semibold tabular-nums" :class="transferNetTotal < 0 ? 'text-red-600' : 'text-slate-900'">{{ formatNumber(transferNetTotal) }}</span>
+                <span class="text-slate-500"> · klik nomor/nilai untuk lihat item</span>
+              </div>
+              <div v-if="transferItems.length === 0" class="py-12 text-center text-gray-500">Tidak ada transaksi outlet transfer.</div>
+              <div v-else class="overflow-hidden rounded-md border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th class="px-4 py-2 text-left">Tanggal</th>
+                      <th class="px-4 py-2 text-left">Nomor</th>
+                      <th class="px-4 py-2 text-left">Arah</th>
+                      <th class="px-4 py-2 text-left">Dari</th>
+                      <th class="px-4 py-2 text-left">Ke</th>
+                      <th class="px-4 py-2 text-right">Item</th>
+                      <th class="px-4 py-2 text-right">Nilai</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="row in transferItems" :key="row.transaction_id" class="hover:bg-blue-50/40">
+                      <td class="px-4 py-2 text-gray-600">{{ row.transaction_date }}</td>
+                      <td class="px-4 py-2">
+                        <button type="button" class="font-medium text-blue-700 hover:underline" @click="openTransferTransactionItems(row)">
+                          {{ row.transaction_number }}
+                        </button>
+                      </td>
+                      <td class="px-4 py-2">
+                        <span class="rounded px-2 py-0.5 text-xs font-semibold uppercase" :class="transferDirectionClass(row.direction)">{{ transferDirectionLabel(row.direction) }}</span>
+                      </td>
+                      <td class="px-4 py-2 text-gray-600">{{ row.from_outlet }} <span class="text-xs text-gray-400">({{ row.from_warehouse }})</span></td>
+                      <td class="px-4 py-2 text-gray-600">{{ row.to_outlet }} <span class="text-xs text-gray-400">({{ row.to_warehouse }})</span></td>
+                      <td class="px-4 py-2 text-right tabular-nums text-gray-600">{{ row.item_count }}</td>
+                      <td class="px-4 py-2 text-right">
+                        <button
+                          type="button"
+                          class="font-medium tabular-nums hover:underline"
+                          :class="(row.amount || 0) < 0 ? 'text-red-600' : 'text-blue-700'"
+                          @click="openTransferTransactionItems(row)"
+                        >
+                          {{ formatNumber(row.amount) }}
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-else>
+              <div v-if="transferTransaction" class="mb-3 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                {{ transferTransaction.transaction_number }} · {{ transferTransaction.transaction_date }}
+                · {{ transferTransaction.from_outlet }} → {{ transferTransaction.to_outlet }}
+                · Net
+                <span class="font-semibold tabular-nums" :class="(transferTransaction.amount || 0) < 0 ? 'text-red-600' : ''">{{ formatNumber(transferTransaction.amount) }}</span>
+              </div>
+              <div v-if="transferItems.length === 0" class="py-12 text-center text-gray-500">Tidak ada item pada transaksi ini.</div>
+              <div v-else class="overflow-hidden rounded-md border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th class="px-4 py-2 text-left">Item</th>
+                      <th class="px-4 py-2 text-left">SKU</th>
+                      <th class="px-4 py-2 text-left">Arah</th>
+                      <th class="px-4 py-2 text-right">Qty</th>
+                      <th class="px-4 py-2 text-right">MAC</th>
+                      <th class="px-4 py-2 text-right">Nilai</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="(item, idx) in transferItems" :key="`${item.item_sku}-${item.direction}-${idx}`">
+                      <td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td>
+                      <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td>
+                      <td class="px-4 py-2">
+                        <span class="rounded px-2 py-0.5 text-xs font-semibold uppercase" :class="transferDirectionClass(item.direction)">{{ transferDirectionLabel(item.direction) }}</span>
+                      </td>
+                      <td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.qty) }}</td>
+                      <td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.unit_cost) }}</td>
+                      <td class="px-4 py-2 text-right font-medium tabular-nums" :class="(item.amount || 0) < 0 ? 'text-red-600' : 'text-gray-900'">{{ formatNumber(item.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-3 text-sm text-gray-600">
+            <div class="flex items-center gap-2">
+              <button
+                v-if="transferLevel === 'items'"
+                type="button"
+                class="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
+                @click="goTransferTransactions"
+              >
+                Kembali
+              </button>
+              <span>
+                {{ transferPagination.total }} {{ transferLevel === 'transactions' ? 'transaksi' : 'item' }}
+                · Halaman {{ transferPagination.current_page }} / {{ transferPagination.last_page }}
+              </span>
+            </div>
+            <div class="flex gap-2">
+              <button type="button" :disabled="transferLoading || transferPagination.current_page <= 1" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="reloadTransferCurrent(transferPagination.current_page - 1)">Sebelumnya</button>
+              <button type="button" :disabled="transferLoading || transferPagination.current_page >= transferPagination.last_page" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="reloadTransferCurrent(transferPagination.current_page + 1)">Berikutnya</button>
+            </div>
+          </footer>
+        </section>
+      </div>
     </div>
   </AppLayout>
 </template>
@@ -539,6 +716,17 @@ const officialPagination = ref({ current_page: 1, last_page: 1, per_page: 25, to
 const officialFilters = ref({ search: '', sort_by: 'amount', sort_direction: 'desc', per_page: 25 });
 let officialSearchTimer;
 
+const showTransferDetail = ref(false);
+const transferLoading = ref(false);
+const transferError = ref('');
+const transferLevel = ref('transactions'); // transactions | items
+const transferNetTotal = ref(0);
+const transferTransaction = ref(null);
+const transferItems = ref([]);
+const transferPagination = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
+const transferFilters = ref({ search: '', sort_by: 'amount', sort_direction: 'desc', per_page: 25 });
+let transferSearchTimer;
+
 watch(() => props.filters, (v) => {
   filters.value = { ...v };
 }, { immediate: true });
@@ -576,6 +764,11 @@ const officialDetailTitle = computed(() => {
   if (officialLevel.value === 'summary') return 'Detail Official Cost';
   if (officialLevel.value === 'transactions') return `Transaksi ${officialSourceLabel.value}`;
   return `Detail ${officialTransaction.value?.transaction_number || 'Transaksi'}`;
+});
+
+const transferDetailTitle = computed(() => {
+  if (transferLevel.value === 'transactions') return 'Detail Outlet Transfer';
+  return `Detail ${transferTransaction.value?.transaction_number || 'Transfer'}`;
 });
 
 function formatNumber(value) {
@@ -882,6 +1075,137 @@ async function loadOfficialTransactionItems(page) {
     officialError.value = error?.response?.data?.message || error.message || 'Gagal memuat detail transaksi.';
   } finally {
     officialLoading.value = false;
+  }
+}
+
+function openOutletTransferDetail(row) {
+  selectedOutlet.value = row;
+  transferLevel.value = 'transactions';
+  transferNetTotal.value = Number(row.outlet_transfer || 0);
+  transferTransaction.value = null;
+  transferItems.value = [];
+  transferError.value = '';
+  transferFilters.value = { search: '', sort_by: 'amount', sort_direction: 'desc', per_page: 25 };
+  transferPagination.value = { current_page: 1, last_page: 1, per_page: 25, total: 0 };
+  showTransferDetail.value = true;
+  loadTransferTransactions(1);
+}
+
+function closeOutletTransferDetail() {
+  showTransferDetail.value = false;
+  window.clearTimeout(transferSearchTimer);
+}
+
+function queueTransferSearch() {
+  window.clearTimeout(transferSearchTimer);
+  transferSearchTimer = window.setTimeout(() => reloadTransferCurrent(1), 300);
+}
+
+function goTransferTransactions() {
+  transferLevel.value = 'transactions';
+  transferTransaction.value = null;
+  transferItems.value = [];
+  transferFilters.value.search = '';
+  transferFilters.value.sort_by = 'amount';
+  loadTransferTransactions(1);
+}
+
+function openTransferTransactionItems(row) {
+  transferLevel.value = 'items';
+  transferTransaction.value = {
+    transaction_id: row.transaction_id,
+    transaction_number: row.transaction_number,
+    transaction_date: row.transaction_date,
+    from_outlet: row.from_outlet,
+    to_outlet: row.to_outlet,
+    amount: row.amount,
+  };
+  transferItems.value = [];
+  transferFilters.value.search = '';
+  transferFilters.value.sort_by = 'amount';
+  transferFilters.value.sort_direction = 'desc';
+  loadTransferTransactionItems(1);
+}
+
+function reloadTransferCurrent(page) {
+  if (transferLevel.value === 'items') {
+    loadTransferTransactionItems(page);
+  } else {
+    loadTransferTransactions(page);
+  }
+}
+
+function transferDirectionLabel(direction) {
+  if (direction === 'in' || direction === 'internal_in') return 'IN';
+  if (direction === 'out' || direction === 'internal_out') return 'OUT';
+  return 'INTERNAL';
+}
+
+function transferDirectionClass(direction) {
+  if (direction === 'in' || direction === 'internal_in') return 'bg-emerald-100 text-emerald-800';
+  if (direction === 'out' || direction === 'internal_out') return 'bg-red-100 text-red-800';
+  return 'bg-slate-100 text-slate-700';
+}
+
+async function loadTransferTransactions(page) {
+  if (!selectedOutlet.value || !filters.value.bulan) return;
+  transferLoading.value = true;
+  transferError.value = '';
+  try {
+    const response = await axios.get('/cost-report/outlet-transfer-transactions', {
+      params: {
+        bulan: filters.value.bulan,
+        outlet_id: selectedOutlet.value.outlet_id,
+        search: transferFilters.value.search || undefined,
+        sort_by: transferFilters.value.sort_by,
+        sort_direction: transferFilters.value.sort_direction,
+        per_page: transferFilters.value.per_page,
+        page,
+      },
+    });
+    if (!response?.data?.success) throw new Error('Gagal memuat transaksi outlet transfer.');
+    transferItems.value = response.data.items || [];
+    transferPagination.value = response.data.pagination || transferPagination.value;
+    transferNetTotal.value = Number(response.data.net_total ?? transferNetTotal.value);
+  } catch (error) {
+    transferItems.value = [];
+    transferError.value = error?.response?.data?.message || error.message || 'Gagal memuat transaksi outlet transfer.';
+  } finally {
+    transferLoading.value = false;
+  }
+}
+
+async function loadTransferTransactionItems(page) {
+  if (!selectedOutlet.value || !filters.value.bulan || !transferTransaction.value?.transaction_id) return;
+  transferLoading.value = true;
+  transferError.value = '';
+  try {
+    const response = await axios.get('/cost-report/outlet-transfer-transaction-items', {
+      params: {
+        bulan: filters.value.bulan,
+        outlet_id: selectedOutlet.value.outlet_id,
+        transaction_id: transferTransaction.value.transaction_id,
+        search: transferFilters.value.search || undefined,
+        sort_by: transferFilters.value.sort_by,
+        sort_direction: transferFilters.value.sort_direction,
+        per_page: transferFilters.value.per_page,
+        page,
+      },
+    });
+    if (!response?.data?.success) throw new Error('Gagal memuat detail transfer.');
+    if (response.data.transaction) {
+      transferTransaction.value = {
+        ...transferTransaction.value,
+        ...response.data.transaction,
+      };
+    }
+    transferItems.value = response.data.items || [];
+    transferPagination.value = response.data.pagination || transferPagination.value;
+  } catch (error) {
+    transferItems.value = [];
+    transferError.value = error?.response?.data?.message || error.message || 'Gagal memuat detail transfer.';
+  } finally {
+    transferLoading.value = false;
   }
 }
 
