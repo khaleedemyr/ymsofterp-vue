@@ -1023,7 +1023,7 @@
                     </span>
                   </p>
                   <p class="mt-0.5 text-[10px] text-slate-400">
-                    Max 2% revenue
+                    Toleransi 2% COGS Aktual
                     <span v-if="ov.cogs?.toleransi_max_amount != null">· {{ formatCurrency(ov.cogs.toleransi_max_amount) }}</span>
                   </p>
                 </div>
@@ -2928,7 +2928,7 @@ const cardHelps = {
   ending_inventory:
     'Nilai utama (besar) = Cost di stok — kartu inventory terbaru dalam periode (sama Ending Inventory MTD di Cost Report).\n\nFormula buku (kotak bawah) = Begin + Koreksi tgl 1 item tanpa IB + Purchased ± Transfer ± Adj − Stock Cut fisik − Category Cost.\nSelisih = formula − cost di stok.\n\nPer warehouse di card = breakdown cost di stok.',
   cogs_pct:
-    '% COGS (periode filter dashboard) — selaras tab Actual Cost MTD Cost Report.\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost = spoil + waste + guest + non commodity (TANPA meal)\nMeal Employees = internal use (terpisah)\nCOGS Pembanding = Foods + Category Cost + Meal Employees\nBarang tersedia = Begin + Official Cost − Cost RND + Outlet Transfer (sama Cost Report)\nCOGS Aktual = Barang tersedia − Ending Stok / Cost di stok (sama Ending MTD)\n\nDeviasi = Pembanding − Aktual.\nToleransi max = 2% revenue.',
+    '% COGS (periode filter dashboard) — selaras tab Actual Cost MTD Cost Report.\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\n\nCOGS Foods / Category Cost / Meal Employees = rumus sama Cost Report (MAC detail).\nCategory Cost = spoil + waste + guest + non commodity (TANPA meal)\nMeal Employees = internal use (terpisah)\nCOGS Pembanding = Foods + Category Cost + Meal Employees\nBarang tersedia = Begin + Official Cost − Cost RND + Outlet Transfer\nCOGS Aktual = Barang tersedia − Ending Stok / Cost di stok\n\nDeviasi = Pembanding − Aktual\n% Deviasi = Deviasi ÷ Pembanding (sama Cost Report)\nToleransi 2% = 2% × COGS Aktual (sama Cost Report).',
   outlet_transfer:
     'Transfer antar outlet pada periode filter (hanya status approved).\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi approved (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:

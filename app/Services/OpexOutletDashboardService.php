@@ -284,30 +284,13 @@ class OpexOutletDashboardService
         $endingInventory = round((float) $endingStock['total'], 2);
 
         // COGS % — selaras tab Actual Cost MTD Cost Report.
-        // COGS Foods = Stock Cut HPP full
-        // Category Cost (pembanding) = spoil+waste+guest+non_commodity (tanpa internal_use)
-        // Meal Employees = internal_use
-        // COGS Pembanding = Foods + CatCost + Meal Emp
-        // Barang tersedia = Begin + Official Cost − Cost RND + Outlet Transfer (sama Cost Report)
-        // COGS Aktual = Barang tersedia − Ending Stok (cost di stok / MTD)
-        $mealEmployees = 0.0;
-        $categoryCostForCogs = 0.0;
-        $costRnd = 0.0;
-        foreach ($categoryCost['by_type'] ?? [] as $row) {
-            $type = (string) ($row['type'] ?? '');
-            $amount = (float) ($row['amount'] ?? 0);
-            if ($type === 'internal_use') {
-                $mealEmployees += $amount;
-            } elseif (in_array($type, ['spoil', 'waste', 'guest_supplies', 'non_commodity'], true)) {
-                $categoryCostForCogs += $amount;
-            } elseif (in_array($type, ['r_and_d', 'marketing'], true)) {
-                $costRnd += $amount;
-            }
-        }
-        $mealEmployees = round($mealEmployees, 2);
-        $categoryCostForCogs = round($categoryCostForCogs, 2);
-        $costRnd = round($costRnd, 2);
-        $cogsFoods = round((float) $stockCut['total'], 2);
+        // Foods / Category / Meal pakai rumus yang sama dengan CostReportDataService
+        // supaya Pembanding & Deviasi match.
+        $costReport = app(CostReportDataService::class);
+        $cogsFoods = round((float) ($costReport->computeCogsStockCutByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
+        $categoryCostForCogs = round((float) ($costReport->computeCategoryCostByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
+        $mealEmployees = round((float) ($costReport->computeMealEmployeesByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
+        $costRnd = round((float) ($costReport->computeCostRndByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
         $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
         $officialCost = $this->sumOfficialCostForOutlet($outletId, $dateFrom, $dateTo);
         $availableGoods = round(
@@ -329,11 +312,10 @@ class OpexOutletDashboardService
             return $den > 0 ? round(($num / $den) * 100, 2) : null;
         };
         $deviasi = round($cogsPembanding - $cogsAktual, 2);
-        $pctDeviasiSigned = $salesAfter > 0 ? round(($deviasi / $salesAfter) * 100, 2) : null;
-        $toleransiMaxAmount = round($salesAfter * 0.02, 2);
-        $withinToleransi = $pctDeviasiSigned === null
-            ? true
-            : abs($pctDeviasiSigned) <= 2.0;
+        // Sama Cost Report: % Deviasi = Deviasi ÷ COGS Pembanding; Toleransi 2% = 2% × COGS Aktual.
+        $pctDeviasiSigned = $cogsPembanding > 0 ? round(($deviasi / $cogsPembanding) * 100, 2) : null;
+        $toleransiMaxAmount = round($cogsAktual * 0.02, 2);
+        $withinToleransi = abs($deviasi) <= $toleransiMaxAmount;
         $cogsSummary = [
             'cogs_foods' => $cogsFoods,
             'category_cost' => $categoryCostForCogs,
