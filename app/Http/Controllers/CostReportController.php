@@ -32,7 +32,7 @@ class CostReportController extends Controller
      */
     public function index(Request $request)
     {
-        $bulan = $request->input('bulan', date('Y-m'));
+        $period = $this->resolveReportPeriod($request);
         $shouldLoadData = $request->boolean('load') || $request->input('load') === '1';
 
         if (!$shouldLoadData) {
@@ -47,17 +47,17 @@ class CostReportController extends Controller
                 'reportRows' => [],
                 'cogsRows' => [],
                 'categoryCostRows' => [],
-                'filters' => ['bulan' => $bulan],
+                'filters' => $period['filters'],
             ]);
         }
 
-        $data = $this->getReportData($bulan);
+        $data = $this->getReportData($period['date_from'], $period['date_to']);
         return Inertia::render('CostReport/Index', [
             'outlets' => $data['outlets'],
             'reportRows' => $data['reportRows'],
             'cogsRows' => $data['cogsRows'],
             'categoryCostRows' => $data['categoryCostRows'],
-            'filters' => ['bulan' => $bulan],
+            'filters' => $period['filters'],
         ]);
     }
 
@@ -66,11 +66,12 @@ class CostReportController extends Controller
      */
     public function export(Request $request)
     {
-        $bulan = $request->input('bulan', date('Y-m'));
-        $data = $this->getReportData($bulan);
-        $fileName = 'cost_report_' . $bulan . '.xlsx';
+        $period = $this->resolveReportPeriod($request);
+        $data = $this->getReportData($period['date_from'], $period['date_to']);
+        $label = $period['date_from'].'_'.$period['date_to'];
+        $fileName = 'cost_report_'.$label.'.xlsx';
         return Excel::download(
-            new CostReportExport($data['reportRows'], $data['cogsRows'], $data['categoryCostRows'], $bulan),
+            new CostReportExport($data['reportRows'], $data['cogsRows'], $data['categoryCostRows'], $label),
             $fileName
         );
     }
@@ -80,9 +81,10 @@ class CostReportController extends Controller
      */
     public function exportDay1CutoffWithoutIb(Request $request)
     {
-        $bulan = $request->input('bulan', date('Y-m'));
+        $period = $this->resolveReportPeriod($request);
+        $bulan = Carbon::parse($period['date_from'])->format('Y-m');
         $rows = $this->opexOutletDashboard->listItemsWithoutIbAndWithoutDay1OpnameAllOutlets($bulan);
-        $fileName = 'tanpa_ib_tanpa_opname_tgl1_'.$bulan.'.xlsx';
+        $fileName = 'tanpa_ib_tanpa_opname_'.$period['date_from'].'_'.$period['date_to'].'.xlsx';
 
         return Excel::download(
             new Day1OpnameCutoffWithoutIbExport($rows, $bulan),
@@ -95,7 +97,7 @@ class CostReportController extends Controller
      */
     public function tabData(Request $request)
     {
-        $bulan = $request->input('bulan', date('Y-m'));
+        $period = $this->resolveReportPeriod($request);
         $tab = $request->input('tab', 'cost_inventory');
 
         if (!in_array($tab, ['cost_inventory', 'cogs', 'category_cost'], true)) {
@@ -105,12 +107,10 @@ class CostReportController extends Controller
             ], 422);
         }
 
-        $bulanCarbon = Carbon::parse($bulan . '-01');
-        $bulanSebelumnya = $bulanCarbon->copy()->subMonth();
-        $tanggalAkhirBulanSebelumnya = $bulanSebelumnya->format('Y-m-t');
-        $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
-        $tanggalAwalBulan = $bulanCarbon->format('Y-m-01');
-        $tanggalAkhirBulan = $bulanCarbon->format('Y-m-t');
+        $dateFrom = $period['date_from'];
+        $dateTo = $period['date_to'];
+        $dayBefore = Carbon::parse($dateFrom)->subDay();
+        $tanggalAkhirSebelumPeriode = $dayBefore->toDateString();
 
         $outlets = DB::table('tbl_data_outlet')
             ->where('is_outlet', 1)
@@ -119,56 +119,48 @@ class CostReportController extends Controller
             ->orderBy('nama_outlet')
             ->get();
 
-        if ($tab === 'cost_inventory') {
-            $reportRows = Cache::remember(
-                $this->getReportRowsCacheKey($bulan),
-                now()->addMinutes(10),
-                fn () => $this->buildCostInventoryRows(
-                    $outlets,
-                    $bulanSebelumnya,
-                    $tanggalAkhirBulanSebelumnya,
-                    $tanggal1BulanIni,
-                    $tanggalAwalBulan,
-                    $tanggalAkhirBulan
-                )
-            );
+        $build = fn () => $this->buildCostInventoryRows(
+            $outlets,
+            $dayBefore,
+            $tanggalAkhirSebelumPeriode,
+            $dateFrom,
+            $dateFrom,
+            $dateTo
+        );
 
+        $reportRows = Cache::remember(
+            $this->getReportRowsCacheKey($dateFrom, $dateTo),
+            now()->addMinutes(10),
+            $build
+        );
+
+        if ($tab === 'cost_inventory') {
             return response()->json([
                 'success' => true,
                 'tab' => $tab,
                 'reportRows' => $reportRows,
+                'filters' => $period['filters'],
             ]);
         }
 
-        $reportRows = Cache::remember(
-            $this->getReportRowsCacheKey($bulan),
-            now()->addMinutes(10),
-            fn () => $this->buildCostInventoryRows(
-                $outlets,
-                $bulanSebelumnya,
-                $tanggalAkhirBulanSebelumnya,
-                $tanggal1BulanIni,
-                $tanggalAwalBulan,
-                $tanggalAkhirBulan
-            )
-        );
-
         if ($tab === 'cogs') {
-            $cogsRows = $this->buildCogsRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan);
+            $cogsRows = $this->buildCogsRows($outlets, $reportRows, $dateFrom, $dateTo);
 
             return response()->json([
                 'success' => true,
                 'tab' => $tab,
                 'cogsRows' => $cogsRows,
+                'filters' => $period['filters'],
             ]);
         }
 
-        $categoryCostRows = $this->buildCategoryCostRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan);
+        $categoryCostRows = $this->buildCategoryCostRows($outlets, $reportRows, $dateFrom, $dateTo);
 
         return response()->json([
             'success' => true,
             'tab' => $tab,
             'categoryCostRows' => $categoryCostRows,
+            'filters' => $period['filters'],
         ]);
     }
 
@@ -177,20 +169,81 @@ class CostReportController extends Controller
      */
     public function clearCache(Request $request)
     {
-        $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
-        ]);
-
-        $bulan = $validated['bulan'];
-        Cache::forget($this->getReportRowsCacheKey($bulan));
+        $period = $this->resolveReportPeriod($request);
+        Cache::forget($this->getReportRowsCacheKey($period['date_from'], $period['date_to']));
 
         return response()->json([
             'success' => true,
             'message' => 'Cache cost report berhasil dibersihkan.',
-            'bulan' => $bulan,
+            'filters' => $period['filters'],
         ]);
     }
 
+
+    /**
+     * @return array{date_from: string, date_to: string, filters: array{date_from: string, date_to: string, bulan: string}}
+     */
+    private function resolveReportPeriod(Request $request): array
+    {
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+
+        if ((!$dateFrom || !$dateTo) && $request->filled('bulan') && preg_match('/^\d{4}-\d{2}$/', (string) $request->input('bulan'))) {
+            $month = Carbon::parse($request->input('bulan').'-01');
+            $dateFrom = $month->copy()->startOfMonth()->toDateString();
+            $dateTo = $month->copy()->endOfMonth()->toDateString();
+        }
+
+        if (!$dateFrom || !$dateTo) {
+            $today = Carbon::today();
+            $dateFrom = $today->copy()->startOfMonth()->toDateString();
+            $dateTo = $today->toDateString();
+        }
+
+        try {
+            $from = Carbon::parse($dateFrom)->startOfDay();
+            $to = Carbon::parse($dateTo)->startOfDay();
+        } catch (\Throwable $e) {
+            $today = Carbon::today();
+            $from = $today->copy()->startOfMonth();
+            $to = $today->copy();
+        }
+
+        if ($to->lt($from)) {
+            [$from, $to] = [$to->copy(), $from->copy()];
+        }
+
+        if ($from->diffInDays($to) > 93) {
+            $to = $from->copy()->addDays(93);
+        }
+
+        $dateFrom = $from->toDateString();
+        $dateTo = $to->toDateString();
+
+        return [
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'filters' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'bulan' => $from->format('Y-m'),
+            ],
+        ];
+    }
+
+    private function periodFromValidated(array $validated): array
+    {
+        if (!empty($validated['date_from']) && !empty($validated['date_to'])) {
+            return [$validated['date_from'], $validated['date_to']];
+        }
+        if (!empty($validated['bulan'])) {
+            return $this->officialCostMonthRange($validated['bulan']);
+        }
+
+        $today = Carbon::today();
+
+        return [$today->copy()->startOfMonth()->toDateString(), $today->toDateString()];
+    }
     /**
      * Detail lazy-loaded untuk Begin Inventory sebuah outlet.
      * Formula nilai mengikuti kolom Total MAC di Cost Report.
@@ -198,7 +251,9 @@ class CostReportController extends Controller
     public function beginInventoryDetail(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'search' => ['nullable', 'string', 'max:100'],
             'sort_by' => ['nullable', 'in:category_name,item_name,item_sku,warehouse_name,begin_qty_small,mac,begin_value'],
@@ -207,10 +262,9 @@ class CostReportController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $bulan = $validated['bulan'];
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
-        $reportMonth = Carbon::parse($bulan . '-01');
-        $initialBalanceDate = $reportMonth->format('Y-m-01');
+        $initialBalanceDate = $dateFrom;
         $search = trim((string) ($validated['search'] ?? ''));
         $sortBy = $validated['sort_by'] ?? 'begin_value';
         $sortDirection = $validated['sort_direction'] ?? 'desc';
@@ -302,7 +356,9 @@ class CostReportController extends Controller
     public function officialCostDetail(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'search' => ['nullable', 'string', 'max:100'],
             'sort_by' => ['nullable', 'in:category_name,item_name,item_sku,transaction_date,source,qty,unit_cost,amount'],
@@ -311,9 +367,7 @@ class CostReportController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        $month = Carbon::parse($validated['bulan'] . '-01');
-        $dateFrom = $month->copy()->startOfMonth()->toDateString();
-        $dateTo = $month->copy()->endOfMonth()->toDateString();
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
         $search = trim((string) ($validated['search'] ?? ''));
         $sortBy = $validated['sort_by'] ?? 'amount';
@@ -411,11 +465,13 @@ class CostReportController extends Controller
     public function officialCostSummary(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
         ]);
 
-        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
         $excluded = $this->officialCostExcludedSubCategories();
 
@@ -454,7 +510,9 @@ class CostReportController extends Controller
     public function officialCostTransactions(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'source' => ['required', 'in:food_gr,gsr,retail_food'],
             'search' => ['nullable', 'string', 'max:100'],
@@ -464,7 +522,7 @@ class CostReportController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
         $source = $validated['source'];
         $search = trim((string) ($validated['search'] ?? ''));
@@ -534,7 +592,9 @@ class CostReportController extends Controller
     public function officialCostTransactionItems(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'source' => ['required', 'in:food_gr,gsr,retail_food'],
             'transaction_id' => ['required', 'integer', 'min:1'],
@@ -545,7 +605,7 @@ class CostReportController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
         $source = $validated['source'];
         $transactionId = (int) $validated['transaction_id'];
@@ -609,9 +669,15 @@ class CostReportController extends Controller
         return [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')];
     }
 
-    private function officialCostMonthRange(string $bulan): array
+    private function officialCostMonthRange(string $bulanOrFrom, ?string $dateTo = null): array
     {
-        $month = Carbon::parse($bulan . '-01');
+        if ($dateTo !== null) {
+            return [$bulanOrFrom, $dateTo];
+        }
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $bulanOrFrom)) {
+            return [$bulanOrFrom, $bulanOrFrom];
+        }
+        $month = Carbon::parse($bulanOrFrom . '-01');
 
         return [
             $month->copy()->startOfMonth()->toDateString(),
@@ -894,7 +960,9 @@ class CostReportController extends Controller
     public function outletTransferTransactions(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'search' => ['nullable', 'string', 'max:100'],
             'sort_by' => ['nullable', 'in:transaction_date,transaction_number,amount,direction'],
@@ -903,7 +971,7 @@ class CostReportController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
         $search = trim((string) ($validated['search'] ?? ''));
         $sortBy = $validated['sort_by'] ?? 'amount';
@@ -971,7 +1039,9 @@ class CostReportController extends Controller
     public function outletTransferTransactionItems(Request $request)
     {
         $validated = $request->validate([
-            'bulan' => ['required', 'date_format:Y-m'],
+            'date_from' => ['nullable', 'date_format:Y-m-d'],
+            'date_to' => ['nullable', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+            'bulan' => ['nullable', 'date_format:Y-m'],
             'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
             'transaction_id' => ['required', 'integer', 'min:1'],
             'search' => ['nullable', 'string', 'max:100'],
@@ -981,7 +1051,7 @@ class CostReportController extends Controller
             'page' => ['nullable', 'integer', 'min:1'],
         ]);
 
-        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        [$dateFrom, $dateTo] = $this->periodFromValidated($validated);
         $outletId = (int) $validated['outlet_id'];
         $transferId = (int) $validated['transaction_id'];
         $search = trim((string) ($validated['search'] ?? ''));
@@ -1332,9 +1402,13 @@ class CostReportController extends Controller
         return $rows;
     }
 
-    private function getReportRowsCacheKey(string $bulan): string
+    private function getReportRowsCacheKey(string $dateFrom, string $dateTo = ''): string
     {
-        return 'cost_report:report_rows:v2:' . $bulan;
+        if ($dateTo === '') {
+            return 'cost_report:report_rows:v3:' . $dateFrom;
+        }
+
+        return 'cost_report:report_rows:v3:' . $dateFrom . '_' . $dateTo;
     }
 
     private function buildCostInventoryRows($outlets, Carbon $bulanSebelumnya, string $tanggalAkhirBulanSebelumnya, string $tanggal1BulanIni, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
@@ -1363,7 +1437,8 @@ class CostReportController extends Controller
             $stockRows,
             $outletIds,
             $warehouseOutletIds,
-            $tanggalAkhirBulan
+            $tanggalAkhirBulan,
+            $tanggalAwalBulan
         );
 
         $warehouseIdsByOutlet = [];
@@ -1585,13 +1660,14 @@ class CostReportController extends Controller
         $stockRows,
         array $outletIds,
         array $warehouseOutletIds,
-        string $tanggalAkhirBulan
+        string $tanggalAkhirBulan,
+        ?string $tanggalAwalPeriode = null
     ): array {
         if ($stockRows->isEmpty() || empty($outletIds) || empty($warehouseOutletIds)) {
             return [];
         }
 
-        $tanggalAwalBulan = Carbon::parse($tanggalAkhirBulan)->startOfMonth()->toDateString();
+        $tanggalAwalBulan = $tanggalAwalPeriode ?: Carbon::parse($tanggalAkhirBulan)->startOfMonth()->toDateString();
 
         // Ambil stock opname TERAKHIR dalam bulan ini per (outlet, warehouse_outlet)
         // (bukan harus tepat tanggal akhir bulan) agar ending tidak 0 semua.
@@ -1728,14 +1804,21 @@ class CostReportController extends Controller
     /**
      * Build report data for the given month (shared by index and export).
      */
-    private function getReportData(string $bulan): array
+    private function getReportData(string $dateFrom, ?string $dateTo = null): array
     {
-        $bulanCarbon = Carbon::parse($bulan . '-01');
-        $bulanSebelumnya = $bulanCarbon->copy()->subMonth();
-        $tanggalAkhirBulanSebelumnya = $bulanSebelumnya->format('Y-m-t');
-        $tanggal1BulanIni = $bulanCarbon->format('Y-m-01');
-        $tanggalAwalBulan = $bulanCarbon->format('Y-m-01');
-        $tanggalAkhirBulan = $bulanCarbon->format('Y-m-t');
+        if ($dateTo === null && preg_match('/^\d{4}-\d{2}$/', $dateFrom)) {
+            $bulanCarbon = Carbon::parse($dateFrom.'-01');
+            $dateFrom = $bulanCarbon->format('Y-m-01');
+            $dateTo = $bulanCarbon->format('Y-m-t');
+        }
+        $dateTo = $dateTo ?: $dateFrom;
+        $dayBefore = Carbon::parse($dateFrom)->subDay();
+        $bulanSebelumnya = $dayBefore;
+        $tanggalAkhirBulanSebelumnya = $dayBefore->toDateString();
+        $tanggal1BulanIni = $dateFrom;
+        $tanggalAwalBulan = $dateFrom;
+        $tanggalAkhirBulan = $dateTo;
+        $bulan = Carbon::parse($dateFrom)->format('Y-m');
 
         // 1. Outlets: is_outlet=1, status='A'
         $outlets = DB::table('tbl_data_outlet')
@@ -1746,7 +1829,7 @@ class CostReportController extends Controller
             ->get();
 
         $reportRows = Cache::remember(
-            $this->getReportRowsCacheKey($bulan),
+            $this->getReportRowsCacheKey($tanggalAwalBulan, $tanggalAkhirBulan),
             now()->addMinutes(10),
             fn () => $this->buildCostInventoryRows(
                 $outlets,

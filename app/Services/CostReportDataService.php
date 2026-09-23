@@ -49,7 +49,8 @@ class CostReportDataService
             $stockRows,
             $outletIds,
             $warehouseOutletIds,
-            $tanggalAkhirBulan
+            $tanggalAkhirBulan,
+            $tanggalAwalBulan
         );
 
         $warehouseIdsByOutlet = [];
@@ -271,16 +272,16 @@ class CostReportDataService
         $stockRows,
         array $outletIds,
         array $warehouseOutletIds,
-        string $tanggalAkhirBulan
+        string $tanggalAkhirBulan,
+        ?string $tanggalAwalPeriode = null
     ): array {
         if ($stockRows->isEmpty() || empty($outletIds) || empty($warehouseOutletIds)) {
             return [];
         }
 
-        $tanggalAwalBulan = Carbon::parse($tanggalAkhirBulan)->startOfMonth()->toDateString();
+        $tanggalAwalBulan = $tanggalAwalPeriode ?: Carbon::parse($tanggalAkhirBulan)->startOfMonth()->toDateString();
 
-        // Ambil stock opname TERAKHIR dalam bulan ini per (outlet, warehouse_outlet)
-        // (bukan harus tepat tanggal akhir bulan) agar ending tidak 0 semua.
+        // Ambil stock opname TERAKHIR dalam rentang periode per (outlet, warehouse_outlet)
         $outletIdsSql = implode(',', array_map('intval', $outletIds));
         $warehouseIdsSql = implode(',', array_map('intval', $warehouseOutletIds));
 

@@ -1,0 +1,776 @@
+[
+    {
+        "key": "sirloin aussie 150gr",
+        "reported": "10 pcs",
+        "item_id": 52976,
+        "inv_id": 4649,
+        "name": "Beef Sirloin Aussie 150gr",
+        "drift_stock": 1500,
+        "lost": {
+            "same_saldo": true,
+            "shortfall_small": 1500,
+            "festival_out_s": 1500,
+            "festival_out_m": 10,
+            "festival_out_l": 10,
+            "jawa_out_s": 1500,
+            "jawa_out_m": 10,
+            "jawa_out_l": 10
+        },
+        "do37": [
+            {
+                "id": 776975,
+                "ref": 65749,
+                "out_s": 1500,
+                "out_m": 10,
+                "out_l": 10,
+                "saldo_s": 104550,
+                "saldo_m": 697,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777008,
+                "ref": 65750,
+                "out_s": 1500,
+                "out_m": 10,
+                "out_l": 10,
+                "saldo_s": 104550,
+                "saldo_m": 697,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:14"
+            }
+        ],
+        "bad_count": 53
+    },
+    {
+        "key": "sirloin aussie 250gr",
+        "reported": "5 pcs",
+        "item_id": 52977,
+        "inv_id": 4651,
+        "name": "Beef Sirloin Aussie 250gr",
+        "drift_stock": 1250,
+        "lost": {
+            "same_saldo": true,
+            "shortfall_small": 1250,
+            "festival_out_s": 1250,
+            "festival_out_m": 5,
+            "festival_out_l": 5,
+            "jawa_out_s": 1250,
+            "jawa_out_m": 5,
+            "jawa_out_l": 5
+        },
+        "do37": [
+            {
+                "id": 776976,
+                "ref": 65749,
+                "out_s": 1250,
+                "out_m": 5,
+                "out_l": 5,
+                "saldo_s": 76000,
+                "saldo_m": 304,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777009,
+                "ref": 65750,
+                "out_s": 1250,
+                "out_m": 5,
+                "out_l": 5,
+                "saldo_s": 76000,
+                "saldo_m": 304,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:14"
+            }
+        ],
+        "bad_count": 53
+    },
+    {
+        "key": "sirloin blue label",
+        "reported": "10 pcs",
+        "item_id": 52992,
+        "inv_id": 4652,
+        "name": "Beef Sirloin Blue Label",
+        "drift_stock": 1600,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 1600,
+            "festival_out_s": 4800,
+            "festival_out_m": 30,
+            "festival_out_l": 30,
+            "jawa_out_s": 1600,
+            "jawa_out_m": 10,
+            "jawa_out_l": 10
+        },
+        "do37": [
+            {
+                "id": 776977,
+                "ref": 65749,
+                "out_s": 1600,
+                "out_m": 10,
+                "out_l": 10,
+                "saldo_s": 49600,
+                "saldo_m": 310,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777010,
+                "ref": 65750,
+                "out_s": 4800,
+                "out_m": 30,
+                "out_l": 30,
+                "saldo_s": 46400,
+                "saldo_m": 290,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:14"
+            }
+        ],
+        "bad_count": 57
+    },
+    {
+        "key": "stroganof",
+        "reported": "1 pck",
+        "item_id": 52906,
+        "inv_id": 4663,
+        "name": "Beef Stroganoff",
+        "drift_stock": 500,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 500,
+            "festival_out_s": 1000,
+            "festival_out_m": 2,
+            "festival_out_l": 2,
+            "jawa_out_s": 500,
+            "jawa_out_m": 1,
+            "jawa_out_l": 1
+        },
+        "do37": [
+            {
+                "id": 776979,
+                "ref": 65749,
+                "out_s": 500,
+                "out_m": 1,
+                "out_l": 1,
+                "saldo_s": 261000.15,
+                "saldo_m": 522.0023,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777012,
+                "ref": 65750,
+                "out_s": 1000,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 260500.15,
+                "saldo_m": 521.0023,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:14"
+            }
+        ],
+        "bad_count": 99
+    },
+    {
+        "key": "tenderloin aussie 150gr",
+        "reported": "10 pcs",
+        "item_id": 52984,
+        "inv_id": 4671,
+        "name": "Beef Tenderloin Aussie 150gr",
+        "drift_stock": 1500,
+        "lost": {
+            "same_saldo": true,
+            "shortfall_small": 1500,
+            "festival_out_s": 1500,
+            "festival_out_m": 10,
+            "festival_out_l": 10,
+            "jawa_out_s": 1500,
+            "jawa_out_m": 10,
+            "jawa_out_l": 10
+        },
+        "do37": [
+            {
+                "id": 776980,
+                "ref": 65749,
+                "out_s": 1500,
+                "out_m": 10,
+                "out_l": 10,
+                "saldo_s": 56100,
+                "saldo_m": 374,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777014,
+                "ref": 65750,
+                "out_s": 1500,
+                "out_m": 10,
+                "out_l": 10,
+                "saldo_s": 56100,
+                "saldo_m": 374,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 86
+    },
+    {
+        "key": "tenderloin blue label",
+        "reported": "10 pcs",
+        "item_id": 52994,
+        "inv_id": 4674,
+        "name": "Beef Tenderloin Blue Label",
+        "drift_stock": -66400,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 1600,
+            "festival_out_s": 4800,
+            "festival_out_m": 30,
+            "festival_out_l": 30,
+            "jawa_out_s": 1600,
+            "jawa_out_m": 10,
+            "jawa_out_l": 10
+        },
+        "do37": [
+            {
+                "id": 776981,
+                "ref": 65749,
+                "out_s": 1600,
+                "out_m": 10,
+                "out_l": 10,
+                "saldo_s": 6400,
+                "saldo_m": 40,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777016,
+                "ref": 65750,
+                "out_s": 4800,
+                "out_m": 30,
+                "out_l": 30,
+                "saldo_s": 3200,
+                "saldo_m": 20,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 76
+    },
+    {
+        "key": "tenderloin meltique 250gr",
+        "reported": "4 pcs",
+        "item_id": 53015,
+        "inv_id": 4676,
+        "name": "Beef Tenderloin Meltique 250gr",
+        "drift_stock": 1000,
+        "lost": {
+            "same_saldo": true,
+            "shortfall_small": 1000,
+            "festival_out_s": 1000,
+            "festival_out_m": 4,
+            "festival_out_l": 4,
+            "jawa_out_s": 1000,
+            "jawa_out_m": 4,
+            "jawa_out_l": 4
+        },
+        "do37": [
+            {
+                "id": 776982,
+                "ref": 65749,
+                "out_s": 1000,
+                "out_m": 4,
+                "out_l": 4,
+                "saldo_s": 32000,
+                "saldo_m": 128,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777017,
+                "ref": 65750,
+                "out_s": 1000,
+                "out_m": 4,
+                "out_l": 4,
+                "saldo_s": 32000,
+                "saldo_m": 128,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 37
+    },
+    {
+        "key": "butter salted",
+        "reported": "5 pck",
+        "item_id": 53265,
+        "inv_id": 4784,
+        "name": "Butter Salted",
+        "drift_stock": 1000,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 1000,
+            "festival_out_s": 400,
+            "festival_out_m": 2,
+            "festival_out_l": 2,
+            "jawa_out_s": 1000,
+            "jawa_out_m": 5,
+            "jawa_out_l": 5
+        },
+        "do37": [
+            {
+                "id": 776984,
+                "ref": 65749,
+                "out_s": 1000,
+                "out_m": 5,
+                "out_l": 5,
+                "saldo_s": 366600,
+                "saldo_m": 1833,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777018,
+                "ref": 65750,
+                "out_s": 400,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 367200,
+                "saldo_m": 1836,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 35
+    },
+    {
+        "key": "chicken breast",
+        "reported": "2 kg",
+        "item_id": 53043,
+        "inv_id": 4820,
+        "name": "Chicken Breast",
+        "drift_stock": 2000,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 2000,
+            "festival_out_s": 4000,
+            "festival_out_m": 4,
+            "festival_out_l": 4,
+            "jawa_out_s": 2000,
+            "jawa_out_m": 2,
+            "jawa_out_l": 2
+        },
+        "do37": [
+            {
+                "id": 776985,
+                "ref": 65749,
+                "out_s": 2000,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 171000,
+                "saldo_m": 171,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:12"
+            },
+            {
+                "id": 777020,
+                "ref": 65750,
+                "out_s": 4000,
+                "out_m": 4,
+                "out_l": 4,
+                "saldo_s": 169000,
+                "saldo_m": 169,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 71
+    },
+    {
+        "key": "chicken leg skin",
+        "reported": "1 kg",
+        "item_id": 53044,
+        "inv_id": 4827,
+        "name": "Chicken Leg Skin",
+        "drift_stock": 1000,
+        "lost": {
+            "same_saldo": true,
+            "shortfall_small": 1000,
+            "festival_out_s": 1000,
+            "festival_out_m": 1,
+            "festival_out_l": 1,
+            "jawa_out_s": 1000,
+            "jawa_out_m": 1,
+            "jawa_out_l": 1
+        },
+        "do37": [
+            {
+                "id": 776986,
+                "ref": 65749,
+                "out_s": 1000,
+                "out_m": 1,
+                "out_l": 1,
+                "saldo_s": 273000,
+                "saldo_m": 273,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777021,
+                "ref": 65750,
+                "out_s": 1000,
+                "out_m": 1,
+                "out_l": 1,
+                "saldo_s": 273000,
+                "saldo_m": 273,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 48
+    },
+    {
+        "key": "cooking cream",
+        "reported": "3 pck",
+        "item_id": 53271,
+        "inv_id": 4860,
+        "name": "Cooking Cream",
+        "drift_stock": 3000,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 3000,
+            "festival_out_s": 4000,
+            "festival_out_m": 4,
+            "festival_out_l": 4,
+            "jawa_out_s": 3000,
+            "jawa_out_m": 3,
+            "jawa_out_l": 3
+        },
+        "do37": [
+            {
+                "id": 776988,
+                "ref": 65749,
+                "out_s": 3000,
+                "out_m": 3,
+                "out_l": 3,
+                "saldo_s": 251000,
+                "saldo_m": 251,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777022,
+                "ref": 65750,
+                "out_s": 4000,
+                "out_m": 4,
+                "out_l": 4,
+                "saldo_s": 250000,
+                "saldo_m": 250,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 85
+    },
+    {
+        "key": "cooking cream",
+        "reported": "3 pck",
+        "item_id": 53272,
+        "inv_id": 4861,
+        "name": "Cooking Cream Gourmet",
+        "drift_stock": 2000,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 2000,
+            "festival_out_s": 3000,
+            "festival_out_m": 3,
+            "festival_out_l": 3,
+            "jawa_out_s": 2000,
+            "jawa_out_m": 2,
+            "jawa_out_l": 2
+        },
+        "do37": [
+            {
+                "id": 776989,
+                "ref": 65749,
+                "out_s": 2000,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 246000,
+                "saldo_m": 246,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777023,
+                "ref": 65750,
+                "out_s": 3000,
+                "out_m": 3,
+                "out_l": 3,
+                "saldo_s": 245000,
+                "saldo_m": 245,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 61
+    },
+    {
+        "key": "ikan cumi",
+        "reported": "1 kg",
+        "item_id": 53336,
+        "inv_id": 5025,
+        "name": "Ikan Cumi",
+        "drift_stock": 1000,
+        "lost": {
+            "same_saldo": true,
+            "shortfall_small": 1000,
+            "festival_out_s": 1000,
+            "festival_out_m": 1,
+            "festival_out_l": 1,
+            "jawa_out_s": 1000,
+            "jawa_out_m": 1,
+            "jawa_out_l": 1
+        },
+        "do37": [
+            {
+                "id": 776993,
+                "ref": 65749,
+                "out_s": 1000,
+                "out_m": 1,
+                "out_l": 1,
+                "saldo_s": 119000,
+                "saldo_m": 119,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777026,
+                "ref": 65750,
+                "out_s": 1000,
+                "out_m": 1,
+                "out_l": 1,
+                "saldo_s": 119000,
+                "saldo_m": 119,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 20
+    },
+    {
+        "key": "ikan dory",
+        "reported": "2 kg",
+        "item_id": 53335,
+        "inv_id": 5027,
+        "name": "Ikan Dory",
+        "drift_stock": 2000,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 2000,
+            "festival_out_s": 3000,
+            "festival_out_m": 3,
+            "festival_out_l": 3,
+            "jawa_out_s": 2000,
+            "jawa_out_m": 2,
+            "jawa_out_l": 2
+        },
+        "do37": [
+            {
+                "id": 776994,
+                "ref": 65749,
+                "out_s": 2000,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 117000,
+                "saldo_m": 117,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777027,
+                "ref": 65750,
+                "out_s": 3000,
+                "out_m": 3,
+                "out_l": 3,
+                "saldo_s": 116000,
+                "saldo_m": 116,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 42
+    },
+    {
+        "key": "salmon fillet",
+        "reported": "2 pcs",
+        "item_id": 53351,
+        "inv_id": 5034,
+        "name": "Ikan Salmon Fillet",
+        "drift_stock": 2,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 2,
+            "festival_out_s": 6,
+            "festival_out_m": 6,
+            "festival_out_l": 6,
+            "jawa_out_s": 2,
+            "jawa_out_m": 2,
+            "jawa_out_l": 2
+        },
+        "do37": [
+            {
+                "id": 776996,
+                "ref": 65749,
+                "out_s": 2,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 76,
+                "saldo_m": 76,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777028,
+                "ref": 65750,
+                "out_s": 6,
+                "out_m": 6,
+                "out_l": 6,
+                "saldo_s": 72,
+                "saldo_m": 72,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 42
+    },
+    {
+        "key": "salmon steak",
+        "reported": "6 pcs",
+        "item_id": 53352,
+        "inv_id": 4537,
+        "name": "Ikan Salmon Steak",
+        "drift_stock": 6,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 6,
+            "festival_out_s": 2,
+            "festival_out_m": 2,
+            "festival_out_l": 2,
+            "jawa_out_s": 6,
+            "jawa_out_m": 6,
+            "jawa_out_l": 6
+        },
+        "do37": [
+            {
+                "id": 776997,
+                "ref": 65749,
+                "out_s": 6,
+                "out_m": 6,
+                "out_l": 6,
+                "saldo_s": 238,
+                "saldo_m": 238,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777029,
+                "ref": 65750,
+                "out_s": 2,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 242,
+                "saldo_m": 242,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 49
+    },
+    {
+        "key": "straightcut",
+        "reported": "2 pck",
+        "item_id": 53224,
+        "inv_id": 5300,
+        "name": "Potato Straight Cut",
+        "drift_stock": 4540,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 4540,
+            "festival_out_s": 6810,
+            "festival_out_m": 3,
+            "festival_out_l": 3,
+            "jawa_out_s": 4540,
+            "jawa_out_m": 2,
+            "jawa_out_l": 2
+        },
+        "do37": [
+            {
+                "id": 776999,
+                "ref": 65749,
+                "out_s": 4540,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 254240,
+                "saldo_m": 112,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777033,
+                "ref": 65750,
+                "out_s": 6810,
+                "out_m": 3,
+                "out_l": 3,
+                "saldo_s": 251970,
+                "saldo_m": 111,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 85
+    },
+    {
+        "key": "sosis",
+        "reported": "1 pck",
+        "item_id": 53229,
+        "inv_id": 5413,
+        "name": "Sosis Bratwurst",
+        "drift_stock": 12,
+        "lost": {
+            "same_saldo": false,
+            "shortfall_small": 12,
+            "festival_out_s": 24,
+            "festival_out_m": 2,
+            "festival_out_l": 2,
+            "jawa_out_s": 12,
+            "jawa_out_m": 1,
+            "jawa_out_l": 1
+        },
+        "do37": [
+            {
+                "id": 777002,
+                "ref": 65749,
+                "out_s": 12,
+                "out_m": 1,
+                "out_l": 1,
+                "saldo_s": 3204,
+                "saldo_m": 267,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Jawa (Fallback)",
+                "created": "2026-09-16 14:02:13"
+            },
+            {
+                "id": 777037,
+                "ref": 65750,
+                "out_s": 24,
+                "out_m": 2,
+                "out_l": 2,
+                "saldo_s": 3192,
+                "saldo_m": 266,
+                "desc": "Stock Out - Delivery Order DO2609160037 to Justus Steak House Festival Citylink (Fallback)",
+                "created": "2026-09-16 14:02:15"
+            }
+        ],
+        "bad_count": 30
+    }
+]

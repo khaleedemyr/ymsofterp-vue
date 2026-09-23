@@ -10,20 +10,27 @@
 
       <!-- Filter -->
       <div class="bg-white rounded-xl shadow-xl p-6 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-2">Bulan</label>
+            <label class="block text-sm font-medium text-gray-700 mb-2">From</label>
             <input
-              type="month"
-              v-model="filters.bulan"
-              @change="loadReport"
+              type="date"
+              v-model="filters.date_from"
               class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
-          <div class="flex items-end gap-2">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-2">To</label>
+            <input
+              type="date"
+              v-model="filters.date_to"
+              class="w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+          <div class="md:col-span-3 flex items-end gap-2 flex-wrap">
             <button
               @click="loadReport"
-              :disabled="loading || clearingCache"
+              :disabled="loading || clearingCache || !canLoad"
               class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <i v-if="loading" class="fa-solid fa-spinner fa-spin mr-1"></i>
@@ -32,7 +39,7 @@
             </button>
             <button
               @click="clearCacheAndReload"
-              :disabled="loading || clearingCache || !filters.bulan"
+              :disabled="loading || clearingCache || !canLoad"
               class="inline-flex items-center px-4 py-2 rounded bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <i v-if="clearingCache" class="fa-solid fa-spinner fa-spin mr-1"></i>
@@ -44,6 +51,7 @@
               target="_blank"
               rel="noopener noreferrer"
               class="inline-flex items-center px-4 py-2 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition"
+              :class="{ 'pointer-events-none opacity-50': !canLoad }"
             >
               <i class="fa-solid fa-file-excel mr-1"></i>
               Export to Excel
@@ -53,6 +61,7 @@
               target="_blank"
               rel="noopener noreferrer"
               class="inline-flex items-center px-4 py-2 rounded bg-amber-700 text-white hover:bg-amber-800 transition"
+              :class="{ 'pointer-events-none opacity-50': !canLoad }"
               title="Item tanpa IB tgl 1 dan tanpa stock opname koreksi fisik tgl 1 (semua outlet)"
             >
               <i class="fa-solid fa-file-excel mr-1"></i>
@@ -60,6 +69,7 @@
             </a>
           </div>
         </div>
+        <p class="mt-3 text-xs text-gray-500">Semua metrik (Official Cost, Transfer, Sales, COGS, Ending) mengikuti rentang From–To. Bisa weekly atau daily.</p>
       </div>
 
       <!-- Tabs -->
@@ -164,7 +174,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_after != null ? (Number(row.cogs_after).toFixed(2) + '%') : '-' }}</td>
             </tr>
             <tr v-if="!reportRowsData || reportRowsData.length === 0">
-              <td colspan="16" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
+              <td colspan="16" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>
@@ -209,7 +219,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_category_cost != null ? (Number(row.pct_category_cost).toFixed(2) + '%') : '-' }}</td>
             </tr>
             <tr v-if="!cogsRowsData || cogsRowsData.length === 0">
-              <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
+              <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>
@@ -250,7 +260,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_category_cost != null ? (Number(row.pct_category_cost).toFixed(2) + '%') : '-' }}</td>
             </tr>
             <tr v-if="!categoryCostRowsData || categoryCostRowsData.length === 0">
-              <td colspan="12" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
+              <td colspan="12" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>
@@ -261,7 +271,7 @@
           <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
             <div>
               <h2 id="begin-inventory-detail-title" class="text-lg font-semibold text-gray-900">Detail Begin Inventory</h2>
-              <p class="mt-1 text-sm text-gray-500">Detail Begin Inventory · {{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <p class="mt-1 text-sm text-gray-500">Detail Begin Inventory · {{ selectedOutlet?.outlet_name || '-' }} · {{ periodLabel }}</p>
             </div>
             <button type="button" class="text-gray-500 hover:text-gray-900" title="Tutup detail" @click="closeBeginInventoryDetail">
               <i class="fa-solid fa-xmark text-xl"></i>
@@ -330,7 +340,7 @@
           <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
             <div>
               <h2 id="official-cost-detail-title" class="text-lg font-semibold text-gray-900">{{ officialDetailTitle }}</h2>
-              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ periodLabel }}</p>
               <nav v-if="officialLevel !== 'summary'" class="mt-2 flex flex-wrap items-center gap-1 text-xs text-gray-500">
                 <button type="button" class="text-blue-700 hover:underline" @click="goOfficialSummary">Ringkasan</button>
                 <span>/</span>
@@ -517,7 +527,7 @@
           <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
             <div>
               <h2 id="outlet-transfer-detail-title" class="text-lg font-semibold text-gray-900">{{ transferDetailTitle }}</h2>
-              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ periodLabel }}</p>
               <nav v-if="transferLevel === 'items'" class="mt-2 flex flex-wrap items-center gap-1 text-xs text-gray-500">
                 <button type="button" class="text-blue-700 hover:underline" @click="goTransferTransactions">Transaksi</button>
                 <span>/</span>
@@ -693,12 +703,46 @@ const props = defineProps({
   reportRows: { type: Array, default: () => [] },
   cogsRows: { type: Array, default: () => [] },
   categoryCostRows: { type: Array, default: () => [] },
-  filters: { type: Object, default: () => ({ bulan: '' }) },
+  filters: { type: Object, default: () => ({ date_from: '', date_to: '', bulan: '' }) },
 });
 
 const loading = ref(false);
 const clearingCache = ref(false);
-const filters = ref({ ...props.filters });
+
+function defaultPeriodFilters(src = {}) {
+  const today = new Date();
+  const yyyy = today.getFullYear();
+  const mm = String(today.getMonth() + 1).padStart(2, '0');
+  const dd = String(today.getDate()).padStart(2, '0');
+  const monthStart = `${yyyy}-${mm}-01`;
+  const todayStr = `${yyyy}-${mm}-${dd}`;
+  // legacy bulan → full month
+  if ((!src.date_from || !src.date_to) && src.bulan && /^\d{4}-\d{2}$/.test(src.bulan)) {
+    const [y, m] = src.bulan.split('-').map(Number);
+    const last = new Date(y, m, 0).getDate();
+    return {
+      date_from: `${src.bulan}-01`,
+      date_to: `${src.bulan}-${String(last).padStart(2, '0')}`,
+      bulan: src.bulan,
+    };
+  }
+  return {
+    date_from: src.date_from || monthStart,
+    date_to: src.date_to || todayStr,
+    bulan: src.bulan || `${yyyy}-${mm}`,
+  };
+}
+
+const filters = ref(defaultPeriodFilters(props.filters));
+const canLoad = computed(() => !!(filters.value.date_from && filters.value.date_to));
+const periodLabel = computed(() => {
+  if (!filters.value.date_from || !filters.value.date_to) return '-';
+  return `${filters.value.date_from} s/d ${filters.value.date_to}`;
+});
+const periodQuery = computed(() => ({
+  date_from: filters.value.date_from,
+  date_to: filters.value.date_to,
+}));
 const activeTab = ref('cost_inventory'); // 'cost_inventory' | 'cogs' | 'category_cost'
 const reportRowsData = ref(props.reportRows || []);
 const cogsRowsData = ref(props.cogsRows || []);
@@ -740,7 +784,7 @@ const transferFilters = ref({ search: '', sort_by: 'amount', sort_direction: 'de
 let transferSearchTimer;
 
 watch(() => props.filters, (v) => {
-  filters.value = { ...v };
+  filters.value = defaultPeriodFilters(v || {});
 }, { immediate: true });
 
 watch(() => props.reportRows, (v) => {
@@ -756,13 +800,13 @@ watch(() => props.categoryCostRows, (v) => {
 }, { immediate: true });
 
 const exportUrl = computed(() => {
-  const bulan = filters.value.bulan || '';
-  return `/cost-report/export?bulan=${encodeURIComponent(bulan)}`;
+  const q = new URLSearchParams(periodQuery.value).toString();
+  return `/cost-report/export?${q}`;
 });
 
 const exportDay1CutoffUrl = computed(() => {
-  const bulan = filters.value.bulan || '';
-  return `/cost-report/export-day1-cutoff-without-ib?bulan=${encodeURIComponent(bulan)}`;
+  const q = new URLSearchParams(periodQuery.value).toString();
+  return `/cost-report/export-day1-cutoff-without-ib?${q}`;
 });
 
 const beginDetailGroups = computed(() => {
@@ -799,25 +843,24 @@ function formatNumber(value) {
 }
 
 function loadReport() {
-  const bulan = filters.value.bulan || '';
+  if (!canLoad.value) return;
   loadedTabs.value = {};
   reportRowsData.value = [];
   cogsRowsData.value = [];
   categoryCostRowsData.value = [];
-  fetchTabData(activeTab.value, bulan, true);
+  fetchTabData(activeTab.value, true);
 }
 
 function switchTab(tab) {
   activeTab.value = tab;
-  const bulan = filters.value.bulan || '';
-  if (!bulan) return;
-  fetchTabData(tab, bulan, false);
+  if (!canLoad.value) return;
+  fetchTabData(tab, false);
 }
 
-async function fetchTabData(tab, bulan, force = false) {
-  if (!bulan) return;
+async function fetchTabData(tab, force = false) {
+  if (!canLoad.value) return;
 
-  const loadKey = `${bulan}:${tab}`;
+  const loadKey = `${filters.value.date_from}_${filters.value.date_to}:${tab}`;
   if (!force && loadedTabs.value[loadKey]) {
     return;
   }
@@ -825,10 +868,13 @@ async function fetchTabData(tab, bulan, force = false) {
   loading.value = true;
   try {
     const response = await axios.get('/cost-report/tab-data', {
-      params: { bulan, tab },
+      params: { ...periodQuery.value, tab },
     });
 
     if (response?.data?.success) {
+      if (response.data.filters) {
+        filters.value = defaultPeriodFilters(response.data.filters);
+      }
       if (tab === 'cost_inventory') {
         reportRowsData.value = response.data.reportRows || [];
       } else if (tab === 'cogs') {
@@ -846,17 +892,16 @@ async function fetchTabData(tab, bulan, force = false) {
 }
 
 async function clearCacheAndReload() {
-  const bulan = filters.value.bulan || '';
-  if (!bulan) return;
+  if (!canLoad.value) return;
 
   clearingCache.value = true;
   try {
-    await axios.post('/cost-report/clear-cache', { bulan });
+    await axios.post('/cost-report/clear-cache', { ...periodQuery.value });
     loadedTabs.value = {};
     reportRowsData.value = [];
     cogsRowsData.value = [];
     categoryCostRowsData.value = [];
-    await fetchTabData(activeTab.value, bulan, true);
+    await fetchTabData(activeTab.value, true);
   } catch (error) {
     console.error('Failed to clear cost report cache:', error);
   } finally {
@@ -914,13 +959,13 @@ function queueOfficialSearch() {
 }
 
 async function loadBeginInventoryDetail(page) {
-  if (!selectedOutlet.value || !filters.value.bulan) return;
+  if (!selectedOutlet.value || !canLoad.value) return;
   beginDetailLoading.value = true;
   beginDetailError.value = '';
   try {
     const response = await axios.get('/cost-report/begin-inventory-detail', {
       params: {
-        bulan: filters.value.bulan,
+        ...periodQuery.value,
         outlet_id: selectedOutlet.value.outlet_id,
         search: beginDetailFilters.value.search || undefined,
         sort_by: beginDetailFilters.value.sort_by,
@@ -942,13 +987,13 @@ async function loadBeginInventoryDetail(page) {
 }
 
 async function loadOfficialSummary() {
-  if (!selectedOutlet.value || !filters.value.bulan) return;
+  if (!selectedOutlet.value || !canLoad.value) return;
   officialLoading.value = true;
   officialError.value = '';
   try {
     const response = await axios.get('/cost-report/official-cost-summary', {
       params: {
-        bulan: filters.value.bulan,
+        ...periodQuery.value,
         outlet_id: selectedOutlet.value.outlet_id,
       },
     });
@@ -1032,13 +1077,13 @@ function reloadOfficialCurrent(page) {
 }
 
 async function loadOfficialTransactions(page) {
-  if (!selectedOutlet.value || !filters.value.bulan || !officialSourceKey.value) return;
+  if (!selectedOutlet.value || !canLoad.value || !officialSourceKey.value) return;
   officialLoading.value = true;
   officialError.value = '';
   try {
     const response = await axios.get('/cost-report/official-cost-transactions', {
       params: {
-        bulan: filters.value.bulan,
+        ...periodQuery.value,
         outlet_id: selectedOutlet.value.outlet_id,
         source: officialSourceKey.value,
         search: officialFilters.value.search || undefined,
@@ -1061,13 +1106,13 @@ async function loadOfficialTransactions(page) {
 }
 
 async function loadOfficialTransactionItems(page) {
-  if (!selectedOutlet.value || !filters.value.bulan || !officialSourceKey.value || !officialTransaction.value?.transaction_id) return;
+  if (!selectedOutlet.value || !canLoad.value || !officialSourceKey.value || !officialTransaction.value?.transaction_id) return;
   officialLoading.value = true;
   officialError.value = '';
   try {
     const response = await axios.get('/cost-report/official-cost-transaction-items', {
       params: {
-        bulan: filters.value.bulan,
+        ...periodQuery.value,
         outlet_id: selectedOutlet.value.outlet_id,
         source: officialSourceKey.value,
         transaction_id: officialTransaction.value.transaction_id,
@@ -1165,13 +1210,13 @@ function transferDirectionClass(direction) {
 }
 
 async function loadTransferTransactions(page) {
-  if (!selectedOutlet.value || !filters.value.bulan) return;
+  if (!selectedOutlet.value || !canLoad.value) return;
   transferLoading.value = true;
   transferError.value = '';
   try {
     const response = await axios.get('/cost-report/outlet-transfer-transactions', {
       params: {
-        bulan: filters.value.bulan,
+        ...periodQuery.value,
         outlet_id: selectedOutlet.value.outlet_id,
         search: transferFilters.value.search || undefined,
         sort_by: transferFilters.value.sort_by,
@@ -1193,13 +1238,13 @@ async function loadTransferTransactions(page) {
 }
 
 async function loadTransferTransactionItems(page) {
-  if (!selectedOutlet.value || !filters.value.bulan || !transferTransaction.value?.transaction_id) return;
+  if (!selectedOutlet.value || !canLoad.value || !transferTransaction.value?.transaction_id) return;
   transferLoading.value = true;
   transferError.value = '';
   try {
     const response = await axios.get('/cost-report/outlet-transfer-transaction-items', {
       params: {
-        bulan: filters.value.bulan,
+        ...periodQuery.value,
         outlet_id: selectedOutlet.value.outlet_id,
         transaction_id: transferTransaction.value.transaction_id,
         search: transferFilters.value.search || undefined,
