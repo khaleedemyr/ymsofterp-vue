@@ -48,6 +48,16 @@
               <i class="fa-solid fa-file-excel mr-1"></i>
               Export to Excel
             </a>
+            <a
+              :href="exportDay1CutoffUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center px-4 py-2 rounded bg-amber-700 text-white hover:bg-amber-800 transition"
+              title="Item tanpa IB tgl 1 dan tanpa stock opname koreksi fisik tgl 1 (semua outlet)"
+            >
+              <i class="fa-solid fa-file-excel mr-1"></i>
+              Export Tanpa IB & Tanpa Opname Tgl 1
+            </a>
           </div>
         </div>
       </div>
@@ -748,6 +758,11 @@ watch(() => props.categoryCostRows, (v) => {
 const exportUrl = computed(() => {
   const bulan = filters.value.bulan || '';
   return `/cost-report/export?bulan=${encodeURIComponent(bulan)}`;
+});
+
+const exportDay1CutoffUrl = computed(() => {
+  const bulan = filters.value.bulan || '';
+  return `/cost-report/export-day1-cutoff-without-ib?bulan=${encodeURIComponent(bulan)}`;
 });
 
 const beginDetailGroups = computed(() => {

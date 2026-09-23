@@ -3118,6 +3118,243 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Item (outlet × warehouse) yang TIDAK punya IB tgl 1 DAN TIDAK punya stock_opname koreksi fisik tgl 1.
+     * Universe: stok aktif (qty ≠ 0) atau ada kartu inventory di bulan laporan.
+     * Semua outlet aktif (is_outlet=1, status=A). Dipakai export Excel.
+     *
+     * @return list<array{
+     *   outlet_id: int,
+     *   outlet_name: string,
+     *   warehouse_id: int,
+     *   warehouse_name: string,
+     *   inventory_item_id: int,
+     *   item_id: int|null,
+     *   item_sku: string|null,
+     *   item_name: string|null,
+     *   category_name: string|null,
+     *   unit_name: string|null,
+     *   stock_qty_small: float,
+     *   has_card_in_month: bool,
+     *   first_card_date: string|null,
+     *   first_card_reference: string|null
+     * }>
+     */
+    public function listItemsWithoutIbAndWithoutDay1OpnameAllOutlets(string $bulan): array
+    {
+        $tanggal1 = Carbon::parse($bulan.'-01')->format('Y-m-01');
+        $tanggalAkhir = Carbon::parse($bulan.'-01')->endOfMonth()->format('Y-m-d');
+
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('is_outlet', 1)
+            ->where('status', 'A')
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet']);
+
+        if ($outlets->isEmpty()) {
+            return [];
+        }
+
+        $outletIds = $outlets->pluck('id_outlet')->map(fn ($id) => (int) $id)->all();
+        $outletNameById = $outlets->mapWithKeys(
+            fn ($o) => [(int) $o->id_outlet => (string) $o->nama_outlet]
+        )->all();
+
+        $warehouses = DB::table('warehouse_outlets')
+            ->whereIn('outlet_id', $outletIds)
+            ->where('status', 'active')
+            ->get(['id', 'outlet_id', 'name']);
+
+        if ($warehouses->isEmpty()) {
+            return [];
+        }
+
+        $warehouseIds = $warehouses->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $warehouseMeta = [];
+        foreach ($warehouses as $wh) {
+            $warehouseMeta[(int) $wh->id] = [
+                'outlet_id' => (int) $wh->outlet_id,
+                'name' => (string) $wh->name,
+            ];
+        }
+
+        $ibKeySet = [];
+        foreach (DB::table('outlet_food_inventory_cards')
+            ->whereIn('id_outlet', $outletIds)
+            ->whereIn('warehouse_outlet_id', $warehouseIds)
+            ->where('reference_type', 'initial_balance')
+            ->whereDate('date', $tanggal1)
+            ->groupBy('warehouse_outlet_id', 'inventory_item_id')
+            ->selectRaw('warehouse_outlet_id, inventory_item_id')
+            ->get() as $row) {
+            $ibKeySet[((int) $row->warehouse_outlet_id).'|'.((int) $row->inventory_item_id)] = true;
+        }
+
+        $opKeySet = [];
+        foreach (DB::table('outlet_food_inventory_cards')
+            ->whereIn('id_outlet', $outletIds)
+            ->whereIn('warehouse_outlet_id', $warehouseIds)
+            ->where('reference_type', 'stock_opname')
+            ->whereDate('date', $tanggal1)
+            ->groupBy('warehouse_outlet_id', 'inventory_item_id')
+            ->selectRaw('warehouse_outlet_id, inventory_item_id')
+            ->get() as $row) {
+            $opKeySet[((int) $row->warehouse_outlet_id).'|'.((int) $row->inventory_item_id)] = true;
+        }
+
+        // Candidates: stock rows with qty != 0
+        $stockRows = DB::table('outlet_food_inventory_stocks as s')
+            ->whereIn('s.id_outlet', $outletIds)
+            ->whereIn('s.warehouse_outlet_id', $warehouseIds)
+            ->whereRaw('ABS(COALESCE(s.qty_small, 0)) >= 0.00005')
+            ->get([
+                's.id_outlet',
+                's.warehouse_outlet_id',
+                's.inventory_item_id',
+                's.qty_small',
+            ]);
+
+        $candidates = [];
+        foreach ($stockRows as $row) {
+            $wid = (int) $row->warehouse_outlet_id;
+            $iid = (int) $row->inventory_item_id;
+            $key = $wid.'|'.$iid;
+            $candidates[$key] = [
+                'outlet_id' => (int) $row->id_outlet,
+                'warehouse_id' => $wid,
+                'inventory_item_id' => $iid,
+                'stock_qty_small' => (float) ($row->qty_small ?? 0),
+                'has_card_in_month' => false,
+                'first_card_date' => null,
+                'first_card_reference' => null,
+            ];
+        }
+
+        // Also candidates: any card activity in month (even if current stock 0)
+        $outletIdsSql = implode(',', array_map('intval', $outletIds));
+        $warehouseIdsSql = implode(',', array_map('intval', $warehouseIds));
+        $tanggal1Sql = DB::getPdo()->quote($tanggal1);
+        $tanggalAkhirSql = DB::getPdo()->quote($tanggalAkhir);
+
+        $firstCards = DB::table('outlet_food_inventory_cards as card')
+            ->join(DB::raw("(
+                SELECT warehouse_outlet_id, inventory_item_id, MIN(id) as min_id
+                FROM outlet_food_inventory_cards
+                WHERE id_outlet IN ({$outletIdsSql})
+                  AND warehouse_outlet_id IN ({$warehouseIdsSql})
+                  AND DATE(date) >= {$tanggal1Sql}
+                  AND DATE(date) <= {$tanggalAkhirSql}
+                GROUP BY warehouse_outlet_id, inventory_item_id
+            ) t"), 't.min_id', '=', 'card.id')
+            ->get([
+                'card.id_outlet',
+                'card.warehouse_outlet_id',
+                'card.inventory_item_id',
+                'card.date',
+                'card.reference_type',
+            ]);
+
+        foreach ($firstCards as $row) {
+            $wid = (int) $row->warehouse_outlet_id;
+            $iid = (int) $row->inventory_item_id;
+            $key = $wid.'|'.$iid;
+            if (!isset($candidates[$key])) {
+                $candidates[$key] = [
+                    'outlet_id' => (int) $row->id_outlet,
+                    'warehouse_id' => $wid,
+                    'inventory_item_id' => $iid,
+                    'stock_qty_small' => 0.0,
+                    'has_card_in_month' => true,
+                    'first_card_date' => (string) $row->date,
+                    'first_card_reference' => (string) $row->reference_type,
+                ];
+            } else {
+                $candidates[$key]['has_card_in_month'] = true;
+                $candidates[$key]['first_card_date'] = (string) $row->date;
+                $candidates[$key]['first_card_reference'] = (string) $row->reference_type;
+            }
+        }
+
+        $filteredKeys = [];
+        foreach ($candidates as $key => $cand) {
+            if (isset($ibKeySet[$key]) || isset($opKeySet[$key])) {
+                continue;
+            }
+            $filteredKeys[] = $key;
+        }
+
+        if ($filteredKeys === []) {
+            return [];
+        }
+
+        $inventoryItemIds = array_values(array_unique(array_map(
+            fn ($key) => (int) explode('|', $key)[1],
+            $filteredKeys
+        )));
+
+        $itemMeta = DB::table('outlet_food_inventory_items as fi')
+            ->leftJoin('items as it', 'it.id', '=', 'fi.item_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'it.category_id')
+            ->leftJoin('units as u', 'u.id', '=', 'it.small_unit_id')
+            ->whereIn('fi.id', $inventoryItemIds)
+            ->get([
+                'fi.id as inventory_item_id',
+                'fi.item_id',
+                'it.sku as item_sku',
+                'it.name as item_name',
+                'c.name as category_name',
+                'u.name as unit_name',
+            ])
+            ->keyBy('inventory_item_id');
+
+        $rows = [];
+        foreach ($filteredKeys as $key) {
+            $cand = $candidates[$key];
+            $meta = $itemMeta[$cand['inventory_item_id']] ?? null;
+            $outletId = (int) $cand['outlet_id'];
+            $wid = (int) $cand['warehouse_id'];
+            $rows[] = [
+                'outlet_id' => $outletId,
+                'outlet_name' => $outletNameById[$outletId] ?? (string) $outletId,
+                'warehouse_id' => $wid,
+                'warehouse_name' => $warehouseMeta[$wid]['name'] ?? (string) $wid,
+                'inventory_item_id' => (int) $cand['inventory_item_id'],
+                'item_id' => $meta && $meta->item_id !== null ? (int) $meta->item_id : null,
+                'item_sku' => $meta->item_sku ?? null,
+                'item_name' => $meta->item_name ?? null,
+                'category_name' => $meta->category_name ?? null,
+                'unit_name' => $meta->unit_name ?? null,
+                'stock_qty_small' => round((float) $cand['stock_qty_small'], 4),
+                'has_card_in_month' => (bool) $cand['has_card_in_month'],
+                'first_card_date' => $cand['first_card_date'],
+                'first_card_reference' => $cand['first_card_reference'],
+            ];
+        }
+
+        usort($rows, function ($a, $b) {
+            $cmp = strcmp($a['outlet_name'], $b['outlet_name']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            $cmp = strcmp($a['warehouse_name'], $b['warehouse_name']);
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+
+            return strcmp((string) $a['item_name'], (string) $b['item_name']);
+        });
+
+        return $rows;
+    }
+
+    /**
+     * @deprecated Use listItemsWithoutIbAndWithoutDay1OpnameAllOutlets
+     */
+    public function listDay1OpnameCutoffWithoutIbAllOutlets(string $bulan): array
+    {
+        return $this->listItemsWithoutIbAndWithoutDay1OpnameAllOutlets($bulan);
+    }
+
+    /**
      * Begin Inventory (Total MAC) — sama formula Cost Report kolom Begin Inventory.
      * Hanya initial_balance tgl 1 (latest per item+WH); tanpa stock_opname.
      * Fast path: aggregate SQL + cache (tanpa load semua stock rows ke PHP).

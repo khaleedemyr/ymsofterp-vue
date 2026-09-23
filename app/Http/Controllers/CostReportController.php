@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\CostReportExport;
+use App\Exports\Day1OpnameCutoffWithoutIbExport;
 use App\Http\Traits\ReportHelperTrait;
 use App\Services\OpexOutletDashboardService;
 use Illuminate\Http\Request;
@@ -70,6 +71,21 @@ class CostReportController extends Controller
         $fileName = 'cost_report_' . $bulan . '.xlsx';
         return Excel::download(
             new CostReportExport($data['reportRows'], $data['cogsRows'], $data['categoryCostRows'], $bulan),
+            $fileName
+        );
+    }
+
+    /**
+     * Export item tanpa IB tgl 1 DAN tanpa stock opname koreksi fisik tgl 1 (semua outlet).
+     */
+    public function exportDay1CutoffWithoutIb(Request $request)
+    {
+        $bulan = $request->input('bulan', date('Y-m'));
+        $rows = $this->opexOutletDashboard->listItemsWithoutIbAndWithoutDay1OpnameAllOutlets($bulan);
+        $fileName = 'tanpa_ib_tanpa_opname_tgl1_'.$bulan.'.xlsx';
+
+        return Excel::download(
+            new Day1OpnameCutoffWithoutIbExport($rows, $bulan),
             $fileName
         );
     }

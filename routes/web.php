@@ -1310,6 +1310,7 @@ Route::get('/cost-report/official-cost-transaction-items', [\App\Http\Controller
 Route::get('/cost-report/outlet-transfer-transactions', [\App\Http\Controllers\CostReportController::class, 'outletTransferTransactions'])->name('cost-report.outlet-transfer-transactions');
 Route::get('/cost-report/outlet-transfer-transaction-items', [\App\Http\Controllers\CostReportController::class, 'outletTransferTransactionItems'])->name('cost-report.outlet-transfer-transaction-items');
 Route::get('/cost-report/export', [\App\Http\Controllers\CostReportController::class, 'export'])->name('cost-report.export');
+Route::get('/cost-report/export-day1-cutoff-without-ib', [\App\Http\Controllers\CostReportController::class, 'exportDay1CutoffWithoutIb'])->name('cost-report.export-day1-cutoff-without-ib');
 Route::post('/cost-report/clear-cache', [\App\Http\Controllers\CostReportController::class, 'clearCache'])->name('cost-report.clear-cache');
 
 // Cost Report HO (warehouse + division, begin inventory dari food_inventory_*)
