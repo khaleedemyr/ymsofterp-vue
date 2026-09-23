@@ -95,6 +95,10 @@
             </div>
             <p class="mt-2 text-lg font-bold" :class="sc.valueClass">{{ formatCurrency(sc.eom) }}</p>
             <p class="text-xs mt-1" :class="sc.gapClass">Gap {{ formatCurrency(sc.gap) }}</p>
+            <p class="mt-1.5 text-xs font-medium text-slate-600 inline-flex items-center gap-1">
+              Pace {{ sc.pace != null ? sc.pace : '—' }}
+              <CardHelpTip :text="helpTips.pace" />
+            </p>
           </div>
         </div>
 
@@ -242,16 +246,19 @@ const helpTips = {
     'Actual MTD = total revenue orders sampai kemarin (as_of).\n\nPace = Actual MTD ÷ expected-to-date (sum baseline s/d as_of).\nPace < 1 = di bawah plan; > 1 = di atas plan.',
   projected_eom:
     'Projected EOM patokan utama = skenario Realistis.\n\n= Actual MTD + sisa hari (blend 50% pace MTD + 50% baseline).\nGap = Projected EOM − Monthly Target.',
+  pace:
+    'Rumus Pace (sama untuk semua skenario):\n\nPace = Actual MTD ÷ Expected-to-date\n\n• Actual MTD = Σ revenue orders s/d as_of (kemarin)\n• Expected-to-date = Σ baseline harian s/d as_of\n• Baseline harian = pembagian monthly target per tipe hari (weekday / weekend / libur)\n\nClamp: min 0,45 · max 1,55\nJika belum ≥2 hari dengan baseline, atau MTD/expected = 0 → Pace = 1,00\n\nPace < 1 = di bawah plan · Pace > 1 = di atas plan',
   pessimistic:
-    'Pesimis: sisa hari lanjut di pace MTD saat ini.\n\nJika MTD lemah, sisa hari juga diasumsikan lemah (baseline × pace).\nPaling konservatif dari tiga skenario.',
+    'Pesimis: sisa hari lanjut di pace MTD saat ini.\n\nProyeksi sisa hari ≈ baseline × Pace\nJika MTD lemah, sisa hari juga diasumsikan lemah.\nPaling konservatif dari tiga skenario.\n\nPace = Actual MTD ÷ Expected-to-date (clamp 0,45–1,55).',
   realistic:
-    'Realistis: patokan utama untuk dashboard & budget RO.\n\nSisa hari = blend 50% pace MTD + 50% baseline plan.\nLebih seimbang antara tren aktual dan target harian.',
+    'Realistis: patokan utama projected EOM.\n\nProyeksi sisa hari = blend 50% (baseline × Pace) + 50% baseline plan.\nLebih seimbang antara tren aktual dan target harian.\n\nPace = Actual MTD ÷ Expected-to-date (clamp 0,45–1,55).',
   optimistic:
-    'Optimis: jika pace < 1, sisa hari kembali ke baseline plan.\n\nTidak memaksa catch-up di atas plan harian.\nJika pace > 1, upside pace tetap dipertahankan (boleh > monthly target).',
+    'Optimis:\n• Jika Pace < 1 → sisa hari kembali ke baseline plan (tidak memaksa catch-up di atas plan)\n• Jika Pace ≥ 1 → sisa hari = baseline × Pace (upside dipertahankan)\n\nPace = Actual MTD ÷ Expected-to-date (clamp 0,45–1,55).',
 }
 
 const scenarioCards = computed(() => {
   const sc = data.value?.scenarios || {}
+  const pace = data.value?.pace_factor != null ? Number(data.value.pace_factor) : null
   const mapStyle = (key, gap) => {
     const under = gap < 0
     if (key === 'pessimistic') {
@@ -291,6 +298,7 @@ const scenarioCards = computed(() => {
       eom: row.projected_eom || 0,
       gap,
       pct: row.pct_of_target || 0,
+      pace,
       ...mapStyle(key, gap),
     }
   })
