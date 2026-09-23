@@ -71,7 +71,13 @@ class CostReportController extends Controller
         $label = $period['date_from'].'_'.$period['date_to'];
         $fileName = 'cost_report_'.$label.'.xlsx';
         return Excel::download(
-            new CostReportExport($data['reportRows'], $data['cogsRows'], $data['categoryCostRows'], $label),
+            new CostReportExport(
+                $data['reportRows'],
+                $data['cogsRows'],
+                $data['categoryCostRows'],
+                $label,
+                $data['cogsRowsMtd'] ?? []
+            ),
             $fileName
         );
     }
@@ -100,7 +106,7 @@ class CostReportController extends Controller
         $period = $this->resolveReportPeriod($request);
         $tab = $request->input('tab', 'cost_inventory');
 
-        if (!in_array($tab, ['cost_inventory', 'cogs', 'category_cost'], true)) {
+        if (!in_array($tab, ['cost_inventory', 'cogs', 'cogs_mtd', 'category_cost'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Tab tidak valid.',
@@ -143,8 +149,9 @@ class CostReportController extends Controller
             ]);
         }
 
-        if ($tab === 'cogs') {
-            $cogsRows = $this->buildCogsRows($outlets, $reportRows, $dateFrom, $dateTo);
+        if ($tab === 'cogs' || $tab === 'cogs_mtd') {
+            $cogsAktualField = $tab === 'cogs_mtd' ? 'cogs_aktual_mtd' : 'cogs_aktual';
+            $cogsRows = $this->buildCogsRows($outlets, $reportRows, $dateFrom, $dateTo, $cogsAktualField);
 
             return response()->json([
                 'success' => true,
@@ -1503,11 +1510,15 @@ class CostReportController extends Controller
                 2
             );
             $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory_weekly'] ?? $row['ending_inventory'] ?? 0), 2);
+            $row['cogs_aktual_mtd'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory_mtd'] ?? 0), 2);
 
             $cogsAktual = (float) ($row['cogs_aktual'] ?? 0);
+            $cogsAktualMtd = (float) ($row['cogs_aktual_mtd'] ?? 0);
             $salesAfter = (float) ($row['sales_after_discount'] ?? 0);
             $row['cogs_before'] = $salesBefore > 0 ? round(($cogsAktual / $salesBefore) * 100, 2) : null;
             $row['cogs_after'] = $salesAfter > 0 ? round(($cogsAktual / $salesAfter) * 100, 2) : null;
+            $row['cogs_before_mtd'] = $salesBefore > 0 ? round(($cogsAktualMtd / $salesBefore) * 100, 2) : null;
+            $row['cogs_after_mtd'] = $salesAfter > 0 ? round(($cogsAktualMtd / $salesAfter) * 100, 2) : null;
         }
         unset($row);
 
@@ -1712,12 +1723,12 @@ class CostReportController extends Controller
         return $totalsByWarehouse;
     }
 
-    private function buildCogsRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
+    private function buildCogsRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan, string $cogsAktualField = 'cogs_aktual'): array
     {
         $cogsByOutlet = $this->computeCogsStockCutByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
         $categoryCostByOutlet = $this->computeCategoryCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
         $mealEmployeesByOutlet = $this->computeMealEmployeesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['cogs_aktual'] ?? 0))->all();
+        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r[$cogsAktualField] ?? $r['cogs_aktual'] ?? 0))->all();
         $salesBeforeDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_before_discount'] ?? 0))->all();
         $salesAfterDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_after_discount'] ?? 0))->all();
 
@@ -1746,6 +1757,7 @@ class CostReportController extends Controller
                 'category_cost' => $categoryCost,
                 'meal_employees' => $mealEmployees,
                 'cogs_pembanding' => $cogsPembanding,
+                'cogs_aktual' => round($cogsAktual, 2),
                 'deviasi' => $deviasi,
                 'toleransi_2_pct' => $toleransi2Pct,
                 'pct_cogs_pembanding' => $pctCogsPembanding,
@@ -1754,6 +1766,7 @@ class CostReportController extends Controller
                 'pct_cogs_foods' => $pctCogsFoods,
                 'pct_deviasi' => $pctDeviasi,
                 'pct_category_cost' => $pctCategoryCost,
+                'ending_basis' => $cogsAktualField === 'cogs_aktual_mtd' ? 'mtd' : 'weekly',
             ];
         }
 
@@ -1841,101 +1854,16 @@ class CostReportController extends Controller
             )
         );
 
-        // Tab COGS: outlet sama, kolom COGS + Category Cost + Meal Employees + COGS Pembanding + Deviasi
-        $cogsByOutlet = $this->computeCogsStockCutByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $categoryCostByOutlet = $this->computeCategoryCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $mealEmployeesByOutlet = $this->computeMealEmployeesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['cogs_aktual'] ?? 0))->all();
-        $salesBeforeDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_before_discount'] ?? 0))->all();
-        $salesAfterDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_after_discount'] ?? 0))->all();
-        $cogsRows = [];
-        foreach ($outlets as $outlet) {
-            $cogs = round($cogsByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $categoryCost = round($categoryCostByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $mealEmployees = round($mealEmployeesByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $cogsPembanding = round($cogs + $categoryCost + $mealEmployees, 2);
-            $cogsAktual = $cogsAktualByOutlet[$outlet->id_outlet] ?? 0;
-            $deviasi = round($cogsPembanding - $cogsAktual, 2);
-            $toleransi2Pct = round($cogsAktual * 0.02, 2);
-            $salesBeforeDiscount = $salesBeforeDiscountByOutlet[$outlet->id_outlet] ?? 0;
-            $salesAfterDiscount = $salesAfterDiscountByOutlet[$outlet->id_outlet] ?? 0;
-            $pctCogsPembanding = $salesBeforeDiscount > 0
-                ? round(($cogsPembanding / $salesBeforeDiscount) * 100, 2)
-                : null;
-            $pctCogsActualBeforeDisc = $salesBeforeDiscount > 0
-                ? round(($cogsAktual / $salesBeforeDiscount) * 100, 2)
-                : null;
-            $pctCogsActualAfterDisc = $salesAfterDiscount > 0
-                ? round(($cogsAktual / $salesAfterDiscount) * 100, 2)
-                : null;
-            // % COGS Foods = cogs / sales before discount
-            $pctCogsFoods = $salesBeforeDiscount > 0
-                ? round(($cogs / $salesBeforeDiscount) * 100, 2)
-                : null;
-            // % Deviasi = deviasi / cogs pembanding (persentase dari COGS Pembanding)
-            $pctDeviasi = $cogsPembanding > 0
-                ? round(($deviasi / $cogsPembanding) * 100, 2)
-                : null;
-            // % Category Cost = category cost / cogs actual
-            $pctCategoryCost = $cogsAktual > 0
-                ? round(($categoryCost / $cogsAktual) * 100, 2)
-                : null;
-            $cogsRows[] = [
-                'outlet_id' => $outlet->id_outlet,
-                'outlet_name' => $outlet->name,
-                'cogs' => $cogs,
-                'category_cost' => $categoryCost,
-                'meal_employees' => $mealEmployees,
-                'cogs_pembanding' => $cogsPembanding,
-                'deviasi' => $deviasi,
-                'toleransi_2_pct' => $toleransi2Pct,
-                'pct_cogs_pembanding' => $pctCogsPembanding,
-                'pct_cogs_actual_before_disc' => $pctCogsActualBeforeDisc,
-                'pct_cogs_actual_after_disc' => $pctCogsActualAfterDisc,
-                'pct_cogs_foods' => $pctCogsFoods,
-                'pct_deviasi' => $pctDeviasi,
-                'pct_category_cost' => $pctCategoryCost,
-            ];
-        }
-
-        // Tab Category Cost: outlet + Guest Supplies, Spoilage, Waste, Non Commodity (masing-masing + %), Category Cost (total + %)
-        $guestSuppliesByOutlet = $this->computeGuestSuppliesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $spoilageByOutlet = $this->computeSpoilageByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $wasteByOutlet = $this->computeWasteByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $nonCommodityByOutlet = $this->computeNonCommodityByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $categoryCostRows = [];
-        foreach ($outlets as $outlet) {
-            $cogsAktual = $cogsAktualByOutlet[$outlet->id_outlet] ?? 0;
-            $guestSupplies = round($guestSuppliesByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $spoilage = round($spoilageByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $waste = round($wasteByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $nonCommodity = round($nonCommodityByOutlet[$outlet->id_outlet] ?? 0, 2);
-            $categoryCostTotal = round($guestSupplies + $spoilage + $waste + $nonCommodity, 2);
-            $pctGuestSupplies = $cogsAktual > 0 ? round(($guestSupplies / $cogsAktual) * 100, 2) : null;
-            $pctSpoilage = $cogsAktual > 0 ? round(($spoilage / $cogsAktual) * 100, 2) : null;
-            $pctWaste = $cogsAktual > 0 ? round(($waste / $cogsAktual) * 100, 2) : null;
-            $pctNonCommodity = $cogsAktual > 0 ? round(($nonCommodity / $cogsAktual) * 100, 2) : null;
-            $pctCategoryCost = $cogsAktual > 0 ? round(($categoryCostTotal / $cogsAktual) * 100, 2) : null;
-            $categoryCostRows[] = [
-                'outlet_id' => $outlet->id_outlet,
-                'outlet_name' => $outlet->name,
-                'guest_supplies' => $guestSupplies,
-                'pct_guest_supplies' => $pctGuestSupplies,
-                'spoilage' => $spoilage,
-                'pct_spoilage' => $pctSpoilage,
-                'waste' => $waste,
-                'pct_waste' => $pctWaste,
-                'non_commodity' => $nonCommodity,
-                'pct_non_commodity' => $pctNonCommodity,
-                'category_cost' => $categoryCostTotal,
-                'pct_category_cost' => $pctCategoryCost,
-            ];
-        }
+        // Tab COGS Weekly + MTD + Category Cost
+        $cogsRows = $this->buildCogsRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan, 'cogs_aktual');
+        $cogsRowsMtd = $this->buildCogsRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan, 'cogs_aktual_mtd');
+        $categoryCostRows = $this->buildCategoryCostRows($outlets, $reportRows, $tanggalAwalBulan, $tanggalAkhirBulan);
 
         return [
             'outlets' => $outlets,
             'reportRows' => $reportRows,
             'cogsRows' => $cogsRows,
+            'cogsRowsMtd' => $cogsRowsMtd,
             'categoryCostRows' => $categoryCostRows,
         ];
     }

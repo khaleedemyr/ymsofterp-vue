@@ -89,7 +89,15 @@
             :class="activeTab === 'cogs' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
             class="px-4 py-3 border-b-2 font-medium text-sm transition"
           >
-            Actual Cost
+            Actual Cost Weekly
+          </button>
+          <button
+            type="button"
+            @click="switchTab('cogs_mtd')"
+            :class="activeTab === 'cogs_mtd' ? 'border-blue-500 text-blue-600 bg-blue-50' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'"
+            class="px-4 py-3 border-b-2 font-medium text-sm transition"
+          >
+            Actual Cost MTD
           </button>
           <button
             type="button"
@@ -124,13 +132,16 @@
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Barang Tersedia</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ending Inventory Weekly</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ending Inventory MTD</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Aktual</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Aktual Weekly</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Aktual MTD</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Before Discount</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Discount</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Sales After Discount</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">% Discount vs Sales</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Before</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS After</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Before Weekly</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS After Weekly</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Before MTD</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS After MTD</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
@@ -166,22 +177,30 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.ending_inventory_weekly ?? row.ending_inventory) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.ending_inventory_mtd) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cogs_aktual) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cogs_aktual_mtd) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.sales_before_discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.sales_after_discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_discount != null ? (Number(row.pct_discount).toFixed(2) + '%') : '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_before != null ? (Number(row.cogs_before).toFixed(2) + '%') : '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_after != null ? (Number(row.cogs_after).toFixed(2) + '%') : '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_before_mtd != null ? (Number(row.cogs_before_mtd).toFixed(2) + '%') : '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_after_mtd != null ? (Number(row.cogs_after_mtd).toFixed(2) + '%') : '-' }}</td>
             </tr>
             <tr v-if="!reportRowsData || reportRowsData.length === 0">
-              <td colspan="16" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
+              <td colspan="19" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- Tab: COGS (outlet sama dengan Cost Inventory, kolom COGS + Category Cost + Meal Employees) -->
-      <div v-else-if="activeTab === 'cogs'" class="bg-white rounded-xl shadow-xl overflow-x-auto">
+      <!-- Tab: Actual Cost Weekly / MTD (basis ending berbeda) -->
+      <div v-else-if="activeTab === 'cogs' || activeTab === 'cogs_mtd'" class="bg-white rounded-xl shadow-xl overflow-x-auto">
+        <p class="px-4 pt-4 text-xs text-gray-500">
+          {{ activeTab === 'cogs_mtd'
+            ? 'COGS Aktual = Total Barang Tersedia − Ending Inventory MTD (formula Opex).'
+            : 'COGS Aktual = Total Barang Tersedia − Ending Inventory Weekly (opname terakhir di rentang).' }}
+        </p>
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -191,6 +210,7 @@
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Category Cost</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Meal Employees</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Pembanding</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Aktual</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Deviasi</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Toleransi 2%</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">% COGS Pembanding</th>
@@ -202,13 +222,14 @@
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <tr v-for="(row, index) in (cogsRowsData || [])" :key="row.outlet_id">
+            <tr v-for="(row, index) in (activeTab === 'cogs_mtd' ? (cogsRowsMtdData || []) : (cogsRowsData || []))" :key="row.outlet_id">
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900">{{ index + 1 }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">{{ row.outlet_name }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cogs) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.category_cost) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.meal_employees) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{{ formatNumber(row.cogs_pembanding) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{{ formatNumber(row.cogs_aktual) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-right" :class="(row.deviasi || 0) < 0 ? 'text-red-600' : (row.deviasi || 0) > 0 ? 'text-green-600' : 'text-gray-900'">{{ formatNumber(row.deviasi) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.toleransi_2_pct) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_cogs_pembanding != null ? (Number(row.pct_cogs_pembanding).toFixed(2) + '%') : '-' }}</td>
@@ -218,8 +239,8 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-right" :class="(row.pct_deviasi || 0) < 0 ? 'text-red-600' : (row.pct_deviasi || 0) > 0 ? 'text-green-600' : 'text-gray-900'">{{ row.pct_deviasi != null ? (Number(row.pct_deviasi).toFixed(2) + '%') : '-' }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.pct_category_cost != null ? (Number(row.pct_category_cost).toFixed(2) + '%') : '-' }}</td>
             </tr>
-            <tr v-if="!cogsRowsData || cogsRowsData.length === 0">
-              <td colspan="14" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
+            <tr v-if="(activeTab === 'cogs_mtd' ? !(cogsRowsMtdData && cogsRowsMtdData.length) : !(cogsRowsData && cogsRowsData.length))">
+              <td colspan="15" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih From–To lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>
@@ -743,9 +764,10 @@ const periodQuery = computed(() => ({
   date_from: filters.value.date_from,
   date_to: filters.value.date_to,
 }));
-const activeTab = ref('cost_inventory'); // 'cost_inventory' | 'cogs' | 'category_cost'
+const activeTab = ref('cost_inventory'); // 'cost_inventory' | 'cogs' | 'cogs_mtd' | 'category_cost'
 const reportRowsData = ref(props.reportRows || []);
 const cogsRowsData = ref(props.cogsRows || []);
+const cogsRowsMtdData = ref([]);
 const categoryCostRowsData = ref(props.categoryCostRows || []);
 const loadedTabs = ref({});
 const showBeginDetail = ref(false);
@@ -847,6 +869,7 @@ function loadReport() {
   loadedTabs.value = {};
   reportRowsData.value = [];
   cogsRowsData.value = [];
+  cogsRowsMtdData.value = [];
   categoryCostRowsData.value = [];
   fetchTabData(activeTab.value, true);
 }
@@ -879,6 +902,8 @@ async function fetchTabData(tab, force = false) {
         reportRowsData.value = response.data.reportRows || [];
       } else if (tab === 'cogs') {
         cogsRowsData.value = response.data.cogsRows || [];
+      } else if (tab === 'cogs_mtd') {
+        cogsRowsMtdData.value = response.data.cogsRows || [];
       } else if (tab === 'category_cost') {
         categoryCostRowsData.value = response.data.categoryCostRows || [];
       }
@@ -900,6 +925,7 @@ async function clearCacheAndReload() {
     loadedTabs.value = {};
     reportRowsData.value = [];
     cogsRowsData.value = [];
+    cogsRowsMtdData.value = [];
     categoryCostRowsData.value = [];
     await fetchTabData(activeTab.value, true);
   } catch (error) {

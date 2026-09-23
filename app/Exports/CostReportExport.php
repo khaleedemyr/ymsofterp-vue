@@ -10,16 +10,18 @@ class CostReportExport implements WithMultipleSheets
         protected array $reportRows,
         protected array $cogsRows,
         protected array $categoryCostRows,
-        protected string $bulan
+        protected string $bulan,
+        protected array $cogsRowsMtd = []
     ) {
     }
 
     public function sheets(): array
     {
         return [
-            'Cost Inventory' => new CostReport\CostInventorySheetExport($this->reportRows),
-            'COGS' => new CostReport\CogsSheetExport($this->cogsRows),
-            'Category Cost' => new CostReport\CategoryCostSheetExport($this->categoryCostRows),
+            new CostReport\CostInventorySheetExport($this->reportRows),
+            new CostReport\CogsSheetExport($this->cogsRows, 'Weekly'),
+            new CostReport\CogsSheetExport($this->cogsRowsMtd, 'MTD'),
+            new CostReport\CategoryCostSheetExport($this->categoryCostRows),
         ];
     }
 }

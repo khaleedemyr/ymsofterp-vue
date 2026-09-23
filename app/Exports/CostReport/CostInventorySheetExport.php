@@ -34,13 +34,16 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             'Total Barang Tersedia',
             'Ending Inventory Weekly',
             'Ending Inventory MTD',
-            'COGS Aktual',
+            'COGS Aktual Weekly',
+            'COGS Aktual MTD',
             'Sales Before Discount',
             'Discount',
             'Sales After Discount',
             '% Discount vs Sales',
-            'COGS Before',
-            'COGS After',
+            'COGS Before Weekly',
+            'COGS After Weekly',
+            'COGS Before MTD',
+            'COGS After MTD',
         ];
     }
 
@@ -51,12 +54,12 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
         $pct = isset($row['pct_discount']) && $row['pct_discount'] !== null
             ? number_format((float) $row['pct_discount'], 2, '.', '') . '%'
             : '-';
-        $cogsBefore = isset($row['cogs_before']) && $row['cogs_before'] !== null
-            ? number_format((float) $row['cogs_before'], 2, '.', '') . '%'
-            : '-';
-        $cogsAfter = isset($row['cogs_after']) && $row['cogs_after'] !== null
-            ? number_format((float) $row['cogs_after'], 2, '.', '') . '%'
-            : '-';
+        $fmtPct = static function ($val) {
+            return isset($val) && $val !== null
+                ? number_format((float) $val, 2, '.', '') . '%'
+                : '-';
+        };
+
         return [
             $no,
             $row['outlet_name'] ?? '',
@@ -68,18 +71,21 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             (float) ($row['ending_inventory_weekly'] ?? $row['ending_inventory'] ?? 0),
             (float) ($row['ending_inventory_mtd'] ?? 0),
             (float) ($row['cogs_aktual'] ?? 0),
+            (float) ($row['cogs_aktual_mtd'] ?? 0),
             (float) ($row['sales_before_discount'] ?? 0),
             (float) ($row['discount'] ?? 0),
             (float) ($row['sales_after_discount'] ?? 0),
             $pct,
-            $cogsBefore,
-            $cogsAfter,
+            $fmtPct($row['cogs_before'] ?? null),
+            $fmtPct($row['cogs_after'] ?? null),
+            $fmtPct($row['cogs_before_mtd'] ?? null),
+            $fmtPct($row['cogs_after_mtd'] ?? null),
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
-        $lastCol = 'P';
+        $lastCol = 'S';
         $lastRow = count($this->reportRows) + 1;
         return [
             1 => [
@@ -111,13 +117,16 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             'G' => 20,
             'H' => 22,
             'I' => 22,
-            'J' => 14,
-            'K' => 20,
-            'L' => 12,
-            'M' => 20,
-            'N' => 18,
-            'O' => 14,
-            'P' => 14,
+            'J' => 18,
+            'K' => 18,
+            'L' => 20,
+            'M' => 12,
+            'N' => 20,
+            'O' => 18,
+            'P' => 16,
+            'Q' => 16,
+            'R' => 16,
+            'S' => 16,
         ];
     }
 }

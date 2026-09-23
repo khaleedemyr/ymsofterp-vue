@@ -115,11 +115,15 @@ class CostReportDataService
                 2
             );
             $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory_weekly'] ?? $row['ending_inventory'] ?? 0), 2);
+            $row['cogs_aktual_mtd'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory_mtd'] ?? 0), 2);
 
             $cogsAktual = (float) ($row['cogs_aktual'] ?? 0);
+            $cogsAktualMtd = (float) ($row['cogs_aktual_mtd'] ?? 0);
             $salesAfter = (float) ($row['sales_after_discount'] ?? 0);
             $row['cogs_before'] = $salesBefore > 0 ? round(($cogsAktual / $salesBefore) * 100, 2) : null;
             $row['cogs_after'] = $salesAfter > 0 ? round(($cogsAktual / $salesAfter) * 100, 2) : null;
+            $row['cogs_before_mtd'] = $salesBefore > 0 ? round(($cogsAktualMtd / $salesBefore) * 100, 2) : null;
+            $row['cogs_after_mtd'] = $salesAfter > 0 ? round(($cogsAktualMtd / $salesAfter) * 100, 2) : null;
         }
         unset($row);
 
@@ -323,12 +327,12 @@ class CostReportDataService
         return $totalsByWarehouse;
     }
 
-    public function buildCogsRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
+    public function buildCogsRows($outlets, array $reportRows, string $tanggalAwalBulan, string $tanggalAkhirBulan, string $cogsAktualField = 'cogs_aktual'): array
     {
         $cogsByOutlet = $this->computeCogsStockCutByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
         $categoryCostByOutlet = $this->computeCategoryCostByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
         $mealEmployeesByOutlet = $this->computeMealEmployeesByOutlet($tanggalAwalBulan, $tanggalAkhirBulan);
-        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['cogs_aktual'] ?? 0))->all();
+        $cogsAktualByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r[$cogsAktualField] ?? $r['cogs_aktual'] ?? 0))->all();
         $salesBeforeDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_before_discount'] ?? 0))->all();
         $salesAfterDiscountByOutlet = collect($reportRows)->keyBy('outlet_id')->map(fn ($r) => (float) ($r['sales_after_discount'] ?? 0))->all();
 
@@ -357,6 +361,7 @@ class CostReportDataService
                 'category_cost' => $categoryCost,
                 'meal_employees' => $mealEmployees,
                 'cogs_pembanding' => $cogsPembanding,
+                'cogs_aktual' => round($cogsAktual, 2),
                 'deviasi' => $deviasi,
                 'toleransi_2_pct' => $toleransi2Pct,
                 'pct_cogs_pembanding' => $pctCogsPembanding,
@@ -365,6 +370,7 @@ class CostReportDataService
                 'pct_cogs_foods' => $pctCogsFoods,
                 'pct_deviasi' => $pctDeviasi,
                 'pct_category_cost' => $pctCategoryCost,
+                'ending_basis' => $cogsAktualField === 'cogs_aktual_mtd' ? 'mtd' : 'weekly',
             ];
         }
 

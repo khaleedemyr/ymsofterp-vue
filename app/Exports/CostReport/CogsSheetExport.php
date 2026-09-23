@@ -7,14 +7,22 @@ use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithColumnWidths;
+use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 
-class CogsSheetExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths
+class CogsSheetExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithColumnWidths, WithTitle
 {
-    public function __construct(protected array $cogsRows)
+    private int $rowNo = 0;
+
+    public function __construct(protected array $cogsRows, protected string $basisLabel = 'Weekly')
     {
+    }
+
+    public function title(): string
+    {
+        return 'COGS '.$this->basisLabel;
     }
 
     public function collection()
@@ -31,6 +39,7 @@ class CogsSheetExport implements FromCollection, WithHeadings, WithMapping, With
             'Category Cost',
             'Meal Employees',
             'COGS Pembanding',
+            'COGS Aktual ('.$this->basisLabel.')',
             'Deviasi',
             'Toleransi 2%',
             '% COGS Pembanding',
@@ -49,15 +58,15 @@ class CogsSheetExport implements FromCollection, WithHeadings, WithMapping, With
 
     public function map($row): array
     {
-        static $no = 0;
-        $no++;
+        $this->rowNo++;
         return [
-            $no,
+            $this->rowNo,
             $row['outlet_name'] ?? '',
             (float) ($row['cogs'] ?? 0),
             (float) ($row['category_cost'] ?? 0),
             (float) ($row['meal_employees'] ?? 0),
             (float) ($row['cogs_pembanding'] ?? 0),
+            (float) ($row['cogs_aktual'] ?? 0),
             (float) ($row['deviasi'] ?? 0),
             (float) ($row['toleransi_2_pct'] ?? 0),
             $this->pct($row['pct_cogs_pembanding'] ?? null),
@@ -71,7 +80,7 @@ class CogsSheetExport implements FromCollection, WithHeadings, WithMapping, With
 
     public function styles(Worksheet $sheet)
     {
-        $lastCol = 'N';
+        $lastCol = 'O';
         $lastRow = count($this->cogsRows) + 1;
         return [
             1 => [
@@ -99,15 +108,16 @@ class CogsSheetExport implements FromCollection, WithHeadings, WithMapping, With
             'C' => 14,
             'D' => 16,
             'E' => 16,
-            'F' => 18,
-            'G' => 14,
+            'F' => 16,
+            'G' => 18,
             'H' => 14,
-            'I' => 20,
-            'J' => 24,
-            'K' => 24,
-            'L' => 14,
-            'M' => 12,
-            'N' => 18,
+            'I' => 14,
+            'J' => 16,
+            'K' => 18,
+            'L' => 18,
+            'M' => 14,
+            'N' => 12,
+            'O' => 16,
         ];
     }
 }
