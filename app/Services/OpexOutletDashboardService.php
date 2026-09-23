@@ -280,7 +280,8 @@ class OpexOutletDashboardService
             2
         );
         $endingStock = $this->sumEndingStockSanitized($outletId, $dateTo, $dateFrom);
-        $endingInventory = $formulaEnding;
+        // Nilai utama card Ending = cost di stok (sama Cost Report MTD). Formula tetap di breakdown.
+        $endingInventory = round((float) $endingStock['total'], 2);
 
         // COGS % — selaras tab COGS Cost Report (periode filter dashboard).
         // COGS Foods = Stock Cut HPP full

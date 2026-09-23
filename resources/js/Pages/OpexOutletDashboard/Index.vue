@@ -904,17 +904,18 @@
                     Ending Inventory
                     <CardHelpTip :text="cardHelps.ending_inventory" />
                   </p>
-                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
-                  <p class="mt-1 text-sm text-slate-500">Begin + Koreksi tgl 1* + Purchased ± Xfer ± Adj − Cut − Category</p>
+                  <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory_stock ?? ov.ending_inventory) }}</p>
+                  <p class="mt-1 text-sm font-medium text-amber-800/80">Cost di stok</p>
                   <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                     {{ ov.ending_inventory_revenue_pct }}% dari revenue
                   </p>
                   <p class="mt-1 text-xs font-medium" :class="vsClass(vs.ending_inventory, true)">{{ vsLabel(vs.ending_inventory) }}</p>
-                  <div class="mt-3 rounded-2xl bg-amber-50/70 border border-amber-100 px-3 py-2 space-y-1">
-                    <div class="flex items-center justify-between gap-2 text-xs">
-                      <span class="text-slate-500">Cost di stok</span>
-                      <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_stock) }}</span>
+                  <div class="mt-3 rounded-2xl bg-amber-50/70 border border-amber-100 px-3 py-2.5 space-y-1.5">
+                    <div class="flex items-center justify-between gap-2 text-sm">
+                      <span class="text-slate-500">Formula buku</span>
+                      <span class="font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory_formula?.formula_ending ?? ov.ending_inventory_formula?.ending) }}</span>
                     </div>
+                    <p class="text-[10px] text-slate-400 leading-snug">Begin + Koreksi tgl 1* + Purchased ± Xfer ± Adj − Cut − Category</p>
                     <div
                       v-if="(ov.ending_inventory_formula?.day1_opname_cutoff || 0) !== 0"
                       class="flex items-center justify-between gap-2 text-xs"
@@ -922,7 +923,7 @@
                       <span class="text-slate-500">Koreksi tgl 1 (tanpa IB)</span>
                       <span class="font-semibold text-slate-800">{{ formatCurrency(ov.ending_inventory_formula?.day1_opname_cutoff) }}</span>
                     </div>
-                    <div class="flex items-center justify-between gap-2 text-xs">
+                    <div class="flex items-center justify-between gap-2 text-xs pt-0.5 border-t border-amber-100/80">
                       <span class="text-slate-500">Selisih (formula − stok)</span>
                       <span
                         class="font-semibold"
@@ -2918,7 +2919,7 @@ const cardHelps = {
   begin_inventory:
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance saja (tanpa stock_opname).\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin (IB / Cost Report) + Koreksi fisik tgl 1 untuk item tanpa IB + Purchased (full, termasuk MCS) ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nPurchased full dipakai supaya formula apple-to-apple dengan Cost di stok.\nUntuk COGS / Barang tersedia: Purchased excl Chemical/Marketing/Stationary − Cost RND (lihat tip % COGS).\n\nBegin Inventory card tetap sama Cost Report (IB saja).\nKoreksi fisik tgl 1 hanya masuk formula ending (bukan begin card).\nOpname EOM / mid-month lain = balancing — tidak dijumlah ke formula buku.\n\nStok ending = kartu terbaru dalam periode filter.\nSelisih = formula − cost di stok.',
+    'Nilai utama (besar) = Cost di stok — kartu inventory terbaru dalam periode (sama Ending Inventory MTD di Cost Report).\n\nFormula buku (kotak bawah) = Begin + Koreksi tgl 1 item tanpa IB + Purchased ± Transfer ± Adj − Stock Cut fisik − Category Cost.\nSelisih = formula − cost di stok.\n\nPer warehouse di card = breakdown cost di stok.',
   cogs_pct:
     '% COGS (periode filter dashboard).\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\nSales before disc = Σ(qty × price) order items.\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost (pembanding) = spoil + waste + guest supplies + non commodity\nMeal Employees = internal use\nCOGS Pembanding = Foods + Cat Cost + Meal Emp\nBarang tersedia = Begin + Koreksi tgl 1 + Purchased (excl Chemical/Marketing/Stationary) − Cost RND (r_and_d + marketing) ± Xfer ± Adj\nCOGS Aktual = Barang tersedia − Ending Stok\n\nDeviasi = Pembanding − Aktual, ditampilkan juga sebagai % dari revenue after disc.\nToleransi max = 2% revenue (hijau jika dalam batas, merah jika melebihi).',
   outlet_transfer:

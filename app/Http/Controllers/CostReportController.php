@@ -1412,10 +1412,10 @@ class CostReportController extends Controller
     private function getReportRowsCacheKey(string $dateFrom, string $dateTo = ''): string
     {
         if ($dateTo === '') {
-            return 'cost_report:report_rows:v3:' . $dateFrom;
+            return 'cost_report:report_rows:v4:' . $dateFrom;
         }
 
-        return 'cost_report:report_rows:v3:' . $dateFrom . '_' . $dateTo;
+        return 'cost_report:report_rows:v4:' . $dateFrom . '_' . $dateTo;
     }
 
     private function buildCostInventoryRows($outlets, Carbon $bulanSebelumnya, string $tanggalAkhirBulanSebelumnya, string $tanggal1BulanIni, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
