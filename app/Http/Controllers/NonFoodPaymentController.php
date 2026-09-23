@@ -403,6 +403,89 @@ class NonFoodPaymentController extends Controller
             return !$hasPayment;
         })->values();
 
+        // Attach PO approval history (who approved + when) for create list
+        $poIds = $availablePOs->pluck('id')->filter()->values()->all();
+        $approvalFlowsByPo = collect();
+        $legacyApprovalsByPo = collect();
+
+        if (!empty($poIds)) {
+            if (Schema::hasTable('purchase_order_ops_approval_flows')) {
+                $approvalFlowsByPo = DB::table('purchase_order_ops_approval_flows as af')
+                    ->leftJoin('users as u', 'af.approver_id', '=', 'u.id')
+                    ->whereIn('af.purchase_order_ops_id', $poIds)
+                    ->where('af.status', 'APPROVED')
+                    ->select(
+                        'af.purchase_order_ops_id',
+                        'af.approval_level',
+                        'af.status',
+                        'af.approved_at',
+                        'af.comments',
+                        'u.nama_lengkap as approver_name'
+                    )
+                    ->orderBy('af.approval_level', 'asc')
+                    ->orderBy('af.approved_at', 'asc')
+                    ->get()
+                    ->groupBy('purchase_order_ops_id');
+            }
+
+            $legacyApprovalsByPo = DB::table('purchase_order_ops as poo')
+                ->leftJoin('users as pm', 'poo.purchasing_manager_approved_by', '=', 'pm.id')
+                ->leftJoin('users as gm', 'poo.gm_finance_approved_by', '=', 'gm.id')
+                ->whereIn('poo.id', $poIds)
+                ->select(
+                    'poo.id',
+                    'poo.purchasing_manager_approved_at',
+                    'poo.gm_finance_approved_at',
+                    'pm.nama_lengkap as purchasing_manager_name',
+                    'gm.nama_lengkap as gm_finance_name'
+                )
+                ->get()
+                ->keyBy('id');
+        }
+
+        $availablePOs = $availablePOs->map(function ($po) use ($approvalFlowsByPo, $legacyApprovalsByPo) {
+            $history = [];
+            $flows = $approvalFlowsByPo->get($po->id, collect());
+
+            if ($flows->isNotEmpty()) {
+                foreach ($flows as $flow) {
+                    $history[] = [
+                        'level' => $flow->approval_level,
+                        'role' => 'Level ' . $flow->approval_level,
+                        'approver_name' => $flow->approver_name ?: '-',
+                        'approved_at' => $flow->approved_at,
+                        'status' => $flow->status,
+                        'comments' => $flow->comments,
+                    ];
+                }
+            } else {
+                $legacy = $legacyApprovalsByPo->get($po->id);
+                if ($legacy && $legacy->purchasing_manager_approved_at) {
+                    $history[] = [
+                        'level' => 1,
+                        'role' => 'Purchasing Manager',
+                        'approver_name' => $legacy->purchasing_manager_name ?: '-',
+                        'approved_at' => $legacy->purchasing_manager_approved_at,
+                        'status' => 'APPROVED',
+                        'comments' => null,
+                    ];
+                }
+                if ($legacy && $legacy->gm_finance_approved_at) {
+                    $history[] = [
+                        'level' => 2,
+                        'role' => 'GM Finance',
+                        'approver_name' => $legacy->gm_finance_name ?: '-',
+                        'approved_at' => $legacy->gm_finance_approved_at,
+                        'status' => 'APPROVED',
+                        'comments' => null,
+                    ];
+                }
+            }
+
+            $po->approval_history = $history;
+            return $po;
+        })->values();
+
         // Get available Purchase Requisitions (mode purchase_payment, travel_application, kasbon) that don't have payments yet
         // Exclude PRs that have any payment (except cancelled) or are fully paid
         $prQuery = DB::table('purchase_requisitions as pr')

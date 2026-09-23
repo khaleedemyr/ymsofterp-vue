@@ -50,6 +50,24 @@
                   <div v-if="po.source_pr_number" class="text-xs text-blue-600 mt-1">
                     <i class="fa fa-link mr-1"></i>Source: {{ po.source_pr_number }}
                   </div>
+                  <div v-if="po.approval_history && po.approval_history.length > 0" class="mt-2 pt-2 border-t border-gray-100">
+                    <div class="text-xs font-medium text-gray-600 mb-1">
+                      <i class="fa fa-check-circle mr-1 text-green-500"></i>History Approval
+                    </div>
+                    <ul class="space-y-1">
+                      <li
+                        v-for="(approval, idx) in po.approval_history"
+                        :key="idx"
+                        class="text-xs text-gray-600 flex flex-wrap items-baseline gap-x-1"
+                      >
+                        <span class="font-medium text-gray-800">{{ approval.approver_name || '-' }}</span>
+                        <span class="text-gray-400">·</span>
+                        <span class="text-gray-500">{{ approval.role || ('Level ' + approval.level) }}</span>
+                        <span class="text-gray-400">·</span>
+                        <span class="text-green-700">{{ formatDateTime(approval.approved_at) }}</span>
+                      </li>
+                    </ul>
+                  </div>
                   <p v-if="po.is_held && po.hold_reason" class="text-sm text-red-600 mt-1">
                     <i class="fas fa-info-circle mr-1"></i>
                     {{ po.hold_reason }}
@@ -268,6 +286,23 @@
             <div v-if="selectedPO && selectedPO.source_pr_number">
               <label class="block text-sm font-medium text-gray-700">Source PR</label>
               <p class="mt-1 text-gray-900">{{ selectedPO.source_pr_number }}</p>
+            </div>
+            <div v-if="selectedPO && selectedPO.approval_history && selectedPO.approval_history.length > 0" class="md:col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-2">History Approval PO</label>
+              <ul class="space-y-1.5 bg-gray-50 rounded-lg border border-gray-100 p-3">
+                <li
+                  v-for="(approval, idx) in selectedPO.approval_history"
+                  :key="idx"
+                  class="text-sm text-gray-700 flex flex-wrap items-baseline gap-x-2"
+                >
+                  <i class="fa fa-check-circle text-green-500 text-xs"></i>
+                  <span class="font-medium text-gray-900">{{ approval.approver_name || '-' }}</span>
+                  <span class="text-gray-400">·</span>
+                  <span class="text-gray-500">{{ approval.role || ('Level ' + approval.level) }}</span>
+                  <span class="text-gray-400">·</span>
+                  <span class="text-green-700">{{ formatDateTime(approval.approved_at) }}</span>
+                </li>
+              </ul>
             </div>
             <div v-if="selectedPR && selectedPR.division_name">
               <label class="block text-sm font-medium text-gray-700">Division</label>
@@ -1880,6 +1915,19 @@ function formatDate(date) {
   if (!date) return '-';
   const d = new Date(date);
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
+}
+
+function formatDateTime(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
 }
 
 function formatCurrency(value) {
