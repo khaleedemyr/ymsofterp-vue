@@ -1578,9 +1578,24 @@ class KpiEvaluationService
     protected function generateCode(string $periodMonth): string
     {
         $suffix = str_replace('-', '', $periodMonth);
-        $count = KpiEvaluation::where('period_month', $periodMonth)->count() + 1;
+        $prefix = 'KPI-EVL-' . $suffix . '-';
 
-        return 'KPI-EVL-' . $suffix . '-' . str_pad((string) $count, 4, '0', STR_PAD_LEFT);
+        // Ambil nomor urut terakhir (bukan count): setelah draft dihapus, count turun
+        // tapi kode tertinggi masih ada → count()+1 bisa bentrok unique.
+        // lockForUpdate aman karena dipanggil di dalam DB::transaction (createDraft).
+        $lastCode = KpiEvaluation::query()
+            ->where('period_month', $periodMonth)
+            ->where('evaluation_code', 'like', $prefix . '%')
+            ->lockForUpdate()
+            ->orderByDesc('evaluation_code')
+            ->value('evaluation_code');
+
+        $next = 1;
+        if ($lastCode && preg_match('/-(\d+)$/', $lastCode, $matches)) {
+            $next = (int) $matches[1] + 1;
+        }
+
+        return $prefix . str_pad((string) $next, 4, '0', STR_PAD_LEFT);
     }
 
     /**
