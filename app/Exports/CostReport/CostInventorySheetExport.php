@@ -32,7 +32,8 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             'Cost RND',
             'Outlet Transfer',
             'Total Barang Tersedia',
-            'Ending Inventory',
+            'Ending Inventory Weekly',
+            'Ending Inventory MTD',
             'COGS Aktual',
             'Sales Before Discount',
             'Discount',
@@ -64,7 +65,8 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             (float) ($row['cost_rnd'] ?? 0),
             (float) ($row['outlet_transfer'] ?? 0),
             (float) ($row['total_barang_tersedia'] ?? 0),
-            (float) ($row['ending_inventory'] ?? 0),
+            (float) ($row['ending_inventory_weekly'] ?? $row['ending_inventory'] ?? 0),
+            (float) ($row['ending_inventory_mtd'] ?? 0),
             (float) ($row['cogs_aktual'] ?? 0),
             (float) ($row['sales_before_discount'] ?? 0),
             (float) ($row['discount'] ?? 0),
@@ -77,7 +79,7 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
 
     public function styles(Worksheet $sheet)
     {
-        $lastCol = 'O';
+        $lastCol = 'P';
         $lastRow = count($this->reportRows) + 1;
         return [
             1 => [
@@ -107,14 +109,15 @@ class CostInventorySheetExport implements FromCollection, WithHeadings, WithMapp
             'E' => 12,
             'F' => 16,
             'G' => 20,
-            'H' => 18,
-            'I' => 14,
-            'J' => 20,
-            'K' => 12,
-            'L' => 20,
-            'M' => 18,
-            'N' => 14,
+            'H' => 22,
+            'I' => 22,
+            'J' => 14,
+            'K' => 20,
+            'L' => 12,
+            'M' => 20,
+            'N' => 18,
             'O' => 14,
+            'P' => 14,
         ];
     }
 }

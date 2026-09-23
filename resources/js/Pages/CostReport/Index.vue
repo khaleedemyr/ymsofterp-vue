@@ -102,7 +102,8 @@
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Cost RND</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Outlet Transfer</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Total Barang Tersedia</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ending Inventory</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ending Inventory Weekly</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Ending Inventory MTD</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">COGS Aktual</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Sales Before Discount</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Discount</th>
@@ -142,7 +143,8 @@
                 </button>
               </td>
               <td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900 text-right">{{ formatNumber(row.total_barang_tersedia) }}</td>
-              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.ending_inventory) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.ending_inventory_weekly ?? row.ending_inventory) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.ending_inventory_mtd) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.cogs_aktual) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.sales_before_discount) }}</td>
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ formatNumber(row.discount) }}</td>
@@ -152,7 +154,7 @@
               <td class="px-4 py-3 whitespace-nowrap text-sm text-gray-900 text-right">{{ row.cogs_after != null ? (Number(row.cogs_after).toFixed(2) + '%') : '-' }}</td>
             </tr>
             <tr v-if="!reportRowsData || reportRowsData.length === 0">
-              <td colspan="15" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
+              <td colspan="16" class="px-4 py-8 text-center text-gray-500">Tidak ada data. Pilih bulan lalu klik Load Data.</td>
             </tr>
           </tbody>
         </table>

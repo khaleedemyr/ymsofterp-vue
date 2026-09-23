@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Carbon\Carbon;
+use App\Support\OutletInventoryCostResolver;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -3030,6 +3031,33 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Ending Inventory (formula buku) sama nilai utama card Cost Stock di Opex Outlet Dashboard:
+     * Begin + Day1 cutoff (item tanpa IB) + Purchased ± Transfer ± Adjustment − Stock Cut fisik − Category Cost.
+     */
+    public function computeEndingInventoryFormula(int $outletId, string $dateFrom, string $dateTo): float
+    {
+        $beginInventory = $this->sumBeginInventory($outletId, $dateFrom);
+        $day1Cutoff = $this->sumDay1OpnameCutoffWithoutIb($outletId, $dateFrom);
+        $inventoryMovement = $this->buildInventoryMovementSummary($outletId, $dateFrom, $dateTo);
+        $outletTransferSummary = $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo);
+        $adjustmentSummary = $this->sumOutletAdjustmentMovements($outletId, $dateFrom, $dateTo);
+        $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
+        $stockCutPhysical = (float) ($stockCut['physical_total'] ?? $stockCut['total']);
+        $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
+
+        return round(
+            (float) $beginInventory['total']
+            + (float) $day1Cutoff['total']
+            + (float) $inventoryMovement['purchased_total']
+            + (float) $outletTransferSummary['net_total']
+            + (float) $adjustmentSummary['total']
+            - $stockCutPhysical
+            - (float) $categoryCost['total'],
+            2
+        );
+    }
+
+    /**
      * Cutoff koreksi fisik tgl 1 untuk item TANPA IB — dipakai di formula ending saja.
      * Begin Inventory card tetap IB-only (parity Cost Report).
      *
@@ -5467,6 +5495,7 @@ class OpexOutletDashboardService
             ->where(function ($q) use ($outletId) {
                 $q->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
             })
+            ->where('t.status', 'approved')
             ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
             ->count();
         if ($count === 0) {
@@ -5686,6 +5715,7 @@ class OpexOutletDashboardService
             ->where(function ($qq) use ($outletId) {
                 $qq->where('wf.outlet_id', $outletId)->orWhere('wt.outlet_id', $outletId);
             })
+            ->where('t.status', 'approved')
             ->whereBetween('t.transfer_date', [$dateFrom, $dateTo])
             ->orderByDesc('t.transfer_date')
             ->orderByDesc('t.id')
@@ -5784,6 +5814,8 @@ class OpexOutletDashboardService
                 't.transfer_date',
                 't.status',
                 't.notes',
+                't.warehouse_outlet_from_id',
+                't.warehouse_outlet_to_id',
                 'u.nama_lengkap as created_by_name',
                 'wf.name as from_warehouse_name',
                 'wt.name as to_warehouse_name',
@@ -5793,6 +5825,17 @@ class OpexOutletDashboardService
                 'oto.id_outlet as to_outlet_id',
             ]);
 
+        if (! $header) {
+            return ['transaction' => null, 'items' => []];
+        }
+
+        $fromOutletId = (int) ($header->from_outlet_id ?? 0);
+        $toOutletId = (int) ($header->to_outlet_id ?? 0);
+        $fromWarehouseId = (int) ($header->warehouse_outlet_from_id ?? 0);
+        $toWarehouseId = (int) ($header->warehouse_outlet_to_id ?? 0);
+        $isSourceView = $fromOutletId === $outletId;
+        $isDestView = $toOutletId === $outletId && $fromOutletId !== $outletId;
+
         $vals = DB::table('outlet_food_inventory_cards')
             ->where('reference_type', 'outlet_transfer')
             ->where('reference_id', $transferId)
@@ -5800,7 +5843,226 @@ class OpexOutletDashboardService
             ->selectRaw('SUM(COALESCE(value_in,0)) as vin, SUM(COALESCE(value_out,0)) as vout')
             ->first();
 
-        $txn = $header ? [
+        // Kartu di outlet yang sedang dilihat (bisa kosong untuk draft/rejected).
+        $cardsHere = DB::table('outlet_food_inventory_cards as c')
+            ->leftJoin('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
+            ->where('c.reference_type', 'outlet_transfer')
+            ->where('c.reference_id', $transferId)
+            ->where('c.id_outlet', $outletId)
+            ->get([
+                'c.inventory_item_id',
+                'c.in_qty_small',
+                'c.out_qty_small',
+                'c.cost_per_small',
+                'c.value_in',
+                'c.value_out',
+                'wo.name as warehouse_name',
+            ]);
+
+        $cardByInv = [];
+        foreach ($cardsHere as $c) {
+            $iid = (int) $c->inventory_item_id;
+            if (! isset($cardByInv[$iid])) {
+                $cardByInv[$iid] = $c;
+            } else {
+                // Gabung bila ada lebih dari satu baris (in + out jarang di outlet yang sama)
+                $cardByInv[$iid]->in_qty_small = (float) $cardByInv[$iid]->in_qty_small + (float) $c->in_qty_small;
+                $cardByInv[$iid]->out_qty_small = (float) $cardByInv[$iid]->out_qty_small + (float) $c->out_qty_small;
+                $cardByInv[$iid]->value_in = (float) $cardByInv[$iid]->value_in + (float) $c->value_in;
+                $cardByInv[$iid]->value_out = (float) $cardByInv[$iid]->value_out + (float) $c->value_out;
+                if ((float) $c->cost_per_small > (float) $cardByInv[$iid]->cost_per_small) {
+                    $cardByInv[$iid]->cost_per_small = $c->cost_per_small;
+                }
+            }
+        }
+
+        // Cost dari kartu peer (outlet lawan) — berguna jika kartu lokal cost-nya 0.
+        $peerCostByInv = [];
+        foreach (
+            DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'outlet_transfer')
+                ->where('reference_id', $transferId)
+                ->where('cost_per_small', '>', 0)
+                ->get(['inventory_item_id', 'cost_per_small']) as $pc
+        ) {
+            $iid = (int) $pc->inventory_item_id;
+            if (! isset($peerCostByInv[$iid])) {
+                $peerCostByInv[$iid] = (float) $pc->cost_per_small;
+            }
+        }
+
+        $transferItems = DB::table('outlet_transfer_items as ti')
+            ->join('items as i', 'ti.item_id', '=', 'i.id')
+            ->leftJoin('outlet_food_inventory_items as fi', 'fi.item_id', '=', 'i.id')
+            ->where('ti.outlet_transfer_id', $transferId)
+            ->orderBy('i.name')
+            ->get([
+                'ti.id',
+                'ti.item_id',
+                'ti.qty_small',
+                'ti.quantity',
+                'i.name as item_name',
+                'i.sku',
+                'fi.id as inventory_item_id',
+            ]);
+
+        // Serial-only transfers: item ada di serial table jika transfer_items kosong.
+        if ($transferItems->isEmpty()) {
+            $transferItems = DB::table('outlet_transfer_serial_items as si')
+                ->join('items as i', 'si.item_id', '=', 'i.id')
+                ->leftJoin('outlet_food_inventory_items as fi', 'fi.item_id', '=', 'i.id')
+                ->where('si.outlet_transfer_id', $transferId)
+                ->orderBy('i.name')
+                ->get([
+                    'si.id',
+                    'si.item_id',
+                    'si.qty_small',
+                    DB::raw('si.qty_small as quantity'),
+                    'i.name as item_name',
+                    'i.sku',
+                    'fi.id as inventory_item_id',
+                    'si.cost_small',
+                ]);
+        }
+
+        $items = [];
+        $resolvedVin = 0.0;
+        $resolvedVout = 0.0;
+
+        if ($transferItems->isNotEmpty()) {
+            foreach ($transferItems as $ti) {
+                $invItemId = (int) ($ti->inventory_item_id ?? 0);
+                $qtyDoc = (float) (($ti->qty_small ?? 0) ?: ($ti->quantity ?? 0));
+                $card = $invItemId > 0 ? ($cardByInv[$invItemId] ?? null) : null;
+
+                $qtyIn = $card ? (float) $card->in_qty_small : 0.0;
+                $qtyOut = $card ? (float) $card->out_qty_small : 0.0;
+                $valueIn = $card ? (float) $card->value_in : 0.0;
+                $valueOut = $card ? (float) $card->value_out : 0.0;
+                $cost = $card ? (float) $card->cost_per_small : 0.0;
+                $warehouseName = $card ? (string) ($card->warehouse_name ?? '') : '';
+                $costSource = $card && $cost > 0 ? 'card' : null;
+
+                // Tanpa kartu (draft / submitted / rejected): arah qty dari peran outlet.
+                if (! $card && $qtyDoc > 0) {
+                    if ($isDestView) {
+                        $qtyIn = $qtyDoc;
+                        $warehouseName = (string) ($header->to_warehouse_name ?? '');
+                    } else {
+                        $qtyOut = $qtyDoc;
+                        $warehouseName = (string) ($header->from_warehouse_name ?? '');
+                    }
+                }
+
+                if ($cost <= 0 && $invItemId > 0 && isset($peerCostByInv[$invItemId])) {
+                    $cost = $peerCostByInv[$invItemId];
+                    $costSource = 'card_peer';
+                }
+
+                if ($cost <= 0 && isset($ti->cost_small) && (float) $ti->cost_small > 0) {
+                    $cost = (float) $ti->cost_small;
+                    $costSource = 'serial_item';
+                }
+
+                if ($cost <= 0 && $invItemId > 0 && $fromOutletId > 0 && $fromWarehouseId > 0) {
+                    $stock = DB::table('outlet_food_inventory_stocks')
+                        ->where('id_outlet', $fromOutletId)
+                        ->where('warehouse_outlet_id', $fromWarehouseId)
+                        ->where('inventory_item_id', $invItemId)
+                        ->first();
+                    if (! $stock) {
+                        $stock = (object) [
+                            'id_outlet' => $fromOutletId,
+                            'warehouse_outlet_id' => $fromWarehouseId,
+                            'inventory_item_id' => $invItemId,
+                            'last_cost_small' => 0,
+                        ];
+                    }
+                    [$costSmall] = OutletInventoryCostResolver::transferInboundCostRates(
+                        $stock,
+                        $fromOutletId,
+                        $fromWarehouseId,
+                        $invItemId
+                    );
+                    if ($costSmall > 0) {
+                        $cost = round((float) $costSmall, 4);
+                        $costSource = 'estimated_mac';
+                    }
+                }
+
+                // Isi value jika qty ada tapi value kartu kosong.
+                if ($cost > 0) {
+                    if ($qtyOut > 0 && $valueOut <= 0) {
+                        $valueOut = round($qtyOut * $cost, 2);
+                    }
+                    if ($qtyIn > 0 && $valueIn <= 0) {
+                        $valueIn = round($qtyIn * $cost, 2);
+                    }
+                }
+
+                $amount = round($valueIn + $valueOut, 2);
+                $resolvedVin += $valueIn;
+                $resolvedVout += $valueOut;
+
+                $items[] = [
+                    'id' => (int) $ti->id,
+                    'item_name' => (string) $ti->item_name,
+                    'sku' => (string) ($ti->sku ?? ''),
+                    'warehouse_name' => $warehouseName,
+                    'qty_in' => $qtyIn,
+                    'qty_out' => $qtyOut,
+                    'cost_per_small' => $cost,
+                    'value_in' => $valueIn,
+                    'value_out' => $valueOut,
+                    'amount' => $amount,
+                    'cost_source' => $costSource,
+                ];
+            }
+        } elseif ($cardByInv !== []) {
+            // Fallback: hanya kartu (jarang, jika transfer_items hilang)
+            foreach ($cardByInv as $c) {
+                $cost = (float) $c->cost_per_small;
+                $valueIn = (float) $c->value_in;
+                $valueOut = (float) $c->value_out;
+                $items[] = [
+                    'id' => (int) $c->inventory_item_id,
+                    'item_name' => '',
+                    'sku' => '',
+                    'warehouse_name' => (string) ($c->warehouse_name ?? ''),
+                    'qty_in' => (float) $c->in_qty_small,
+                    'qty_out' => (float) $c->out_qty_small,
+                    'cost_per_small' => $cost,
+                    'value_in' => $valueIn,
+                    'value_out' => $valueOut,
+                    'amount' => round($valueIn + $valueOut, 2),
+                    'cost_source' => $cost > 0 ? 'card' : null,
+                ];
+                $resolvedVin += $valueIn;
+                $resolvedVout += $valueOut;
+            }
+            // Lengkapi nama item
+            $invIds = array_keys($cardByInv);
+            $names = DB::table('outlet_food_inventory_items as fi')
+                ->join('items as i', 'fi.item_id', '=', 'i.id')
+                ->whereIn('fi.id', $invIds)
+                ->get(['fi.id', 'i.name', 'i.sku'])
+                ->keyBy('id');
+            foreach ($items as &$row) {
+                $n = $names->get($row['id']);
+                if ($n) {
+                    $row['item_name'] = (string) $n->name;
+                    $row['sku'] = (string) ($n->sku ?? '');
+                }
+            }
+            unset($row);
+        }
+
+        $cardVin = (float) ($vals->vin ?? 0);
+        $cardVout = (float) ($vals->vout ?? 0);
+        $displayVin = $cardVin > 0 ? $cardVin : round($resolvedVin, 2);
+        $displayVout = $cardVout > 0 ? $cardVout : round($resolvedVout, 2);
+
+        $txn = [
             'id' => (int) $header->id,
             'number' => (string) $header->transfer_number,
             'date' => (string) $header->transfer_date,
@@ -5811,65 +6073,10 @@ class OpexOutletDashboardService
             'to_outlet' => (string) ($header->to_outlet_name ?? '-'),
             'from_warehouse' => (string) ($header->from_warehouse_name ?? '-'),
             'to_warehouse' => (string) ($header->to_warehouse_name ?? '-'),
-            'value_in' => round((float) ($vals->vin ?? 0), 2),
-            'value_out' => round((float) ($vals->vout ?? 0), 2),
-            'amount' => round(max((float) ($vals->vin ?? 0), (float) ($vals->vout ?? 0)), 2),
-        ] : null;
-
-        $items = DB::table('outlet_food_inventory_cards as c')
-            ->join('outlet_food_inventory_items as fi', 'c.inventory_item_id', '=', 'fi.id')
-            ->join('items as i', 'fi.item_id', '=', 'i.id')
-            ->leftJoin('warehouse_outlets as wo', 'c.warehouse_outlet_id', '=', 'wo.id')
-            ->where('c.reference_type', 'outlet_transfer')
-            ->where('c.reference_id', $transferId)
-            ->where('c.id_outlet', $outletId)
-            ->orderBy('i.name')
-            ->get([
-                'c.id',
-                'i.name as item_name',
-                'i.sku',
-                'wo.name as warehouse_name',
-                'c.in_qty_small',
-                'c.out_qty_small',
-                'c.cost_per_small',
-                'c.value_in',
-                'c.value_out',
-            ])
-            ->map(fn ($r) => [
-                'id' => (int) $r->id,
-                'item_name' => (string) $r->item_name,
-                'sku' => (string) ($r->sku ?? ''),
-                'warehouse_name' => (string) ($r->warehouse_name ?? ''),
-                'qty_in' => (float) $r->in_qty_small,
-                'qty_out' => (float) $r->out_qty_small,
-                'cost_per_small' => (float) $r->cost_per_small,
-                'value_in' => (float) $r->value_in,
-                'value_out' => (float) $r->value_out,
-                'amount' => round((float) $r->value_in + (float) $r->value_out, 2),
-            ])
-            ->values()
-            ->all();
-
-        if ($items === []) {
-            $items = DB::table('outlet_transfer_items as ti')
-                ->join('items as i', 'ti.item_id', '=', 'i.id')
-                ->where('ti.outlet_transfer_id', $transferId)
-                ->get(['ti.id', 'i.name as item_name', 'i.sku', 'ti.qty_small', 'ti.quantity'])
-                ->map(fn ($r) => [
-                    'id' => (int) $r->id,
-                    'item_name' => (string) $r->item_name,
-                    'sku' => (string) ($r->sku ?? ''),
-                    'warehouse_name' => '',
-                    'qty_in' => 0.0,
-                    'qty_out' => (float) ($r->qty_small ?: $r->quantity),
-                    'cost_per_small' => 0.0,
-                    'value_in' => 0.0,
-                    'value_out' => 0.0,
-                    'amount' => 0.0,
-                ])
-                ->values()
-                ->all();
-        }
+            'value_in' => round($displayVin, 2),
+            'value_out' => round($displayVout, 2),
+            'amount' => round(max($displayVin, $displayVout), 2),
+        ];
 
         return ['transaction' => $txn, 'items' => $items];
     }
@@ -6305,41 +6512,176 @@ class OpexOutletDashboardService
             ->where('t.id', $transferId)
             ->first([
                 't.id', 't.transfer_number', 't.transfer_date', 't.notes',
+                't.warehouse_outlet_from_id', 't.warehouse_outlet_to_id',
                 'u.nama_lengkap as created_by_name',
                 'wf.id as from_warehouse_id', 'wf.name as from_warehouse_name',
                 'wt.id as to_warehouse_id', 'wt.name as to_warehouse_name',
             ]);
-        $amount = (float) DB::table('internal_warehouse_transfer_items')
+
+        if (! $header) {
+            return ['transaction' => null, 'items' => []];
+        }
+
+        $fromWarehouseId = (int) ($header->warehouse_outlet_from_id ?? $header->from_warehouse_id ?? 0);
+        $toWarehouseId = (int) ($header->warehouse_outlet_to_id ?? $header->to_warehouse_id ?? 0);
+
+        // Kartu OUT (sumber) + IN (tujuan) — sumber cost yang benar untuk IWT normal.
+        $cards = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'internal_warehouse_transfer')
+            ->where('reference_id', $transferId)
+            ->where('id_outlet', $outletId)
+            ->get([
+                'inventory_item_id',
+                'warehouse_outlet_id',
+                'in_qty_small',
+                'out_qty_small',
+                'cost_per_small',
+                'value_in',
+                'value_out',
+            ]);
+
+        $cardByInv = [];
+        foreach ($cards as $c) {
+            $iid = (int) $c->inventory_item_id;
+            if (! isset($cardByInv[$iid])) {
+                $cardByInv[$iid] = [
+                    'qty_in' => 0.0,
+                    'qty_out' => 0.0,
+                    'value_in' => 0.0,
+                    'value_out' => 0.0,
+                    'cost' => 0.0,
+                ];
+            }
+            $cardByInv[$iid]['qty_in'] += (float) $c->in_qty_small;
+            $cardByInv[$iid]['qty_out'] += (float) $c->out_qty_small;
+            $cardByInv[$iid]['value_in'] += (float) $c->value_in;
+            $cardByInv[$iid]['value_out'] += (float) $c->value_out;
+            $cost = (float) $c->cost_per_small;
+            if ($cost > $cardByInv[$iid]['cost']) {
+                $cardByInv[$iid]['cost'] = $cost;
+            }
+        }
+
+        $transferItems = DB::table('internal_warehouse_transfer_items as i')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->leftJoin('outlet_food_inventory_items as fi', 'fi.item_id', '=', 'it.id')
+            ->where('i.internal_warehouse_transfer_id', $transferId)
+            ->orderBy('it.name')
+            ->get([
+                'i.id',
+                'i.item_id',
+                'i.qty_small',
+                'i.cost_small',
+                'i.total_cost',
+                'it.name as item_name',
+                'it.sku',
+                'fi.id as inventory_item_id',
+            ]);
+
+        $items = [];
+        $resolvedAmount = 0.0;
+
+        foreach ($transferItems as $ti) {
+            $invItemId = (int) ($ti->inventory_item_id ?? 0);
+            $qtyDoc = (float) ($ti->qty_small ?? 0);
+            $card = $invItemId > 0 ? ($cardByInv[$invItemId] ?? null) : null;
+
+            $qtyIn = $card ? (float) $card['qty_in'] : 0.0;
+            $qtyOut = $card ? (float) $card['qty_out'] : 0.0;
+            $valueIn = $card ? (float) $card['value_in'] : 0.0;
+            $valueOut = $card ? (float) $card['value_out'] : 0.0;
+            $cost = $card ? (float) $card['cost'] : 0.0;
+            $costSource = $cost > 0 ? 'card' : null;
+
+            // Tanpa kartu: tampilkan qty dokumen sebagai keluar dari sumber.
+            if (! $card && $qtyDoc > 0) {
+                $qtyOut = $qtyDoc;
+            }
+
+            if ($cost <= 0 && (float) ($ti->cost_small ?? 0) > 0) {
+                $cost = (float) $ti->cost_small;
+                $costSource = 'item';
+            }
+
+            if ($cost <= 0 && $invItemId > 0 && $fromWarehouseId > 0) {
+                $stock = DB::table('outlet_food_inventory_stocks')
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $fromWarehouseId)
+                    ->where('inventory_item_id', $invItemId)
+                    ->first();
+                if (! $stock) {
+                    $stock = (object) [
+                        'id_outlet' => $outletId,
+                        'warehouse_outlet_id' => $fromWarehouseId,
+                        'inventory_item_id' => $invItemId,
+                        'last_cost_small' => 0,
+                    ];
+                }
+                [$costSmall] = OutletInventoryCostResolver::transferInboundCostRates(
+                    $stock,
+                    $outletId,
+                    $fromWarehouseId,
+                    $invItemId
+                );
+                if ($costSmall > 0) {
+                    $cost = round((float) $costSmall, 4);
+                    $costSource = 'estimated_mac';
+                }
+            }
+
+            if ($cost > 0) {
+                if ($qtyOut > 0 && $valueOut <= 0) {
+                    $valueOut = round($qtyOut * $cost, 2);
+                }
+                if ($qtyIn > 0 && $valueIn <= 0) {
+                    $valueIn = round($qtyIn * $cost, 2);
+                }
+            }
+
+            // Nilai tampilan: utamakan value_out kartu; kalau tidak ada pakai value_in / total_cost item.
+            $amount = $valueOut > 0
+                ? round($valueOut, 2)
+                : ($valueIn > 0
+                    ? round($valueIn, 2)
+                    : ((float) ($ti->total_cost ?? 0) > 0
+                        ? round((float) $ti->total_cost, 2)
+                        : round(max($qtyOut, $qtyIn, $qtyDoc) * $cost, 2)));
+
+            $resolvedAmount += $amount;
+
+            $items[] = [
+                'id' => (int) $ti->id,
+                'item_name' => (string) $ti->item_name,
+                'sku' => (string) ($ti->sku ?? ''),
+                'qty_small' => $qtyDoc,
+                'qty_in' => $qtyIn,
+                'qty_out' => $qtyOut,
+                'cost_per_small' => $cost,
+                'value_in' => $valueIn,
+                'value_out' => $valueOut,
+                'amount' => $amount,
+                'cost_source' => $costSource,
+            ];
+        }
+
+        $itemSum = (float) DB::table('internal_warehouse_transfer_items')
             ->where('internal_warehouse_transfer_id', $transferId)
             ->sum('total_cost');
-        $txn = $header ? [
+        $cardSum = round(array_sum(array_map(fn ($c) => (float) $c['value_out'], $cardByInv)), 2);
+        $amount = $itemSum > 0 ? round($itemSum, 2) : ($cardSum > 0 ? $cardSum : round($resolvedAmount, 2));
+
+        $txn = [
             'id' => (int) $header->id,
             'number' => (string) $header->transfer_number,
             'date' => (string) $header->transfer_date,
             'notes' => (string) ($header->notes ?? ''),
             'created_by' => (string) ($header->created_by_name ?? '-'),
-            'from_warehouse_id' => (int) $header->from_warehouse_id,
+            'from_warehouse_id' => $fromWarehouseId,
             'from_warehouse' => (string) $header->from_warehouse_name,
-            'to_warehouse_id' => (int) $header->to_warehouse_id,
+            'to_warehouse_id' => $toWarehouseId,
             'to_warehouse' => (string) $header->to_warehouse_name,
-            'amount' => round($amount, 2),
-        ] : null;
-
-        $items = DB::table('internal_warehouse_transfer_items as i')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->where('i.internal_warehouse_transfer_id', $transferId)
-            ->orderBy('it.name')
-            ->get(['i.id', 'it.name as item_name', 'it.sku', 'i.qty_small', 'i.cost_small', 'i.total_cost'])
-            ->map(fn ($r) => [
-                'id' => (int) $r->id,
-                'item_name' => (string) $r->item_name,
-                'sku' => (string) ($r->sku ?? ''),
-                'qty_small' => (float) $r->qty_small,
-                'cost_per_small' => (float) $r->cost_small,
-                'amount' => round((float) $r->total_cost, 2),
-            ])
-            ->values()
-            ->all();
+            'amount' => $amount,
+        ];
 
         return ['transaction' => $txn, 'items' => $items];
     }

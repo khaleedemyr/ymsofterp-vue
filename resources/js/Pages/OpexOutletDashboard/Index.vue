@@ -1863,6 +1863,14 @@
                     {{ invTxnDetail.transaction?.warehouse_name }}
                     · {{ formatCurrency(invTxnDetail.transaction?.amount) }}
                   </p>
+                  <p
+                    v-if="modalType === 'outlet_transfer' && invTxnDetail.transaction?.status && invTxnDetail.transaction.status !== 'approved'"
+                    class="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2"
+                  >
+                    Status <span class="font-semibold">{{ invTxnDetail.transaction.status }}</span>
+                    — belum/tidak ada posting kartu stok.
+                    Cost ditampilkan dari MAC stok sumber (estimasi), bukan value kartu.
+                  </p>
                 </div>
                 <div class="overflow-x-auto rounded-2xl border border-slate-200">
                   <table class="min-w-full text-sm">
@@ -2914,7 +2922,7 @@ const cardHelps = {
   cogs_pct:
     '% COGS (periode filter dashboard).\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\nSales before disc = Σ(qty × price) order items.\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost (pembanding) = spoil + waste + guest supplies + non commodity\nMeal Employees = internal use\nCOGS Pembanding = Foods + Cat Cost + Meal Emp\nCOGS Aktual = (Begin + Koreksi tgl 1 + Purchased ± Xfer ± Adj) − Ending Stok\n\nDeviasi = Pembanding − Aktual, ditampilkan juga sebagai % dari revenue after disc.\nToleransi max = 2% revenue (hijau jika dalam batas, merah jika melebihi).',
   outlet_transfer:
-    'Transfer antar outlet pada periode filter.\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi (outlet + user).\nKlik transaksi → detail item + cost.',
+    'Transfer antar outlet pada periode filter (hanya status approved).\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi approved (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:
     'Stock adjustment outlet (net value_in − value_out) per periode.\nBreakdown per warehouse di card.\nKlik → daftar transaksi → detail item + cost.',
   stock_opname:

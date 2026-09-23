@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exports\CostReportExport;
 use App\Http\Traits\ReportHelperTrait;
+use App\Services\OpexOutletDashboardService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +18,9 @@ class CostReportController extends Controller
 
     private array $internalUseWasteAggregatesCache = [];
 
+    public function __construct(private OpexOutletDashboardService $opexOutletDashboard)
+    {
+    }
     /**
      * Cost Report: kolom Outlet (is_outlet=1, status=A) dan Begin Inventory (Total MAC).
      * Begin inventory logic sama seperti Outlet Stock Report, tapi nilai yang ditampilkan
@@ -1314,7 +1318,7 @@ class CostReportController extends Controller
 
     private function getReportRowsCacheKey(string $bulan): string
     {
-        return 'cost_report:report_rows:' . $bulan;
+        return 'cost_report:report_rows:v2:' . $bulan;
     }
 
     private function buildCostInventoryRows($outlets, Carbon $bulanSebelumnya, string $tanggalAkhirBulanSebelumnya, string $tanggal1BulanIni, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
@@ -1361,11 +1365,21 @@ class CostReportController extends Controller
                 $totalEndingMacOutlet += (float) ($endingMacByWarehouse[$warehouseOutletId] ?? 0);
             }
 
+            $endingWeekly = round($totalEndingMacOutlet, 2);
+            $endingMtd = $this->opexOutletDashboard->computeEndingInventoryFormula(
+                (int) $outletId,
+                $tanggalAwalBulan,
+                $tanggalAkhirBulan
+            );
+
             $reportRows[] = [
                 'outlet_id' => $outlet->id_outlet,
                 'outlet_name' => $outlet->name,
                 'total_begin_mac' => round($totalBeginMacOutlet, 2),
-                'ending_inventory' => round($totalEndingMacOutlet, 2),
+                'ending_inventory_weekly' => $endingWeekly,
+                'ending_inventory_mtd' => $endingMtd,
+                // Alias lama = weekly (opname), dipakai COGS Aktual.
+                'ending_inventory' => $endingWeekly,
                 'official_cost' => 0,
                 'cost_rnd' => 0,
                 'outlet_transfer' => 0,
@@ -1394,10 +1408,10 @@ class CostReportController extends Controller
                 : 0;
 
             $row['total_barang_tersedia'] = round(
-                ($row['total_begin_mac'] ?? 0) + ($row['official_cost'] ?? 0) - ($row['cost_rnd'] ?? 0) - ($row['outlet_transfer'] ?? 0),
+                ($row['total_begin_mac'] ?? 0) + ($row['official_cost'] ?? 0) - ($row['cost_rnd'] ?? 0) + ($row['outlet_transfer'] ?? 0),
                 2
             );
-            $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory'] ?? 0), 2);
+            $row['cogs_aktual'] = round(($row['total_barang_tersedia'] ?? 0) - ($row['ending_inventory_weekly'] ?? $row['ending_inventory'] ?? 0), 2);
 
             $cogsAktual = (float) ($row['cogs_aktual'] ?? 0);
             $salesAfter = (float) ($row['sales_after_discount'] ?? 0);
