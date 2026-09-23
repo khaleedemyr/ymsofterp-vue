@@ -238,8 +238,8 @@
         <section class="flex max-h-[90vh] w-full max-w-6xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="begin-inventory-detail-title">
           <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
             <div>
-              <h2 id="begin-inventory-detail-title" class="text-lg font-semibold text-gray-900">{{ beginDetailTitle }}</h2>
-              <p class="mt-1 text-sm text-gray-500">{{ beginDetailTitle }} · {{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <h2 id="begin-inventory-detail-title" class="text-lg font-semibold text-gray-900">Detail Begin Inventory</h2>
+              <p class="mt-1 text-sm text-gray-500">Detail Begin Inventory · {{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
             </div>
             <button type="button" class="text-gray-500 hover:text-gray-900" title="Tutup detail" @click="closeBeginInventoryDetail">
               <i class="fa-solid fa-xmark text-xl"></i>
@@ -249,14 +249,13 @@
           <div class="grid grid-cols-1 gap-3 border-b border-gray-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_11rem_8rem_8rem]">
             <input v-model="beginDetailFilters.search" type="search" placeholder="Cari item, SKU, kategori, gudang..." class="w-full border border-gray-300 rounded-md px-3 py-2" @input="queueBeginInventorySearch" />
             <select v-model="beginDetailFilters.sort_by" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
-              <option :value="beginDetailMode === 'official_cost' ? 'amount' : 'begin_value'">Urutkan: Nilai</option>
+              <option value="begin_value">Urutkan: Nilai</option>
               <option value="item_name">Urutkan: Nama item</option>
               <option value="item_sku">Urutkan: SKU</option>
               <option value="category_name">Urutkan: Kategori</option>
-              <option :value="beginDetailMode === 'official_cost' ? 'transaction_date' : 'warehouse_name'">Urutkan: {{ beginDetailMode === 'official_cost' ? 'Tanggal' : 'Gudang' }}</option>
-              <option v-if="beginDetailMode === 'official_cost'" value="source">Urutkan: Sumber</option>
-              <option :value="beginDetailMode === 'official_cost' ? 'qty' : 'begin_qty_small'">Urutkan: Qty</option>
-              <option :value="beginDetailMode === 'official_cost' ? 'unit_cost' : 'mac'">Urutkan: {{ beginDetailMode === 'official_cost' ? 'Harga' : 'MAC' }}</option>
+              <option value="warehouse_name">Urutkan: Gudang</option>
+              <option value="begin_qty_small">Urutkan: Qty</option>
+              <option value="mac">Urutkan: MAC</option>
             </select>
             <select v-model="beginDetailFilters.sort_direction" class="border border-gray-300 rounded-md px-3 py-2" @change="loadBeginInventoryDetail(1)">
               <option value="desc">Terbesar dahulu</option>
@@ -283,10 +282,10 @@
                 <div v-show="isBeginDetailCategoryOpen(group.name)" class="overflow-x-auto">
                   <table class="min-w-full divide-y divide-gray-200 text-sm">
                     <thead class="bg-white text-xs uppercase text-gray-500">
-                      <tr><th class="px-4 py-2 text-left">Item</th><th class="px-4 py-2 text-left">SKU</th><th class="px-4 py-2 text-left">{{ beginDetailMode === 'official_cost' ? 'Referensi' : 'Gudang' }}</th><th class="px-4 py-2 text-right">Qty</th><th class="px-4 py-2 text-right">{{ beginDetailMode === 'official_cost' ? 'Harga' : 'MAC' }}</th><th class="px-4 py-2 text-right">Nilai</th></tr>
+                      <tr><th class="px-4 py-2 text-left">Item</th><th class="px-4 py-2 text-left">SKU</th><th class="px-4 py-2 text-left">Gudang</th><th class="px-4 py-2 text-right">Qty</th><th class="px-4 py-2 text-right">MAC</th><th class="px-4 py-2 text-right">Nilai</th></tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
-                      <tr v-for="item in group.items" :key="`${item.item_sku}-${item.reference_number || item.warehouse_name}`"><td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td><td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td><td class="px-4 py-2 text-gray-600">{{ item.reference_number || item.warehouse_name }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.qty ?? item.begin_qty_small) }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.unit_cost ?? item.mac) }}</td><td class="px-4 py-2 text-right font-medium tabular-nums">{{ formatNumber(item.amount ?? item.begin_value) }}</td></tr>
+                      <tr v-for="item in group.items" :key="`${item.item_sku}-${item.warehouse_name}`"><td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td><td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td><td class="px-4 py-2 text-gray-600">{{ item.warehouse_name }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.begin_qty_small) }}</td><td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.mac) }}</td><td class="px-4 py-2 text-right font-medium tabular-nums">{{ formatNumber(item.begin_value) }}</td></tr>
                     </tbody>
                   </table>
                 </div>
@@ -299,6 +298,193 @@
             <div class="flex gap-2">
               <button type="button" :disabled="beginDetailLoading || beginDetailPagination.current_page <= 1" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="loadBeginInventoryDetail(beginDetailPagination.current_page - 1)">Sebelumnya</button>
               <button type="button" :disabled="beginDetailLoading || beginDetailPagination.current_page >= beginDetailPagination.last_page" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="loadBeginInventoryDetail(beginDetailPagination.current_page + 1)">Berikutnya</button>
+            </div>
+          </footer>
+        </section>
+      </div>
+
+      <div v-if="showOfficialDetail" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" @click.self="closeOfficialCostDetail">
+        <section class="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-lg bg-white shadow-2xl" role="dialog" aria-modal="true" aria-labelledby="official-cost-detail-title">
+          <header class="flex items-start justify-between border-b border-gray-200 px-5 py-4">
+            <div>
+              <h2 id="official-cost-detail-title" class="text-lg font-semibold text-gray-900">{{ officialDetailTitle }}</h2>
+              <p class="mt-1 text-sm text-gray-500">{{ selectedOutlet?.outlet_name || '-' }} · {{ filters.bulan }}</p>
+              <nav v-if="officialLevel !== 'summary'" class="mt-2 flex flex-wrap items-center gap-1 text-xs text-gray-500">
+                <button type="button" class="text-blue-700 hover:underline" @click="goOfficialSummary">Ringkasan</button>
+                <span>/</span>
+                <button v-if="officialLevel === 'items'" type="button" class="text-blue-700 hover:underline" @click="goOfficialTransactions">{{ officialSourceLabel }}</button>
+                <span v-if="officialLevel === 'items'">/</span>
+                <span class="text-gray-700">{{ officialLevel === 'transactions' ? officialSourceLabel : (officialTransaction?.transaction_number || 'Detail') }}</span>
+              </nav>
+            </div>
+            <button type="button" class="text-gray-500 hover:text-gray-900" title="Tutup detail" @click="closeOfficialCostDetail">
+              <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+          </header>
+
+          <div v-if="officialLevel !== 'summary'" class="grid grid-cols-1 gap-3 border-b border-gray-200 px-5 py-4 md:grid-cols-[minmax(0,1fr)_11rem_8rem_8rem]">
+            <input
+              v-model="officialFilters.search"
+              type="search"
+              :placeholder="officialLevel === 'transactions' ? 'Cari nomor / tanggal transaksi...' : 'Cari item, SKU, kategori...'"
+              class="w-full border border-gray-300 rounded-md px-3 py-2"
+              @input="queueOfficialSearch"
+            />
+            <select v-model="officialFilters.sort_by" class="border border-gray-300 rounded-md px-3 py-2" @change="reloadOfficialCurrent(1)">
+              <template v-if="officialLevel === 'transactions'">
+                <option value="amount">Urutkan: Nilai</option>
+                <option value="transaction_date">Urutkan: Tanggal</option>
+                <option value="transaction_number">Urutkan: Nomor</option>
+                <option value="item_count">Urutkan: Jumlah item</option>
+              </template>
+              <template v-else>
+                <option value="amount">Urutkan: Nilai</option>
+                <option value="item_name">Urutkan: Nama item</option>
+                <option value="item_sku">Urutkan: SKU</option>
+                <option value="category_name">Urutkan: Kategori</option>
+                <option value="qty">Urutkan: Qty</option>
+                <option value="unit_cost">Urutkan: Harga</option>
+              </template>
+            </select>
+            <select v-model="officialFilters.sort_direction" class="border border-gray-300 rounded-md px-3 py-2" @change="reloadOfficialCurrent(1)">
+              <option value="desc">Terbesar dahulu</option>
+              <option value="asc">Terkecil dahulu</option>
+            </select>
+            <select v-model.number="officialFilters.per_page" class="border border-gray-300 rounded-md px-3 py-2" @change="reloadOfficialCurrent(1)">
+              <option :value="10">10 / halaman</option>
+              <option :value="25">25 / halaman</option>
+              <option :value="50">50 / halaman</option>
+              <option :value="100">100 / halaman</option>
+            </select>
+          </div>
+
+          <div class="min-h-48 overflow-y-auto px-5 py-4">
+            <div v-if="officialLoading" class="py-12 text-center text-gray-500"><i class="fa-solid fa-spinner fa-spin mr-2"></i>Memuat detail...</div>
+            <div v-else-if="officialError" class="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-700">{{ officialError }}</div>
+
+            <div v-else-if="officialLevel === 'summary'" class="space-y-3">
+              <p class="text-sm text-gray-500">Klik salah satu sumber untuk melihat daftar transaksi.</p>
+              <div class="overflow-hidden rounded-md border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th class="px-4 py-3 text-left">Sumber</th>
+                      <th class="px-4 py-3 text-right">Nilai</th>
+                      <th class="px-4 py-3 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="source in officialSources" :key="source.key">
+                      <td class="px-4 py-3 font-medium text-gray-900">{{ source.label }}</td>
+                      <td class="px-4 py-3 text-right tabular-nums text-gray-900">{{ formatNumber(source.amount) }}</td>
+                      <td class="px-4 py-3 text-right">
+                        <button
+                          type="button"
+                          class="font-medium text-blue-700 hover:text-blue-900 hover:underline disabled:cursor-not-allowed disabled:opacity-40"
+                          :disabled="source.available === false"
+                          @click="openOfficialTransactions(source)"
+                        >
+                          Lihat transaksi
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                  <tfoot class="bg-gray-50">
+                    <tr>
+                      <td class="px-4 py-3 font-semibold text-gray-900">Total Official Cost</td>
+                      <td class="px-4 py-3 text-right font-semibold tabular-nums text-gray-900">{{ formatNumber(officialTotal) }}</td>
+                      <td class="px-4 py-3"></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+
+            <div v-else-if="officialLevel === 'transactions'">
+              <div v-if="officialItems.length === 0" class="py-12 text-center text-gray-500">Tidak ada transaksi pada sumber ini.</div>
+              <div v-else class="overflow-hidden rounded-md border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th class="px-4 py-2 text-left">Tanggal</th>
+                      <th class="px-4 py-2 text-left">Nomor</th>
+                      <th class="px-4 py-2 text-right">Item</th>
+                      <th class="px-4 py-2 text-right">Nilai</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="row in officialItems" :key="row.transaction_id" class="hover:bg-blue-50/40">
+                      <td class="px-4 py-2 text-gray-600">{{ row.transaction_date }}</td>
+                      <td class="px-4 py-2">
+                        <button type="button" class="font-medium text-blue-700 hover:underline" @click="openOfficialTransactionItems(row)">
+                          {{ row.transaction_number }}
+                        </button>
+                      </td>
+                      <td class="px-4 py-2 text-right tabular-nums text-gray-600">{{ row.item_count }}</td>
+                      <td class="px-4 py-2 text-right">
+                        <button type="button" class="font-medium tabular-nums text-blue-700 hover:underline" @click="openOfficialTransactionItems(row)">
+                          {{ formatNumber(row.amount) }}
+                        </button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div v-else>
+              <div v-if="officialTransaction" class="mb-3 rounded-md border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+                {{ officialTransaction.source_label }} · {{ officialTransaction.transaction_number }} · {{ officialTransaction.transaction_date }}
+              </div>
+              <div v-if="officialItems.length === 0" class="py-12 text-center text-gray-500">Tidak ada item pada transaksi ini.</div>
+              <div v-else class="overflow-hidden rounded-md border border-gray-200">
+                <table class="min-w-full divide-y divide-gray-200 text-sm">
+                  <thead class="bg-gray-50 text-xs uppercase text-gray-500">
+                    <tr>
+                      <th class="px-4 py-2 text-left">Item</th>
+                      <th class="px-4 py-2 text-left">SKU</th>
+                      <th class="px-4 py-2 text-left">Kategori</th>
+                      <th class="px-4 py-2 text-left">Unit</th>
+                      <th class="px-4 py-2 text-right">Qty</th>
+                      <th class="px-4 py-2 text-right">Harga</th>
+                      <th class="px-4 py-2 text-right">Nilai</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-gray-100">
+                    <tr v-for="(item, idx) in officialItems" :key="`${item.item_sku}-${idx}`">
+                      <td class="px-4 py-2 text-gray-900">{{ item.item_name }}</td>
+                      <td class="px-4 py-2 font-mono text-xs text-gray-600">{{ item.item_sku || '-' }}</td>
+                      <td class="px-4 py-2 text-gray-600">{{ item.category_name || '-' }}</td>
+                      <td class="px-4 py-2 text-gray-600">{{ item.unit_name || '-' }}</td>
+                      <td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.qty) }}</td>
+                      <td class="px-4 py-2 text-right tabular-nums">{{ formatNumber(item.unit_cost) }}</td>
+                      <td class="px-4 py-2 text-right font-medium tabular-nums">{{ formatNumber(item.amount) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <footer class="flex flex-wrap items-center justify-between gap-3 border-t border-gray-200 px-5 py-3 text-sm text-gray-600">
+            <div class="flex items-center gap-2">
+              <button
+                v-if="officialLevel !== 'summary'"
+                type="button"
+                class="rounded-md border border-gray-300 px-3 py-1.5 hover:bg-gray-50"
+                @click="officialGoBack"
+              >
+                Kembali
+              </button>
+              <span v-if="officialLevel !== 'summary'">
+                {{ officialPagination.total }} {{ officialLevel === 'transactions' ? 'transaksi' : 'item' }}
+                · Halaman {{ officialPagination.current_page }} / {{ officialPagination.last_page }}
+              </span>
+              <span v-else>Total: {{ formatNumber(officialTotal) }}</span>
+            </div>
+            <div v-if="officialLevel !== 'summary'" class="flex gap-2">
+              <button type="button" :disabled="officialLoading || officialPagination.current_page <= 1" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="reloadOfficialCurrent(officialPagination.current_page - 1)">Sebelumnya</button>
+              <button type="button" :disabled="officialLoading || officialPagination.current_page >= officialPagination.last_page" class="rounded-md border border-gray-300 px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50" @click="reloadOfficialCurrent(officialPagination.current_page + 1)">Berikutnya</button>
             </div>
           </footer>
         </section>
@@ -337,8 +523,21 @@ const beginDetailItems = ref([]);
 const beginDetailOpenCategories = ref({});
 const beginDetailPagination = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
 const beginDetailFilters = ref({ search: '', sort_by: 'begin_value', sort_direction: 'desc', per_page: 25 });
-const beginDetailMode = ref('begin_inventory');
 let beginDetailSearchTimer;
+
+const showOfficialDetail = ref(false);
+const officialLoading = ref(false);
+const officialError = ref('');
+const officialLevel = ref('summary'); // summary | transactions | items
+const officialSources = ref([]);
+const officialTotal = ref(0);
+const officialSourceKey = ref('');
+const officialSourceLabel = ref('');
+const officialTransaction = ref(null);
+const officialItems = ref([]);
+const officialPagination = ref({ current_page: 1, last_page: 1, per_page: 25, total: 0 });
+const officialFilters = ref({ search: '', sort_by: 'amount', sort_direction: 'desc', per_page: 25 });
+let officialSearchTimer;
 
 watch(() => props.filters, (v) => {
   filters.value = { ...v };
@@ -368,12 +567,16 @@ const beginDetailGroups = computed(() => {
     if (!groups.has(name)) groups.set(name, { name, items: [], total: 0 });
     const group = groups.get(name);
     group.items.push(item);
-    group.total += Number(item.amount ?? item.begin_value ?? 0);
+    group.total += Number(item.begin_value || 0);
   }
   return Array.from(groups.values());
 });
 
-const beginDetailTitle = computed(() => beginDetailMode.value === 'official_cost' ? 'Detail Official Cost' : 'Detail Begin Inventory');
+const officialDetailTitle = computed(() => {
+  if (officialLevel.value === 'summary') return 'Detail Official Cost';
+  if (officialLevel.value === 'transactions') return `Transaksi ${officialSourceLabel.value}`;
+  return `Detail ${officialTransaction.value?.transaction_number || 'Transaksi'}`;
+});
 
 function formatNumber(value) {
   if (value == null || value === '') return '0';
@@ -452,7 +655,6 @@ async function clearCacheAndReload() {
 }
 
 function openBeginInventoryDetail(row) {
-  beginDetailMode.value = 'begin_inventory';
   selectedOutlet.value = row;
   beginDetailFilters.value.search = '';
   beginDetailFilters.value.sort_by = 'begin_value';
@@ -466,17 +668,19 @@ function openBeginInventoryDetail(row) {
 }
 
 function openOfficialCostDetail(row) {
-  beginDetailMode.value = 'official_cost';
   selectedOutlet.value = row;
-  beginDetailFilters.value.search = '';
-  beginDetailFilters.value.sort_by = 'amount';
-  beginDetailFilters.value.sort_direction = 'desc';
-  beginDetailFilters.value.per_page = 25;
-  beginDetailItems.value = [];
-  beginDetailOpenCategories.value = {};
-  beginDetailError.value = '';
-  showBeginDetail.value = true;
-  loadBeginInventoryDetail(1);
+  officialLevel.value = 'summary';
+  officialSources.value = [];
+  officialTotal.value = 0;
+  officialSourceKey.value = '';
+  officialSourceLabel.value = '';
+  officialTransaction.value = null;
+  officialItems.value = [];
+  officialError.value = '';
+  officialFilters.value = { search: '', sort_by: 'amount', sort_direction: 'desc', per_page: 25 };
+  officialPagination.value = { current_page: 1, last_page: 1, per_page: 25, total: 0 };
+  showOfficialDetail.value = true;
+  loadOfficialSummary();
 }
 
 function closeBeginInventoryDetail() {
@@ -484,9 +688,19 @@ function closeBeginInventoryDetail() {
   window.clearTimeout(beginDetailSearchTimer);
 }
 
+function closeOfficialCostDetail() {
+  showOfficialDetail.value = false;
+  window.clearTimeout(officialSearchTimer);
+}
+
 function queueBeginInventorySearch() {
   window.clearTimeout(beginDetailSearchTimer);
   beginDetailSearchTimer = window.setTimeout(() => loadBeginInventoryDetail(1), 300);
+}
+
+function queueOfficialSearch() {
+  window.clearTimeout(officialSearchTimer);
+  officialSearchTimer = window.setTimeout(() => reloadOfficialCurrent(1), 300);
 }
 
 async function loadBeginInventoryDetail(page) {
@@ -494,8 +708,7 @@ async function loadBeginInventoryDetail(page) {
   beginDetailLoading.value = true;
   beginDetailError.value = '';
   try {
-    const isOfficialCost = beginDetailMode.value === 'official_cost';
-    const response = await axios.get(isOfficialCost ? '/cost-report/official-cost-detail' : '/cost-report/begin-inventory-detail', {
+    const response = await axios.get('/cost-report/begin-inventory-detail', {
       params: {
         bulan: filters.value.bulan,
         outlet_id: selectedOutlet.value.outlet_id,
@@ -515,6 +728,160 @@ async function loadBeginInventoryDetail(page) {
     beginDetailError.value = error?.response?.data?.message || error.message || 'Gagal memuat detail begin inventory.';
   } finally {
     beginDetailLoading.value = false;
+  }
+}
+
+async function loadOfficialSummary() {
+  if (!selectedOutlet.value || !filters.value.bulan) return;
+  officialLoading.value = true;
+  officialError.value = '';
+  try {
+    const response = await axios.get('/cost-report/official-cost-summary', {
+      params: {
+        bulan: filters.value.bulan,
+        outlet_id: selectedOutlet.value.outlet_id,
+      },
+    });
+    if (!response?.data?.success) throw new Error('Gagal memuat ringkasan official cost.');
+    officialSources.value = response.data.sources || [];
+    officialTotal.value = Number(response.data.total || 0);
+  } catch (error) {
+    officialSources.value = [];
+    officialTotal.value = 0;
+    officialError.value = error?.response?.data?.message || error.message || 'Gagal memuat ringkasan official cost.';
+  } finally {
+    officialLoading.value = false;
+  }
+}
+
+function openOfficialTransactions(source) {
+  if (source.available === false) return;
+  officialLevel.value = 'transactions';
+  officialSourceKey.value = source.key;
+  officialSourceLabel.value = source.label;
+  officialTransaction.value = null;
+  officialItems.value = [];
+  officialFilters.value.search = '';
+  officialFilters.value.sort_by = 'amount';
+  officialFilters.value.sort_direction = 'desc';
+  loadOfficialTransactions(1);
+}
+
+function openOfficialTransactionItems(row) {
+  officialLevel.value = 'items';
+  officialTransaction.value = {
+    transaction_id: row.transaction_id,
+    transaction_number: row.transaction_number,
+    transaction_date: row.transaction_date,
+    source_label: officialSourceLabel.value,
+  };
+  officialItems.value = [];
+  officialFilters.value.search = '';
+  officialFilters.value.sort_by = 'amount';
+  officialFilters.value.sort_direction = 'desc';
+  loadOfficialTransactionItems(1);
+}
+
+function goOfficialSummary() {
+  officialLevel.value = 'summary';
+  officialSourceKey.value = '';
+  officialSourceLabel.value = '';
+  officialTransaction.value = null;
+  officialItems.value = [];
+  officialError.value = '';
+  loadOfficialSummary();
+}
+
+function goOfficialTransactions() {
+  if (!officialSourceKey.value) {
+    goOfficialSummary();
+    return;
+  }
+  officialLevel.value = 'transactions';
+  officialTransaction.value = null;
+  officialItems.value = [];
+  officialFilters.value.search = '';
+  officialFilters.value.sort_by = 'amount';
+  loadOfficialTransactions(1);
+}
+
+function officialGoBack() {
+  if (officialLevel.value === 'items') {
+    goOfficialTransactions();
+    return;
+  }
+  goOfficialSummary();
+}
+
+function reloadOfficialCurrent(page) {
+  if (officialLevel.value === 'transactions') {
+    loadOfficialTransactions(page);
+  } else if (officialLevel.value === 'items') {
+    loadOfficialTransactionItems(page);
+  }
+}
+
+async function loadOfficialTransactions(page) {
+  if (!selectedOutlet.value || !filters.value.bulan || !officialSourceKey.value) return;
+  officialLoading.value = true;
+  officialError.value = '';
+  try {
+    const response = await axios.get('/cost-report/official-cost-transactions', {
+      params: {
+        bulan: filters.value.bulan,
+        outlet_id: selectedOutlet.value.outlet_id,
+        source: officialSourceKey.value,
+        search: officialFilters.value.search || undefined,
+        sort_by: officialFilters.value.sort_by,
+        sort_direction: officialFilters.value.sort_direction,
+        per_page: officialFilters.value.per_page,
+        page,
+      },
+    });
+    if (!response?.data?.success) throw new Error('Gagal memuat transaksi official cost.');
+    officialItems.value = response.data.items || [];
+    officialPagination.value = response.data.pagination || officialPagination.value;
+    if (response.data.source_label) officialSourceLabel.value = response.data.source_label;
+  } catch (error) {
+    officialItems.value = [];
+    officialError.value = error?.response?.data?.message || error.message || 'Gagal memuat transaksi official cost.';
+  } finally {
+    officialLoading.value = false;
+  }
+}
+
+async function loadOfficialTransactionItems(page) {
+  if (!selectedOutlet.value || !filters.value.bulan || !officialSourceKey.value || !officialTransaction.value?.transaction_id) return;
+  officialLoading.value = true;
+  officialError.value = '';
+  try {
+    const response = await axios.get('/cost-report/official-cost-transaction-items', {
+      params: {
+        bulan: filters.value.bulan,
+        outlet_id: selectedOutlet.value.outlet_id,
+        source: officialSourceKey.value,
+        transaction_id: officialTransaction.value.transaction_id,
+        search: officialFilters.value.search || undefined,
+        sort_by: officialFilters.value.sort_by,
+        sort_direction: officialFilters.value.sort_direction,
+        per_page: officialFilters.value.per_page,
+        page,
+      },
+    });
+    if (!response?.data?.success) throw new Error('Gagal memuat detail transaksi.');
+    if (response.data.transaction) {
+      officialTransaction.value = {
+        ...officialTransaction.value,
+        ...response.data.transaction,
+      };
+    }
+    officialItems.value = response.data.items || [];
+    officialPagination.value = response.data.pagination || officialPagination.value;
+  } catch (error) {
+    officialItems.value = [];
+    officialError.value = error?.response?.data?.message || error.message || 'Gagal memuat detail transaksi.';
+  } finally {
+    officialLoading.value = false;
   }
 }
 

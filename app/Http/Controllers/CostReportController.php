@@ -385,6 +385,489 @@ class CostReportController extends Controller
         ]);
     }
 
+    /**
+     * Level 1 Official Cost: breakdown Food GR / GSR / Retail Food per outlet.
+     */
+    public function officialCostSummary(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+        ]);
+
+        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        $outletId = (int) $validated['outlet_id'];
+        $excluded = $this->officialCostExcludedSubCategories();
+
+        $foodGr = $this->sumOfficialCostFoodGr($outletId, $dateFrom, $dateTo, $excluded);
+        $gsr = $this->sumOfficialCostGsr($outletId, $dateFrom, $dateTo, $excluded);
+        $retailFood = $this->sumOfficialCostRetailFood($outletId, $dateFrom, $dateTo, $excluded);
+        $total = round($foodGr + $gsr + $retailFood, 2);
+
+        return response()->json([
+            'success' => true,
+            'sources' => [
+                [
+                    'key' => 'food_gr',
+                    'label' => 'Food GR',
+                    'amount' => round($foodGr, 2),
+                ],
+                [
+                    'key' => 'gsr',
+                    'label' => 'GSR',
+                    'amount' => round($gsr, 2),
+                    'available' => $this->rekapFjHasSerialGrTables(),
+                ],
+                [
+                    'key' => 'retail_food',
+                    'label' => 'Retail Food',
+                    'amount' => round($retailFood, 2),
+                ],
+            ],
+            'total' => $total,
+        ]);
+    }
+
+    /**
+     * Level 2 Official Cost: daftar transaksi per sumber.
+     */
+    public function officialCostTransactions(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'source' => ['required', 'in:food_gr,gsr,retail_food'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'sort_by' => ['nullable', 'in:transaction_date,transaction_number,amount,item_count'],
+            'sort_direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        $outletId = (int) $validated['outlet_id'];
+        $source = $validated['source'];
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sortBy = $validated['sort_by'] ?? 'amount';
+        $sortDirection = $validated['sort_direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $excluded = $this->officialCostExcludedSubCategories();
+
+        if ($source === 'gsr' && !$this->rekapFjHasSerialGrTables()) {
+            return response()->json([
+                'success' => true,
+                'source' => $source,
+                'source_label' => 'GSR',
+                'items' => [],
+                'pagination' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                ],
+            ]);
+        }
+
+        $baseQuery = match ($source) {
+            'food_gr' => $this->buildOfficialCostFoodGrTransactionsQuery($outletId, $dateFrom, $dateTo, $excluded),
+            'gsr' => $this->buildOfficialCostGsrTransactionsQuery($outletId, $dateFrom, $dateTo, $excluded),
+            'retail_food' => $this->buildOfficialCostRetailTransactionsQuery($outletId, $dateFrom, $dateTo, $excluded),
+        };
+
+        $query = DB::query()->fromSub($baseQuery, 'official_cost_transactions');
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('transaction_number', 'like', '%' . $search . '%')
+                    ->orWhere('transaction_date', 'like', '%' . $search . '%');
+            });
+        }
+
+        $items = $query
+            ->orderBy($sortBy, $sortDirection)
+            ->orderByDesc('transaction_id')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        $sourceLabels = [
+            'food_gr' => 'Food GR',
+            'gsr' => 'GSR',
+            'retail_food' => 'Retail Food',
+        ];
+
+        return response()->json([
+            'success' => true,
+            'source' => $source,
+            'source_label' => $sourceLabels[$source] ?? $source,
+            'items' => $items->items(),
+            'pagination' => [
+                'current_page' => $items->currentPage(),
+                'last_page' => $items->lastPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+            ],
+        ]);
+    }
+
+    /**
+     * Level 3 Official Cost: detail item dalam satu transaksi.
+     */
+    public function officialCostTransactionItems(Request $request)
+    {
+        $validated = $request->validate([
+            'bulan' => ['required', 'date_format:Y-m'],
+            'outlet_id' => ['required', 'integer', 'exists:tbl_data_outlet,id_outlet'],
+            'source' => ['required', 'in:food_gr,gsr,retail_food'],
+            'transaction_id' => ['required', 'integer', 'min:1'],
+            'search' => ['nullable', 'string', 'max:100'],
+            'sort_by' => ['nullable', 'in:item_name,item_sku,category_name,qty,unit_cost,amount'],
+            'sort_direction' => ['nullable', 'in:asc,desc'],
+            'per_page' => ['nullable', 'integer', 'min:10', 'max:100'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        [$dateFrom, $dateTo] = $this->officialCostMonthRange($validated['bulan']);
+        $outletId = (int) $validated['outlet_id'];
+        $source = $validated['source'];
+        $transactionId = (int) $validated['transaction_id'];
+        $search = trim((string) ($validated['search'] ?? ''));
+        $sortBy = $validated['sort_by'] ?? 'amount';
+        $sortDirection = $validated['sort_direction'] ?? 'desc';
+        $perPage = (int) ($validated['per_page'] ?? 25);
+        $excluded = $this->officialCostExcludedSubCategories();
+
+        if ($source === 'gsr' && !$this->rekapFjHasSerialGrTables()) {
+            return response()->json([
+                'success' => true,
+                'transaction' => null,
+                'items' => [],
+                'pagination' => [
+                    'current_page' => 1,
+                    'last_page' => 1,
+                    'per_page' => $perPage,
+                    'total' => 0,
+                ],
+            ]);
+        }
+
+        $meta = $this->resolveOfficialCostTransactionMeta($source, $outletId, $transactionId, $dateFrom, $dateTo);
+        $linesQuery = match ($source) {
+            'food_gr' => $this->buildOfficialCostFoodGrItemLinesQuery($outletId, $transactionId, $dateFrom, $dateTo, $excluded),
+            'gsr' => $this->buildOfficialCostGsrItemLinesQuery($outletId, $transactionId, $dateFrom, $dateTo, $excluded),
+            'retail_food' => $this->buildOfficialCostRetailItemLinesQuery($outletId, $transactionId, $dateFrom, $dateTo, $excluded),
+        };
+
+        $query = DB::query()->fromSub($linesQuery, 'official_cost_transaction_items');
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('item_name', 'like', '%' . $search . '%')
+                    ->orWhere('item_sku', 'like', '%' . $search . '%')
+                    ->orWhere('category_name', 'like', '%' . $search . '%');
+            });
+        }
+
+        $items = $query
+            ->orderBy($sortBy, $sortDirection)
+            ->orderBy('item_name')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        return response()->json([
+            'success' => true,
+            'transaction' => $meta,
+            'items' => $items->items(),
+            'pagination' => [
+                'current_page' => $items->currentPage(),
+                'last_page' => $items->lastPage(),
+                'per_page' => $items->perPage(),
+                'total' => $items->total(),
+            ],
+        ]);
+    }
+
+    private function officialCostExcludedSubCategories(): array
+    {
+        return [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')];
+    }
+
+    private function officialCostMonthRange(string $bulan): array
+    {
+        $month = Carbon::parse($bulan . '-01');
+
+        return [
+            $month->copy()->startOfMonth()->toDateString(),
+            $month->copy()->endOfMonth()->toDateString(),
+        ];
+    }
+
+    private function officialCostItemNameMap()
+    {
+        return DB::table('items as im')
+            ->select(DB::raw('MIN(im.id) as item_id'), DB::raw('TRIM(im.name) as item_name_key'))
+            ->groupBy(DB::raw('TRIM(im.name)'));
+    }
+
+    private function sumOfficialCostFoodGr(int $outletId, string $dateFrom, string $dateTo, array $excluded): float
+    {
+        $row = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->where('gr.outlet_id', $outletId)
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->whereNull('gr.deleted_at')
+            ->where('gr.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw('COALESCE(SUM(i.received_qty * COALESCE(fo.price, 0)), 0) as total')
+            ->value('total');
+
+        return (float) $row;
+    }
+
+    private function sumOfficialCostGsr(int $outletId, string $dateFrom, string $dateTo, array $excluded): float
+    {
+        if (!$this->rekapFjHasSerialGrTables()) {
+            return 0;
+        }
+
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+        $row = DB::table('outlet_serial_receive_headers as h')
+            ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('h.outlet_id', $outletId)
+            ->whereDate('h.receive_date', '>=', $dateFrom)
+            ->whereDate('h.receive_date', '<=', $dateTo)
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw("COALESCE(SUM(si.qty * ({$effectivePriceExpr})), 0) as total")
+            ->value('total');
+
+        return (float) $row;
+    }
+
+    private function sumOfficialCostRetailFood(int $outletId, string $dateFrom, string $dateTo, array $excluded): float
+    {
+        $row = DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->joinSub($this->officialCostItemNameMap(), 'map_item', function ($join) {
+                $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+            })
+            ->join('items as it', 'map_item.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('rf.outlet_id', $outletId)
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->where('rf.status', 'approved')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw('COALESCE(SUM(rfi.subtotal), 0) as total')
+            ->value('total');
+
+        return (float) $row;
+    }
+
+    private function buildOfficialCostFoodGrTransactionsQuery(int $outletId, string $dateFrom, string $dateTo, array $excluded)
+    {
+        return DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->where('gr.outlet_id', $outletId)
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
+            ->whereNull('gr.deleted_at')
+            ->where('gr.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->groupBy('gr.id', 'gr.number', 'gr.receive_date')
+            ->select(
+                'gr.id as transaction_id',
+                DB::raw("COALESCE(gr.number, CONCAT('GR #', gr.id)) as transaction_number"),
+                DB::raw('DATE(gr.receive_date) as transaction_date'),
+                DB::raw('SUM(i.received_qty * COALESCE(fo.price, 0)) as amount'),
+                DB::raw('COUNT(DISTINCT i.item_id) as item_count')
+            );
+    }
+
+    private function buildOfficialCostGsrTransactionsQuery(int $outletId, string $dateFrom, string $dateTo, array $excluded)
+    {
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+
+        return DB::table('outlet_serial_receive_headers as h')
+            ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+            ->join('items as it', 'si.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('h.outlet_id', $outletId)
+            ->whereDate('h.receive_date', '>=', $dateFrom)
+            ->whereDate('h.receive_date', '<=', $dateTo)
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->groupBy('h.id', 'h.number', 'h.receive_date')
+            ->select(
+                'h.id as transaction_id',
+                DB::raw("COALESCE(h.number, CONCAT('GSR #', h.id)) as transaction_number"),
+                DB::raw('DATE(h.receive_date) as transaction_date'),
+                DB::raw("SUM(si.qty * ({$effectivePriceExpr})) as amount"),
+                DB::raw('COUNT(DISTINCT si.item_id) as item_count')
+            );
+    }
+
+    private function buildOfficialCostRetailTransactionsQuery(int $outletId, string $dateFrom, string $dateTo, array $excluded)
+    {
+        return DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->joinSub($this->officialCostItemNameMap(), 'map_item', function ($join) {
+                $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+            })
+            ->join('items as it', 'map_item.item_id', '=', 'it.id')
+            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->where('rf.outlet_id', $outletId)
+            ->whereDate('rf.transaction_date', '>=', $dateFrom)
+            ->whereDate('rf.transaction_date', '<=', $dateTo)
+            ->where('rf.status', 'approved')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->groupBy('rf.id', 'rf.retail_number', 'rf.transaction_date')
+            ->select(
+                'rf.id as transaction_id',
+                DB::raw("COALESCE(rf.retail_number, CONCAT('Retail #', rf.id)) as transaction_number"),
+                DB::raw('DATE(rf.transaction_date) as transaction_date'),
+                DB::raw('SUM(rfi.subtotal) as amount'),
+                DB::raw('COUNT(DISTINCT map_item.item_id) as item_count')
+            );
+    }
+
+    private function resolveOfficialCostTransactionMeta(string $source, int $outletId, int $transactionId, string $dateFrom, string $dateTo): ?array
+    {
+        if ($source === 'food_gr') {
+            $row = DB::table('outlet_food_good_receives as gr')
+                ->where('gr.id', $transactionId)
+                ->where('gr.outlet_id', $outletId)
+                ->whereDate('gr.receive_date', '>=', $dateFrom)
+                ->whereDate('gr.receive_date', '<=', $dateTo)
+                ->whereNull('gr.deleted_at')
+                ->where('gr.status', 'completed')
+                ->select(
+                    'gr.id as transaction_id',
+                    DB::raw("COALESCE(gr.number, CONCAT('GR #', gr.id)) as transaction_number"),
+                    DB::raw('DATE(gr.receive_date) as transaction_date')
+                )
+                ->first();
+        } elseif ($source === 'gsr') {
+            $row = DB::table('outlet_serial_receive_headers as h')
+                ->where('h.id', $transactionId)
+                ->where('h.outlet_id', $outletId)
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->select(
+                    'h.id as transaction_id',
+                    DB::raw("COALESCE(h.number, CONCAT('GSR #', h.id)) as transaction_number"),
+                    DB::raw('DATE(h.receive_date) as transaction_date')
+                )
+                ->first();
+        } else {
+            $row = DB::table('retail_food as rf')
+                ->where('rf.id', $transactionId)
+                ->where('rf.outlet_id', $outletId)
+                ->whereDate('rf.transaction_date', '>=', $dateFrom)
+                ->whereDate('rf.transaction_date', '<=', $dateTo)
+                ->where('rf.status', 'approved')
+                ->select(
+                    'rf.id as transaction_id',
+                    DB::raw("COALESCE(rf.retail_number, CONCAT('Retail #', rf.id)) as transaction_number"),
+                    DB::raw('DATE(rf.transaction_date) as transaction_date')
+                )
+                ->first();
+        }
+
+        if (!$row) {
+            return null;
+        }
+
+        return [
+            'transaction_id' => (int) $row->transaction_id,
+            'transaction_number' => $row->transaction_number,
+            'transaction_date' => $row->transaction_date,
+            'source' => $source,
+            'source_label' => [
+                'food_gr' => 'Food GR',
+                'gsr' => 'GSR',
+                'retail_food' => 'Retail Food',
+            ][$source] ?? $source,
+        ];
+    }
+
+    private function buildOfficialCostFoodGrItemLinesQuery(int $outletId, int $transactionId, string $dateFrom, string $dateTo, array $excluded)
+    {
+        return DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as gri', 'gr.id', '=', 'gri.outlet_food_good_receive_id')
+            ->join('items as i', 'gri.item_id', '=', 'i.id')
+            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('units as u', 'gri.unit_id', '=', 'u.id')
+            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('gri.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'do.floor_order_id');
+            })
+            ->where('gr.id', $transactionId)
+            ->where('gr.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(gr.receive_date)'), [$dateFrom, $dateTo])
+            ->whereNull('gr.deleted_at')
+            ->where('gr.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, COALESCE(u.name, '-') as unit_name, COALESCE(gri.received_qty, 0) as qty, COALESCE(fo.price, 0) as unit_cost, COALESCE(gri.received_qty, 0) * COALESCE(fo.price, 0) as amount");
+    }
+
+    private function buildOfficialCostGsrItemLinesQuery(int $outletId, int $transactionId, string $dateFrom, string $dateTo, array $excluded)
+    {
+        $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('i');
+
+        return DB::table('outlet_serial_receive_headers as h')
+            ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+            ->join('items as i', 'si.item_id', '=', 'i.id')
+            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('units as u', 'si.unit_id', '=', 'u.id')
+            ->where('h.id', $transactionId)
+            ->where('h.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(h.receive_date)'), [$dateFrom, $dateTo])
+            ->whereNull('h.deleted_at')
+            ->where('h.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, COALESCE(u.name, '-') as unit_name, COALESCE(si.qty, 0) as qty, ({$effectivePriceExpr}) as unit_cost, COALESCE(si.qty, 0) * ({$effectivePriceExpr}) as amount");
+    }
+
+    private function buildOfficialCostRetailItemLinesQuery(int $outletId, int $transactionId, string $dateFrom, string $dateTo, array $excluded)
+    {
+        return DB::table('retail_food as rf')
+            ->join('retail_food_items as rfi', 'rf.id', '=', 'rfi.retail_food_id')
+            ->joinSub($this->officialCostItemNameMap(), 'map_item', function ($join) {
+                $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+            })
+            ->join('items as i', 'map_item.item_id', '=', 'i.id')
+            ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->where('rf.id', $transactionId)
+            ->where('rf.outlet_id', $outletId)
+            ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$dateFrom, $dateTo])
+            ->where('rf.status', 'approved')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, COALESCE(rfi.unit, '-') as unit_name, COALESCE(rfi.qty, 0) as qty, CASE WHEN COALESCE(rfi.qty, 0) <> 0 THEN COALESCE(rfi.subtotal, 0) / rfi.qty ELSE 0 END as unit_cost, COALESCE(rfi.subtotal, 0) as amount");
+    }
+
     private function getReportRowsCacheKey(string $bulan): string
     {
         return 'cost_report:report_rows:' . $bulan;
