@@ -198,7 +198,7 @@
       <div v-else-if="activeTab === 'cogs' || activeTab === 'cogs_mtd'" class="bg-white rounded-xl shadow-xl overflow-x-auto">
         <p class="px-4 pt-4 text-xs text-gray-500">
           {{ activeTab === 'cogs_mtd'
-            ? 'COGS Aktual = Total Barang Tersedia − Ending Inventory MTD (formula Opex).'
+            ? 'COGS Aktual = Total Barang Tersedia − Ending Inventory MTD (cost di stok).'
             : 'COGS Aktual = Total Barang Tersedia − Ending Inventory Weekly (opname terakhir di rentang).' }}
         </p>
         <table class="min-w-full divide-y divide-gray-200">

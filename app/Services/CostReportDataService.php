@@ -69,7 +69,8 @@ class CostReportDataService
             }
 
             $endingWeekly = round($totalEndingMacOutlet, 2);
-            $endingMtd = $this->opexOutletDashboard->computeEndingInventoryFormula(
+            // MTD = cost di stok (kartu sanitized), sama "Cost di stok" di Opex — bukan formula rollforward.
+            $endingMtd = $this->opexOutletDashboard->computeEndingInventoryStockCost(
                 (int) $outletId,
                 $tanggalAwalBulan,
                 $tanggalAkhirBulan

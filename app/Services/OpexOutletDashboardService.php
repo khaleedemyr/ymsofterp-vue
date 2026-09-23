@@ -3055,6 +3055,15 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Ending Inventory (cost di stok) — kartu inventory terbaru dalam periode (sanitized).
+     * Dipakai Cost Report kolom Ending Inventory MTD (bukan formula rollforward).
+     */
+    public function computeEndingInventoryStockCost(int $outletId, string $dateFrom, string $dateTo): float
+    {
+        return round((float) ($this->sumEndingStockSanitized($outletId, $dateTo, $dateFrom)['total'] ?? 0), 2);
+    }
+
+    /**
      * Ending Inventory (formula buku) sama nilai utama card Cost Stock di Opex Outlet Dashboard:
      * Begin + Day1 cutoff (item tanpa IB) + Purchased ± Transfer ± Adjustment − Stock Cut fisik − Category Cost.
      */
