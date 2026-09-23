@@ -308,10 +308,15 @@ class OpexOutletDashboardService
         $costRnd = round($costRnd, 2);
         $cogsFoods = round((float) $stockCut['total'], 2);
         $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
+        // Purchased untuk COGS/tersedia: excl MCS (sama Official Cost). Ending formula tetap full.
+        $purchasedForCogs = round(
+            (float) ($inventoryMovement['purchased_excl_mcs_total'] ?? $inventoryMovement['purchased_total'] ?? 0),
+            2
+        );
         $availableGoods = round(
             (float) $beginInventory['total']
             + (float) $day1Cutoff['total']
-            + (float) $inventoryMovement['purchased_total']
+            + $purchasedForCogs
             - $costRnd
             + (float) $outletTransferSummary['net_total']
             + (float) $adjustmentSummary['total'],
@@ -454,7 +459,16 @@ class OpexOutletDashboardService
                 'day1_opname_cutoff' => round((float) $day1Cutoff['total'], 2),
                 'day1_opname_cutoff_count' => (int) $day1Cutoff['count'],
                 'purchased' => round((float) $inventoryMovement['purchased_total'], 2),
-                'purchased_excludes_mcs' => true,
+                'purchased_excl_mcs' => round(
+                    (float) ($inventoryMovement['purchased_excl_mcs_total'] ?? $inventoryMovement['purchased_total'] ?? 0),
+                    2
+                ),
+                'purchased_excludes_mcs' => false,
+                'mcs_in_purchased' => round(
+                    (float) ($inventoryMovement['purchased_total'] ?? 0)
+                    - (float) ($inventoryMovement['purchased_excl_mcs_total'] ?? $inventoryMovement['purchased_total'] ?? 0),
+                    2
+                ),
                 'cost_rnd' => $costRnd,
                 'outlet_transfer_net' => round((float) $outletTransferSummary['net_total'], 2),
                 'outlet_adjustment' => round((float) $adjustmentSummary['total'], 2),
@@ -3054,11 +3068,13 @@ class OpexOutletDashboardService
         $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
         $stockCutPhysical = (float) ($stockCut['physical_total'] ?? $stockCut['total']);
         $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
+        // Cost Report Ending MTD: purchased excl MCS (parity Official Cost).
+        $purchased = (float) ($inventoryMovement['purchased_excl_mcs_total'] ?? $inventoryMovement['purchased_total'] ?? 0);
 
         return round(
             (float) $beginInventory['total']
             + (float) $day1Cutoff['total']
-            + (float) $inventoryMovement['purchased_total']
+            + $purchased
             + (float) $outletTransferSummary['net_total']
             + (float) $adjustmentSummary['total']
             - $stockCutPhysical
@@ -3615,6 +3631,7 @@ class OpexOutletDashboardService
             return [
                 'begin_by_warehouse' => $emptyList,
                 'purchased_total' => 0.0,
+                'purchased_excl_mcs_total' => 0.0,
                 'purchased_by_warehouse' => $emptyList,
                 'opname_total' => 0.0,
                 'opname_by_warehouse' => $emptyList,
@@ -3630,7 +3647,9 @@ class OpexOutletDashboardService
 
         $beginMap = $this->beginInventoryAmountByWarehouse($outletId, $dateFrom, $warehouseIds);
         $day1CutoffMap = $this->sumDay1OpnameCutoffWithoutIb($outletId, $dateFrom)['by_warehouse'];
-        $purchasedMap = $this->purchasedAmountByWarehouse($outletId, $dateFrom, $dateTo, $warehouses);
+        // Full purchased (incl MCS) — untuk formula ending vs cost-di-stok.
+        $purchasedMap = $this->purchasedAmountByWarehouse($outletId, $dateFrom, $dateTo, $warehouses, false);
+        $purchasedExclMcsMap = $this->purchasedAmountByWarehouse($outletId, $dateFrom, $dateTo, $warehouses, true);
         $opnameMap = $this->cardMovementNetByWarehouse(
             $outletId,
             $dateFrom,
@@ -3655,6 +3674,7 @@ class OpexOutletDashboardService
         $endingByWh = [];
         $beginTotal = 0.0;
         $purchasedTotal = 0.0;
+        $purchasedExclMcsTotal = 0.0;
         $opnameTotal = 0.0;
         $transferTotal = 0.0;
         $stockCutTotal = 0.0;
@@ -3687,6 +3707,7 @@ class OpexOutletDashboardService
             $beginTotal += $begin;
             $day1CutoffTotal += $day1Cutoff;
             $purchasedTotal += $purchased;
+            $purchasedExclMcsTotal += round((float) ($purchasedExclMcsMap[$id] ?? 0), 2);
             $opnameTotal += $opname;
             $transferTotal += $transfer;
             $stockCutTotal += $stockCut;
@@ -3697,6 +3718,7 @@ class OpexOutletDashboardService
         return [
             'begin_by_warehouse' => $beginByWh,
             'purchased_total' => round($purchasedTotal, 2),
+            'purchased_excl_mcs_total' => round($purchasedExclMcsTotal, 2),
             'purchased_by_warehouse' => $purchasedByWh,
             'opname_total' => round($opnameTotal, 2),
             'opname_by_warehouse' => $opnameByWh,
@@ -4143,7 +4165,7 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Sub-category yang di-exclude dari Official Cost / Purchased inventory (parity Cost Report):
+     * Sub-category yang di-exclude dari Official Cost / Purchased (parity Cost Report):
      * Stationary, Marketing, Chemical.
      *
      * @return list<string>
@@ -4154,11 +4176,20 @@ class OpexOutletDashboardService
     }
 
     /**
+     * Purchased per warehouse (GSR + Food GR + Retail Food).
+     * $excludeMcs = true → exclude Chemical/Marketing/Stationary (parity Official Cost / COGS).
+     * Ending inventory vs cost-di-stok harus pakai $excludeMcs = false supaya apple-to-apple.
+     *
      * @param  \Illuminate\Support\Collection<int, object>  $warehouses
      * @return array<int, float>
      */
-    private function purchasedAmountByWarehouse(int $outletId, string $dateFrom, string $dateTo, $warehouses): array
-    {
+    private function purchasedAmountByWarehouse(
+        int $outletId,
+        string $dateFrom,
+        string $dateTo,
+        $warehouses,
+        bool $excludeMcs = false
+    ): array {
         $out = [];
         foreach ($warehouses as $wh) {
             $out[(int) $wh->id] = 0.0;
@@ -4171,20 +4202,26 @@ class OpexOutletDashboardService
             $out[$warehouseId] = round($out[$warehouseId] + $amount, 2);
         };
 
-        $excluded = $this->costReportExcludedSubCategories();
+        $excluded = $excludeMcs ? $this->costReportExcludedSubCategories() : [];
 
         if ($this->hasSerialGrTables()) {
             $priceSql = $this->serialGrPriceSql('it');
-            $gsrRows = DB::table('outlet_serial_receive_items as si')
+            $gsrQuery = DB::table('outlet_serial_receive_items as si')
                 ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
                 ->join('items as it', 'si.item_id', '=', 'it.id')
-                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
                 ->whereNull('h.deleted_at')
                 ->where('h.status', 'completed')
                 ->where('h.outlet_id', $outletId)
                 ->whereBetween(DB::raw('DATE(h.receive_date)'), [$dateFrom, $dateTo])
-                ->whereNotNull('si.warehouse_outlet_id')
-                ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+                ->whereNotNull('si.warehouse_outlet_id');
+
+            if ($excludeMcs) {
+                $gsrQuery
+                    ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                    ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded);
+            }
+
+            $gsrRows = $gsrQuery
                 ->selectRaw('si.warehouse_outlet_id as warehouse_id, SUM(si.qty * ('.$priceSql.')) as total')
                 ->groupBy('si.warehouse_outlet_id')
                 ->get();
@@ -4194,10 +4231,8 @@ class OpexOutletDashboardService
             }
         }
 
-        $grRows = DB::table('outlet_food_good_receive_items as ofgri')
+        $grQuery = DB::table('outlet_food_good_receive_items as ofgri')
             ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
-            ->join('items as it', 'ofgri.item_id', '=', 'it.id')
-            ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
             ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
             ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
             ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
@@ -4213,8 +4248,16 @@ class OpexOutletDashboardService
             ->whereNull('ofgr.deleted_at')
             ->where('ofgr.outlet_id', $outletId)
             ->whereBetween(DB::raw('DATE(ofgr.receive_date)'), [$dateFrom, $dateTo])
-            ->whereRaw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id) IS NOT NULL')
-            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded)
+            ->whereRaw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id) IS NOT NULL');
+
+        if ($excludeMcs) {
+            $grQuery
+                ->join('items as it', 'ofgri.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excluded);
+        }
+
+        $grRows = $grQuery
             ->selectRaw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id) as warehouse_id, SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
             ->groupBy(DB::raw('COALESCE(ffo.warehouse_outlet_id, ffo_ro.warehouse_outlet_id)'))
             ->get();
@@ -4223,8 +4266,8 @@ class OpexOutletDashboardService
             $add((int) $row->warehouse_id, (float) $row->total);
         }
 
-        // Retail Food: sum per item (bukan header total) agar MCS bisa di-exclude seperti Cost Report.
-        if (Schema::hasTable('retail_food_items')) {
+        if ($excludeMcs && Schema::hasTable('retail_food_items')) {
+            // Item-level supaya MCS bisa di-filter (parity Cost Report Official Cost).
             $itemNameMap = DB::table('items as im')
                 ->selectRaw('MIN(im.id) as item_id, TRIM(im.name) as item_name_key')
                 ->groupBy(DB::raw('TRIM(im.name)'));
@@ -4245,10 +4288,21 @@ class OpexOutletDashboardService
                 ->selectRaw('rf.warehouse_outlet_id as warehouse_id, SUM(COALESCE(rfi.subtotal, 0)) as total')
                 ->groupBy('rf.warehouse_outlet_id')
                 ->get();
+        } else {
+            // Full purchased untuk reconcile ending vs cost-di-stok: pakai header total.
+            $retailFoodRows = DB::table('retail_food as rf')
+                ->where('rf.outlet_id', $outletId)
+                ->where('rf.status', 'approved')
+                ->whereNull('rf.deleted_at')
+                ->whereBetween(DB::raw('DATE(rf.transaction_date)'), [$dateFrom, $dateTo])
+                ->whereNotNull('rf.warehouse_outlet_id')
+                ->selectRaw('rf.warehouse_outlet_id as warehouse_id, SUM(rf.total_amount) as total')
+                ->groupBy('rf.warehouse_outlet_id')
+                ->get();
+        }
 
-            foreach ($retailFoodRows as $row) {
-                $add((int) $row->warehouse_id, (float) $row->total);
-            }
+        foreach ($retailFoodRows as $row) {
+            $add((int) $row->warehouse_id, (float) $row->total);
         }
 
         // RWS tidak dijumlah: inlet stok outlet sudah lewat Retail Food (mirror RWS).

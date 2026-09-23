@@ -905,7 +905,7 @@
                     <CardHelpTip :text="cardHelps.ending_inventory" />
                   </p>
                   <p class="mt-2 text-3xl font-bold text-slate-900">{{ formatCurrency(ov.ending_inventory) }}</p>
-                  <p class="mt-1 text-sm text-slate-500">Begin + Koreksi tgl 1* + Purchased (excl MCS) ± Xfer ± Adj − Cut − Category</p>
+                  <p class="mt-1 text-sm text-slate-500">Begin + Koreksi tgl 1* + Purchased ± Xfer ± Adj − Cut − Category</p>
                   <p v-if="ov.ending_inventory_revenue_pct != null" class="text-xs font-semibold text-slate-600 mt-1">
                     {{ ov.ending_inventory_revenue_pct }}% dari revenue
                   </p>
@@ -2918,7 +2918,7 @@ const cardHelps = {
   begin_inventory:
     'Begin Inventory (Total MAC) sama seperti kolom Cost Report.\n\nJika ada upload saldo awal tgl 1 bulan laporan → pakai initial_balance saja (tanpa stock_opname).\nJika tidak → qty × MAC dari stok sistem.\nKlik card → detail item, qty, MAC per kategori (expand/collapse + search).\nCard menampilkan breakdown per warehouse outlet.',
   ending_inventory:
-    'Nilai utama = Begin (IB / Cost Report) + Koreksi fisik tgl 1 untuk item tanpa IB + Purchased (excl Chemical/Marketing/Stationary, sama Official Cost) ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nBegin Inventory card tetap sama Cost Report (IB saja).\nKoreksi fisik tgl 1 hanya masuk formula ending (bukan begin card), supaya stok item yang dikoreksi tanpa IB tidak hilang dari rollforward.\nOpname EOM / mid-month lain = balancing qty ke fisik — tidak dijumlah ke formula buku.\n\nStok ending = kartu terbaru dalam periode filter saja (dari tgl 1), tidak menarik saldo bulan sebelumnya.\nStock Cut di formula = qty fisik yang keluar kartu (bukan HPP full).\nSelisih HPP full vs fisik = shortfall Laporan Minus.\nIWT tidak dijumlah di level outlet (net antar gudang ≈ 0).\nDi bawahnya: cost stok aktual + selisih (formula − stok).\nPer warehouse = nilai stok (bukan formula).',
+    'Nilai utama = Begin (IB / Cost Report) + Koreksi fisik tgl 1 untuk item tanpa IB + Purchased (full, termasuk MCS) ± Transfer Outlet (net) ± Adjustment − Stock Cut (fisik) − Category Cost.\n\nPurchased full dipakai supaya formula apple-to-apple dengan Cost di stok.\nUntuk COGS / Barang tersedia: Purchased excl Chemical/Marketing/Stationary − Cost RND (lihat tip % COGS).\n\nBegin Inventory card tetap sama Cost Report (IB saja).\nKoreksi fisik tgl 1 hanya masuk formula ending (bukan begin card).\nOpname EOM / mid-month lain = balancing — tidak dijumlah ke formula buku.\n\nStok ending = kartu terbaru dalam periode filter.\nSelisih = formula − cost di stok.',
   cogs_pct:
     '% COGS (periode filter dashboard).\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\nSales before disc = Σ(qty × price) order items.\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost (pembanding) = spoil + waste + guest supplies + non commodity\nMeal Employees = internal use\nCOGS Pembanding = Foods + Cat Cost + Meal Emp\nBarang tersedia = Begin + Koreksi tgl 1 + Purchased (excl Chemical/Marketing/Stationary) − Cost RND (r_and_d + marketing) ± Xfer ± Adj\nCOGS Aktual = Barang tersedia − Ending Stok\n\nDeviasi = Pembanding − Aktual, ditampilkan juga sebagai % dari revenue after disc.\nToleransi max = 2% revenue (hijau jika dalam batas, merah jika melebihi).',
   outlet_transfer:
