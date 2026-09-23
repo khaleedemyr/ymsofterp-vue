@@ -994,12 +994,19 @@
                   <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.cogs_foods) }}</p>
                 </div>
                 <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Cat + Meal Emp</p>
-                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency((ov.cogs?.category_cost || 0) + (ov.cogs?.meal_employees || 0)) }}</p>
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Category Cost</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.category_cost) }}</p>
+                  <p class="mt-0.5 text-[10px] text-slate-400">spoil + waste + guest + non commodity</p>
+                </div>
+                <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Meal Employees</p>
+                  <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.meal_employees) }}</p>
+                  <p class="mt-0.5 text-[10px] text-slate-400">internal use · terpisah dari Category Cost</p>
                 </div>
                 <div class="rounded-2xl bg-slate-50 border border-slate-100 px-3 py-2.5">
                   <p class="text-[10px] uppercase tracking-wide text-slate-400">Pembanding</p>
                   <p class="mt-1 text-sm font-bold text-slate-800 truncate">{{ formatCurrency(ov.cogs?.cogs_pembanding) }}</p>
+                  <p class="mt-0.5 text-[10px] text-slate-400">Foods + Cat + Meal</p>
                 </div>
                 <div
                   class="rounded-2xl border px-3 py-2.5"
@@ -2921,7 +2928,7 @@ const cardHelps = {
   ending_inventory:
     'Nilai utama (besar) = Cost di stok — kartu inventory terbaru dalam periode (sama Ending Inventory MTD di Cost Report).\n\nFormula buku (kotak bawah) = Begin + Koreksi tgl 1 item tanpa IB + Purchased ± Transfer ± Adj − Stock Cut fisik − Category Cost.\nSelisih = formula − cost di stok.\n\nPer warehouse di card = breakdown cost di stok.',
   cogs_pct:
-    '% COGS (periode filter dashboard).\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\nSales before disc = Σ(qty × price) order items.\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost (pembanding) = spoil + waste + guest supplies + non commodity\nMeal Employees = internal use\nCOGS Pembanding = Foods + Cat Cost + Meal Emp\nBarang tersedia = Begin + Koreksi tgl 1 + Purchased (excl Chemical/Marketing/Stationary) − Cost RND (r_and_d + marketing) ± Xfer ± Adj\nCOGS Aktual = Barang tersedia − Ending Stok\n\nDeviasi = Pembanding − Aktual, ditampilkan juga sebagai % dari revenue after disc.\nToleransi max = 2% revenue (hijau jika dalam batas, merah jika melebihi).',
+    '% COGS (periode filter dashboard) — selaras tab Actual Cost Cost Report.\n\nNilai utama = % COGS Actual After Disc = COGS Aktual ÷ (Sales before disc − Discount).\n\nCOGS Foods = Stock Cut HPP full\nCategory Cost = spoil + waste + guest supplies + non commodity (TANPA meal employee)\nMeal Employees = internal use (kolom terpisah, sama Cost Report)\nCOGS Pembanding = Foods + Category Cost + Meal Employees (sama Cost Report)\nBarang tersedia = Begin + Koreksi tgl 1 + Purchased (excl MCS) − Cost RND ± Xfer ± Adj\nCOGS Aktual = Barang tersedia − Ending Stok (cost di stok)\n\nDeviasi = Pembanding − Aktual.\nToleransi max = 2% revenue.',
   outlet_transfer:
     'Transfer antar outlet pada periode filter (hanya status approved).\nTransfer In = value_in kartu inventory.\nTransfer Out = value_out kartu inventory.\nKlik card → daftar transaksi approved (outlet + user).\nKlik transaksi → detail item + cost.',
   outlet_adjustment:
