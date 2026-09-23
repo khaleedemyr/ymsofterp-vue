@@ -1259,9 +1259,13 @@ class FoodPaymentController extends Controller
                 ]);
             }
         }
+
+        $poApprovalHistories = !empty($poIds)
+            ? \App\Models\PurchaseOrderFood::getApprovalHistoriesByIds($poIds)
+            : [];
         
         // Transform data to include source type and outlet information (using batch query results)
-        $contraBons = $contraBons->map(function($contraBon) use ($outletDataMap, $sourceTypeMap, $retailFoodsMap, $warehouseRetailFoodsMap, $purchaseOrdersMap, $retailNonFoodsMap, $prWarehouseMap) {
+        $contraBons = $contraBons->map(function($contraBon) use ($outletDataMap, $sourceTypeMap, $retailFoodsMap, $warehouseRetailFoodsMap, $purchaseOrdersMap, $retailNonFoodsMap, $prWarehouseMap, $poApprovalHistories) {
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
             $warehouseNames = [];
@@ -1468,6 +1472,10 @@ class FoodPaymentController extends Controller
             // Gabung outlet dan warehouse untuk location_names
             $locationNames = array_merge($outletNames, $warehouseNames);
             $contraBon->location_names = $locationNames;
+
+            $contraBon->po_approval_history = ($contraBonPoId && isset($poApprovalHistories[(int) $contraBonPoId]))
+                ? $poApprovalHistories[(int) $contraBonPoId]
+                : [];
             
             // Debug logging untuk contra bon tertentu
             if ($contraBon->number === 'CB-20260119-0064' || $contraBon->number === 'CB-20260120-0160') {

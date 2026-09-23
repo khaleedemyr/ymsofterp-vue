@@ -992,6 +992,19 @@ function formatDate(date) {
   return d.toLocaleDateString('id-ID', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
+function formatDateTime(date) {
+  if (!date) return '-';
+  const d = new Date(date);
+  if (Number.isNaN(d.getTime())) return '-';
+  return d.toLocaleString('id-ID', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 // Computed untuk menghitung subtotal dari item yang dicentang (with discount item)
 const subtotalAmount = computed(() => {
   return form.items
@@ -1790,13 +1803,32 @@ function getUnitName(item) {
                 <span v-else-if="source.type === 'retail_non_food'" class="text-green-500">
                   <i class="fa fa-shopping-bag"></i>
                 </span>
-                <span class="font-medium text-gray-700">{{ source.display }}</span>
-                <span
-                  v-if="source.type === 'retail_non_food' && source.category_name"
-                  class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"
-                >
-                  {{ source.category_name }}
-                </span>
+                <div>
+                  <span class="font-medium text-gray-700">{{ source.display }}</span>
+                  <span
+                    v-if="source.type === 'retail_non_food' && source.category_name"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 ml-2"
+                  >
+                    {{ source.category_name }}
+                  </span>
+                  <div
+                    v-if="source.type === 'purchase_order' && source.data?.po_approval_history?.length"
+                    class="mt-1 space-y-0.5"
+                  >
+                    <div
+                      v-for="(approval, idx) in source.data.po_approval_history"
+                      :key="idx"
+                      class="text-xs text-gray-600"
+                    >
+                      <i class="fa fa-check-circle text-green-500 mr-1"></i>
+                      <span class="font-medium text-gray-800">{{ approval.approver_name || '-' }}</span>
+                      <span class="text-gray-400"> · </span>
+                      <span>{{ approval.role || ('Level ' + approval.level) }}</span>
+                      <span class="text-gray-400"> · </span>
+                      <span class="text-green-700">{{ formatDateTime(approval.approved_at) }}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
               <button 
                 type="button"
@@ -2104,6 +2136,24 @@ function getUnitName(item) {
                   <div class="text-gray-600">{{ p.supplier_name }}</div>
                   <div v-if="p.outlet_names && p.outlet_names.length > 0" class="text-sm text-orange-600 mt-1">
                     <i class="fa fa-map-marker-alt"></i> {{ p.outlet_names.join(', ') }}
+                  </div>
+                  <div v-if="p.po_approval_history && p.po_approval_history.length > 0" class="mt-2 pt-2 border-t border-gray-100">
+                    <div class="text-xs font-medium text-gray-600 mb-1">
+                      <i class="fa fa-check-circle mr-1 text-green-500"></i>History Approval PO
+                    </div>
+                    <ul class="space-y-0.5">
+                      <li
+                        v-for="(approval, idx) in p.po_approval_history"
+                        :key="idx"
+                        class="text-xs text-gray-600 flex flex-wrap items-baseline gap-x-1"
+                      >
+                        <span class="font-medium text-gray-800">{{ approval.approver_name || '-' }}</span>
+                        <span class="text-gray-400">·</span>
+                        <span class="text-gray-500">{{ approval.role || ('Level ' + approval.level) }}</span>
+                        <span class="text-gray-400">·</span>
+                        <span class="text-green-700">{{ formatDateTime(approval.approved_at) }}</span>
+                      </li>
+                    </ul>
                   </div>
                 </div>
                 <div class="text-right">

@@ -179,6 +179,24 @@
                   <div v-if="cb.purchaseOrder?.number" class="text-xs text-blue-600">
                     <i class="fa fa-shopping-cart mr-1"></i><strong>PO:</strong> {{ cb.purchaseOrder.number }}
                   </div>
+                  <div v-if="cb.po_approval_history && cb.po_approval_history.length > 0" class="mt-1.5 pt-1.5 border-t border-gray-100">
+                    <div class="text-xs font-medium text-gray-600 mb-1">
+                      <i class="fa fa-check-circle mr-1 text-green-500"></i>History Approval PO
+                    </div>
+                    <ul class="space-y-0.5">
+                      <li
+                        v-for="(approval, idx) in cb.po_approval_history"
+                        :key="idx"
+                        class="text-xs text-gray-600 flex flex-wrap items-baseline gap-x-1"
+                      >
+                        <span class="font-medium text-gray-800">{{ approval.approver_name || '-' }}</span>
+                        <span class="text-gray-400">·</span>
+                        <span class="text-gray-500">{{ approval.role || ('Level ' + approval.level) }}</span>
+                        <span class="text-gray-400">·</span>
+                        <span class="text-green-700">{{ formatDateTime(approval.approved_at) }}</span>
+                      </li>
+                    </ul>
+                  </div>
                   <div v-if="cb.retailFood?.number" class="text-xs text-purple-600">
                     <i class="fa fa-store mr-1"></i><strong>Retail:</strong> {{ cb.retailFood.number }}
                   </div>
@@ -530,6 +548,15 @@
                             <div><strong>Total:</strong> {{ formatCurrency(cb.total_amount) }}</div>
                             <div v-if="cb.date"><strong>Tanggal:</strong> {{ formatDate(cb.date) }}</div>
                             <div v-if="cb.supplier_invoice_number"><strong>Invoice:</strong> {{ cb.supplier_invoice_number }}</div>
+                            <div v-if="cb.purchaseOrder?.number"><strong>PO:</strong> {{ cb.purchaseOrder.number }}</div>
+                            <div v-if="cb.po_approval_history && cb.po_approval_history.length > 0">
+                              <strong>Approval PO:</strong>
+                              <ul class="mt-0.5 space-y-0.5">
+                                <li v-for="(approval, idx) in cb.po_approval_history" :key="idx">
+                                  {{ approval.approver_name || '-' }} · {{ formatDateTime(approval.approved_at) }}
+                                </li>
+                              </ul>
+                            </div>
                             <div v-if="cb.location_names && cb.location_names.length > 0">
                               <strong>Location:</strong> {{ Array.isArray(cb.location_names) ? cb.location_names.join(', ') : cb.location_names }}
                             </div>
@@ -953,6 +980,23 @@ function formatDate(dateString) {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric'
+    });
+  } catch (e) {
+    return dateString;
+  }
+}
+
+function formatDateTime(dateString) {
+  if (!dateString) return '-';
+  try {
+    const date = new Date(dateString);
+    if (Number.isNaN(date.getTime())) return '-';
+    return date.toLocaleString('id-ID', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   } catch (e) {
     return dateString;

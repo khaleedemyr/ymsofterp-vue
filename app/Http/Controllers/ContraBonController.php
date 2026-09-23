@@ -1890,6 +1890,25 @@ class ContraBonController extends Controller
             });
         }
 
+        $poIdsForApproval = [];
+        if ($contraBon->sources && $contraBon->sources->count() > 0) {
+            foreach ($contraBon->sources as $source) {
+                if ($source->source_type === 'purchase_order' && $source->po_id) {
+                    $poIdsForApproval[] = (int) $source->po_id;
+                }
+            }
+        } elseif ($contraBon->po_id) {
+            $poIdsForApproval[] = (int) $contraBon->po_id;
+        }
+        $approvalHistories = PurchaseOrderFood::getApprovalHistoriesByIds($poIdsForApproval);
+        $flatHistory = [];
+        foreach ($poIdsForApproval as $poId) {
+            foreach ($approvalHistories[$poId] ?? [] as $entry) {
+                $flatHistory[] = $entry;
+            }
+        }
+        $contraBon->po_approval_history = $flatHistory;
+
         return inertia('ContraBon/Show', [
             'contraBon' => $contraBon,
             'user' => auth()->user()
@@ -2617,8 +2636,17 @@ class ContraBonController extends Controller
                     'subtotal' => $row->subtotal ?? 0,
                     'grand_total' => $row->grand_total ?? 0,
                 ],
+                'po_approval_history' => [],
             ];
         }
+
+        $approvalHistories = PurchaseOrderFood::getApprovalHistoriesByIds(
+            collect($result)->pluck('po_id')->all()
+        );
+        foreach ($result as &$item) {
+            $item['po_approval_history'] = $approvalHistories[(int) $item['po_id']] ?? [];
+        }
+        unset($item);
 
         return response()->json([
             'data' => $result,
@@ -2873,8 +2901,17 @@ class ContraBonController extends Controller
                     'outlet_names' => array_unique($outletNames),
                     'items' => $itemsArray, // Gunakan array yang sudah di-map
                     'po_discount_info' => $poDiscountInfo,
+                    'po_approval_history' => [],
                 ];
             }
+
+            $approvalHistories = PurchaseOrderFood::getApprovalHistoriesByIds(
+                collect($result)->pluck('po_id')->all()
+            );
+            foreach ($result as &$item) {
+                $item['po_approval_history'] = $approvalHistories[(int) $item['po_id']] ?? [];
+            }
+            unset($item);
             
             return response()->json([
                 'data' => $result,
@@ -3003,6 +3040,7 @@ class ContraBonController extends Controller
                 'outlet_names' => array_unique($outletNames),
                 'items' => $itemsArray,
                 'po_discount_info' => $poDiscountInfo,
+                'po_approval_history' => PurchaseOrderFood::getApprovalHistoriesByIds([(int) $row->po_id])[(int) $row->po_id] ?? [],
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
             throw $e;

@@ -90,6 +90,24 @@
                       Grand Total PO: <span class="font-semibold text-green-600">{{ formatRupiah(contraBon.po_discount_info.grand_total) }}</span>
                     </div>
                   </div>
+                  <div v-if="contraBon.po_approval_history && contraBon.po_approval_history.length > 0" class="mt-3 pt-3 border-t border-gray-200">
+                    <p class="text-sm font-semibold text-gray-800 mb-1">
+                      <i class="fa fa-check-circle text-green-500 mr-1"></i>History Approval PO
+                    </p>
+                    <ul class="space-y-1">
+                      <li
+                        v-for="(approval, idx) in contraBon.po_approval_history"
+                        :key="idx"
+                        class="text-xs text-gray-600"
+                      >
+                        <span class="font-medium text-gray-800">{{ approval.approver_name || '-' }}</span>
+                        <span class="text-gray-400"> · </span>
+                        <span>{{ approval.role || ('Level ' + approval.level) }}</span>
+                        <span class="text-gray-400"> · </span>
+                        <span class="text-green-700">{{ formatDateTime(approval.approved_at) }}</span>
+                      </li>
+                    </ul>
+                  </div>
                 </div>
               </div>
               <div>
