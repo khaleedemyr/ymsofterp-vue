@@ -219,6 +219,7 @@ class OpexOutletDashboardService
     private function buildOverviewMetrics(int $outletId, ?string $qrCode, string $dateFrom, string $dateTo): array
     {
         $revenue = $this->sumRevenue($qrCode, $dateFrom, $dateTo);
+        $avgDailyRevenue = $this->buildAvgDailyRevenueByWeekday($qrCode, $dateFrom, $dateTo);
         $gsrRo = $this->sumGsrRo($outletId, $dateFrom, $dateTo);
         $rws = $this->sumRws($outletId, $dateFrom, $dateTo);
         $rf = $this->sumRetailFood($outletId, $dateFrom, $dateTo);
@@ -353,6 +354,9 @@ class OpexOutletDashboardService
             'revenue_monthly_budget' => $monthlyBudget,
             'revenue_budget_perf_percent' => $budgetPerf,
             'revenue_budget_variance' => $budgetVariance,
+            'avg_daily_revenue' => $avgDailyRevenue['avg_daily'],
+            'avg_daily_revenue_day_count' => $avgDailyRevenue['day_count'],
+            'avg_daily_revenue_by_weekday' => $avgDailyRevenue['by_weekday'],
             'cover' => $revenue['cover'],
             'avg_pax' => $revenue['avg_pax'],
             'avg_check' => $revenue['avg_check'],
@@ -2326,6 +2330,89 @@ class OpexOutletDashboardService
         }
 
         return $rows;
+    }
+
+    /**
+     * Rata-rata revenue harian, dikelompokkan per hari (Senin–Minggu).
+     * Hanya hari yang ada penjualan (sama sumber revenueByDate).
+     *
+     * @return array{
+     *   avg_daily: ?float,
+     *   day_count: int,
+     *   total_revenue: float,
+     *   by_weekday: list<array{
+     *     dow: int,
+     *     day_name: string,
+     *     day_count: int,
+     *     total: float,
+     *     average: ?float,
+     *     dates: list<array{date: string, revenue: float, is_weekend: bool}>
+     *   }>
+     * }
+     */
+    public function buildAvgDailyRevenueByWeekday(?string $qrCode, string $dateFrom, string $dateTo): array
+    {
+        $byDate = $this->revenueByDate($qrCode, $dateFrom, $dateTo);
+        $dayNames = [
+            0 => 'Minggu',
+            1 => 'Senin',
+            2 => 'Selasa',
+            3 => 'Rabu',
+            4 => 'Kamis',
+            5 => 'Jumat',
+            6 => 'Sabtu',
+        ];
+        // Urutan bisnis: Senin → Minggu
+        $order = [1, 2, 3, 4, 5, 6, 0];
+
+        $buckets = [];
+        foreach ($order as $dow) {
+            $buckets[$dow] = [
+                'dow' => $dow,
+                'day_name' => $dayNames[$dow],
+                'day_count' => 0,
+                'total' => 0.0,
+                'average' => null,
+                'dates' => [],
+            ];
+        }
+
+        ksort($byDate);
+        foreach ($byDate as $date => $revenue) {
+            $carbon = Carbon::parse((string) $date);
+            $dow = (int) $carbon->dayOfWeek;
+            if (! isset($buckets[$dow])) {
+                continue;
+            }
+            $amount = round((float) $revenue, 2);
+            $buckets[$dow]['dates'][] = [
+                'date' => (string) $date,
+                'revenue' => $amount,
+                'is_weekend' => in_array($dow, [0, 6], true),
+            ];
+            $buckets[$dow]['total'] += $amount;
+            $buckets[$dow]['day_count']++;
+        }
+
+        $byWeekday = [];
+        foreach ($order as $dow) {
+            $row = $buckets[$dow];
+            $row['total'] = round((float) $row['total'], 2);
+            $row['average'] = $row['day_count'] > 0
+                ? round($row['total'] / $row['day_count'], 2)
+                : null;
+            $byWeekday[] = $row;
+        }
+
+        $dayCount = count($byDate);
+        $totalRevenue = round(array_sum(array_map('floatval', $byDate)), 2);
+
+        return [
+            'avg_daily' => $dayCount > 0 ? round($totalRevenue / $dayCount, 2) : null,
+            'day_count' => $dayCount,
+            'total_revenue' => $totalRevenue,
+            'by_weekday' => $byWeekday,
+        ];
     }
 
     /**

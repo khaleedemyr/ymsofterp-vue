@@ -136,6 +136,26 @@ class OpexOutletDashboardController extends Controller
             ]);
         }
 
+        if ($type === 'avg_daily_revenue') {
+            $detail = $this->opexService->buildAvgDailyRevenueByWeekday(
+                $outlet?->qr_code,
+                $dateFrom,
+                $dateTo
+            );
+
+            return response()->json([
+                'trend' => [],
+                'transactions' => [],
+                'sheet_meta' => $detail,
+                'pagination' => [
+                    'current_page' => 1,
+                    'per_page' => count($detail['by_weekday'] ?? []),
+                    'total' => count($detail['by_weekday'] ?? []),
+                    'total_pages' => 1,
+                ],
+            ]);
+        }
+
         if ($type === 'ending_inventory') {
             $warehouseId = $request->filled('warehouse_id') ? (int) $request->get('warehouse_id') : null;
             $detail = $this->opexService->buildEndingInventoryDetail(
@@ -772,6 +792,9 @@ class OpexOutletDashboardController extends Controller
             $carbon = Carbon::parse($date);
             $dow = (int) $carbon->dayOfWeek;
 
+            $lunchPct = $totalRevenue > 0 ? round(($lunchRevenue / $totalRevenue) * 100, 1) : null;
+            $dinnerPct = $totalRevenue > 0 ? round(($dinnerRevenue / $totalRevenue) * 100, 1) : null;
+
             return (object) [
                 'id' => $date,
                 'type' => 'revenue',
@@ -783,10 +806,12 @@ class OpexOutletDashboardController extends Controller
                 'amount' => round($totalRevenue, 2),
                 'lunch_cover' => (int) round($lunchCover),
                 'lunch_revenue' => round($lunchRevenue, 2),
+                'lunch_pct' => $lunchPct,
                 'lunch_avg_check' => $lunchCover > 0 ? (float) round($lunchRevenue / $lunchCover) : 0.0,
                 'lunch_disc' => round($lunchDisc, 2),
                 'dinner_cover' => (int) round($dinnerCover),
                 'dinner_revenue' => round($dinnerRevenue, 2),
+                'dinner_pct' => $dinnerPct,
                 'dinner_avg_check' => $dinnerCover > 0 ? (float) round($dinnerRevenue / $dinnerCover) : 0.0,
                 'dinner_disc' => round($dinnerDisc, 2),
                 'total_cover' => (int) round($totalCover),

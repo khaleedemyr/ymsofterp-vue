@@ -494,6 +494,50 @@
           </div>
         </div>
 
+        <!-- Avg Daily Revenue by weekday -->
+        <button
+          type="button"
+          class="mb-4 w-full rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
+          @click="openCard('avg_daily_revenue')"
+        >
+          <div class="flex flex-col xl:flex-row xl:items-stretch gap-5">
+            <div class="flex items-start justify-between gap-3 xl:w-56 shrink-0">
+              <div class="min-w-0">
+                <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
+                  Avg Daily Revenue
+                  <CardHelpTip :text="cardHelps.avg_daily_revenue" />
+                </p>
+                <p class="mt-2 text-3xl font-bold text-slate-900">
+                  {{ ov.avg_daily_revenue != null ? formatCurrency(ov.avg_daily_revenue) : '—' }}
+                </p>
+                <p class="mt-1 text-sm text-slate-500">
+                  {{ ov.avg_daily_revenue_day_count || 0 }} hari dengan penjualan
+                </p>
+                <p class="mt-1 text-xs text-slate-400">Klik untuk lihat tanggal &amp; detail per hari</p>
+              </div>
+              <div class="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0">
+                <i class="fa-solid fa-calendar-day text-xl"></i>
+              </div>
+            </div>
+            <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2 min-w-0">
+              <div
+                v-for="row in (ov.avg_daily_revenue_by_weekday || [])"
+                :key="'avg-dow-' + row.dow"
+                class="rounded-2xl border px-3 py-2.5 min-w-0"
+                :class="row.day_count > 0
+                  ? (row.dow === 0 || row.dow === 6 ? 'bg-rose-50/70 border-rose-100' : 'bg-cyan-50/60 border-cyan-100')
+                  : 'bg-slate-50 border-slate-100 opacity-60'"
+              >
+                <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.day_name }}</p>
+                <p class="mt-1 text-sm font-bold text-slate-800 truncate">
+                  {{ row.average != null ? formatCurrency(row.average) : '—' }}
+                </p>
+                <p class="mt-0.5 text-[10px] text-slate-500">{{ row.day_count || 0 }} hari</p>
+              </div>
+            </div>
+          </div>
+        </button>
+
         <!-- Cover / Pax / Discount / Compliment / GS / OC -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           <div class="rounded-3xl bg-white border border-indigo-100 shadow-sm p-5">
@@ -1417,7 +1461,7 @@
     >
       <div
         class="bg-white rounded-3xl shadow-2xl w-full max-h-[88vh] overflow-hidden flex flex-col"
-        :class="['revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
+        :class="['revenue', 'avg_daily_revenue', 'total_spend', 'category_cost', 'mcs_purchase', 'purchase_category', 'begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType) ? 'max-w-7xl' : 'max-w-5xl'"
       >
         <div class="px-6 py-4 border-b border-slate-100 flex items-start justify-between gap-4">
           <div>
@@ -1434,10 +1478,95 @@
             <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat...
           </div>
           <template v-else>
-            <apexchart v-if="!['begin_inventory', 'ending_inventory', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+            <apexchart v-if="!['begin_inventory', 'ending_inventory', 'avg_daily_revenue', 'outlet_transfer', 'outlet_adjustment', 'stock_opname', 'internal_warehouse_transfer', 'outlet_wip'].includes(modalType)" type="area" height="220" :options="modalTrendOptions" :series="modalTrendSeries" />
+
+            <!-- Avg Daily Revenue: per weekday + daftar tanggal -->
+            <template v-if="modalType === 'avg_daily_revenue'">
+              <div class="rounded-2xl border border-cyan-100 bg-cyan-50/40 px-4 py-3 flex flex-wrap items-end gap-x-6 gap-y-2">
+                <div>
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Rata-rata harian</p>
+                  <p class="text-2xl font-bold text-slate-900">
+                    {{ modalSheetMeta?.avg_daily != null ? formatCurrency(modalSheetMeta.avg_daily) : '—' }}
+                  </p>
+                </div>
+                <div>
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Hari dengan penjualan</p>
+                  <p class="text-lg font-semibold text-slate-800">{{ formatNumber(modalSheetMeta?.day_count) }}</p>
+                </div>
+                <div>
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Total revenue</p>
+                  <p class="text-lg font-semibold text-slate-800">{{ formatCurrency(modalSheetMeta?.total_revenue) }}</p>
+                </div>
+              </div>
+
+              <div class="space-y-3">
+                <div
+                  v-for="row in (modalSheetMeta?.by_weekday || [])"
+                  :key="'avg-modal-' + row.dow"
+                  class="rounded-2xl border border-slate-200 overflow-hidden"
+                >
+                  <button
+                    type="button"
+                    class="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-slate-50 transition"
+                    @click="toggleAvgWeekday(row.dow)"
+                  >
+                    <div class="min-w-0 flex items-center gap-3">
+                      <span
+                        class="inline-flex h-8 w-8 items-center justify-center rounded-xl text-xs font-bold shrink-0"
+                        :class="row.dow === 0 || row.dow === 6 ? 'bg-rose-100 text-rose-700' : 'bg-cyan-100 text-cyan-800'"
+                      >
+                        {{ (row.day_name || '').slice(0, 3) }}
+                      </span>
+                      <div class="min-w-0">
+                        <p class="font-semibold text-slate-900">{{ row.day_name }}</p>
+                        <p class="text-xs text-slate-500">{{ row.day_count || 0 }} hari · total {{ formatCurrency(row.total) }}</p>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-3 shrink-0">
+                      <div class="text-right">
+                        <p class="text-[10px] uppercase tracking-wide text-slate-400">Rata-rata</p>
+                        <p class="font-bold text-slate-900">{{ row.average != null ? formatCurrency(row.average) : '—' }}</p>
+                      </div>
+                      <i
+                        class="fa-solid text-slate-400 text-sm"
+                        :class="expandedAvgWeekdays[row.dow] ? 'fa-chevron-up' : 'fa-chevron-down'"
+                      ></i>
+                    </div>
+                  </button>
+                  <div v-if="expandedAvgWeekdays[row.dow]" class="border-t border-slate-100">
+                    <table v-if="(row.dates || []).length" class="min-w-full text-sm">
+                      <thead>
+                        <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
+                          <th class="px-4 py-2 text-left font-medium">Tanggal</th>
+                          <th class="px-4 py-2 text-right font-medium">Revenue</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr
+                          v-for="d in row.dates"
+                          :key="row.dow + '-' + d.date"
+                          class="border-t border-slate-50"
+                          :class="d.is_weekend ? 'bg-rose-50/40' : ''"
+                        >
+                          <td class="px-4 py-2.5 text-slate-700">{{ formatShortDate(d.date) }}</td>
+                          <td class="px-4 py-2.5 text-right font-semibold text-slate-900">{{ formatCurrency(d.revenue) }}</td>
+                        </tr>
+                      </tbody>
+                      <tfoot>
+                        <tr class="border-t border-slate-200 bg-slate-50 font-semibold">
+                          <td class="px-4 py-2.5 text-slate-700">Rata-rata ({{ row.day_count }} hari)</td>
+                          <td class="px-4 py-2.5 text-right text-cyan-800">{{ formatCurrency(row.average) }}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                    <p v-else class="px-4 py-6 text-center text-slate-400 text-sm">Tidak ada penjualan di hari ini pada periode filter</p>
+                  </div>
+                </div>
+              </div>
+            </template>
 
             <!-- Begin Inventory: group by category, expand/collapse + search -->
-            <template v-if="modalType === 'begin_inventory'">
+            <template v-else-if="modalType === 'begin_inventory'">
               <div class="flex flex-col sm:flex-row sm:items-center gap-3">
                 <div class="relative flex-1">
                   <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
@@ -1820,8 +1949,8 @@
                     <tr class="bg-slate-900 text-white">
                       <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Tanggal</th>
                       <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Hari</th>
-                      <th class="px-3 py-2 text-center border-r border-emerald-700 bg-emerald-800" colspan="4">Lunch</th>
-                      <th class="px-3 py-2 text-center border-r border-amber-700 bg-amber-800" colspan="4">Dinner</th>
+                      <th class="px-3 py-2 text-center border-r border-emerald-700 bg-emerald-800" colspan="5">Lunch</th>
+                      <th class="px-3 py-2 text-center border-r border-amber-700 bg-amber-800" colspan="5">Dinner</th>
                       <th class="px-3 py-2 text-center bg-indigo-800" colspan="4">Total</th>
                     </tr>
                     <tr class="bg-slate-800 text-slate-200">
@@ -1839,10 +1968,12 @@
                       <td class="px-3 py-2.5 text-center text-slate-700 border-r border-slate-100">{{ row.day_name }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.lunch_cover) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-emerald-700">{{ formatPct(row.lunch_pct) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_disc) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.dinner_cover) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-amber-700">{{ formatPct(row.dinner_pct) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_disc) }}</td>
                       <td class="px-2 py-2.5 text-center font-semibold border-r border-slate-100">{{ formatNumber(row.total_cover) }}</td>
@@ -1854,10 +1985,12 @@
                       <td class="px-3 py-2.5 text-center" colspan="2">TOTAL</td>
                       <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatNumber(revenueModalTotals.lunch_cover) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatPct(revenueModalTotals.lunch_pct) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_disc) }}</td>
                       <td class="px-2 py-2.5 text-center bg-amber-900/50">{{ formatNumber(revenueModalTotals.dinner_cover) }}</td>
                       <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_revenue) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-amber-900/50">{{ formatPct(revenueModalTotals.dinner_pct) }}</td>
                       <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_disc) }}</td>
                       <td class="px-2 py-2.5 text-center bg-indigo-900/50">{{ formatNumber(revenueModalTotals.total_cover) }}</td>
@@ -1866,12 +1999,12 @@
                       <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_disc) }}</td>
                     </tr>
                     <tr v-if="!modalTxns.length">
-                      <td colspan="14" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
+                      <td colspan="16" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · Lunch = s/d jam 17, Dinner = setelah jam 17</p>
+              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · Lunch = s/d jam 17, Dinner = setelah jam 17 · % = share revenue terhadap total hari</p>
             </template>
 
             <!-- Total Spend: daily ala Receiving Sheet (tanpa omzet) -->
@@ -2718,6 +2851,8 @@ const cardHelps = {
     'Pie chart komposisi pembelian semua category item dari GSR + Retail Food.\nKlik slice untuk buka detail transaksi.',
   revenue:
     'Total penjualan outlet (orders) pada periode filter.\nBudget & performa dibanding Revenue Target bulanan (jika ada).',
+  avg_daily_revenue:
+    'Rata-rata revenue harian pada periode filter.\n\nNilai utama = total revenue ÷ jumlah hari yang ada penjualan.\nBreakdown per hari (Senin–Minggu): jumlah hari, rata-rata, dan daftar tanggal + revenue masing-masing.\nKlik card → detail expand per hari.',
   total_spend:
     'Total belanja outlet = GSR + GR + Retail Food + Retail Non Food.\n\nRWS tidak dijumlah (sudah di RF Justus Group).\n\nBreakdown di card:\n• GSR / GR\n• RF Cash & RF Contra Bon\n• RNF Cash & RNF Contra Bon\n\nModal detail: tabel harian Receiving Sheet + list Retail Non Food.\n% di bawah = Total Spend ÷ Revenue.',
   net:
@@ -3338,6 +3473,7 @@ const modalSheetMeta = ref(null)
 const expandedMcsTxnIds = ref({})
 const expandedBeginCategories = ref({})
 const expandedEndingCategories = ref({})
+const expandedAvgWeekdays = ref({})
 const endingWarehouseFilter = ref('')
 const mcsCategoryFilter = ref('')
 let beginInventorySearchTimer = null
@@ -3380,6 +3516,13 @@ const toggleBeginCategory = (category) => {
   expandedBeginCategories.value = {
     ...expandedBeginCategories.value,
     [category]: !expandedBeginCategories.value[category],
+  }
+}
+
+const toggleAvgWeekday = (dow) => {
+  expandedAvgWeekdays.value = {
+    ...expandedAvgWeekdays.value,
+    [dow]: !expandedAvgWeekdays.value[dow],
   }
 }
 
@@ -3449,6 +3592,7 @@ const toggleMcsTxn = (id) => {
 const modalTitle = computed(() => {
   const map = {
     revenue: 'Revenue',
+    avg_daily_revenue: 'Avg Daily Revenue',
     discount: 'Diskon',
     discount_compliment: 'Compliment',
     discount_guest_satisfaction: 'Guest Satisfaction',
@@ -3535,8 +3679,8 @@ const modalAmountLabel = computed(() => {
 })
 
 const revenueSubHeaders = [
-  'COVER', 'REVENUE', 'A/C', 'DISC',
-  'COVER', 'REVENUE', 'A/C', 'DISC',
+  'COVER', 'REVENUE', '%', 'A/C', 'DISC',
+  'COVER', 'REVENUE', '%', 'A/C', 'DISC',
   'COVER', 'REVENUE', 'A/C', 'DISC',
 ]
 
@@ -3553,10 +3697,12 @@ const revenueModalTotals = computed(() => {
   return {
     lunch_cover: lunchCover,
     lunch_revenue: lunchRevenue,
+    lunch_pct: totalRevenue > 0 ? Math.round((lunchRevenue / totalRevenue) * 1000) / 10 : null,
     lunch_avg_check: lunchCover > 0 ? Math.round(lunchRevenue / lunchCover) : 0,
     lunch_disc: sum('lunch_disc'),
     dinner_cover: dinnerCover,
     dinner_revenue: dinnerRevenue,
+    dinner_pct: totalRevenue > 0 ? Math.round((dinnerRevenue / totalRevenue) * 1000) / 10 : null,
     dinner_avg_check: dinnerCover > 0 ? Math.round(dinnerRevenue / dinnerCover) : 0,
     dinner_disc: sum('dinner_disc'),
     total_cover: totalCover,
@@ -3655,6 +3801,7 @@ const openCard = async (type) => {
   expandedMcsTxnIds.value = {}
   expandedBeginCategories.value = {}
   expandedEndingCategories.value = {}
+  expandedAvgWeekdays.value = {}
   endingWarehouseFilter.value = ''
   invTxnDetail.value = null
   if (type !== 'mcs_purchase' && type !== 'purchase_category') {
@@ -3676,6 +3823,7 @@ const closeModal = () => {
   expandedMcsTxnIds.value = {}
   expandedBeginCategories.value = {}
   expandedEndingCategories.value = {}
+  expandedAvgWeekdays.value = {}
   endingWarehouseFilter.value = ''
   mcsCategoryFilter.value = ''
   invTxnDetail.value = null
@@ -3952,6 +4100,13 @@ const fetchModal = async () => {
         expandAllEndingCategories()
       }
     }
+    if (modalType.value === 'avg_daily_revenue') {
+      const next = {}
+      for (const row of modalSheetMeta.value?.by_weekday || []) {
+        if ((row.day_count || 0) > 0) next[row.dow] = true
+      }
+      expandedAvgWeekdays.value = next
+    }
   } catch (e) {
     console.error(e)
     alert('Gagal memuat detail')
@@ -4011,6 +4166,11 @@ const formatDecimal = (value) =>
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(Number(value) || 0)
+
+const formatPct = (value) => {
+  if (value == null || Number.isNaN(Number(value))) return '—'
+  return `${Number(value).toFixed(1)}%`
+}
 
 const beginInventorySourceLabel = (source) => {
   if (source === 'initial_balance') return 'Saldo awal (tgl 1)'
