@@ -495,48 +495,52 @@
         </div>
 
         <!-- Avg Daily Revenue by weekday -->
-        <button
-          type="button"
-          class="mb-4 w-full rounded-3xl bg-white border border-cyan-100 shadow-sm p-5 text-left hover:shadow-md transition"
-          @click="openCard('avg_daily_revenue')"
-        >
+        <div class="mb-4 w-full rounded-3xl bg-white border border-cyan-100 shadow-sm p-5">
           <div class="flex flex-col xl:flex-row xl:items-stretch gap-5">
-            <div class="flex items-start justify-between gap-3 xl:w-56 shrink-0">
-              <div class="min-w-0">
+            <button
+              type="button"
+              class="xl:w-64 shrink-0 text-left rounded-2xl hover:bg-cyan-50/50 transition p-1 -m-1"
+              @click="openAvgDailyRevenue(null)"
+            >
+              <div class="flex items-center justify-between gap-2">
                 <p class="text-xs font-semibold uppercase tracking-wide text-cyan-700 inline-flex items-center gap-1">
                   Avg Daily Revenue
-                  <CardHelpTip :text="cardHelps.avg_daily_revenue" />
+                  <span @click.stop>
+                    <CardHelpTip :text="cardHelps.avg_daily_revenue" />
+                  </span>
                 </p>
-                <p class="mt-2 text-3xl font-bold text-slate-900">
-                  {{ ov.avg_daily_revenue != null ? formatCurrency(ov.avg_daily_revenue) : '—' }}
-                </p>
-                <p class="mt-1 text-sm text-slate-500">
-                  {{ ov.avg_daily_revenue_day_count || 0 }} hari dengan penjualan
-                </p>
-                <p class="mt-1 text-xs text-slate-400">Klik untuk lihat tanggal &amp; detail per hari</p>
+                <div class="w-10 h-10 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0">
+                  <i class="fa-solid fa-calendar-day"></i>
+                </div>
               </div>
-              <div class="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-700 flex items-center justify-center shrink-0">
-                <i class="fa-solid fa-calendar-day text-xl"></i>
-              </div>
-            </div>
+              <p class="mt-2 text-3xl font-bold text-slate-900 tabular-nums">
+                {{ ov.avg_daily_revenue != null ? formatCurrency(ov.avg_daily_revenue) : '—' }}
+              </p>
+              <p class="mt-1 text-sm text-slate-500">
+                {{ ov.avg_daily_revenue_day_count || 0 }} hari dengan penjualan
+              </p>
+              <p class="mt-1 text-xs text-slate-400">Klik untuk semua hari · atau klik chip hari di kanan</p>
+            </button>
             <div class="flex-1 grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2 min-w-0">
-              <div
+              <button
                 v-for="row in (ov.avg_daily_revenue_by_weekday || [])"
                 :key="'avg-dow-' + row.dow"
-                class="rounded-2xl border px-3 py-2.5 min-w-0"
+                type="button"
+                class="rounded-2xl border px-3 py-2.5 min-w-0 text-left hover:shadow-sm hover:border-cyan-300 transition"
                 :class="row.day_count > 0
                   ? (row.dow === 0 || row.dow === 6 ? 'bg-rose-50/70 border-rose-100' : 'bg-cyan-50/60 border-cyan-100')
                   : 'bg-slate-50 border-slate-100 opacity-60'"
+                @click="openAvgDailyRevenue(row.dow)"
               >
                 <p class="text-[10px] uppercase tracking-wide text-slate-400 truncate">{{ row.day_name }}</p>
-                <p class="mt-1 text-sm font-bold text-slate-800 truncate">
+                <p class="mt-1 text-sm font-bold text-slate-800 truncate tabular-nums">
                   {{ row.average != null ? formatCurrency(row.average) : '—' }}
                 </p>
                 <p class="mt-0.5 text-[10px] text-slate-500">{{ row.day_count || 0 }} hari</p>
-              </div>
+              </button>
             </div>
           </div>
-        </button>
+        </div>
 
         <!-- Cover / Pax / Discount / Compliment / GS / OC -->
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1484,24 +1488,44 @@
             <template v-if="modalType === 'avg_daily_revenue'">
               <div class="rounded-2xl border border-cyan-100 bg-cyan-50/40 px-4 py-3 flex flex-wrap items-end gap-x-6 gap-y-2">
                 <div>
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Rata-rata harian</p>
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">
+                    {{ avgDailyFocusRow ? ('Rata-rata ' + avgDailyFocusRow.day_name) : 'Rata-rata harian' }}
+                  </p>
                   <p class="text-2xl font-bold text-slate-900">
-                    {{ modalSheetMeta?.avg_daily != null ? formatCurrency(modalSheetMeta.avg_daily) : '—' }}
+                    {{
+                      avgDailyFocusRow
+                        ? (avgDailyFocusRow.average != null ? formatCurrency(avgDailyFocusRow.average) : '—')
+                        : (modalSheetMeta?.avg_daily != null ? formatCurrency(modalSheetMeta.avg_daily) : '—')
+                    }}
                   </p>
                 </div>
                 <div>
-                  <p class="text-[10px] uppercase tracking-wide text-slate-400">Hari dengan penjualan</p>
-                  <p class="text-lg font-semibold text-slate-800">{{ formatNumber(modalSheetMeta?.day_count) }}</p>
+                  <p class="text-[10px] uppercase tracking-wide text-slate-400">
+                    {{ avgDailyFocusRow ? 'Jumlah hari' : 'Hari dengan penjualan' }}
+                  </p>
+                  <p class="text-lg font-semibold text-slate-800">
+                    {{ formatNumber(avgDailyFocusRow ? avgDailyFocusRow.day_count : modalSheetMeta?.day_count) }}
+                  </p>
                 </div>
                 <div>
                   <p class="text-[10px] uppercase tracking-wide text-slate-400">Total revenue</p>
-                  <p class="text-lg font-semibold text-slate-800">{{ formatCurrency(modalSheetMeta?.total_revenue) }}</p>
+                  <p class="text-lg font-semibold text-slate-800">
+                    {{ formatCurrency(avgDailyFocusRow ? avgDailyFocusRow.total : modalSheetMeta?.total_revenue) }}
+                  </p>
                 </div>
+                <button
+                  v-if="avgDailyFocusDow != null"
+                  type="button"
+                  class="ml-auto text-xs font-medium text-cyan-700 hover:text-cyan-900 underline"
+                  @click="avgDailyFocusDow = null"
+                >
+                  Lihat semua hari
+                </button>
               </div>
 
               <div class="space-y-3">
                 <div
-                  v-for="row in (modalSheetMeta?.by_weekday || [])"
+                  v-for="row in avgDailyModalWeekdays"
                   :key="'avg-modal-' + row.dow"
                   class="rounded-2xl border border-slate-200 overflow-hidden"
                 >
@@ -1533,7 +1557,7 @@
                       ></i>
                     </div>
                   </button>
-                  <div v-if="expandedAvgWeekdays[row.dow]" class="border-t border-slate-100">
+                  <div v-if="expandedAvgWeekdays[row.dow] || avgDailyFocusDow != null" class="border-t border-slate-100">
                     <table v-if="(row.dates || []).length" class="min-w-full text-sm">
                       <thead>
                         <tr class="bg-slate-50 text-slate-500 text-xs uppercase tracking-wide">
@@ -3474,6 +3498,7 @@ const expandedMcsTxnIds = ref({})
 const expandedBeginCategories = ref({})
 const expandedEndingCategories = ref({})
 const expandedAvgWeekdays = ref({})
+const avgDailyFocusDow = ref(null)
 const endingWarehouseFilter = ref('')
 const mcsCategoryFilter = ref('')
 let beginInventorySearchTimer = null
@@ -3524,6 +3549,24 @@ const toggleAvgWeekday = (dow) => {
     ...expandedAvgWeekdays.value,
     [dow]: !expandedAvgWeekdays.value[dow],
   }
+}
+
+const avgDailyModalWeekdays = computed(() => {
+  const rows = modalSheetMeta.value?.by_weekday || []
+  if (avgDailyFocusDow.value == null) return rows
+  return rows.filter((r) => Number(r.dow) === Number(avgDailyFocusDow.value))
+})
+
+const avgDailyFocusRow = computed(() => {
+  if (avgDailyFocusDow.value == null) return null
+  return (modalSheetMeta.value?.by_weekday || []).find(
+    (r) => Number(r.dow) === Number(avgDailyFocusDow.value)
+  ) || null
+})
+
+const openAvgDailyRevenue = async (dow = null) => {
+  avgDailyFocusDow.value = dow == null ? null : Number(dow)
+  await openCard('avg_daily_revenue')
 }
 
 const expandAllBeginCategories = () => {
@@ -3592,7 +3635,9 @@ const toggleMcsTxn = (id) => {
 const modalTitle = computed(() => {
   const map = {
     revenue: 'Revenue',
-    avg_daily_revenue: 'Avg Daily Revenue',
+    avg_daily_revenue: avgDailyFocusRow.value
+      ? `Avg Daily Revenue · ${avgDailyFocusRow.value.day_name}`
+      : 'Avg Daily Revenue',
     discount: 'Diskon',
     discount_compliment: 'Compliment',
     discount_guest_satisfaction: 'Guest Satisfaction',
@@ -3807,6 +3852,9 @@ const openCard = async (type) => {
   if (type !== 'mcs_purchase' && type !== 'purchase_category') {
     mcsCategoryFilter.value = ''
   }
+  if (type !== 'avg_daily_revenue') {
+    avgDailyFocusDow.value = null
+  }
   await fetchModal()
 }
 
@@ -3824,6 +3872,7 @@ const closeModal = () => {
   expandedBeginCategories.value = {}
   expandedEndingCategories.value = {}
   expandedAvgWeekdays.value = {}
+  avgDailyFocusDow.value = null
   endingWarehouseFilter.value = ''
   mcsCategoryFilter.value = ''
   invTxnDetail.value = null
@@ -4102,8 +4151,12 @@ const fetchModal = async () => {
     }
     if (modalType.value === 'avg_daily_revenue') {
       const next = {}
-      for (const row of modalSheetMeta.value?.by_weekday || []) {
-        if ((row.day_count || 0) > 0) next[row.dow] = true
+      if (avgDailyFocusDow.value != null) {
+        next[avgDailyFocusDow.value] = true
+      } else {
+        for (const row of modalSheetMeta.value?.by_weekday || []) {
+          if ((row.day_count || 0) > 0) next[row.dow] = true
+        }
       }
       expandedAvgWeekdays.value = next
     }
