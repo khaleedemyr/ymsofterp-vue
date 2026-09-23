@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Exports\CostReportExport;
+use App\Http\Traits\ReportHelperTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -12,6 +13,8 @@ use Maatwebsite\Excel\Facades\Excel;
 
 class CostReportController extends Controller
 {
+    use ReportHelperTrait;
+
     private array $internalUseWasteAggregatesCache = [];
 
     /**
@@ -274,7 +277,7 @@ class CostReportController extends Controller
     }
 
     /**
-     * Detail lazy-loaded Official Cost: Good Receive dan Retail Food per item.
+     * Detail lazy-loaded Official Cost: Good Receive, GSR, dan Retail Food per item.
      */
     public function officialCostDetail(Request $request)
     {
@@ -312,6 +315,7 @@ class CostReportController extends Controller
             ->where('gr.outlet_id', $outletId)
             ->whereBetween(DB::raw('DATE(gr.receive_date)'), [$dateFrom, $dateTo])
             ->whereNull('gr.deleted_at')
+            ->where('gr.status', 'completed')
             ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
             ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, DATE(gr.receive_date) as transaction_date, 'Good Receive' as source, CONCAT('GR #', gr.id) as reference_number, COALESCE(gri.received_qty, 0) as qty, COALESCE(fo.price, 0) as unit_cost, COALESCE(gri.received_qty, 0) * COALESCE(fo.price, 0) as amount");
 
@@ -333,7 +337,26 @@ class CostReportController extends Controller
             ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
             ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, DATE(rf.transaction_date) as transaction_date, 'Retail Food' as source, CONCAT('Retail #', rf.id) as reference_number, COALESCE(rfi.qty, 0) as qty, CASE WHEN COALESCE(rfi.qty, 0) <> 0 THEN COALESCE(rfi.subtotal, 0) / rfi.qty ELSE 0 END as unit_cost, COALESCE(rfi.subtotal, 0) as amount");
 
-        $query = DB::query()->fromSub($goodReceive->unionAll($retailFood), 'official_cost_lines');
+        $unionQuery = $goodReceive->unionAll($retailFood);
+
+        if ($this->rekapFjHasSerialGrTables()) {
+            $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('i');
+            $gsr = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as i', 'si.item_id', '=', 'i.id')
+                ->join('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->where('h.outlet_id', $outletId)
+                ->whereBetween(DB::raw('DATE(h.receive_date)'), [$dateFrom, $dateTo])
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
+                ->selectRaw("COALESCE(c.name, 'Tanpa Kategori') as category_name, i.name as item_name, i.sku as item_sku, DATE(h.receive_date) as transaction_date, 'GSR' as source, CONCAT('GSR #', h.id) as reference_number, COALESCE(si.qty, 0) as qty, ({$effectivePriceExpr}) as unit_cost, COALESCE(si.qty, 0) * ({$effectivePriceExpr}) as amount");
+
+            $unionQuery = $unionQuery->unionAll($gsr);
+        }
+
+        $query = DB::query()->fromSub($unionQuery, 'official_cost_lines');
         if ($search !== '') {
             $query->where(function ($query) use ($search) {
                 $query->where('item_name', 'like', '%' . $search . '%')
@@ -983,14 +1006,17 @@ class CostReportController extends Controller
     }
 
     /**
-     * Official Cost = nilai GR + Retail Food untuk bulan tertentu,
+     * Official Cost = Food GR (completed) + GSR (completed) + Retail Food untuk bulan tertentu,
      * EXCLUDE barang dengan sub_category: Stationary, Marketing, Chemical.
+     * Food GR & GSR mengikuti rumus Report Invoice Outlet / Rekap FJ (harga FO / cost_small).
      * Return array [ outlet_id => total_official_cost ].
      */
     private function computeOfficialCostByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {
-        // 1) GR mengikuti pola Report Rekap FJ: group per outlet + item dulu, lalu dijumlah per outlet.
-        //    Ini menjaga konsistensi perhitungan dengan report rekap FJ.
+        $excludedSubCategories = [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')];
+
+        // 1) Food GR: sama sumber harga Invoice Outlet (food_floor_order_items.price),
+        //    filter status completed + receive_date bulan laporan.
         $grItems = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
@@ -1003,7 +1029,8 @@ class CostReportController extends Controller
             ->whereDate('gr.receive_date', '>=', $tanggalAwal)
             ->whereDate('gr.receive_date', '<=', $tanggalAkhir)
             ->whereNull('gr.deleted_at')
-            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')])
+            ->where('gr.status', 'completed')
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
             ->groupBy('gr.outlet_id', 'it.id', 'sc.name')
             ->select(
                 'gr.outlet_id',
@@ -1020,8 +1047,36 @@ class CostReportController extends Controller
             $grByOutlet[$outletId] += (float) ($item->item_subtotal ?? 0);
         }
 
-        // 2) Tambahan Retail Food (sesuai permintaan):
-        //    gunakan mapping nama item -> satu item master agar tidak double count jika nama item kembar.
+        // 2) GSR: sama rumus Invoice Outlet / Rekap FJ (qty × cost_small dikonversi ke unit baris).
+        $gsrByOutlet = [];
+        if ($this->rekapFjHasSerialGrTables()) {
+            $effectivePriceExpr = $this->rekapFjSerialGrEffectivePriceSql('it');
+            $gsrItems = DB::table('outlet_serial_receive_headers as h')
+                ->join('outlet_serial_receive_items as si', 'h.id', '=', 'si.header_id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->join('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->whereDate('h.receive_date', '>=', $tanggalAwal)
+                ->whereDate('h.receive_date', '<=', $tanggalAkhir)
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
+                ->groupBy('h.outlet_id', 'it.id', 'sc.name')
+                ->select(
+                    'h.outlet_id',
+                    DB::raw("SUM(si.qty * ({$effectivePriceExpr})) as item_subtotal")
+                )
+                ->get();
+
+            foreach ($gsrItems as $item) {
+                $outletId = (int) $item->outlet_id;
+                if (!isset($gsrByOutlet[$outletId])) {
+                    $gsrByOutlet[$outletId] = 0;
+                }
+                $gsrByOutlet[$outletId] += (float) ($item->item_subtotal ?? 0);
+            }
+        }
+
+        // 3) Retail Food tetap ditambahkan (bukan bagian Invoice Outlet).
         $itemNameMap = DB::table('items as im')
             ->select(DB::raw('MIN(im.id) as item_id'), DB::raw('TRIM(im.name) as item_name_key'))
             ->groupBy(DB::raw('TRIM(im.name)'));
@@ -1036,7 +1091,7 @@ class CostReportController extends Controller
             ->whereDate('rf.transaction_date', '>=', $tanggalAwal)
             ->whereDate('rf.transaction_date', '<=', $tanggalAkhir)
             ->where('rf.status', 'approved')
-            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', [strtoupper('Stationary'), strtoupper('Marketing'), strtoupper('Chemical')])
+            ->whereRaw('UPPER(TRIM(sc.name)) NOT IN (?, ?, ?)', $excludedSubCategories)
             ->groupBy('rf.outlet_id')
             ->select('rf.outlet_id', DB::raw('SUM(rfi.subtotal) as total_retail'))
             ->get();
@@ -1054,8 +1109,9 @@ class CostReportController extends Controller
         $result = [];
         foreach ($outletIds as $oid) {
             $gr = (float) ($grByOutlet[(int) $oid] ?? 0);
+            $gsr = (float) ($gsrByOutlet[(int) $oid] ?? 0);
             $retail = (float) ($retailByOutlet[(int) $oid] ?? 0);
-            $result[$oid] = $gr + $retail;
+            $result[$oid] = $gr + $gsr + $retail;
         }
         return $result;
     }
