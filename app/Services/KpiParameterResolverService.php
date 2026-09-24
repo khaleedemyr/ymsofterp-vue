@@ -2458,19 +2458,32 @@ class KpiParameterResolverService
     }
 
     /**
-     * Saat breakdown per outlet, context berisi satu outlet — filter CVCC per id_outlet.
+     * Filter CVCC per id_outlet hanya saat context benar-benar single-outlet
+     * (breakdown per outlet / scope 1 outlet).
+     *
+     * Jangan pakai outlet_id "pertama" dari evaluasi multi-outlet — buildErpContext
+     * selalu mengisi outlet_id = outlet_ids[0], yang membuat D053/D054/D055 jadi 0.
      */
     private function singleOutletIdFromContext(array $context): ?int
     {
-        if (isset($context['outlet_id']) && (int) $context['outlet_id'] > 0) {
-            return (int) $context['outlet_id'];
+        $outletIds = $context['outlet_ids'] ?? [];
+        if (is_array($outletIds)) {
+            $outletIds = array_values(array_unique(array_filter(
+                array_map('intval', $outletIds),
+                fn (int $id) => $id > 0,
+            )));
+
+            if (count($outletIds) > 1) {
+                return null;
+            }
+
+            if (count($outletIds) === 1) {
+                return $outletIds[0];
+            }
         }
 
-        $outletIds = $context['outlet_ids'] ?? [];
-        if (is_array($outletIds) && count($outletIds) === 1) {
-            $outletId = (int) $outletIds[0];
-
-            return $outletId > 0 ? $outletId : null;
+        if (isset($context['outlet_id']) && (int) $context['outlet_id'] > 0) {
+            return (int) $context['outlet_id'];
         }
 
         return null;
