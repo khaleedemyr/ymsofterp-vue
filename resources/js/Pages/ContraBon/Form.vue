@@ -84,6 +84,9 @@ const form = useForm({
   date: props.contraBon?.date ? props.contraBon.date.substring(0, 10) : '',
   notes: props.contraBon?.notes || '',
   supplier_invoice_number: props.contraBon?.supplier_invoice_number || '',
+  supplier_invoice_date: props.contraBon?.supplier_invoice_date
+    ? String(props.contraBon.supplier_invoice_date).substring(0, 10)
+    : '',
   // Discount total fields
   discount_total_percent: props.contraBon?.discount_total_percent || 0,
   discount_total_amount: props.contraBon?.discount_total_amount || 0,
@@ -1344,6 +1347,7 @@ async function onSubmit() {
     
     fd.append('notes', form.notes);
     fd.append('supplier_invoice_number', form.supplier_invoice_number);
+    fd.append('supplier_invoice_date', form.supplier_invoice_date || '');
     fd.append('discount_total_percent', form.discount_total_percent || 0);
     fd.append('discount_total_amount', form.discount_total_amount || 0);
     fd.append('image', fileImage.value);
@@ -1869,6 +1873,12 @@ function getUnitName(item) {
           <label class="block text-sm font-medium text-gray-700">No Invoice Supplier</label>
           <input type="text" v-model="form.supplier_invoice_number" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" placeholder="No Invoice dari Supplier" />
           <div v-if="form.errors.supplier_invoice_number" class="text-xs text-red-500 mt-1">{{ form.errors.supplier_invoice_number }}</div>
+        </div>
+
+        <div class="mt-4">
+          <label class="block text-sm font-medium text-gray-700">Tanggal Invoice Supplier</label>
+          <input type="date" v-model="form.supplier_invoice_date" class="mt-1 block w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500" />
+          <div v-if="form.errors.supplier_invoice_date" class="text-xs text-red-500 mt-1">{{ form.errors.supplier_invoice_date }}</div>
         </div>
 
                  <div>

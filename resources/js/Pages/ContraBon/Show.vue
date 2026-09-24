@@ -25,6 +25,7 @@
                   <p><span class="font-medium">Nomor:</span> {{ contraBon.number }}</p>
                   <p><span class="font-medium">Tanggal:</span> {{ formatDate(contraBon.date) }}</p>
                   <p><span class="font-medium">No Invoice Supplier:</span> {{ contraBon.supplier_invoice_number || '-' }}</p>
+                  <p><span class="font-medium">Tanggal Invoice Supplier:</span> {{ contraBon.supplier_invoice_date ? formatDate(contraBon.supplier_invoice_date) : '-' }}</p>
                   <p><span class="font-medium">Status:</span> 
                     <span :class="getStatusClass(contraBon.status)">{{ contraBon.status }}</span>
                   </p>

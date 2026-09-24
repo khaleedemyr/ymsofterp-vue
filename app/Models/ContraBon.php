@@ -32,12 +32,14 @@ class ContraBon extends Model
         'gm_finance_approved_by',
         'gm_finance_note',
         'supplier_invoice_number',
+        'supplier_invoice_date',
         'source_type',
         'source_id',
     ];
 
     protected $casts = [
         'date' => 'date',
+        'supplier_invoice_date' => 'date',
         'approved_at' => 'datetime',
         'total_amount' => 'decimal:2',
         'discount_total_percent' => 'decimal:2',

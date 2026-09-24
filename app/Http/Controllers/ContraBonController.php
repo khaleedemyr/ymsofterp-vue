@@ -1048,6 +1048,7 @@ class ContraBonController extends Controller
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
             'supplier_invoice_number' => 'nullable|string|max:100',
+            'supplier_invoice_date' => 'nullable|date',
             'source_type' => 'nullable|in:purchase_order,retail_food,warehouse_retail_food,retail_non_food',
         ];
         
@@ -1226,6 +1227,9 @@ class ContraBonController extends Controller
                 'finance_manager_approved_at' => now(),
                 'finance_manager_approved_by' => Auth::id(),
                 'supplier_invoice_number' => $request->supplier_invoice_number,
+                'supplier_invoice_date' => $request->filled('supplier_invoice_date')
+                    ? $request->supplier_invoice_date
+                    : null,
                 'source_type' => $sourceType,
             ];
             
@@ -3958,6 +3962,7 @@ class ContraBonController extends Controller
             'notes' => 'nullable|string',
             'image' => 'nullable|image|max:2048',
             'supplier_invoice_number' => 'nullable|string|max:100',
+            'supplier_invoice_date' => 'nullable|date',
             'source_type' => 'nullable|in:purchase_order,retail_food,warehouse_retail_food,retail_non_food',
         ];
         
@@ -4088,6 +4093,9 @@ class ContraBonController extends Controller
                 'notes' => $request->notes,
                 'image_path' => $imagePath,
                 'supplier_invoice_number' => $request->supplier_invoice_number,
+                'supplier_invoice_date' => $request->filled('supplier_invoice_date')
+                    ? $request->supplier_invoice_date
+                    : null,
                 'source_type' => $sourceType,
             ];
             
