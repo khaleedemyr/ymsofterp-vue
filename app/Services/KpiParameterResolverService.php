@@ -1532,11 +1532,10 @@ class KpiParameterResolverService
 
     /**
      * Just Academy — completion training.
-     * D018 (method null): % jadwal yang di-conduct (status completed)
-     * dari training plan yang dibuat user evaluasi di periode.
-     * Contoh: buat 10, conduct 5 → 50%.
-     * D019: rata-rata % modul peserta pada plan Competency Assessment
-     * yang dibuat/ditrainer user (+ bawahan).
+     * D018 (method null) & D019 (Competency Assessment):
+     * % jadwal yang di-conduct (status completed) dari training plan
+     * yang dibuat user evaluasi di periode. Contoh: buat 10, conduct 5 → 50%.
+     * D019 hanya menghitung plan method Competency Assessment.
      */
     private function resolveJustAcademyTrainingCompletion(
         int $userId,
@@ -1548,34 +1547,25 @@ class KpiParameterResolverService
             return null;
         }
 
-        if ($methodName === null) {
-            return $this->resolveJustAcademyCreatedScheduleConductPercent($userId, $periodMonth, $evaluationMonth);
-        }
-
-        $scheduleIds = $this->resolveJustAcademyScopedScheduleIds(
+        return $this->resolveJustAcademyCreatedScheduleConductPercent(
             $userId,
             $periodMonth,
-            $methodName,
             $evaluationMonth,
-            false,
+            $methodName,
         );
-
-        if ($scheduleIds === []) {
-            return null;
-        }
-
-        return $this->averageJustAcademyScheduleCompletionPercents($scheduleIds);
     }
 
     /**
-     * D018 — (jadwal created_by user berstatus completed) / (jadwal created_by user
+     * (jadwal created_by user berstatus completed) / (jadwal created_by user
      * published|ongoing|completed) × 100 pada window bulan data s/d bulan evaluasi.
+     * Opsional filter method/category (mis. Competency Assessment untuk D019).
      * Tidak ada jadwal dibuat di periode = 100%.
      */
     private function resolveJustAcademyCreatedScheduleConductPercent(
         int $userId,
         string $periodMonth,
         ?string $evaluationMonth = null,
+        ?string $methodName = null,
     ): ?float {
         if (! DB::getSchemaBuilder()->hasTable('ja_schedules')) {
             return null;
@@ -1590,13 +1580,34 @@ class KpiParameterResolverService
         }
         $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
 
-        $stats = DB::table('ja_schedules')
-            ->where('created_by', $userId)
-            ->whereIn('status', ['published', 'ongoing', 'completed'])
-            ->where('start_at', '<=', $rangeEnd)
-            ->whereRaw('COALESCE(end_at, start_at) >= ?', [$rangeStart])
+        $query = DB::table('ja_schedules as s')
+            ->where('s.created_by', $userId)
+            ->whereIn('s.status', ['published', 'ongoing', 'completed'])
+            ->where('s.start_at', '<=', $rangeEnd)
+            ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart]);
+
+        if (
+            $methodName !== null
+            && DB::getSchemaBuilder()->hasTable('ja_programs')
+            && DB::getSchemaBuilder()->hasTable('ja_categories')
+        ) {
+            $needle = strtolower(trim($methodName));
+            $like = '%' . $needle . '%';
+            $query->whereIn('s.program_id', function ($sub) use ($needle, $like) {
+                $sub->from('ja_programs as p')
+                    ->leftJoin('ja_categories as c', 'c.id', '=', 'p.category_id')
+                    ->where(function ($w) use ($needle, $like) {
+                        $w->whereRaw('LOWER(TRIM(c.name)) = ?', [$needle])
+                            ->orWhereRaw('LOWER(c.name) LIKE ?', [$like])
+                            ->orWhereRaw('LOWER(p.title) LIKE ?', [$like]);
+                    })
+                    ->select('p.id');
+            });
+        }
+
+        $stats = $query
             ->selectRaw(
-                'COUNT(*) as total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as conducted',
+                'COUNT(*) as total, SUM(CASE WHEN s.status = ? THEN 1 ELSE 0 END) as conducted',
                 ['completed'],
             )
             ->first();
@@ -1610,32 +1621,8 @@ class KpiParameterResolverService
     }
 
     /**
-     * Rata-rata % completion modul (peserta × curriculum) per jadwal.
-     * Jadwal tanpa curriculum di-skip (bukan dihitung 0).
-     *
-     * @param  list<int>  $scheduleIds
-     */
-    private function averageJustAcademyScheduleCompletionPercents(array $scheduleIds): ?float
-    {
-        $percents = [];
-        foreach ($scheduleIds as $scheduleId) {
-            $percent = $this->calculateJustAcademyScheduleModuleCompletionPercent((int) $scheduleId);
-            if ($percent === null) {
-                continue;
-            }
-            $percents[] = $percent;
-        }
-
-        if ($percents === []) {
-            return null;
-        }
-
-        return round(array_sum($percents) / count($percents), 2);
-    }
-
-    /**
-     * Just Academy — % training completion untuk method/program Competency Assessment
-     * yang di-conduct (dibuat / ditrainer) oleh user + bawahan.
+     * Just Academy — % plan method Competency Assessment yang dibuat user
+     * dan sudah di-conduct (status completed). Rumus sama dengan D018.
      */
     private function resolveJustAcademyCompetencyAssessmentScore(
         int $userId,
