@@ -172,12 +172,11 @@
     <table class="items">
         <thead>
             <tr>
-                <th style="width: 5%;">No</th>
-                <th style="width: 20%;">No. CB</th>
-                <th style="width: 18%;">Sumber</th>
-                <th style="width: 20%;">No. Invoice</th>
-                <th style="width: 16%;">Tgl Invoice</th>
-                <th style="width: 21%;" class="text-right">Nominal</th>
+                <th style="width: 6%;">No</th>
+                <th style="width: 24%;">No. CB</th>
+                <th style="width: 24%;">No. Invoice</th>
+                <th style="width: 20%;">Tgl Invoice</th>
+                <th style="width: 26%;" class="text-right">Nominal</th>
             </tr>
         </thead>
         <tbody>
@@ -185,19 +184,18 @@
             <tr>
                 <td class="text-center">{{ $i + 1 }}</td>
                 <td>{{ $cb['number'] }}</td>
-                <td>{{ $cb['source_type_display'] }}</td>
                 <td>{{ $cb['supplier_invoice_number'] ?: '-' }}</td>
                 <td>{{ $cb['supplier_invoice_date'] ?: '-' }}</td>
                 <td class="text-right">Rp {{ number_format($cb['total_amount'], 0, ',', '.') }}</td>
             </tr>
             @empty
             <tr>
-                <td colspan="6" class="text-center">Tidak ada Contra Bon</td>
+                <td colspan="5" class="text-center">Tidak ada Contra Bon</td>
             </tr>
             @endforelse
             @if(count($contra_bons) > 0)
             <tr class="total-row">
-                <td colspan="5" class="text-right">TOTAL</td>
+                <td colspan="4" class="text-right">TOTAL</td>
                 <td class="text-right">Rp {{ number_format($total, 0, ',', '.') }}</td>
             </tr>
             @endif

@@ -1039,6 +1039,8 @@ Route::delete('/api/retail-warehouse-food-items/{id}/serials', [RetailWarehouseF
     // Food Payment
     Route::get('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'index'])->name('food-payments.index');
     Route::get('/food-payments/create', [\App\Http\Controllers\FoodPaymentController::class, 'create'])->name('food-payments.create');
+    Route::get('/food-payments/export-bulk-pdf', [\App\Http\Controllers\FoodPaymentController::class, 'exportBulkPdf'])->name('food-payments.export-bulk-pdf');
+    Route::get('/food-payments/export-bulk-excel', [\App\Http\Controllers\FoodPaymentController::class, 'exportBulkExcel'])->name('food-payments.export-bulk-excel');
     Route::post('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'store'])->name('food-payments.store');
     Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
     Route::get('/food-payments/{id}/export-pdf', [\App\Http\Controllers\FoodPaymentController::class, 'exportPdf'])->name('food-payments.export-pdf');

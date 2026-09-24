@@ -8,11 +8,13 @@ use App\Models\ContraBon;
 use App\Services\NotificationService;
 use App\Services\BankBookService;
 use App\Services\JurnalService;
+use App\Exports\FoodPaymentBulkExport;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Maatwebsite\Excel\Facades\Excel;
 
 class FoodPaymentController extends Controller
 {
@@ -490,7 +492,6 @@ class FoodPaymentController extends Controller
         $contraBons = $this->mapContraBonsForDisplay($payment->contraBons)->map(function ($cb) {
             return [
                 'number' => $cb->number,
-                'source_type_display' => $cb->source_type_display,
                 'supplier_invoice_number' => $cb->supplier_invoice_number,
                 'supplier_invoice_date' => $cb->supplier_invoice_date
                     ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
@@ -536,6 +537,94 @@ class FoodPaymentController extends Controller
         return $pdf->download($filename);
     }
 
+    public function exportBulkPdf(Request $request)
+    {
+        $groups = $this->buildBulkExportGroups($request);
+        if ($groups === null) {
+            return redirect()->back()->with('error', 'Pilih minimal 1 Food Payment.');
+        }
+
+        $pdf = Pdf::loadView('exports.food_payment_bulk_pdf', [
+            'groups' => $groups,
+            'total_count' => collect($groups)->sum(fn ($g) => count($g['items'])),
+            'logo_base64' => $this->prepareJustusLogoBase64(),
+            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download('food-payment-export-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    public function exportBulkExcel(Request $request)
+    {
+        $groups = $this->buildBulkExportGroups($request);
+        if ($groups === null) {
+            return redirect()->back()->with('error', 'Pilih minimal 1 Food Payment.');
+        }
+
+        return Excel::download(
+            new FoodPaymentBulkExport($groups),
+            'food-payment-export-'.now()->format('Ymd-His').'.xlsx'
+        );
+    }
+
+    /**
+     * @return array<int, array{date_key: string, date_label: string, items: array<int, array<string, mixed>>}>|null
+     */
+    protected function buildBulkExportGroups(Request $request): ?array
+    {
+        $ids = $request->input('ids', []);
+        if (is_string($ids)) {
+            $ids = array_filter(array_map('trim', explode(',', $ids)));
+        }
+        if (!is_array($ids) || count($ids) === 0) {
+            return null;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $payments = FoodPayment::with(['supplier', 'contraBons'])
+            ->whereIn('id', $ids)
+            ->orderBy('date')
+            ->orderBy('id')
+            ->get();
+
+        if ($payments->isEmpty()) {
+            return null;
+        }
+
+        $grouped = [];
+        foreach ($payments as $payment) {
+            $dateKey = optional($payment->date)->format('Y-m-d') ?: 'unknown';
+            $dateLabel = optional($payment->date)->format('d/m/Y') ?: '-';
+
+            if (!isset($grouped[$dateKey])) {
+                $grouped[$dateKey] = [
+                    'date_key' => $dateKey,
+                    'date_label' => $dateLabel,
+                    'items' => [],
+                ];
+            }
+
+            $invoiceNumbers = ($payment->contraBons ?? collect())
+                ->pluck('supplier_invoice_number')
+                ->filter()
+                ->unique()
+                ->values()
+                ->implode(', ');
+
+            $supplier = $payment->supplier;
+            $grouped[$dateKey]['items'][] = [
+                'supplier_name' => optional($supplier)->name ?? '-',
+                'nominal' => (float) $payment->total,
+                'description' => $invoiceNumbers,
+                'bank_account_number' => optional($supplier)->bank_account_number ?? '',
+                'bank_name' => optional($supplier)->bank_name ?? '',
+                'bank_account_name' => optional($supplier)->bank_account_name ?? '',
+            ];
+        }
+
+        return array_values($grouped);
+    }
+
     /**
      * Crop whitespace from Justus logo and resize for DomPDF header.
      * Source file is ~4500x4500 with the wordmark centered on a white square.
@@ -576,7 +665,6 @@ class FoodPaymentController extends Controller
         $minY = $workH;
         $maxX = 0;
         $maxY = 0;
-        // Treat near-white as background; keep charcoal + gold content.
         $whiteThreshold = 245;
 
         for ($y = 0; $y < $workH; $y++) {
