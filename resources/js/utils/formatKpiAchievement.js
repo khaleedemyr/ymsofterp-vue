@@ -38,9 +38,23 @@ export function formatKpiAchievement(value, meta, empty = '—') {
 export function formatKpiParameterInputUnit(pv) {
   if (!pv) return '';
 
+  if (pv.input_unit) {
+    return pv.input_unit;
+  }
+
   const dataType = pv.data_type || 'decimal';
   const code = String(pv.parameter_code || '').toUpperCase();
   const name = String(pv.parameter_name || '').toLowerCase();
+  const target = String(pv.target_value || pv.parameter_target || '').toLowerCase();
+
+  if (
+    code === 'KPI13'
+    || name.includes('jng')
+    || name.includes('person')
+    || target.includes('person')
+  ) {
+    return 'orang';
+  }
 
   if (dataType === 'percent') {
     return '%';

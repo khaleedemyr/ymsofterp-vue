@@ -621,6 +621,8 @@ class KpiParameterResolverService
                 $outletIds,
                 $period['start_date'],
                 $period['end_date'],
+                null,
+                (int) ($context['user_id'] ?? 0),
             ),
             'qa2_recipe_compliance_score' => $this->resolveQa2RecipeComplianceScore(
                 $outletIds,
@@ -1713,6 +1715,8 @@ class KpiParameterResolverService
 
     /**
      * QA2 Audits — skor compliance C / (C + NC) per outlet, lalu rata-rata antar outlet scope.
+     * Filter divisi dari Regional Management area (Bar/Kitchen/Service → template BRA/KTA/SVA).
+     * Tanpa assignment regional: semua template (perilaku lama).
      *
      * @param  list<int>  $outletIds
      * @param  list<string>|null  $parameterCodes  Filter parameter QA2 (mis. BRA-1.5.3). Null = semua item audit.
@@ -1722,10 +1726,13 @@ class KpiParameterResolverService
         string $startDate,
         string $endDate,
         ?array $parameterCodes = null,
+        int $userId = 0,
     ): ?float {
         if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('qa2_audits')) {
             return null;
         }
+
+        $templateIds = $this->resolveQa2TemplateIdsForRegionalUser($userId);
 
         $scores = [];
         foreach (array_values(array_unique(array_filter(array_map('intval', $outletIds)))) as $outletId) {
@@ -1733,7 +1740,13 @@ class KpiParameterResolverService
                 continue;
             }
 
-            $score = $this->resolveQa2AuditScoreForOutlet($outletId, $startDate, $endDate, $parameterCodes);
+            $score = $this->resolveQa2AuditScoreForOutlet(
+                $outletId,
+                $startDate,
+                $endDate,
+                $parameterCodes,
+                $templateIds,
+            );
             if ($score !== null) {
                 $scores[] = $score;
             }
@@ -1744,6 +1757,58 @@ class KpiParameterResolverService
         }
 
         return round(array_sum($scores) / count($scores), 2);
+    }
+
+    /**
+     * Template QA2 yang relevan untuk area Regional Management karyawan.
+     * Bar → BRA, Service → SVA, Kitchen → KTA. Multi-area digabung.
+     * Null = tidak filter (semua template).
+     *
+     * @return list<int>|null
+     */
+    private function resolveQa2TemplateIdsForRegionalUser(int $userId): ?array
+    {
+        if ($userId <= 0 || ! DB::getSchemaBuilder()->hasTable('qa2_templates')) {
+            return null;
+        }
+
+        $areas = UserRegional::areasForUserId($userId);
+        if ($areas === []) {
+            return null;
+        }
+
+        $codes = [];
+        foreach ($areas as $area) {
+            $codes = array_merge($codes, $this->regionalAreaToQa2TemplateCodes((string) $area));
+        }
+        $codes = array_values(array_unique(array_filter($codes)));
+        if ($codes === []) {
+            return null;
+        }
+
+        $ids = DB::table('qa2_templates')
+            ->whereIn('code', $codes)
+            ->where('status', 'A')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values()
+            ->all();
+
+        return $ids === [] ? null : $ids;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function regionalAreaToQa2TemplateCodes(string $area): array
+    {
+        return match (trim($area)) {
+            'Bar' => ['BRA'],
+            'Service' => ['SVA'],
+            'Kitchen' => ['KTA'],
+            default => [],
+        };
     }
 
     /**
@@ -1836,25 +1901,36 @@ class KpiParameterResolverService
      * Skor compliance QA2 untuk satu outlet: C / (C + NC) dari audit submitted di periode.
      *
      * @param  list<string>|null  $parameterCodes
+     * @param  list<int>|null  $templateIds  Null = semua template; list kosong = tidak ada skor.
      */
     private function resolveQa2AuditScoreForOutlet(
         int $outletId,
         string $startDate,
         string $endDate,
         ?array $parameterCodes = null,
+        ?array $templateIds = null,
     ): ?float {
         if ($outletId <= 0 || ! DB::getSchemaBuilder()->hasTable('qa2_audits')) {
+            return null;
+        }
+
+        if ($templateIds !== null && $templateIds === []) {
             return null;
         }
 
         $startDate = substr(trim($startDate), 0, 10);
         $endDate = substr(trim($endDate), 0, 10);
 
-        $auditIds = DB::table('qa2_audits')
+        $auditsQuery = DB::table('qa2_audits')
             ->where('outlet_id', $outletId)
             ->where('status', 'submitted')
-            ->whereBetween('audit_datetime', [$startDate . ' 00:00:00', $endDate . ' 23:59:59'])
-            ->pluck('id');
+            ->whereBetween('audit_datetime', [$startDate . ' 00:00:00', $endDate . ' 23:59:59']);
+
+        if ($templateIds !== null) {
+            $auditsQuery->whereIn('template_id', $templateIds);
+        }
+
+        $auditIds = $auditsQuery->pluck('id');
 
         if ($auditIds->isEmpty()) {
             return null;

@@ -251,6 +251,19 @@ function formatAchievement(item) {
 }
 
 function parameterInputUnit(pv) {
+  // Person-count KPI: paksa "orang" meski input_unit lama masih "%" / data_type percent.
+  const code = String(pv?.parameter_code || '').toUpperCase();
+  const name = String(pv?.parameter_name || '').toLowerCase();
+  const target = String(pv?.target_value || '').toLowerCase();
+  if (
+    code === 'KPI13'
+    || name.includes('jng')
+    || name.includes('person')
+    || /person/.test(target)
+  ) {
+    return 'orang';
+  }
+
   return pv?.input_unit || formatKpiParameterInputUnit(pv);
 }
 

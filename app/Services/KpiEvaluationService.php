@@ -514,6 +514,19 @@ class KpiEvaluationService
     {
         $dataType = $this->resolveEffectiveParameterDataType($param, $name);
         $lowerName = strtolower($name);
+        $target = trim((string) ($param?->target_value ?? ''));
+        $description = trim((string) ($param?->description ?? ''));
+
+        // Person-count KPI (mis. KPI13 "12 Person & 100% on Time") — jangan tampilkan % meski data_type=percent.
+        if (
+            $code === 'KPI13'
+            || str_contains($lowerName, 'jng')
+            || preg_match('/Person/i', $target)
+            || preg_match('/\bPerson\b/i', $name)
+            || preg_match('/\bPerson\b/i', $description)
+        ) {
+            return 'orang';
+        }
 
         if ($dataType === 'percent') {
             return '%';
@@ -709,7 +722,7 @@ class KpiEvaluationService
             'cvcc_service_complaint_count' => 'Sumber ERP: CVCC — komplain service (negative + CAPA).',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
-            'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan (semua parameter).',
+            'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan per divisi Regional Management (Bar→BRA, Service→SVA, Kitchen→KTA; rata-rata outlet scope).',
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
             'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
             'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',

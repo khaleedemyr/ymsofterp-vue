@@ -223,7 +223,7 @@ class KpiParameterController extends Controller
                 ['value' => 'training_compliance', 'label' => 'Training Compliance (legacy)'],
                 ['value' => 'just_academy_training_completion', 'label' => 'Just Academy — % modul selesai oleh user yang dinilai (sebagai peserta)'],
                 ['value' => 'just_academy_competency_assessment_score', 'label' => 'Just Academy — Competency Assessment training completion % (method Competency Assessment)'],
-                ['value' => 'qa2_audit1_score', 'label' => 'QA2 Audits — Compliance Score % (avg per outlet, semua parameter)'],
+                ['value' => 'qa2_audit1_score', 'label' => 'QA2 Audits — Compliance Score % (avg outlet, filter divisi Regional Area: Bar/Service/Kitchen)'],
                 ['value' => 'qa2_recipe_compliance_score', 'label' => 'QA2 Audits — Recipe Compliance % (BRA-1.5.3 & BRA-1.4.6, C/(C+NC))'],
                 ['value' => 'ticket_complaint_count', 'label' => 'Ticketing - Complaint Count'],
                 ['value' => 'regional_visit_report', 'label' => 'Regional Visit — Kunjungan Karyawan KPI ke Outlet (count)'],
