@@ -626,6 +626,19 @@ class KpiEvaluationService
 
     private function buildKpiParameterInputInstruction(string $name, string $dataType, string $description): string
     {
+        $lowerName = strtolower($name);
+        $lowerDesc = strtolower($description);
+
+        if (
+            str_contains($lowerName, 'person')
+            || str_contains($lowerName, 'jng')
+            || str_contains($lowerDesc, 'person')
+            || preg_match('/\d+\s*person/i', $description)
+        ) {
+            return "Isi jumlah orang yang menyelesaikan program untuk KPI «{$name}» dalam periode frequency (quarterly = total 1 kuartal, bukan per bulan)."
+                .($description !== '' ? " {$description}" : '');
+        }
+
         if ($description !== '') {
             return "Isi nilai untuk KPI «{$name}». {$description}";
         }
@@ -640,14 +653,18 @@ class KpiEvaluationService
 
     private function exampleValueForParameterInput(string $code, string $name, string $dataType): string
     {
+        $lowerName = strtolower($name);
+
         return match (true) {
-            in_array($code, ['D001', 'D002'], true) || str_contains(strtolower($name), 'revenue')
+            in_array($code, ['D001', 'D002'], true) || str_contains($lowerName, 'revenue')
                 => '19384769236',
+            $code === 'KPI13' || str_contains($lowerName, 'jng') || str_contains($lowerName, 'person')
+                => '12',
             in_array($code, ['D048', 'D049', 'D050', 'D051', 'D052'], true) || $dataType === 'percent'
                 => '42,5',
             $code === 'D053' || $dataType === 'hours'
                 => '24,5',
-            $code === 'D026' || str_contains(strtolower($name), 'google review')
+            $code === 'D026' || str_contains($lowerName, 'google review')
                 => '4,75',
             $dataType === 'integer'
                 => '12',
@@ -2024,7 +2041,8 @@ class KpiEvaluationService
             ];
         }
 
-        if (preg_match('/^>=\s*(\d+(?:\.\d+)?)\s*Person/i', $target, $matches)) {
+        // "12 Person & 100% on Time", ">= 2 Person", ">= 9 Person & 100% on Time"
+        if (preg_match('/^(?:>=\s*)?(\d+(?:\.\d+)?)\s*Person/i', $target, $matches)) {
             return [
                 'comparator' => 'gte',
                 'min' => (float) $matches[1],
