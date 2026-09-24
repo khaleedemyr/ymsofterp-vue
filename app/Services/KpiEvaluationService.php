@@ -742,7 +742,7 @@ class KpiEvaluationService
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
             'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
             'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
-            'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
+            'regional_visit_report' => 'Sumber ERP: absensi kunjungan semua outlet (termasuk backup di luar area target).',
             'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',
             'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant.',
             'ticket_improvement_total' => 'Sumber ERP: total ticket improvement.',

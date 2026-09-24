@@ -226,7 +226,7 @@ class KpiParameterController extends Controller
                 ['value' => 'qa2_audit1_score', 'label' => 'QA2 Audits — Compliance Score % (avg outlet, filter divisi Regional Area: Bar/Service/Kitchen)'],
                 ['value' => 'qa2_recipe_compliance_score', 'label' => 'QA2 Audits — Recipe Compliance % (BRA-1.5.3 & BRA-1.4.6, C/(C+NC))'],
                 ['value' => 'ticket_complaint_count', 'label' => 'Ticketing - Complaint Count'],
-                ['value' => 'regional_visit_report', 'label' => 'Regional Visit — Kunjungan Karyawan KPI ke Outlet (count)'],
+                ['value' => 'regional_visit_report', 'label' => 'Regional Visit — hari kunjungan ke semua outlet (termasuk backup di luar area target)'],
                 ['value' => 'regional_target_outlet_visits', 'label' => 'Regional Management — Target Kunjungan Outlet / Bulan'],
                 ['value' => 'retail_petty_cash_usage', 'label' => 'Retail Food + Non Food Usage (non contra bon)'],
                 ['value' => 'manual_cogs_percent', 'label' => 'Manual COGS — COGS % per outlet'],

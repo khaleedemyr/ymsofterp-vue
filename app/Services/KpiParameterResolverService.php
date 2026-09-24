@@ -1238,24 +1238,21 @@ class KpiParameterResolverService
             return null;
         }
 
+        // Harus terdaftar Regional Management (punya target visit).
         $assignment = UserRegional::where('user_id', $userId)->first();
         if ($assignment === null) {
             return null;
         }
 
-        $targetOutletIds = $this->regionalTargetOutletIds($assignment);
-        if ($targetOutletIds === []) {
+        if ($this->regionalTargetOutletIds($assignment) === []) {
             return null;
         }
 
-        $totalVisitDays = 0;
+        // Semua hari kunjungan ke outlet manapun (termasuk backup di luar area target).
+        // Sebelumnya hanya outlet di outlet_visit_targets — visit backup tidak masuk D021.
+        $stats = $this->regionalVisits->getVisitStats([$userId], $startDate, $endDate);
 
-        foreach ($targetOutletIds as $outletId) {
-            $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
-            $totalVisitDays += (int) ($detail['summary']['visit_days'] ?? 0);
-        }
-
-        return (float) $totalVisitDays;
+        return (float) ($stats['summary']['total_visit_days'] ?? 0);
     }
 
     /**
