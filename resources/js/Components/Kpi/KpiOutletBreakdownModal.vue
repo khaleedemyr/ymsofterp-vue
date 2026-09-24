@@ -34,6 +34,8 @@ function levelBadge(level) {
     below: 'bg-red-100 text-red-800',
     visited: 'bg-green-100 text-green-800',
     not_visited: 'bg-gray-100 text-gray-600',
+    conducted: 'bg-green-100 text-green-800',
+    not_conducted: 'bg-amber-100 text-amber-800',
   };
   return map[level] || 'bg-gray-100 text-gray-700';
 }
@@ -45,7 +47,36 @@ function levelLabel(level) {
     below: 'Below',
     visited: 'Dikunjungi',
     not_visited: 'Belum',
+    conducted: 'Conducted',
+    not_conducted: 'Belum conduct',
   }[level] || level;
+}
+
+function isJustAcademyConductItem(item) {
+  const formula = String(item?.formula || '').trim().toUpperCase();
+  return formula === 'D018' || formula === 'D019';
+}
+
+function canShowBreakdown(item) {
+  if (!item?.formula) return false;
+  if (isJustAcademyConductItem(item)) return true;
+  return props.outletCount >= 2;
+}
+
+function formatScheduleDate(value) {
+  if (!value) return '—';
+  const raw = String(value).replace('T', ' ').slice(0, 16);
+  return raw;
+}
+
+function statusLabel(status) {
+  return {
+    draft: 'Draft',
+    published: 'Published',
+    ongoing: 'Ongoing',
+    completed: 'Completed',
+    cancelled: 'Cancelled',
+  }[status] || status;
 }
 
 function paramCellValue(row, col) {
@@ -65,10 +96,6 @@ watch(() => props.cacheVersion, () => {
 });
 
 async function ensureBulkLoaded() {
-  if (props.outletCount < 2) {
-    return;
-  }
-
   if (Object.keys(bulkCache.value).length > 0) {
     return;
   }
@@ -94,13 +121,11 @@ async function ensureBulkLoaded() {
 }
 
 function preload() {
-  if (props.outletCount >= 2) {
-    ensureBulkLoaded();
-  }
+  ensureBulkLoaded();
 }
 
 async function show(item) {
-  if (!item?.formula || props.outletCount < 2) {
+  if (!canShowBreakdown(item)) {
     return;
   }
 
@@ -146,7 +171,9 @@ async function show(item) {
       error.value = res.message || 'Breakdown tidak tersedia.';
     }
   } catch {
-    error.value = 'Gagal memuat detail per outlet.';
+    error.value = isJustAcademyConductItem(item)
+      ? 'Gagal memuat detail jadwal training.'
+      : 'Gagal memuat detail per outlet.';
   } finally {
     loading.value = false;
   }
@@ -166,7 +193,9 @@ defineExpose({ show, preload });
       <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
         <div class="px-5 py-4 border-b flex items-start justify-between gap-3">
           <div>
-            <h3 class="text-lg font-bold text-gray-900">Detail per Outlet</h3>
+            <h3 class="text-lg font-bold text-gray-900">
+              {{ data?.breakdown_mode === 'just_academy_conduct' ? 'Detail Jadwal Training' : 'Detail per Outlet' }}
+            </h3>
             <p v-if="data?.item_name" class="text-sm text-gray-600 mt-0.5">{{ data.item_name }}</p>
             <p v-if="data?.formula" class="text-xs font-mono text-gray-400 mt-1">{{ data.formula }}</p>
           </div>
@@ -176,7 +205,7 @@ defineExpose({ show, preload });
         <div class="px-5 py-3 overflow-y-auto flex-1">
           <div v-if="loading" class="py-12 text-center text-gray-500">
             <i class="fa-solid fa-spinner fa-spin mr-2"></i>
-            Menghitung per outlet...
+            {{ isJustAcademyConductItem(activeItem) ? 'Memuat jadwal training...' : 'Menghitung per outlet...' }}
             <p v-if="bulkLoading" class="text-xs text-gray-400 mt-2">Memuat semua KPI sekaligus (hanya pertama kali)...</p>
           </div>
 
@@ -185,7 +214,26 @@ defineExpose({ show, preload });
           </div>
 
           <template v-else-if="data?.available">
-            <div v-if="data.breakdown_mode === 'regional_visit'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+            <div v-if="data.breakdown_mode === 'just_academy_conduct'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
+              <div class="bg-gray-50 rounded-lg p-3">
+                <div class="text-gray-500 text-xs">Total Jadwal</div>
+                <div class="font-bold text-lg">{{ data.summary.total_schedules ?? 0 }}</div>
+              </div>
+              <div class="bg-green-50 rounded-lg p-3">
+                <div class="text-green-700 text-xs">Conducted</div>
+                <div class="font-bold text-lg text-green-800">{{ data.summary.conducted_schedules ?? 0 }}</div>
+              </div>
+              <div class="bg-amber-50 rounded-lg p-3">
+                <div class="text-amber-800 text-xs">Belum Conduct</div>
+                <div class="font-bold text-lg text-amber-900">{{ data.summary.pending_schedules ?? 0 }}</div>
+              </div>
+              <div class="bg-indigo-50 rounded-lg p-3">
+                <div class="text-indigo-700 text-xs">Achievement</div>
+                <div class="font-bold text-lg text-indigo-800">{{ formatAchievement(data.summary.conduct_percent) }}</div>
+              </div>
+            </div>
+
+            <div v-else-if="data.breakdown_mode === 'regional_visit'" class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4 text-sm">
               <div class="bg-gray-50 rounded-lg p-3">
                 <div class="text-gray-500 text-xs">Outlet Target</div>
                 <div class="font-bold text-lg">{{ data.summary.configured_outlet_count ?? 0 }}</div>
@@ -262,7 +310,15 @@ defineExpose({ show, preload });
             </div>
 
             <p class="text-xs text-gray-500 mb-3">
-              <template v-if="data.breakdown_mode === 'regional_visit'">
+              <template v-if="data.breakdown_mode === 'just_academy_conduct'">
+                {{ data.portfolio_note }}
+                Achievement agregat evaluasi:
+                <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
+                <span v-if="data.summary.conducted_schedules != null && data.summary.total_schedules != null">
+                  ({{ data.summary.conducted_schedules }} / {{ data.summary.total_schedules }} jadwal conducted)
+                </span>
+              </template>
+              <template v-else-if="data.breakdown_mode === 'regional_visit'">
                 {{ data.portfolio_note }}
                 Achievement agregat evaluasi:
                 <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
@@ -292,7 +348,46 @@ defineExpose({ show, preload });
               </template>
             </p>
 
-            <template v-if="data.breakdown_mode === 'regional_visit'">
+            <template v-if="data.breakdown_mode === 'just_academy_conduct'">
+              <div class="overflow-x-auto border rounded-xl">
+                <table class="min-w-full text-sm">
+                  <thead class="bg-gray-50">
+                    <tr>
+                      <th class="px-3 py-2 text-left">Jadwal</th>
+                      <th class="px-3 py-2 text-left">Method</th>
+                      <th class="px-3 py-2 text-left">Dibuat oleh</th>
+                      <th class="px-3 py-2 text-left">Mulai</th>
+                      <th class="px-3 py-2 text-left">Status</th>
+                      <th class="px-3 py-2 text-center">Conduct</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y">
+                    <tr v-for="row in data.rows" :key="row.schedule_id" class="hover:bg-gray-50">
+                      <td class="px-3 py-2 font-medium">
+                        <div>{{ row.title || '—' }}</div>
+                        <div class="text-[10px] text-gray-400 font-mono">#{{ row.schedule_id }}</div>
+                      </td>
+                      <td class="px-3 py-2 text-gray-600">{{ row.method_name || '—' }}</td>
+                      <td class="px-3 py-2">{{ row.created_by_name || '—' }}</td>
+                      <td class="px-3 py-2 whitespace-nowrap">{{ formatScheduleDate(row.start_at) }}</td>
+                      <td class="px-3 py-2">{{ statusLabel(row.status) }}</td>
+                      <td class="px-3 py-2 text-center">
+                        <span class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(row.performance_level)">
+                          {{ levelLabel(row.performance_level) }}
+                        </span>
+                      </td>
+                    </tr>
+                    <tr v-if="!data.rows?.length">
+                      <td colspan="6" class="px-3 py-4 text-center text-gray-500">
+                        Tidak ada jadwal di periode ini (dianggap 100%).
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </template>
+
+            <template v-else-if="data.breakdown_mode === 'regional_visit'">
               <h4 class="text-sm font-semibold text-gray-800 mb-2">Outlet Target (Regional Management)</h4>
               <div class="overflow-x-auto border rounded-xl mb-6">
                 <table class="min-w-full text-sm">

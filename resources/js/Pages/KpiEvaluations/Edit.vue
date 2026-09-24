@@ -179,13 +179,18 @@ const scopeOutletCount = computed(() => {
 });
 
 function scheduleBreakdownPreload() {
-  if (scopeOutletCount.value >= 2) {
-    setTimeout(() => breakdownModal.value?.preload(), 300);
-  }
+  setTimeout(() => breakdownModal.value?.preload(), 300);
 }
 
 function openOutletBreakdown(item) {
   breakdownModal.value?.show(item);
+}
+
+function canShowItemBreakdown(item) {
+  if (!item?.formula) return false;
+  const formula = String(item.formula).trim().toUpperCase();
+  if (formula === 'D018' || formula === 'D019') return true;
+  return scopeOutletCount.value >= 2;
 }
 
 function pvRow(id) {
@@ -704,13 +709,17 @@ onMounted(() => {
                 <td class="px-4 py-2 text-right">{{ item.weight_percent }}%</td>
                 <td class="px-4 py-2 text-center">
                   <button
-                    v-if="item.formula && scopeOutletCount >= 2"
+                    v-if="canShowItemBreakdown(item)"
                     type="button"
                     class="text-xs px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700"
-                    title="Lihat achievement per outlet"
+                    :title="['D018','D019'].includes(String(item.formula||'').trim().toUpperCase()) ? 'Lihat jadwal conducted vs belum' : 'Lihat achievement per outlet'"
                     @click="openOutletBreakdown(item)"
                   >
-                    <i class="fa-solid fa-store mr-1"></i> Outlet
+                    <i
+                      class="fa-solid mr-1"
+                      :class="['D018','D019'].includes(String(item.formula||'').trim().toUpperCase()) ? 'fa-calendar-check' : 'fa-store'"
+                    ></i>
+                    {{ ['D018','D019'].includes(String(item.formula||'').trim().toUpperCase()) ? 'Jadwal' : 'Outlet' }}
                   </button>
                   <span v-else class="text-xs text-gray-300">—</span>
                 </td>

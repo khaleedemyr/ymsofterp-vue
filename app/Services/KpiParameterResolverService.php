@@ -1534,7 +1534,8 @@ class KpiParameterResolverService
      * Just Academy — completion training.
      * D018 (method null) & D019 (Competency Assessment):
      * % jadwal yang di-conduct (status completed) dari training plan
-     * yang dibuat user evaluasi di periode. Contoh: buat 10, conduct 5 → 50%.
+     * yang dibuat user evaluasi + bawahan langsung di periode.
+     * Contoh: buat 10, conduct 5 → 50%.
      * D019 hanya menghitung plan method Competency Assessment.
      */
     private function resolveJustAcademyTrainingCompletion(
@@ -1556,8 +1557,9 @@ class KpiParameterResolverService
     }
 
     /**
-     * (jadwal created_by user berstatus completed) / (jadwal created_by user
-     * published|ongoing|completed) × 100 pada window bulan data s/d bulan evaluasi.
+     * (jadwal created_by user/bawahan berstatus completed) /
+     * (jadwal created_by user/bawahan published|ongoing|completed) × 100
+     * pada window bulan data s/d bulan evaluasi.
      * Opsional filter method/category (mis. Competency Assessment untuk D019).
      * Tidak ada jadwal dibuat di periode = 100%.
      */
@@ -1567,8 +1569,59 @@ class KpiParameterResolverService
         ?string $evaluationMonth = null,
         ?string $methodName = null,
     ): ?float {
+        $schedules = $this->listJustAcademyCreatedConductSchedules(
+            $userId,
+            $periodMonth,
+            $evaluationMonth,
+            $methodName,
+        );
+
+        if ($schedules === null) {
+            return null;
+        }
+
+        $total = count($schedules);
+        if ($total === 0) {
+            return 100.0;
+        }
+
+        $conducted = count(array_filter($schedules, fn (array $row) => $row['conducted']));
+
+        return round(($conducted / $total) * 100, 2);
+    }
+
+    /**
+     * Daftar training plan yang masuk perhitungan conduct (D018/D019).
+     *
+     * @return list<array{
+     *     id: int,
+     *     title: string,
+     *     status: string,
+     *     conducted: bool,
+     *     created_by: int,
+     *     created_by_name: string,
+     *     method_name: string|null,
+     *     start_at: string|null,
+     *     end_at: string|null
+     * }>|null  null jika tabel Just Academy tidak ada
+     */
+    public function listJustAcademyCreatedConductSchedules(
+        int $userId,
+        string $periodMonth,
+        ?string $evaluationMonth = null,
+        ?string $methodName = null,
+    ): ?array {
+        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth)) {
+            return [];
+        }
+
         if (! DB::getSchemaBuilder()->hasTable('ja_schedules')) {
             return null;
+        }
+
+        $scopeUserIds = $this->resolveTrainingScopeUserIds($userId);
+        if ($scopeUserIds === []) {
+            return [];
         }
 
         $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
@@ -1581,7 +1634,10 @@ class KpiParameterResolverService
         $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
 
         $query = DB::table('ja_schedules as s')
-            ->where('s.created_by', $userId)
+            ->leftJoin('users as u', 'u.id', '=', 's.created_by')
+            ->leftJoin('ja_programs as p', 'p.id', '=', 's.program_id')
+            ->leftJoin('ja_categories as c', 'c.id', '=', 'p.category_id')
+            ->whereIn('s.created_by', $scopeUserIds)
             ->whereIn('s.status', ['published', 'ongoing', 'completed'])
             ->where('s.start_at', '<=', $rangeEnd)
             ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart]);
@@ -1593,35 +1649,46 @@ class KpiParameterResolverService
         ) {
             $needle = strtolower(trim($methodName));
             $like = '%' . $needle . '%';
-            $query->whereIn('s.program_id', function ($sub) use ($needle, $like) {
-                $sub->from('ja_programs as p')
-                    ->leftJoin('ja_categories as c', 'c.id', '=', 'p.category_id')
-                    ->where(function ($w) use ($needle, $like) {
-                        $w->whereRaw('LOWER(TRIM(c.name)) = ?', [$needle])
-                            ->orWhereRaw('LOWER(c.name) LIKE ?', [$like])
-                            ->orWhereRaw('LOWER(p.title) LIKE ?', [$like]);
-                    })
-                    ->select('p.id');
+            $query->where(function ($w) use ($needle, $like) {
+                $w->whereRaw('LOWER(TRIM(c.name)) = ?', [$needle])
+                    ->orWhereRaw('LOWER(c.name) LIKE ?', [$like])
+                    ->orWhereRaw('LOWER(p.title) LIKE ?', [$like]);
             });
         }
 
-        $stats = $query
-            ->selectRaw(
-                'COUNT(*) as total, SUM(CASE WHEN s.status = ? THEN 1 ELSE 0 END) as conducted',
-                ['completed'],
-            )
-            ->first();
+        $rows = $query
+            ->orderByDesc('s.start_at')
+            ->orderBy('s.id')
+            ->get([
+                's.id',
+                's.title',
+                's.status',
+                's.created_by',
+                's.start_at',
+                's.end_at',
+                'u.nama_lengkap as created_by_name',
+                'c.name as method_name',
+            ]);
 
-        $total = (int) ($stats->total ?? 0);
-        if ($total === 0) {
-            return 100.0;
-        }
+        return $rows->map(function ($row) {
+            $status = (string) ($row->status ?? '');
 
-        return round(((int) ($stats->conducted ?? 0) / $total) * 100, 2);
+            return [
+                'id' => (int) $row->id,
+                'title' => (string) ($row->title ?? ''),
+                'status' => $status,
+                'conducted' => $status === 'completed',
+                'created_by' => (int) ($row->created_by ?? 0),
+                'created_by_name' => (string) ($row->created_by_name ?? ''),
+                'method_name' => $row->method_name !== null ? (string) $row->method_name : null,
+                'start_at' => $row->start_at ? (string) $row->start_at : null,
+                'end_at' => $row->end_at ? (string) $row->end_at : null,
+            ];
+        })->values()->all();
     }
 
     /**
-     * Just Academy — % plan method Competency Assessment yang dibuat user
+     * Just Academy — % plan method Competency Assessment yang dibuat user/bawahan
      * dan sudah di-conduct (status completed). Rumus sama dengan D018.
      */
     private function resolveJustAcademyCompetencyAssessmentScore(

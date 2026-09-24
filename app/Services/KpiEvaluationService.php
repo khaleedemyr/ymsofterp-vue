@@ -694,8 +694,8 @@ class KpiEvaluationService
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
             'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan (semua parameter).',
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
-            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user dan sudah di-conduct (status completed).',
-            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user dan sudah di-conduct (status completed).',
+            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user/bawahan dan sudah di-conduct (status completed).',
+            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user/bawahan dan sudah di-conduct (status completed).',
             'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
             'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',
             'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant.',
@@ -2177,7 +2177,7 @@ class KpiEvaluationService
     {
         $version = $evaluation->updated_at?->getTimestamp() ?? 0;
 
-        return 'kpi_bulk_breakdown:v3:' . $evaluation->id . ':' . $version;
+        return 'kpi_bulk_breakdown:v4:' . $evaluation->id . ':' . $version;
     }
 
     /**
@@ -2189,10 +2189,30 @@ class KpiEvaluationService
 
         $outletIds = $this->resolveErpOutletIds($evaluation);
         $items = $evaluation->items()->get();
+        $baseContext = $this->buildErpContext($evaluation);
 
         if ($outletIds === []) {
             $results = [];
             foreach ($items as $item) {
+                $formula = trim((string) ($item->formula ?? ''));
+                $codes = $formula !== '' ? $this->extractCodes($formula) : [];
+                $dCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
+
+                if ($this->isJustAcademyConductFormula($dCodes) && count($dCodes) === count($codes)) {
+                    $results[$item->id] = $this->assembleJustAcademyConductBreakdown(
+                        $item,
+                        $formula,
+                        $dCodes,
+                        collect(),
+                        collect(),
+                        collect(),
+                        [],
+                        $evaluation,
+                        $baseContext,
+                    );
+                    continue;
+                }
+
                 $results[$item->id] = $this->unavailableItemBreakdown($item, 'Tidak ada outlet dalam scope evaluasi.', 0);
             }
 
@@ -2236,15 +2256,12 @@ class KpiEvaluationService
                 ->with('erpMapping')
                 ->get();
 
-        $baseContext = $this->buildErpContext($evaluation);
         $paramMetaByCode = $evaluation->parameterValues()
             ->whereIn('parameter_code', $allDCodes)
             ->get()
             ->keyBy('parameter_code');
 
-        $outletRows = $outletIds === []
-            ? collect()
-            : DB::table('tbl_data_outlet')
+        $outletRows = DB::table('tbl_data_outlet')
                 ->whereIn('id_outlet', $outletIds)
                 ->orderBy('nama_outlet')
                 ->get(['id_outlet', 'nama_outlet', 'qr_code']);
@@ -2269,6 +2286,7 @@ class KpiEvaluationService
                 : [];
 
             $assembler = match (true) {
+                $this->isJustAcademyConductFormula($meta['d_codes']) => 'assembleJustAcademyConductBreakdown',
                 $this->isRegionalVisitCoverageFormula($meta['d_codes']) => 'assembleRegionalVisitCoverageBreakdown',
                 $this->isTicketFollowUpFormula($meta['d_codes']) => 'assembleTicketFollowUpBreakdown',
                 $this->isPortfolioBreakdownFormula($meta['d_codes'], $paramByCode) => 'assemblePortfolioItemBreakdownFromGrid',
@@ -2292,6 +2310,18 @@ class KpiEvaluationService
             'items' => $results,
             'generated_at' => now()->toIso8601String(),
         ];
+    }
+
+    /**
+     * Formula Training / Competency Just Academy (conduct schedule).
+     *
+     * @param  list<string>  $dCodes
+     */
+    protected function isJustAcademyConductFormula(array $dCodes): bool
+    {
+        $normalized = array_values(array_unique($dCodes));
+
+        return $normalized === ['D018'] || $normalized === ['D019'];
     }
 
     /**
@@ -2853,6 +2883,106 @@ class KpiEvaluationService
                 'exceeding' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'exceeding')),
                 'meeting' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'meeting')),
                 'below' => count(array_filter($rows, fn (array $r) => $r['performance_level'] === 'below')),
+            ],
+        ];
+    }
+
+    /**
+     * Breakdown jadwal Just Academy: conducted (completed) vs belum.
+     *
+     * @param  list<string>  $dCodes
+     * @param  Collection<string, KpiParameter>  $parameters
+     * @param  Collection<string, KpiEvaluationParameterValue>  $paramMetaByCode
+     * @param  array<int, array<string, ?float>>  $parameterGrid
+     * @param  array<string, mixed>  $baseContext
+     * @return array<string, mixed>
+     */
+    private function assembleJustAcademyConductBreakdown(
+        KpiEvaluationItem $item,
+        string $formula,
+        array $dCodes,
+        Collection $parameters,
+        Collection $paramMetaByCode,
+        Collection $outletRows,
+        array $parameterGrid,
+        KpiEvaluation $evaluation,
+        array $baseContext,
+    ): array {
+        $userId = (int) ($baseContext['user_id'] ?? 0);
+        $periodMonth = (string) ($baseContext['data_period_month'] ?? $baseContext['period_month'] ?? '');
+        $evaluationMonth = (string) ($baseContext['evaluation_period_month'] ?? $evaluation->period_month ?? '');
+        $code = $dCodes[0] ?? '';
+        $methodName = $code === 'D019' ? 'Competency Assessment' : null;
+
+        $schedules = $this->resolver->listJustAcademyCreatedConductSchedules(
+            $userId,
+            $periodMonth,
+            $evaluationMonth !== '' ? $evaluationMonth : null,
+            $methodName,
+        );
+
+        if ($schedules === null) {
+            return $this->unavailableItemBreakdown($item, 'Tabel Just Academy belum tersedia.');
+        }
+
+        $total = count($schedules);
+        $conductedCount = count(array_filter($schedules, fn (array $row) => $row['conducted']));
+        $pendingCount = $total - $conductedCount;
+        $achievement = $total === 0
+            ? 100.0
+            : round(($conductedCount / $total) * 100, 2);
+
+        $rules = $evaluation->scoring_rules ?? $this->templateService->defaultScoringRules();
+        $scoring = $this->scoreItem($achievement, (string) $item->target_direction, $rules, (string) ($item->target_value ?? ''));
+
+        $rows = array_map(function (array $row) {
+            return [
+                'schedule_id' => $row['id'],
+                'title' => $row['title'],
+                'status' => $row['status'],
+                'conducted' => $row['conducted'],
+                'created_by_name' => $row['created_by_name'],
+                'method_name' => $row['method_name'],
+                'start_at' => $row['start_at'],
+                'end_at' => $row['end_at'],
+                'performance_level' => $row['conducted'] ? 'conducted' : 'not_conducted',
+            ];
+        }, $schedules);
+
+        usort($rows, function (array $a, array $b): int {
+            if ($a['conducted'] !== $b['conducted']) {
+                return $a['conducted'] ? -1 : 1;
+            }
+
+            return strcmp((string) ($b['start_at'] ?? ''), (string) ($a['start_at'] ?? ''));
+        });
+
+        return [
+            'available' => true,
+            'breakdown_mode' => 'just_academy_conduct',
+            'outlet_count' => $outletRows->count(),
+            'item_name' => $item->item_name,
+            'formula' => $formula,
+            'target_value' => $item->target_value,
+            'target_direction' => $item->target_direction,
+            'aggregate_achievement' => $item->achievement_percent !== null
+                ? (float) $item->achievement_percent
+                : $achievement,
+            'value_type' => 'percent',
+            'unit_suffix' => '%',
+            'parameter_columns' => [],
+            'portfolio_note' => $methodName
+                ? 'Dihitung dari training plan method Competency Assessment yang dibuat karyawan + bawahan. Conduct = status completed.'
+                : 'Dihitung dari training plan yang dibuat karyawan + bawahan. Conduct = status completed.',
+            'rows' => $rows,
+            'summary' => [
+                'exceeding' => $scoring['level'] === 'exceeding' ? 1 : 0,
+                'meeting' => $scoring['level'] === 'meeting' ? 1 : 0,
+                'below' => $scoring['level'] === 'below' ? 1 : 0,
+                'total_schedules' => $total,
+                'conducted_schedules' => $conductedCount,
+                'pending_schedules' => $pendingCount,
+                'conduct_percent' => $achievement,
             ],
         ];
     }
