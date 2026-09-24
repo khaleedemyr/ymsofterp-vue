@@ -269,8 +269,7 @@ class KpiEvaluationController extends Controller
 
     public function itemOutletBreakdown(KpiEvaluation $kpiEvaluation, int $item)
     {
-        $evaluation = $this->evaluationService->loadForEdit($kpiEvaluation->id);
-        $evaluationItem = $evaluation->items->firstWhere('id', $item);
+        $evaluationItem = $kpiEvaluation->items()->whereKey($item)->first();
 
         if (! $evaluationItem) {
             return response()->json(['message' => 'Item KPI tidak ditemukan.'], 404);
@@ -278,9 +277,18 @@ class KpiEvaluationController extends Controller
 
         @set_time_limit(180);
 
-        return response()->json(
-            $this->evaluationService->getItemOutletBreakdown($evaluation, $evaluationItem),
-        );
+        try {
+            return response()->json(
+                $this->evaluationService->getItemOutletBreakdown($kpiEvaluation, $evaluationItem),
+            );
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'available' => false,
+                'message' => 'Gagal memuat detail: '.$e->getMessage(),
+            ], 500);
+        }
     }
 
     public function bulkOutletBreakdowns(KpiEvaluation $kpiEvaluation)

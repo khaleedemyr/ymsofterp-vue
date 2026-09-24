@@ -120,8 +120,37 @@ async function ensureBulkLoaded() {
   await bulkLoadPromise;
 }
 
+function itemBreakdownUrl(itemId) {
+  try {
+    return route('kpi-evaluations.items.outlet-breakdown', {
+      kpiEvaluation: props.evaluationId,
+      item: itemId,
+    });
+  } catch {
+    return `/kpi-evaluations/${props.evaluationId}/items/${itemId}/outlet-breakdown`;
+  }
+}
+
+function breakdownErrorMessage(err, item) {
+  const status = err?.response?.status;
+  const serverMsg = err?.response?.data?.message || err?.response?.data?.error;
+  if (serverMsg) return String(serverMsg);
+  if (err?.code === 'ECONNABORTED' || /timeout/i.test(String(err?.message || ''))) {
+    return isJustAcademyConductItem(item)
+      ? 'Timeout memuat jadwal training. Coba lagi.'
+      : 'Timeout memuat detail per outlet. Coba lagi.';
+  }
+  if (status === 404) return 'Endpoint breakdown tidak ditemukan. Hard refresh halaman (Ctrl+F5).';
+  if (status === 403) return 'Tidak punya akses memuat detail ini.';
+  if (status >= 500) return `Server error (${status}) saat memuat detail.`;
+  return isJustAcademyConductItem(item)
+    ? 'Gagal memuat detail jadwal training.'
+    : 'Gagal memuat detail per outlet.';
+}
+
+/** Preload bulk outlet breakdown — skip untuk hindari beban; D018/D019 pakai fetch langsung. */
 function preload() {
-  ensureBulkLoaded();
+  // no-op: bulk preload sering timeout dan mengacaukan cache Jadwal
 }
 
 async function show(item) {
@@ -133,31 +162,30 @@ async function show(item) {
   open.value = true;
   error.value = '';
 
-  const cached = bulkCache.value[item.id];
-  if (cached) {
-    data.value = cached;
-    loading.value = false;
-    if (!cached.available) {
-      error.value = cached.message || 'Breakdown tidak tersedia.';
+  // D018/D019: jangan pakai cache bulk outlet (berat / sering gagal).
+  if (!isJustAcademyConductItem(item)) {
+    const cached = bulkCache.value[item.id];
+    if (cached) {
+      data.value = cached;
+      loading.value = false;
+      if (!cached.available) {
+        error.value = cached.message || 'Breakdown tidak tersedia.';
+      }
+      return;
     }
-    return;
   }
 
   loading.value = true;
   data.value = null;
 
   try {
-    // D018/D019: jangan tunggu bulk outlet (berat) — ambil langsung 1 item.
+    // D018/D019: ambil langsung 1 item — jangan tunggu bulk outlet.
     if (isJustAcademyConductItem(item)) {
-      const { data: res } = await axios.get(
-        route('kpi-evaluations.items.outlet-breakdown', {
-          kpiEvaluation: props.evaluationId,
-          item: item.id,
-        }),
-        { headers: { Accept: 'application/json' }, timeout: 60000 },
-      );
+      const { data: res } = await axios.get(itemBreakdownUrl(item.id), {
+        headers: { Accept: 'application/json' },
+        timeout: 120000,
+      });
       data.value = res;
-      bulkCache.value[item.id] = res;
       if (!res.available) {
         error.value = res.message || 'Breakdown tidak tersedia.';
       }
@@ -175,22 +203,17 @@ async function show(item) {
       return;
     }
 
-    const { data: res } = await axios.get(
-      route('kpi-evaluations.items.outlet-breakdown', {
-        kpiEvaluation: props.evaluationId,
-        item: item.id,
-      }),
-      { headers: { Accept: 'application/json' }, timeout: 180000 },
-    );
+    const { data: res } = await axios.get(itemBreakdownUrl(item.id), {
+      headers: { Accept: 'application/json' },
+      timeout: 180000,
+    });
     data.value = res;
     bulkCache.value[item.id] = res;
     if (!res.available) {
       error.value = res.message || 'Breakdown tidak tersedia.';
     }
-  } catch {
-    error.value = isJustAcademyConductItem(item)
-      ? 'Gagal memuat detail jadwal training.'
-      : 'Gagal memuat detail per outlet.';
+  } catch (err) {
+    error.value = breakdownErrorMessage(err, item);
   } finally {
     loading.value = false;
   }
