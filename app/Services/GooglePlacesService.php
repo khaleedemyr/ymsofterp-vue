@@ -23,7 +23,7 @@ class GooglePlacesService
             throw new \Exception('Google Places API key is not configured (GOOGLE_PLACES_API_KEY).');
         }
 
-        $cacheKey = "place_details_{$placeId}";
+        $cacheKey = "place_details_v2_{$placeId}";
         
         return Cache::remember($cacheKey, now()->addHours(24), function () use ($placeId) {
             // Places API (New)
@@ -33,6 +33,7 @@ class GooglePlacesService
                 'displayName',
                 'formattedAddress',
                 'rating',
+                'userRatingCount',
                 'location',
                 'reviews',
             ]);
@@ -180,7 +181,7 @@ class GooglePlacesService
 
     protected function formatPlaceDetails($place)
     {
-        $reviews = collect($place['reviews'] ?? [])->map(function ($review) {
+        $reviews = collect($place['reviews'] ?? [])->take(5)->map(function ($review) {
             return [
                 'author' => $review['author_name'] ?? '',
                 'rating' => (string)($review['rating'] ?? ''),
@@ -195,6 +196,7 @@ class GooglePlacesService
             'name' => $place['name'] ?? '',
             'address' => $place['formatted_address'] ?? '',
             'rating' => $place['rating'] ?? 0,
+            'user_rating_count' => (int) ($place['user_ratings_total'] ?? 0),
             'location' => [
                 'lat' => $place['geometry']['location']['lat'] ?? 0,
                 'lng' => $place['geometry']['location']['lng'] ?? 0
@@ -205,7 +207,7 @@ class GooglePlacesService
 
     protected function formatPlaceDetailsNew($place)
     {
-        $reviews = collect($place['reviews'] ?? [])->map(function ($review) {
+        $reviews = collect($place['reviews'] ?? [])->take(5)->map(function ($review) {
             $author = $review['authorAttribution']['displayName'] ?? ($review['author'] ?? '');
             $rating = $review['rating'] ?? '';
             $date = $review['relativePublishTimeDescription'] ?? '';
@@ -240,6 +242,7 @@ class GooglePlacesService
             'name' => (string)$displayName,
             'address' => (string)($place['formattedAddress'] ?? ''),
             'rating' => $place['rating'] ?? 0,
+            'user_rating_count' => (int) ($place['userRatingCount'] ?? 0),
             'location' => [
                 'lat' => $location['latitude'] ?? 0,
                 'lng' => $location['longitude'] ?? 0,

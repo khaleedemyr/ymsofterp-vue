@@ -6,7 +6,9 @@ use App\Models\MemberAppsBrand;
 use App\Models\Outlet;
 use App\Models\WebProfileOutletLanding;
 use App\Models\WebProfileSetting;
+use App\Services\GooglePlacesService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -285,7 +287,50 @@ class WebProfileOutletLandingController extends Controller
             'book_now_label' => $landing->book_now_label ?: 'BOOK NOW',
             'see_map_label' => $landing->see_map_label ?: 'SEE MAP',
             'book_now_outlet_id' => (int) $landing->outlet_id,
+            'google_reviews' => $this->resolveGoogleReviews($outlet),
         ];
+    }
+
+    /**
+     * @return array{place_id: string, rating: float|int, user_rating_count: int, reviews: list<array<string, mixed>>, write_review_url: string}|null
+     */
+    private function resolveGoogleReviews(?Outlet $outlet): ?array
+    {
+        $placeId = trim((string) ($outlet?->place_id ?? ''));
+        if ($placeId === '') {
+            return null;
+        }
+
+        try {
+            $details = app(GooglePlacesService::class)->getPlaceDetails($placeId);
+            $reviews = collect($details['reviews'] ?? [])
+                ->take(5)
+                ->map(fn ($review) => [
+                    'author' => (string) ($review['author'] ?? ''),
+                    'rating' => (string) ($review['rating'] ?? ''),
+                    'date' => (string) ($review['date'] ?? ''),
+                    'text' => (string) ($review['text'] ?? ''),
+                    'profile_photo' => (string) ($review['profile_photo'] ?? ''),
+                ])
+                ->values()
+                ->all();
+
+            return [
+                'place_id' => $placeId,
+                'rating' => $details['rating'] ?? 0,
+                'user_rating_count' => (int) ($details['user_rating_count'] ?? 0),
+                'reviews' => $reviews,
+                'write_review_url' => 'https://search.google.com/local/writereview?placeid='.rawurlencode($placeId),
+            ];
+        } catch (\Throwable $e) {
+            Log::warning('Outlet landing Google reviews fetch failed', [
+                'outlet_id' => $outlet?->id_outlet,
+                'place_id' => $placeId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return null;
+        }
     }
 
     /**
