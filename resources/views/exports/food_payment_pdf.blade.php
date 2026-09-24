@@ -16,6 +16,10 @@
             padding-bottom: 12px;
             margin-bottom: 16px;
         }
+        .header .logo {
+            max-height: 48px;
+            margin-bottom: 8px;
+        }
         .header h1 {
             margin: 0;
             color: #2563eb;
@@ -84,12 +88,6 @@
             font-weight: bold;
             background: #eff6ff !important;
         }
-        .notes {
-            margin-top: 6px;
-            padding: 8px 10px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-        }
         .footer {
             margin-top: 22px;
             padding-top: 8px;
@@ -101,6 +99,9 @@
 </head>
 <body>
     <div class="header">
+        @if(!empty($logo_base64))
+            <img src="data:image/png;base64,{{ $logo_base64 }}" alt="Justus Group" class="logo">
+        @endif
         <h1>FOOD PAYMENT</h1>
         <div class="sub">{{ $number }} &middot; {{ $date }}</div>
     </div>
@@ -170,13 +171,12 @@
     <table class="items">
         <thead>
             <tr>
-                <th style="width: 4%;">No</th>
-                <th style="width: 16%;">No. CB</th>
-                <th style="width: 14%;">Sumber</th>
-                <th style="width: 14%;">No. Invoice</th>
-                <th style="width: 12%;">Tgl Invoice</th>
-                <th>Outlet</th>
-                <th style="width: 14%;" class="text-right">Nominal</th>
+                <th style="width: 5%;">No</th>
+                <th style="width: 20%;">No. CB</th>
+                <th style="width: 18%;">Sumber</th>
+                <th style="width: 20%;">No. Invoice</th>
+                <th style="width: 16%;">Tgl Invoice</th>
+                <th style="width: 21%;" class="text-right">Nominal</th>
             </tr>
         </thead>
         <tbody>
@@ -187,44 +187,21 @@
                 <td>{{ $cb['source_type_display'] }}</td>
                 <td>{{ $cb['supplier_invoice_number'] ?: '-' }}</td>
                 <td>{{ $cb['supplier_invoice_date'] ?: '-' }}</td>
-                <td>{{ !empty($cb['outlet_names']) ? implode(', ', $cb['outlet_names']) : '-' }}</td>
                 <td class="text-right">Rp {{ number_format($cb['total_amount'], 0, ',', '.') }}</td>
             </tr>
             @empty
             <tr>
-                <td colspan="7" class="text-center">Tidak ada Contra Bon</td>
+                <td colspan="6" class="text-center">Tidak ada Contra Bon</td>
             </tr>
             @endforelse
             @if(count($contra_bons) > 0)
             <tr class="total-row">
-                <td colspan="6" class="text-right">TOTAL</td>
+                <td colspan="5" class="text-right">TOTAL</td>
                 <td class="text-right">Rp {{ number_format($total, 0, ',', '.') }}</td>
             </tr>
             @endif
         </tbody>
     </table>
-
-    @if(!empty($payment_outlets))
-    <div class="section-title">Alokasi Outlet / Bank</div>
-    <table class="items">
-        <thead>
-            <tr>
-                <th>Outlet</th>
-                <th>Bank</th>
-                <th class="text-right" style="width: 24%;">Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($payment_outlets as $row)
-            <tr>
-                <td>{{ $row['outlet_name'] }}</td>
-                <td>{{ $row['bank_name'] }}</td>
-                <td class="text-right">Rp {{ number_format($row['amount'], 0, ',', '.') }}</td>
-            </tr>
-            @endforeach
-        </tbody>
-    </table>
-    @endif
 
     <div class="footer">
         Dicetak: {{ $generated_at }} &middot; {{ $number }}

@@ -485,15 +485,12 @@ class FoodPaymentController extends Controller
             'contraBons.purchaseOrder',
             'contraBons.retailFood.outlet',
             'contraBons.warehouseRetailFood.warehouse',
-            'paymentOutlets.outlet',
-            'paymentOutlets.bank',
         ])->findOrFail($id);
 
         $contraBons = $this->mapContraBonsForDisplay($payment->contraBons)->map(function ($cb) {
             return [
                 'number' => $cb->number,
                 'source_type_display' => $cb->source_type_display,
-                'outlet_names' => $cb->outlet_names ?? [],
                 'supplier_invoice_number' => $cb->supplier_invoice_number,
                 'supplier_invoice_date' => $cb->supplier_invoice_date
                     ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
@@ -503,18 +500,14 @@ class FoodPaymentController extends Controller
             ];
         })->values()->all();
 
-        $paymentOutlets = ($payment->paymentOutlets ?? collect())->map(function ($row) {
-            $bankLabel = trim(implode(' - ', array_filter([
-                optional($row->bank)->bank_name,
-                optional($row->bank)->account_name,
-            ])));
-
-            return [
-                'outlet_name' => optional($row->outlet)->nama_outlet ?? '-',
-                'bank_name' => $bankLabel !== '' ? $bankLabel : '-',
-                'amount' => (float) $row->amount,
-            ];
-        })->values()->all();
+        $logoBase64 = '';
+        $logoPath = public_path('images/logojustusgroup.png');
+        if (file_exists($logoPath) && is_readable($logoPath)) {
+            $logoContent = file_get_contents($logoPath);
+            if ($logoContent !== false) {
+                $logoBase64 = base64_encode($logoContent);
+            }
+        }
 
         $tz = config('app.timezone', 'Asia/Jakarta');
         $data = [
@@ -540,7 +533,7 @@ class FoodPaymentController extends Controller
                 : null,
             'gm_finance_note' => $payment->gm_finance_note,
             'contra_bons' => $contraBons,
-            'payment_outlets' => $paymentOutlets,
+            'logo_base64' => $logoBase64,
             'generated_at' => now()->timezone($tz)->format('d/m/Y H:i'),
         ];
 
