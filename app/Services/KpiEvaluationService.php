@@ -724,7 +724,7 @@ class KpiEvaluationService
             'manual_catcost_percent' => 'Sumber ERP: Manual COGS — Category Cost %.',
             'manual_lost_breakage_percent' => 'Sumber ERP: Asset Manual Monthly L&B %.',
             'manual_labor_cost_percent' => 'Sumber ERP: Manual Monthly Labor Cost %.',
-            'manual_google_review_rating_avg' => 'Sumber ERP: Manual Monthly Google Review — rata-rata rating outlet.',
+            'manual_google_review_rating_avg' => 'Sumber ERP: Google Places (place_id outlet) — fallback Manual Monthly Google Review.',
             'upselling_actual_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — actual F&B revenue.',
             'upselling_target_fb_revenue' => 'Sumber ERP: Upselling Sales Achievement — target F&B revenue.',
             'outlet_avg_check_data_month' => 'Sumber ERP: Outlet Sales Report — avg check/pax bulan data.',

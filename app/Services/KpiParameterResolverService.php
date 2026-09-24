@@ -524,6 +524,20 @@ class KpiParameterResolverService
                     $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC complaint (D040/D041/D042, D053/D054/D055) tidak bisa dihitung.';
                 }
             }
+
+            if ($usesParameter('D026') && $outletIds !== []) {
+                $withPlaceId = (int) DB::table('tbl_data_outlet')
+                    ->whereIn('id_outlet', $outletIds)
+                    ->whereNotNull('place_id')
+                    ->where('place_id', '!=', '')
+                    ->count();
+                $missingPlaceId = count($outletIds) - $withPlaceId;
+                if ($withPlaceId === 0) {
+                    $hints[] = 'Outlet scope belum punya place_id — D026 fallback ke Manual Monthly Google Review (atau kosong jika manual belum diisi).';
+                } elseif ($missingPlaceId > 0) {
+                    $hints[] = "{$missingPlaceId} outlet tanpa place_id — D026 pakai Google Places untuk yang ada, sisanya fallback manual.";
+                }
+            }
         }
 
         if ($usesParameter('D014') && $this->hasTicketCategoriesTable()) {
@@ -2256,38 +2270,89 @@ class KpiParameterResolverService
     }
 
     /**
-     * Rata-rata rating Google Review per outlet dari menu Manual Monthly Google Review.
-     * Hanya outlet dalam scope user; rating 0 diabaikan (belum diisi).
+     * Rata-rata Google Review rating per outlet di scope.
+     * Prioritas: Google Places API via tbl_data_outlet.place_id (rating Maps terkini, cache 24 jam).
+     * Fallback: Manual Monthly Google Review untuk outlet tanpa place_id / gagal fetch.
+     *
+     * Catatan: Places API mengembalikan rating kumulatif terkini (bukan rata-rata review
+     * khusus bulan KPI). Cocok untuk target rating outlet di Maps.
      *
      * @param  list<int>  $outletIds
      */
     private function resolveManualGoogleReviewRatingAvg(array $outletIds, int $month, int $year): ?float
     {
-        if (empty($outletIds) || ! DB::getSchemaBuilder()->hasTable('manual_monthly_google_review')) {
+        if (empty($outletIds)) {
             return null;
         }
 
-        $headerId = DB::table('manual_monthly_google_review')
-            ->where('month', $month)
-            ->where('year', $year)
-            ->value('id');
+        $ids = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
+        $ratings = [];
+        $coveredByPlaces = [];
 
-        if (! $headerId) {
+        $outlets = DB::table('tbl_data_outlet')
+            ->whereIn('id_outlet', $ids)
+            ->whereNotNull('place_id')
+            ->where('place_id', '!=', '')
+            ->get(['id_outlet', 'place_id']);
+
+        if ($outlets->isNotEmpty()) {
+            $places = app(GooglePlacesService::class);
+            foreach ($outlets as $outlet) {
+                $placeId = trim((string) $outlet->place_id);
+                if ($placeId === '') {
+                    continue;
+                }
+
+                // Places API (New) resource path expects ChIJ… (tanpa prefix places/).
+                $placeId = preg_replace('#^places/#i', '', $placeId) ?: $placeId;
+
+                try {
+                    $details = $places->getPlaceDetails($placeId);
+                    $rating = (float) ($details['rating'] ?? 0);
+                    if ($rating > 0) {
+                        $ratings[] = $rating;
+                        $coveredByPlaces[(int) $outlet->id_outlet] = true;
+                    }
+                } catch (\Throwable $e) {
+                    \Log::warning('KPI Google Places rating fetch failed', [
+                        'outlet_id' => (int) $outlet->id_outlet,
+                        'place_id' => $placeId,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        }
+
+        $missingIds = array_values(array_filter(
+            $ids,
+            static fn (int $id): bool => ! isset($coveredByPlaces[$id]),
+        ));
+
+        if ($missingIds !== [] && DB::getSchemaBuilder()->hasTable('manual_monthly_google_review')) {
+            $headerId = DB::table('manual_monthly_google_review')
+                ->where('month', $month)
+                ->where('year', $year)
+                ->value('id');
+
+            if ($headerId) {
+                $manual = DB::table('manual_monthly_google_review_items')
+                    ->where('manual_monthly_google_review_id', $headerId)
+                    ->whereIn('outlet_id', $missingIds)
+                    ->where('rating', '>', 0)
+                    ->pluck('rating')
+                    ->map(fn ($v) => (float) $v);
+
+                foreach ($manual as $rating) {
+                    $ratings[] = $rating;
+                }
+            }
+        }
+
+        if ($ratings === []) {
             return null;
         }
 
-        $values = DB::table('manual_monthly_google_review_items')
-            ->where('manual_monthly_google_review_id', $headerId)
-            ->whereIn('outlet_id', array_map('intval', $outletIds))
-            ->where('rating', '>', 0)
-            ->pluck('rating')
-            ->map(fn ($v) => (float) $v);
-
-        if ($values->isEmpty()) {
-            return null;
-        }
-
-        return round($values->avg(), 4);
+        return round(array_sum($ratings) / count($ratings), 4);
     }
 
     /**

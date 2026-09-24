@@ -234,7 +234,7 @@ class KpiParameterController extends Controller
                 ['value' => 'manual_catcost_percent', 'label' => 'Manual COGS — Category Cost % per outlet'],
                 ['value' => 'manual_lost_breakage_percent', 'label' => 'Asset Manual Monthly Lost & Breakage %'],
                 ['value' => 'manual_labor_cost_percent', 'label' => 'Manual Monthly Labor Cost %'],
-                ['value' => 'manual_google_review_rating_avg', 'label' => 'Manual Monthly Google Review — avg rating per outlet'],
+                ['value' => 'manual_google_review_rating_avg', 'label' => 'Google Places rating (place_id outlet) + fallback Manual Monthly Google Review'],
                 ['value' => 'upselling_actual_fb_revenue', 'label' => 'Upselling Sales Achievement — actual F&B revenue'],
                 ['value' => 'upselling_target_fb_revenue', 'label' => 'Upselling Sales Achievement — target F&B revenue'],
                 ['value' => 'outlet_avg_check_data_month', 'label' => 'Outlet Sales Report — avg check/pax (bulan data KPI)'],
