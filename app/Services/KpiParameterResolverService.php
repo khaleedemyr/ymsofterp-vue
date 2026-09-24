@@ -741,6 +741,7 @@ class KpiParameterResolverService
                 $period['start_date'],
                 $period['end_date'],
                 $this->singleOutletIdFromContext($context),
+                $outletIds,
             ),
             'cvcc_service_negative_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
                 (int) ($context['user_id'] ?? 0),
@@ -748,6 +749,7 @@ class KpiParameterResolverService
                 $period['end_date'],
                 'service',
                 $this->singleOutletIdFromContext($context),
+                $outletIds,
             ),
             'cvcc_service_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
                 (int) ($context['user_id'] ?? 0),
@@ -755,6 +757,7 @@ class KpiParameterResolverService
                 $period['end_date'],
                 'service',
                 $this->singleOutletIdFromContext($context),
+                $outletIds,
             ),
             'cvcc_beverage_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
                 (int) ($context['user_id'] ?? 0),
@@ -762,6 +765,7 @@ class KpiParameterResolverService
                 $period['end_date'],
                 'bar',
                 $this->singleOutletIdFromContext($context),
+                $outletIds,
             ),
             'cvcc_food_complaint_count' => $this->resolveCvccDivisionNegativeComplaintCount(
                 (int) ($context['user_id'] ?? 0),
@@ -769,12 +773,14 @@ class KpiParameterResolverService
                 $period['end_date'],
                 'kitchen',
                 $this->singleOutletIdFromContext($context),
+                $outletIds,
             ),
             'cvcc_total_review_count' => $this->resolveCvccTotalReviewCount(
                 (int) ($context['user_id'] ?? 0),
                 $period['start_date'],
                 $period['end_date'],
                 $this->singleOutletIdFromContext($context),
+                $outletIds,
             ),
             default => null,
         };
@@ -2634,10 +2640,15 @@ class KpiParameterResolverService
     }
 
     /**
+     * @param  list<int>  $outletIds  Filter multi-outlet (agregat evaluasi). Diabaikan jika $outletId diisi.
      * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed, severity: mixed}>
      */
-    private function fetchCvccCasesByRegionalAssignedPeriod(string $startDate, string $endDate, ?int $outletId = null): array
-    {
+    private function fetchCvccCasesByRegionalAssignedPeriod(
+        string $startDate,
+        string $endDate,
+        ?int $outletId = null,
+        array $outletIds = [],
+    ): array {
         if (! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
             return [];
         }
@@ -2655,11 +2666,32 @@ class KpiParameterResolverService
             )
             ->whereRaw('JSON_LENGTH(COALESCE(JSON_EXTRACT(meta, ?), JSON_ARRAY())) > 0', ['$.regional_user_ids']);
 
-        if ($outletId !== null && $outletId > 0) {
-            $query->where('id_outlet', $outletId);
-        }
+        $this->applyCvccOutletFilter($query, $outletId, $outletIds);
 
         return $query->get(['meta', 'event_at', 'resolved_at', 'severity'])->all();
+    }
+
+    /**
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  list<int>  $outletIds
+     */
+    private function applyCvccOutletFilter(mixed $query, ?int $outletId, array $outletIds = []): void
+    {
+        if ($outletId !== null && $outletId > 0) {
+            $query->where('id_outlet', $outletId);
+
+            return;
+        }
+
+        $ids = array_values(array_unique(array_filter(
+            array_map('intval', $outletIds),
+            fn (int $id) => $id > 0,
+        )));
+
+        if ($ids !== []) {
+            // Multi-outlet eval: hanya case di outlet scope (exclude null / luar area).
+            $query->whereIn('id_outlet', $ids);
+        }
     }
 
     private function extractRegionalAssignedAtTimestamp(mixed $meta): ?int
@@ -2680,10 +2712,16 @@ class KpiParameterResolverService
     }
 
     /**
+     * @param  list<int>  $outletIds
      * @return list<object{meta: mixed, event_at: mixed, resolved_at: mixed, severity: mixed}>
      */
-    private function fetchCvccCasesForPeriod(string $startDate, string $endDate, bool $resolvedOnly = false, ?int $outletId = null): array
-    {
+    private function fetchCvccCasesForPeriod(
+        string $startDate,
+        string $endDate,
+        bool $resolvedOnly = false,
+        ?int $outletId = null,
+        array $outletIds = [],
+    ): array {
         if (! DB::getSchemaBuilder()->hasTable('feedback_cases')) {
             return [];
         }
@@ -2698,15 +2736,21 @@ class KpiParameterResolverService
             $query->whereNotNull('resolved_at');
         }
 
-        if ($outletId !== null && $outletId > 0) {
-            $query->where('id_outlet', $outletId);
-        }
+        $this->applyCvccOutletFilter($query, $outletId, $outletIds);
 
         return $query->get(['meta', 'event_at', 'resolved_at', 'severity'])->all();
     }
 
-    private function resolveCvccAvgResolutionHours(int $userId, string $startDate, string $endDate, ?int $outletId = null): ?float
-    {
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveCvccAvgResolutionHours(
+        int $userId,
+        string $startDate,
+        string $endDate,
+        ?int $outletId = null,
+        array $outletIds = [],
+    ): ?float {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
             return null;
@@ -2719,7 +2763,12 @@ class KpiParameterResolverService
         }
 
         $hours = [];
-        foreach ($this->fetchCvccCasesByRegionalAssignedPeriod($startDate, $endDate, outletId: $outletId) as $row) {
+        foreach ($this->fetchCvccCasesByRegionalAssignedPeriod(
+            $startDate,
+            $endDate,
+            outletId: $outletId,
+            outletIds: $outletIds,
+        ) as $row) {
             if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 continue;
             }
@@ -2750,6 +2799,8 @@ class KpiParameterResolverService
     /**
      * Negative comment CVCC dengan CAPA division (bar / kitchen / service) yang sudah diisi.
      * Tidak ada komplain = 0 (memenuhi target lower-is-better).
+     *
+     * @param  list<int>  $outletIds
      */
     private function resolveCvccDivisionNegativeComplaintCount(
         int $userId,
@@ -2757,6 +2808,7 @@ class KpiParameterResolverService
         string $endDate,
         string $division,
         ?int $outletId = null,
+        array $outletIds = [],
     ): ?float {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
@@ -2772,7 +2824,12 @@ class KpiParameterResolverService
         $scope['capa_division'] = $division;
 
         $count = 0;
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
+        foreach ($this->fetchCvccCasesForPeriod(
+            $startDate,
+            $endDate,
+            outletId: $outletId,
+            outletIds: $outletIds,
+        ) as $row) {
             if (! in_array(strtolower(trim((string) ($row->severity ?? ''))), self::CVCC_NEGATIVE_SEVERITIES, true)) {
                 continue;
             }
@@ -2787,15 +2844,28 @@ class KpiParameterResolverService
         return (float) $count;
     }
 
-    private function resolveCvccTotalReviewCount(int $userId, string $startDate, string $endDate, ?int $outletId = null): ?float
-    {
+    /**
+     * @param  list<int>  $outletIds
+     */
+    private function resolveCvccTotalReviewCount(
+        int $userId,
+        string $startDate,
+        string $endDate,
+        ?int $outletId = null,
+        array $outletIds = [],
+    ): ?float {
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
             return null;
         }
 
         $count = 0;
-        foreach ($this->fetchCvccCasesForPeriod($startDate, $endDate, outletId: $outletId) as $row) {
+        foreach ($this->fetchCvccCasesForPeriod(
+            $startDate,
+            $endDate,
+            outletId: $outletId,
+            outletIds: $outletIds,
+        ) as $row) {
             if ($this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
                 $count++;
             }
