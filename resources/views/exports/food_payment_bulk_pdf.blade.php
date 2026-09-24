@@ -30,14 +30,14 @@
         table.items th {
             background: #f3f4f6;
             color: #111827;
-            border: 1px solid #d1d5db;
+            border: 1.5px solid #111827;
             padding: 3px 4px;
             font-size: 6.5pt;
             font-weight: bold;
             text-align: left;
         }
         table.items td {
-            border: 1px solid #e5e7eb;
+            border: 1.5px solid #111827;
             padding: 2px 4px;
             font-size: 6.5pt;
             vertical-align: top;
