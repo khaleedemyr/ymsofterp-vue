@@ -90,7 +90,7 @@
               <input
                 type="text"
                 v-model="contraBonSearch"
-                placeholder="Cari contra bon (nomor, invoice, supplier, total, tanggal, notes, PO, outlet...)"
+                placeholder="Cari contra bon (nomor, invoice, tgl invoice supplier, supplier, total, tanggal, notes, PO, outlet...)"
                 class="w-full px-4 py-2 pl-10 rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
               />
               <i class="fa fa-search absolute left-3 top-3 text-gray-400"></i>
@@ -170,8 +170,15 @@
                       <i class="fa fa-calendar mr-1"></i>{{ formatDate(cb.date) }}
                     </span>
                   </div>
-                  <div v-if="cb.supplier_invoice_number" class="text-xs text-gray-500">
-                    <i class="fa fa-file-invoice mr-1"></i><strong>Invoice:</strong> {{ cb.supplier_invoice_number }}
+                  <div class="text-xs text-gray-700 flex items-center gap-4 flex-wrap">
+                    <span>
+                      <i class="fa fa-file-invoice mr-1 text-blue-600"></i>
+                      <strong>No Invoice Supplier:</strong> {{ cb.supplier_invoice_number || '-' }}
+                    </span>
+                    <span>
+                      <i class="fa fa-calendar-day mr-1 text-blue-600"></i>
+                      <strong>Tgl Invoice Supplier:</strong> {{ cb.supplier_invoice_date ? formatDate(cb.supplier_invoice_date) : '-' }}
+                    </span>
                   </div>
                   <div v-if="cb.supplier?.name" class="text-xs text-gray-500">
                     <i class="fa fa-truck mr-1"></i><strong>Supplier:</strong> {{ cb.supplier.name }}
@@ -546,8 +553,9 @@
                           </div>
                           <div class="text-xs text-gray-600 space-y-1">
                             <div><strong>Total:</strong> {{ formatCurrency(cb.total_amount) }}</div>
-                            <div v-if="cb.date"><strong>Tanggal:</strong> {{ formatDate(cb.date) }}</div>
-                            <div v-if="cb.supplier_invoice_number"><strong>Invoice:</strong> {{ cb.supplier_invoice_number }}</div>
+                            <div v-if="cb.date"><strong>Tanggal CB:</strong> {{ formatDate(cb.date) }}</div>
+                            <div><strong>No Invoice Supplier:</strong> {{ cb.supplier_invoice_number || '-' }}</div>
+                            <div><strong>Tgl Invoice Supplier:</strong> {{ cb.supplier_invoice_date ? formatDate(cb.supplier_invoice_date) : '-' }}</div>
                             <div v-if="cb.purchaseOrder?.number"><strong>PO:</strong> {{ cb.purchaseOrder.number }}</div>
                             <div v-if="cb.po_approval_history && cb.po_approval_history.length > 0">
                               <strong>Approval PO:</strong>
@@ -946,6 +954,9 @@ const filteredContraBons = computed(() => {
     // Search in multiple fields
     const number = (cb.number || '').toLowerCase();
     const invoiceNumber = (cb.supplier_invoice_number || '').toLowerCase();
+    const invoiceDate = cb.supplier_invoice_date
+      ? new Date(cb.supplier_invoice_date).toLocaleDateString('id-ID').toLowerCase()
+      : '';
     const supplierName = (cb.supplier?.name || '').toLowerCase();
     const totalAmount = (cb.total_amount || '').toString().toLowerCase();
     const date = cb.date ? new Date(cb.date).toLocaleDateString('id-ID').toLowerCase() : '';
@@ -959,6 +970,7 @@ const filteredContraBons = computed(() => {
     
     return number.includes(search) ||
            invoiceNumber.includes(search) ||
+           invoiceDate.includes(search) ||
            supplierName.includes(search) ||
            totalAmount.includes(search) ||
            date.includes(search) ||

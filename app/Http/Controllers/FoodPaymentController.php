@@ -988,6 +988,10 @@ class FoodPaymentController extends Controller
                 $q->where('food_contra_bons.number', 'like', "%{$search}%")
                   // Search by supplier invoice number
                   ->orWhere('food_contra_bons.supplier_invoice_number', 'like', "%{$search}%")
+                  // Search by supplier invoice date
+                  ->orWhereDate('food_contra_bons.supplier_invoice_date', 'like', "%{$search}%")
+                  ->orWhereRaw("DATE_FORMAT(food_contra_bons.supplier_invoice_date, '%d-%m-%Y') LIKE ?", ["%{$search}%"])
+                  ->orWhereRaw("DATE_FORMAT(food_contra_bons.supplier_invoice_date, '%Y-%m-%d') LIKE ?", ["%{$search}%"])
                   // Search by total amount
                   ->orWhereRaw("CAST(food_contra_bons.total_amount AS CHAR) LIKE ?", ["%{$search}%"])
                   // Search by date
