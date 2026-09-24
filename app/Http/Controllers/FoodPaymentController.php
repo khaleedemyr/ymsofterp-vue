@@ -500,14 +500,7 @@ class FoodPaymentController extends Controller
             ];
         })->values()->all();
 
-        $logoBase64 = '';
-        $logoPath = public_path('images/logojustusgroup.png');
-        if (file_exists($logoPath) && is_readable($logoPath)) {
-            $logoContent = file_get_contents($logoPath);
-            if ($logoContent !== false) {
-                $logoBase64 = base64_encode($logoContent);
-            }
-        }
+        $logoBase64 = $this->prepareJustusLogoBase64();
 
         $tz = config('app.timezone', 'Asia/Jakarta');
         $data = [
@@ -541,6 +534,115 @@ class FoodPaymentController extends Controller
         $filename = ($payment->number ?: 'food-payment-'.$payment->id).'.pdf';
 
         return $pdf->download($filename);
+    }
+
+    /**
+     * Crop whitespace from Justus logo and resize for DomPDF header.
+     * Source file is ~4500x4500 with the wordmark centered on a white square.
+     */
+    protected function prepareJustusLogoBase64(): string
+    {
+        $logoPath = public_path('images/logojustusgroup.png');
+        if (!file_exists($logoPath) || !is_readable($logoPath)) {
+            return '';
+        }
+
+        if (!function_exists('imagecreatefrompng')) {
+            $raw = file_get_contents($logoPath);
+            return $raw !== false ? base64_encode($raw) : '';
+        }
+
+        $src = @imagecreatefrompng($logoPath);
+        if (!$src) {
+            $raw = file_get_contents($logoPath);
+            return $raw !== false ? base64_encode($raw) : '';
+        }
+
+        $srcW = imagesx($src);
+        $srcH = imagesy($src);
+        $workMax = 1000;
+        $scale = min(1, $workMax / max($srcW, $srcH));
+        $workW = max(1, (int) round($srcW * $scale));
+        $workH = max(1, (int) round($srcH * $scale));
+        $work = imagescale($src, $workW, $workH, IMG_BILINEAR_FIXED);
+        imagedestroy($src);
+
+        if (!$work) {
+            $raw = file_get_contents($logoPath);
+            return $raw !== false ? base64_encode($raw) : '';
+        }
+
+        $minX = $workW;
+        $minY = $workH;
+        $maxX = 0;
+        $maxY = 0;
+        // Treat near-white as background; keep charcoal + gold content.
+        $whiteThreshold = 245;
+
+        for ($y = 0; $y < $workH; $y++) {
+            for ($x = 0; $x < $workW; $x++) {
+                $rgb = imagecolorat($work, $x, $y);
+                $r = ($rgb >> 16) & 0xFF;
+                $g = ($rgb >> 8) & 0xFF;
+                $b = $rgb & 0xFF;
+                if ($r < $whiteThreshold || $g < $whiteThreshold || $b < $whiteThreshold) {
+                    if ($x < $minX) {
+                        $minX = $x;
+                    }
+                    if ($y < $minY) {
+                        $minY = $y;
+                    }
+                    if ($x > $maxX) {
+                        $maxX = $x;
+                    }
+                    if ($y > $maxY) {
+                        $maxY = $y;
+                    }
+                }
+            }
+        }
+
+        if ($maxX <= $minX || $maxY <= $minY) {
+            imagedestroy($work);
+            $raw = file_get_contents($logoPath);
+            return $raw !== false ? base64_encode($raw) : '';
+        }
+
+        $pad = (int) max(4, round(max($maxX - $minX, $maxY - $minY) * 0.04));
+        $cropX = max(0, $minX - $pad);
+        $cropY = max(0, $minY - $pad);
+        $cropW = min($workW - $cropX, ($maxX - $minX + 1) + (2 * $pad));
+        $cropH = min($workH - $cropY, ($maxY - $minY + 1) + (2 * $pad));
+
+        $cropped = imagecrop($work, [
+            'x' => $cropX,
+            'y' => $cropY,
+            'width' => $cropW,
+            'height' => $cropH,
+        ]);
+        imagedestroy($work);
+
+        if (!$cropped) {
+            $raw = file_get_contents($logoPath);
+            return $raw !== false ? base64_encode($raw) : '';
+        }
+
+        $targetW = 320;
+        $targetH = max(1, (int) round($cropH * ($targetW / $cropW)));
+        $final = imagescale($cropped, $targetW, $targetH, IMG_BILINEAR_FIXED);
+        imagedestroy($cropped);
+
+        if (!$final) {
+            $raw = file_get_contents($logoPath);
+            return $raw !== false ? base64_encode($raw) : '';
+        }
+
+        ob_start();
+        imagepng($final, null, 6);
+        $png = ob_get_clean();
+        imagedestroy($final);
+
+        return $png !== false && $png !== '' ? base64_encode($png) : '';
     }
 
     protected function mapContraBonsForDisplay($contraBons)

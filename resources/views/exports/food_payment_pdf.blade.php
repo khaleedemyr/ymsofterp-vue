@@ -17,9 +17,9 @@
             margin-bottom: 16px;
         }
         .header .logo {
-            height: 110px;
-            width: auto;
-            margin-bottom: 10px;
+            width: 300px;
+            height: auto;
+            margin-bottom: 8px;
         }
         .header h1 {
             margin: 0;
@@ -101,7 +101,7 @@
 <body>
     <div class="header">
         @if(!empty($logo_base64))
-            <img src="data:image/png;base64,{{ $logo_base64 }}" alt="Justus Group" class="logo" height="110">
+            <img src="data:image/png;base64,{{ $logo_base64 }}" alt="Justus Group" class="logo" width="300" style="width: 300px; height: auto;">
         @endif
         <h1>FOOD PAYMENT</h1>
         <div class="sub">{{ $number }} &middot; {{ $date }}</div>
