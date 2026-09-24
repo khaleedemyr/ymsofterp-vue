@@ -11,6 +11,9 @@
         <div class="flex justify-between items-center mb-4">
           <h2 class="text-xl font-bold text-gray-800">Informasi Food Payment</h2>
           <div class="flex gap-2">
+            <a :href="`/food-payments/${payment.id}/export-pdf`" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+              <i class="fa-solid fa-file-pdf mr-1"></i> Print PDF
+            </a>
             <a v-if="payment.status === 'draft' || payment.status === 'approved'" :href="`/food-payments/${payment.id}/edit`" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
               <i class="fa fa-edit mr-1"></i> Edit
             </a>
@@ -103,8 +106,13 @@
               <i class="fa fa-map-marker-alt mr-1"></i>
               <strong>Outlet:</strong> {{ cb.outlet_names.join(', ') }}
             </div>
-            <div v-if="cb.supplier_invoice_number" class="text-sm text-gray-600 mt-1">
-              <strong>No. Invoice:</strong> {{ cb.supplier_invoice_number }}
+            <div class="text-sm text-gray-600 mt-1 space-y-0.5">
+              <div>
+                <strong>No. Invoice Supplier:</strong> {{ cb.supplier_invoice_number || '-' }}
+              </div>
+              <div>
+                <strong>Tgl Invoice Supplier:</strong> {{ cb.supplier_invoice_date ? formatDate(cb.supplier_invoice_date) : '-' }}
+              </div>
             </div>
           </div>
         </div>

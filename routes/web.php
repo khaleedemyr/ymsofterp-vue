@@ -1041,6 +1041,7 @@ Route::delete('/api/retail-warehouse-food-items/{id}/serials', [RetailWarehouseF
     Route::get('/food-payments/create', [\App\Http\Controllers\FoodPaymentController::class, 'create'])->name('food-payments.create');
     Route::post('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'store'])->name('food-payments.store');
     Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
+    Route::get('/food-payments/{id}/export-pdf', [\App\Http\Controllers\FoodPaymentController::class, 'exportPdf'])->name('food-payments.export-pdf');
     Route::get('/food-payments/{id}/edit', [\App\Http\Controllers\FoodPaymentController::class, 'edit'])->name('food-payments.edit');
     Route::put('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'update'])->name('food-payments.update');
     Route::post('/food-payments/{id}/approve', [\App\Http\Controllers\FoodPaymentController::class, 'approve'])->name('food-payments.approve');

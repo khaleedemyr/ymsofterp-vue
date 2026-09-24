@@ -8,6 +8,7 @@ use App\Models\ContraBon;
 use App\Services\NotificationService;
 use App\Services\BankBookService;
 use App\Services\JurnalService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -466,52 +467,130 @@ class FoodPaymentController extends Controller
     public function show($id)
     {
         $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood.outlet', 'contraBons.warehouseRetailFood.warehouse', 'paymentOutlets.outlet', 'paymentOutlets.bank'])->findOrFail($id);
-        
-        // Transform contra bons to include source type and outlet information
-        $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
+
+        $payment->contra_bons = $this->mapContraBonsForDisplay($payment->contraBons);
+
+        return inertia('FoodPayment/Show', [
+            'payment' => $payment
+        ]);
+    }
+
+    public function exportPdf($id)
+    {
+        $payment = FoodPayment::with([
+            'supplier',
+            'creator',
+            'financeManager',
+            'gmFinance',
+            'contraBons.purchaseOrder',
+            'contraBons.retailFood.outlet',
+            'contraBons.warehouseRetailFood.warehouse',
+            'paymentOutlets.outlet',
+            'paymentOutlets.bank',
+        ])->findOrFail($id);
+
+        $contraBons = $this->mapContraBonsForDisplay($payment->contraBons)->map(function ($cb) {
+            return [
+                'number' => $cb->number,
+                'source_type_display' => $cb->source_type_display,
+                'outlet_names' => $cb->outlet_names ?? [],
+                'supplier_invoice_number' => $cb->supplier_invoice_number,
+                'supplier_invoice_date' => $cb->supplier_invoice_date
+                    ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
+                    : null,
+                'total_amount' => (float) $cb->total_amount,
+                'status' => $cb->status,
+            ];
+        })->values()->all();
+
+        $paymentOutlets = ($payment->paymentOutlets ?? collect())->map(function ($row) {
+            $bankLabel = trim(implode(' - ', array_filter([
+                optional($row->bank)->bank_name,
+                optional($row->bank)->account_name,
+            ])));
+
+            return [
+                'outlet_name' => optional($row->outlet)->nama_outlet ?? '-',
+                'bank_name' => $bankLabel !== '' ? $bankLabel : '-',
+                'amount' => (float) $row->amount,
+            ];
+        })->values()->all();
+
+        $tz = config('app.timezone', 'Asia/Jakarta');
+        $data = [
+            'number' => $payment->number,
+            'date' => optional($payment->date)->format('d/m/Y'),
+            'supplier_name' => optional($payment->supplier)->name ?? '-',
+            'payment_type' => $payment->payment_type ?? '-',
+            'status' => strtoupper((string) $payment->status),
+            'total' => (float) $payment->total,
+            'notes' => $payment->notes,
+            'creator_name' => optional($payment->creator)->nama_lengkap ?? '-',
+            'created_at' => $payment->created_at
+                ? $payment->created_at->timezone($tz)->format('d/m/Y H:i')
+                : null,
+            'finance_manager_name' => optional($payment->financeManager)->nama_lengkap,
+            'finance_manager_approved_at' => $payment->finance_manager_approved_at
+                ? $payment->finance_manager_approved_at->timezone($tz)->format('d/m/Y H:i')
+                : null,
+            'finance_manager_note' => $payment->finance_manager_note,
+            'gm_finance_name' => optional($payment->gmFinance)->nama_lengkap,
+            'gm_finance_approved_at' => $payment->gm_finance_approved_at
+                ? $payment->gm_finance_approved_at->timezone($tz)->format('d/m/Y H:i')
+                : null,
+            'gm_finance_note' => $payment->gm_finance_note,
+            'contra_bons' => $contraBons,
+            'payment_outlets' => $paymentOutlets,
+            'generated_at' => now()->timezone($tz)->format('d/m/Y H:i'),
+        ];
+
+        $pdf = Pdf::loadView('exports.food_payment_pdf', $data)->setPaper('a4', 'portrait');
+        $filename = ($payment->number ?: 'food-payment-'.$payment->id).'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    protected function mapContraBonsForDisplay($contraBons)
+    {
+        if (!$contraBons) {
+            return collect();
+        }
+
+        return $contraBons->map(function ($contraBon) {
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
-            
+
             if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
                 if ($contraBon->purchaseOrder->source_type === 'pr_foods') {
                     $sourceTypeDisplay = 'PR Foods';
-                    // PR Foods tidak punya outlet (global)
                     $outletNames = [];
                 } elseif ($contraBon->purchaseOrder->source_type === 'ro_supplier') {
                     $sourceTypeDisplay = 'RO Supplier';
-                    // Get outlet names for RO Supplier
-                    $outletData = \DB::table('food_floor_orders as fo')
+                    $outletData = DB::table('food_floor_orders as fo')
                         ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
                         ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
                         ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
                         ->select('o.nama_outlet')
                         ->distinct()
                         ->get();
-                    
+
                     $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
                 }
             } elseif ($contraBon->source_type === 'retail_food') {
                 $sourceTypeDisplay = 'Retail Food';
-                // Get outlet name for Retail Food from outlet relationship
                 if ($contraBon->retailFood && $contraBon->retailFood->outlet && $contraBon->retailFood->outlet->nama_outlet) {
                     $outletNames = [$contraBon->retailFood->outlet->nama_outlet];
                 }
             } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->warehouseRetailFood) {
                 $sourceTypeDisplay = 'Warehouse Retail Food';
-                // Warehouse Retail Food tidak punya outlet langsung (hanya punya warehouse)
-                // Jika perlu outlet name, bisa diambil dari warehouse jika warehouse punya outlet
                 $outletNames = [];
             }
-            
+
             $contraBon->source_type_display = $sourceTypeDisplay;
             $contraBon->outlet_names = $outletNames;
-            
+
             return $contraBon;
-        }) : collect();
-        
-        return inertia('FoodPayment/Show', [
-            'payment' => $payment
-        ]);
+        });
     }
 
     // Approve payment (Finance Manager)
