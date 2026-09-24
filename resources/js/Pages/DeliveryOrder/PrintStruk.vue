@@ -6,6 +6,23 @@
     <pre class="pre-struk">{{ strukText }}</pre>
     <div class="footer">
       <div class="thanks">Terima kasih</div>
+      <div class="signatures">
+        <div class="signature-block">
+          <div class="signature-label">Checker</div>
+          <div class="signature-line"></div>
+          <div class="signature-hint">(tanda tangan / nama)</div>
+        </div>
+        <div class="signature-block">
+          <div class="signature-label">Driver</div>
+          <div class="signature-line"></div>
+          <div class="signature-hint">(tanda tangan / nama)</div>
+        </div>
+        <div class="signature-block">
+          <div class="signature-label">Outlet</div>
+          <div class="signature-line"></div>
+          <div class="signature-hint">(tanda tangan / nama)</div>
+        </div>
+      </div>
       <div class="qr-wrap">
         <qrcode-vue :value="orderNumber" :size="70" />
       </div>
@@ -82,7 +99,29 @@ const strukText = computed(() => {
 .thanks {
   font-size: 12px;
   font-weight: bold;
+  margin-bottom: 8px;
+  text-align: left;
+}
+.signatures {
+  text-align: left;
+  margin: 6px 0 10px 0;
+}
+.signature-block {
+  margin-bottom: 10px;
+}
+.signature-label {
+  font-size: 11px;
+  font-weight: bold;
+  margin-bottom: 14px;
+}
+.signature-line {
+  border-bottom: 1px solid #000;
+  width: 45mm;
   margin-bottom: 2px;
+}
+.signature-hint {
+  font-size: 9px;
+  color: #333;
 }
 .qr-wrap {
   margin: 4px auto 2px auto;

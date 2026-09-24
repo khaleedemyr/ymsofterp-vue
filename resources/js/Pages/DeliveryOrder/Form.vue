@@ -913,6 +913,26 @@ async function generateStrukPDF({ orderNumber, date, outlet, items, kasirName, d
   y += 3;
   if (kasirName) { pdf.text(`Kasir: ${kasirName}`, 2, y); y += 4.5; }
   pdf.text('Terima kasih', 2, y);
+  y += 8;
+
+  // Kolom tanda tangan vertikal
+  pdf.setFontSize(9);
+  const signatureRoles = ['Checker', 'Driver', 'Outlet'];
+  signatureRoles.forEach((role) => {
+    pdf.setFont(undefined, 'bold');
+    pdf.text(role, 2, y);
+    y += 12;
+    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.3);
+    pdf.line(2, y, 50, y);
+    y += 4;
+    pdf.setFont(undefined, 'normal');
+    pdf.setFontSize(7);
+    pdf.text('(tanda tangan / nama)', 2, y);
+    y += 8;
+    pdf.setFontSize(9);
+  });
+
   pdf.output('dataurlnewwindow');
 }
 

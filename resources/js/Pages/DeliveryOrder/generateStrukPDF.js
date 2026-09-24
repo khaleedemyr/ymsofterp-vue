@@ -19,8 +19,9 @@ export async function generateStrukPDF({ orderNumber, date, outlet, items, kasir
     totalHeight += 8; // "TIDAK ADA ITEM" - dikurangi
   }
   
-  totalHeight += 12; // Garis + footer - dikurangi
-  totalHeight += 15; // Margin bottom - dikurangi
+  totalHeight += 12; // Garis + kasir + thanks
+  totalHeight += 55; // Signature blocks (Checker, Driver, Outlet) vertical
+  totalHeight += 10; // Margin bottom
   
   // Buat PDF dengan tinggi yang tepat
   const pdf = new jsPDF({ unit: 'mm', format: [80, Math.max(297, totalHeight)] });
@@ -91,9 +92,28 @@ export async function generateStrukPDF({ orderNumber, date, outlet, items, kasir
   
   if (kasirName) { pdf.text(`Kasir: ${kasirName}`, 2, y); y += 4; } // dikurangi dari 4.5
   pdf.text('Terima kasih', 2, y);
+  y += 8;
+
+  // Kolom tanda tangan vertikal
+  pdf.setFontSize(9);
+  const signatureRoles = ['Checker', 'Driver', 'Outlet'];
+  signatureRoles.forEach((role) => {
+    pdf.setFont(undefined, 'bold');
+    pdf.text(role, 2, y);
+    y += 12;
+    pdf.setDrawColor(0);
+    pdf.setLineWidth(0.3);
+    pdf.line(2, y, 50, y);
+    y += 4;
+    pdf.setFont(undefined, 'normal');
+    pdf.setFontSize(7);
+    pdf.text('(tanda tangan / nama)', 2, y);
+    y += 8;
+    pdf.setFontSize(9);
+  });
   
   // Tambahkan margin bottom untuk roll paper
-  y += 8; // dikurangi dari 10
+  y += 6;
   
   pdf.output('dataurlnewwindow');
 } 
