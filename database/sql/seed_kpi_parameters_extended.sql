@@ -59,7 +59,7 @@ INSERT INTO `kpi_parameters` (
     `is_shared`, `status`, `created_at`, `updated_at`
 ) VALUES
 ('KPI17', 'Customer Satisfaction Index',              'hybrid', 'outlet',   'percent', 'GSI customer satisfaction',                    '>= 90%',              'higher_better', 'monthly',   'D025',                          1, 'A', NOW(), NOW()),
-('KPI18', 'Google Review Rating',                     'hybrid', 'outlet',   'decimal', 'Google review rating',                       '>= 4.8',              'higher_better', 'monthly',   'D026',                          1, 'A', NOW(), NOW()),
+('KPI18', 'Google Review Rating',                     'hybrid', 'outlet',   'decimal', 'Google review rating',                       '>= 4.9',              'higher_better', 'monthly',   'D026',                          1, 'A', NOW(), NOW()),
 ('KPI19', 'Upselling Sales Achievement',              'hybrid', 'outlet',   'percent', 'Actual vs target upselling sales',           '>= 90%',              'higher_better', 'monthly',   'D027 / D028 * 100',             1, 'A', NOW(), NOW()),
 ('KPI20', 'Average Check Growth',                     'erp',    'outlet',   'percent', 'Average check growth vs previous period',    '> 10%',               'higher_better', 'monthly',   '(D029 - D030) / D030 * 100',    1, 'A', NOW(), NOW()),
 ('KPI21', 'Employee Induction Completion',            'manual', 'employee', 'percent', 'Employee induction on time',                 '100% on Time',        'higher_better', 'monthly',   'D031',                          1, 'A', NOW(), NOW()),

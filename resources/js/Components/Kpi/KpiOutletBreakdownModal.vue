@@ -272,7 +272,7 @@ defineExpose({ show, preload });
                 <div class="font-bold text-lg text-amber-900">{{ data.summary.pending_schedules ?? 0 }}</div>
               </div>
               <div class="bg-indigo-50 rounded-lg p-3">
-                <div class="text-indigo-700 text-xs">Achievement</div>
+                <div class="text-indigo-700 text-xs">Hasil</div>
                 <div class="font-bold text-lg text-indigo-800">{{ formatAchievement(data.summary.conduct_percent) }}</div>
               </div>
             </div>
@@ -356,7 +356,7 @@ defineExpose({ show, preload });
             <p class="text-xs text-gray-500 mb-3">
               <template v-if="data.breakdown_mode === 'just_academy_conduct'">
                 {{ data.portfolio_note }}
-                Achievement agregat evaluasi:
+                Hasil agregat evaluasi:
                 <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.conducted_schedules != null && data.summary.total_schedules != null">
                   ({{ data.summary.conducted_schedules }} / {{ data.summary.total_schedules }} jadwal conducted)
@@ -364,7 +364,7 @@ defineExpose({ show, preload });
               </template>
               <template v-else-if="data.breakdown_mode === 'regional_visit'">
                 {{ data.portfolio_note }}
-                Achievement agregat evaluasi:
+                Hasil agregat evaluasi:
                 <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
                   ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan target)
@@ -372,7 +372,7 @@ defineExpose({ show, preload });
               </template>
               <template v-else-if="data.breakdown_mode === 'ticket_follow_up'">
                 {{ data.portfolio_note }}
-                Achievement agregat evaluasi:
+                Hasil agregat evaluasi:
                 <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.compliant_tickets != null && data.summary.total_tickets">
                   ({{ formatNum(data.summary.compliant_tickets) }} / {{ formatNum(data.summary.total_tickets) }} compliant)
@@ -380,7 +380,7 @@ defineExpose({ show, preload });
               </template>
               <template v-else-if="data.breakdown_mode === 'portfolio'">
                 {{ data.portfolio_note }}
-                Achievement agregat evaluasi:
+                Hasil agregat evaluasi:
                 <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
                   ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan)
@@ -388,7 +388,7 @@ defineExpose({ show, preload });
               </template>
               <template v-else>
                 Nilai per outlet dihitung dari data ERP per outlet (bukan agregat scope).
-                Achievement agregat evaluasi: <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
+                Hasil agregat evaluasi: <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
               </template>
             </p>
 
@@ -499,7 +499,7 @@ defineExpose({ show, preload });
                       <th class="px-3 py-2 text-right">Closed</th>
                       <th class="px-3 py-2 text-right">Overdue</th>
                       <th class="px-3 py-2 text-right">Compliant</th>
-                      <th class="px-3 py-2 text-right">Achievement</th>
+                      <th class="px-3 py-2 text-right">Hasil</th>
                       <th class="px-3 py-2 text-center">Level</th>
                     </tr>
                   </thead>
@@ -546,7 +546,7 @@ defineExpose({ show, preload });
                         <span v-if="col.scope_type === 'employee'"> (total)</span>
                       </div>
                     </th>
-                    <th v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right">Achievement</th>
+                    <th v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right">Hasil</th>
                     <th class="px-3 py-2 text-center">{{ data.breakdown_mode === 'portfolio' ? 'Status' : 'Level' }}</th>
                     <th v-if="data.breakdown_mode !== 'portfolio'" class="px-3 py-2 text-right">Skor</th>
                   </tr>

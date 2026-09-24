@@ -206,6 +206,9 @@
         $valueType = $item['value_type'] ?? 'percent';
         $suffix = $item['unit_suffix'] ?? ($valueType === 'percent' ? '%' : '');
         $label = $item['unit_label'] ?? '';
+        if ($suffix !== '' && $label !== '') {
+            return $formatted.$suffix.' '.$label;
+        }
         if ($suffix !== '') {
             return $formatted.$suffix;
         }
@@ -339,7 +342,7 @@
                         <th style="width: 24%;">KPI</th>
                         <th style="width: 12%;">Frequency</th>
                         <th style="width: 12%;">Target</th>
-                        <th style="width: 10%;" class="num">Achievement</th>
+                        <th style="width: 10%;" class="num">Hasil</th>
                         <th style="width: 9%;">Level</th>
                         <th style="width: 7%;" class="num">Skor</th>
                         <th style="width: 6%;" class="num">Bobot</th>

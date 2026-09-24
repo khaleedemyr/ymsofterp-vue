@@ -66,6 +66,7 @@ class EmployeeOnboardingController extends Controller
             'employee_user_id' => 'required|integer|exists:users,id',
             'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
             'start_date' => 'required|date',
+            'end_date' => 'nullable|date|after_or_equal:start_date',
             'notes' => 'nullable|string|max:2000',
             'item_assignments' => 'nullable|array',
             'item_assignments.*.template_item_id' => 'required|integer',

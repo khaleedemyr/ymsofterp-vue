@@ -13,6 +13,7 @@ use App\Models\OnboardingTemplateWeek;
 use App\Models\OnboardingTemplateWeekApprover;
 use App\Models\Outlet;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
@@ -123,6 +124,12 @@ class EmployeeOnboardingService
         $employee = User::findOrFail($payload['employee_user_id']);
         $outlet = ! empty($payload['outlet_id']) ? Outlet::find($payload['outlet_id']) : null;
 
+        $totalWeeks = max(1, (int) $template->total_weeks);
+        $startDate = Carbon::parse($payload['start_date'])->startOfDay();
+        $endDate = ! empty($payload['end_date'])
+            ? Carbon::parse($payload['end_date'])->startOfDay()
+            : $startDate->copy()->addDays(($totalWeeks * 7) - 1);
+
         $onboarding = EmployeeOnboarding::create([
             'number' => $this->generateNumber(),
             'template_id' => $template->id,
@@ -130,10 +137,11 @@ class EmployeeOnboardingService
             'employee_user_id' => $employee->id,
             'outlet_id' => $outlet?->id_outlet,
             'outlet_name' => $outlet?->nama_outlet,
-            'start_date' => $payload['start_date'],
+            'start_date' => $startDate->toDateString(),
+            'end_date' => $endDate->toDateString(),
             'current_week' => 1,
             'unlocked_week' => 1,
-            'total_weeks' => $template->total_weeks,
+            'total_weeks' => $totalWeeks,
             'status' => 'in_progress',
             'notes' => $payload['notes'] ?? null,
             'created_by' => Auth::id(),
@@ -521,6 +529,10 @@ class EmployeeOnboardingService
             'outlet_id' => $onboarding->outlet_id,
             'outlet_name' => $onboarding->outlet_name,
             'start_date' => $onboarding->start_date?->format('Y-m-d'),
+            'end_date' => $onboarding->end_date?->format('Y-m-d')
+                ?? ($onboarding->start_date
+                    ? $onboarding->start_date->copy()->addDays((max(1, (int) $onboarding->total_weeks) * 7) - 1)->format('Y-m-d')
+                    : null),
             'current_week' => $onboarding->current_week,
             'unlocked_week' => $onboarding->unlocked_week,
             'total_weeks' => $onboarding->total_weeks,

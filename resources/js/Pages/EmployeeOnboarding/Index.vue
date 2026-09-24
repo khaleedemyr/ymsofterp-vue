@@ -50,6 +50,7 @@
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Outlet</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Template</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Tanggal Mulai</th>
+                <th class="px-4 py-3 text-left font-semibold text-gray-700">Tanggal Berakhir</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Minggu</th>
                 <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
                 <th class="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
@@ -57,7 +58,7 @@
             </thead>
             <tbody>
               <tr v-if="records.data.length === 0">
-                <td colspan="8" class="px-4 py-8 text-center text-gray-500">Belum ada onboarding.</td>
+                <td colspan="9" class="px-4 py-8 text-center text-gray-500">Belum ada onboarding.</td>
               </tr>
               <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-indigo-50/40">
                 <td class="px-4 py-3 font-medium">{{ row.number }}</td>
@@ -65,6 +66,7 @@
                 <td class="px-4 py-3">{{ row.outlet_name || '-' }}</td>
                 <td class="px-4 py-3">{{ row.template_name }}</td>
                 <td class="px-4 py-3 whitespace-nowrap">{{ formatDate(row.start_date) }}</td>
+                <td class="px-4 py-3 whitespace-nowrap">{{ formatDate(row.end_date) }}</td>
                 <td class="px-4 py-3">{{ row.unlocked_week }} / {{ row.total_weeks }}</td>
                 <td class="px-4 py-3"><span class="px-2 py-1 rounded-full text-xs font-semibold bg-gray-100">{{ statusLabel(row.status) }}</span></td>
                 <td class="px-4 py-3 text-right">

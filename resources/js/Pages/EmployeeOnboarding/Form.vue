@@ -37,7 +37,12 @@
           </div>
           <div>
             <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal Mulai *</label>
-            <input v-model="form.start_date" type="date" required class="w-full rounded-lg border-gray-300" />
+            <input v-model="form.start_date" type="date" required class="w-full rounded-lg border-gray-300" @change="syncEndDate" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-600 mb-1">Tanggal Berakhir *</label>
+            <input v-model="form.end_date" type="date" required class="w-full rounded-lg border-gray-300" :min="form.start_date" />
+            <p class="text-[11px] text-gray-500 mt-1">Default: tanggal mulai + (jumlah minggu × 7 hari) − 1.</p>
           </div>
           <div class="md:col-span-2">
             <label class="block text-xs font-semibold text-gray-600 mb-1">Catatan</label>
@@ -123,8 +128,23 @@ const form = useForm({
   employee_user_id: '',
   outlet_id: '',
   start_date: new Date().toISOString().slice(0, 10),
+  end_date: '',
   notes: '',
 });
+
+function addDaysIso(isoDate, days) {
+  const d = new Date(`${isoDate}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+function syncEndDate() {
+  if (!form.start_date) return;
+  const weeks = Number(templateStructure.value?.total_weeks || 0);
+  if (weeks > 0) {
+    form.end_date = addDaysIso(form.start_date, weeks * 7 - 1);
+  }
+}
 
 async function loadTemplate() {
   if (!form.template_id) {
@@ -134,6 +154,7 @@ async function loadTemplate() {
   const { data } = await axios.get(route('employee-onboarding.template-structure', form.template_id));
   templateStructure.value = data.template;
   Object.keys(assignments).forEach((key) => delete assignments[key]);
+  syncEndDate();
 }
 
 function applyBulkPic(weekNumber, areaName) {

@@ -11,10 +11,11 @@
         </Link>
       </div>
 
-      <div class="bg-white rounded-xl shadow p-6 mb-6 grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+      <div class="bg-white rounded-xl shadow p-6 mb-6 grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
         <div><div class="text-gray-500 text-xs">Karyawan</div><div class="font-semibold">{{ record.employee_name }}</div></div>
         <div><div class="text-gray-500 text-xs">Outlet</div><div class="font-semibold">{{ record.outlet_name || '-' }}</div></div>
         <div><div class="text-gray-500 text-xs">Tanggal Mulai</div><div class="font-semibold">{{ record.start_date }}</div></div>
+        <div><div class="text-gray-500 text-xs">Tanggal Berakhir</div><div class="font-semibold">{{ record.end_date || '-' }}</div></div>
         <div><div class="text-gray-500 text-xs">Status</div><div class="font-semibold">{{ statusLabel(record.status) }}</div></div>
       </div>
 

@@ -21,6 +21,11 @@ export function formatKpiAchievement(value, meta, empty = '—') {
   const suffix = meta?.unit_suffix ?? (valueType === 'percent' ? '%' : '');
   const label = meta?.unit_label || '';
 
+  // lower_better percent → "100% rasio" (bukan terkesan capaian sempurna)
+  if (suffix && label) {
+    return `${formatted}${suffix} ${label}`;
+  }
+
   if (suffix) {
     return `${formatted}${suffix}`;
   }

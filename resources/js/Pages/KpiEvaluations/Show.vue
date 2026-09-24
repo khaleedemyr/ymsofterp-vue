@@ -205,7 +205,7 @@ onMounted(() => {
                 <th class="px-4 py-2 text-left">KPI</th>
                 <th class="px-4 py-2 text-left">Frequency</th>
                 <th class="px-4 py-2 text-left">Target</th>
-                <th class="px-4 py-2 text-right">Achievement</th>
+                <th class="px-4 py-2 text-right">Hasil</th>
                 <th class="px-4 py-2 text-left">Level</th>
                 <th class="px-4 py-2 text-right">Skor</th>
                 <th class="px-4 py-2 text-right">Bobot</th>
@@ -223,7 +223,15 @@ onMounted(() => {
                   <div v-if="item.data_window_label" class="text-xs text-gray-500 mt-0.5">{{ item.data_window_label }}</div>
                 </td>
                 <td class="px-4 py-2">{{ item.target_value || '—' }}</td>
-                <td class="px-4 py-2 text-right">{{ formatAchievement(item) }}</td>
+                <td class="px-4 py-2 text-right">
+                  <div>{{ formatAchievement(item) }}</div>
+                  <div
+                    v-if="item.is_lower_better || item.target_direction === 'lower_better'"
+                    class="text-[10px] text-gray-400 leading-tight"
+                  >
+                    ↓ {{ item.direction_hint || 'lebih rendah = lebih baik' }}
+                  </div>
+                </td>
                 <td class="px-4 py-2">
                   <span v-if="item.performance_level" class="px-2 py-0.5 rounded-full text-xs" :class="levelBadge(item.performance_level)">{{ item.performance_level }}</span>
                 </td>

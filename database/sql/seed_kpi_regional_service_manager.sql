@@ -88,7 +88,7 @@ FROM (
     -- KS03 Customer Experience (22%)
     SELECT 'KS03' AS ks_code, 'KPI_GM08' AS kpi_code,  8.00 AS weight, 0 AS sort_order, '<= 24 hours' AS tgt UNION ALL
     SELECT 'KS03', 'KPI_GM09',  7.00, 1, '<= 0.50%' UNION ALL
-    SELECT 'KS03', 'KPI18',     7.00, 2, '>= 4.5' UNION ALL
+    SELECT 'KS03', 'KPI18',     7.00, 2, '>= 4.9' UNION ALL
     -- KS06 Sales & Upselling (14%)
     SELECT 'KS06', 'KPI19',     8.00, 0, '>= 90%' UNION ALL
     SELECT 'KS06', 'KPI20',     6.00, 1, '>= 10%' UNION ALL

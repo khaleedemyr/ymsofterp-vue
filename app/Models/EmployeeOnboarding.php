@@ -19,6 +19,7 @@ class EmployeeOnboarding extends Model
         'outlet_id',
         'outlet_name',
         'start_date',
+        'end_date',
         'current_week',
         'unlocked_week',
         'total_weeks',
@@ -30,6 +31,7 @@ class EmployeeOnboarding extends Model
 
     protected $casts = [
         'start_date' => 'date:Y-m-d',
+        'end_date' => 'date:Y-m-d',
         'current_week' => 'integer',
         'unlocked_week' => 'integer',
         'total_weeks' => 'integer',

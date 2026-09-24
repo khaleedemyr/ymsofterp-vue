@@ -283,68 +283,84 @@ class KpiEvaluationService
     }
 
     /**
-     * Satuan tampilan achievement KPI (bukan selalu persen).
+     * Satuan tampilan hasil KPI (bukan selalu persen / "achievement").
      *
-     * @return array{value_type: string, data_type: string, unit_suffix: string, unit_label: string}
+     * @return array{
+     *   value_type: string,
+     *   data_type: string,
+     *   unit_suffix: string,
+     *   unit_label: string,
+     *   is_lower_better: bool,
+     *   direction_hint: string
+     * }
      */
     public function resolveAchievementDisplayMeta(KpiEvaluationItem $item): array
     {
         $target = trim((string) ($item->target_value ?? ''));
         $formula = trim((string) ($item->formula ?? ''));
+        $isLowerBetter = ((string) ($item->target_direction ?? 'higher_better')) === 'lower_better';
 
         if (preg_match('/\*?\s*100\s*$/', $formula) || preg_match('/\/\s*D\d{3}.*\*\s*100/i', $formula)) {
-            return $this->achievementDisplayFromDataType('percent');
-        }
-
-        if (preg_match('/Person/i', $target)) {
-            return [
+            $meta = $this->achievementDisplayFromDataType('percent');
+        } elseif (preg_match('/Person/i', $target)) {
+            $meta = [
                 'value_type' => 'count',
                 'data_type' => 'integer',
                 'unit_suffix' => '',
                 'unit_label' => 'orang',
             ];
-        }
-
-        if (preg_match('/minutes?/i', $target)) {
-            return [
+        } elseif (preg_match('/minutes?/i', $target)) {
+            $meta = [
                 'value_type' => 'duration',
                 'data_type' => 'decimal',
                 'unit_suffix' => '',
                 'unit_label' => 'menit',
             ];
-        }
-
-        if (preg_match('/hours?/i', $target)) {
-            return [
+        } elseif (preg_match('/hours?/i', $target)) {
+            $meta = [
                 'value_type' => 'duration',
                 'data_type' => 'hours',
                 'unit_suffix' => '',
                 'unit_label' => 'jam',
             ];
-        }
+        } elseif (str_contains($target, '%')) {
+            $meta = $this->achievementDisplayFromDataType('percent');
+        } else {
+            $codes = $this->extractCodes($formula);
+            $dataCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
 
-        if (str_contains($target, '%')) {
-            return $this->achievementDisplayFromDataType('percent');
-        }
-
-        $codes = $this->extractCodes($formula);
-        $dataCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
-
-        if (count($dataCodes) === 1 && count($codes) === 1) {
-            $param = KpiParameter::query()->where('code', $dataCodes[0])->first();
-            if ($param) {
-                $dataType = $this->resolveEffectiveParameterDataType($param, (string) $param->name);
-
-                return $this->achievementDisplayFromDataType($dataType, (string) $param->code, (string) $param->name);
+            if (count($dataCodes) === 1 && count($codes) === 1) {
+                $param = KpiParameter::query()->where('code', $dataCodes[0])->first();
+                if ($param) {
+                    $dataType = $this->resolveEffectiveParameterDataType($param, (string) $param->name);
+                    $meta = $this->achievementDisplayFromDataType($dataType, (string) $param->code, (string) $param->name);
+                } else {
+                    $meta = [
+                        'value_type' => 'decimal',
+                        'data_type' => 'decimal',
+                        'unit_suffix' => '',
+                        'unit_label' => '',
+                    ];
+                }
+            } else {
+                $meta = [
+                    'value_type' => 'decimal',
+                    'data_type' => 'decimal',
+                    'unit_suffix' => '',
+                    'unit_label' => '',
+                ];
             }
         }
 
-        return [
-            'value_type' => 'decimal',
-            'data_type' => 'decimal',
-            'unit_suffix' => '',
-            'unit_label' => '',
-        ];
+        // lower_better + % = rasio (complaint/waste/dll), bukan "capaian 100%".
+        if ($isLowerBetter && ($meta['value_type'] ?? '') === 'percent' && ($meta['unit_label'] ?? '') === '') {
+            $meta['unit_label'] = 'rasio';
+        }
+
+        $meta['is_lower_better'] = $isLowerBetter;
+        $meta['direction_hint'] = $isLowerBetter ? 'lebih rendah = lebih baik' : '';
+
+        return $meta;
     }
 
     /**
