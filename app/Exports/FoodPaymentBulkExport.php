@@ -27,9 +27,9 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
         $rows = [];
         $rows[] = [
             'Supplier',
+            'Nomor FP',
             'Nominal',
             'Admin',
-            'Deskripsi',
             'Validasi',
             'No Rekening Supplier',
             'Bank Supplier',
@@ -54,9 +54,9 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
             foreach ($group['items'] as $item) {
                 $rows[] = [
                     $item['supplier_name'],
+                    $item['fp_number'],
                     $item['nominal'],
                     '',
-                    $item['description'],
                     '',
                     $item['bank_account_number'],
                     $item['bank_name'],
@@ -91,7 +91,7 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
             ]);
         }
 
-        $sheet->getStyle('B:B')->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle('C:C')->getNumberFormat()->setFormatCode('#,##0');
 
         return [];
     }
@@ -100,9 +100,9 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
     {
         return [
             'A' => 28,
-            'B' => 16,
-            'C' => 12,
-            'D' => 28,
+            'B' => 22,
+            'C' => 16,
+            'D' => 12,
             'E' => 12,
             'F' => 22,
             'G' => 20,

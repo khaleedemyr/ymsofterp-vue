@@ -578,7 +578,7 @@ class FoodPaymentController extends Controller
         }
 
         $ids = array_values(array_unique(array_map('intval', $ids)));
-        $payments = FoodPayment::with(['supplier', 'contraBons'])
+        $payments = FoodPayment::with(['supplier'])
             ->whereIn('id', $ids)
             ->orderBy('date')
             ->orderBy('id')
@@ -601,28 +601,11 @@ class FoodPaymentController extends Controller
                 ];
             }
 
-            $invoiceParts = ($payment->contraBons ?? collect())
-                ->map(function ($cb) {
-                    $number = trim((string) ($cb->supplier_invoice_number ?? ''));
-                    if ($number === '') {
-                        return null;
-                    }
-                    $date = $cb->supplier_invoice_date
-                        ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
-                        : null;
-
-                    return $date ? "{$number} - {$date}" : $number;
-                })
-                ->filter()
-                ->unique()
-                ->values()
-                ->implode(', ');
-
             $supplier = $payment->supplier;
             $grouped[$dateKey]['items'][] = [
                 'supplier_name' => optional($supplier)->name ?? '-',
+                'fp_number' => $payment->number ?? '',
                 'nominal' => (float) $payment->total,
-                'description' => $invoiceParts,
                 'bank_account_number' => optional($supplier)->bank_account_number ?? '',
                 'bank_name' => optional($supplier)->bank_name ?? '',
                 'bank_account_name' => optional($supplier)->bank_account_name ?? '',

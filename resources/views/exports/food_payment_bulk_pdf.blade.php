@@ -55,22 +55,22 @@
             <thead>
                 <tr>
                     <th style="width: 18%;">Supplier</th>
-                    <th style="width: 11%;" class="text-right">Nominal</th>
-                    <th style="width: 7%;">Admin</th>
-                    <th style="width: 16%;">Deskripsi</th>
-                    <th style="width: 7%;">Validasi</th>
-                    <th style="width: 13%;">No Rekening</th>
-                    <th style="width: 13%;">Bank</th>
-                    <th style="width: 15%;">Atas Nama</th>
+                    <th style="width: 16%;">Nomor FP</th>
+                    <th style="width: 12%;" class="text-right">Nominal</th>
+                    <th style="width: 8%;">Admin</th>
+                    <th style="width: 8%;">Validasi</th>
+                    <th style="width: 12%;">No Rekening</th>
+                    <th style="width: 12%;">Bank</th>
+                    <th style="width: 14%;">Atas Nama</th>
                 </tr>
             </thead>
             <tbody>
                 @foreach($group['items'] as $item)
                 <tr>
                     <td>{{ $item['supplier_name'] }}</td>
+                    <td>{{ $item['fp_number'] ?: '-' }}</td>
                     <td class="text-right">Rp {{ number_format($item['nominal'], 0, ',', '.') }}</td>
                     <td></td>
-                    <td>{{ $item['description'] ?: '-' }}</td>
                     <td></td>
                     <td>{{ $item['bank_account_number'] ?: '-' }}</td>
                     <td>{{ $item['bank_name'] ?: '-' }}</td>
