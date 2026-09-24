@@ -147,6 +147,23 @@ async function show(item) {
   data.value = null;
 
   try {
+    // D018/D019: jangan tunggu bulk outlet (berat) — ambil langsung 1 item.
+    if (isJustAcademyConductItem(item)) {
+      const { data: res } = await axios.get(
+        route('kpi-evaluations.items.outlet-breakdown', {
+          kpiEvaluation: props.evaluationId,
+          item: item.id,
+        }),
+        { headers: { Accept: 'application/json' }, timeout: 60000 },
+      );
+      data.value = res;
+      bulkCache.value[item.id] = res;
+      if (!res.available) {
+        error.value = res.message || 'Breakdown tidak tersedia.';
+      }
+      return;
+    }
+
     await ensureBulkLoaded();
 
     const fromBulk = bulkCache.value[item.id];
@@ -194,7 +211,11 @@ defineExpose({ show, preload });
         <div class="px-5 py-4 border-b flex items-start justify-between gap-3">
           <div>
             <h3 class="text-lg font-bold text-gray-900">
-              {{ data?.breakdown_mode === 'just_academy_conduct' ? 'Detail Jadwal Training' : 'Detail per Outlet' }}
+              {{
+                data?.breakdown_mode === 'just_academy_conduct' || isJustAcademyConductItem(activeItem)
+                  ? 'Detail Jadwal Training'
+                  : 'Detail per Outlet'
+              }}
             </h3>
             <p v-if="data?.item_name" class="text-sm text-gray-600 mt-0.5">{{ data.item_name }}</p>
             <p v-if="data?.formula" class="text-xs font-mono text-gray-400 mt-1">{{ data.formula }}</p>

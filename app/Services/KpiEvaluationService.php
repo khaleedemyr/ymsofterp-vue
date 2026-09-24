@@ -694,8 +694,8 @@ class KpiEvaluationService
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
             'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan (semua parameter).',
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
-            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user/bawahan dan sudah di-conduct (status completed).',
-            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user/bawahan dan sudah di-conduct (status completed).',
+            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
+            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
             'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
             'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',
             'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant.',
@@ -2156,6 +2156,25 @@ class KpiEvaluationService
      */
     public function getItemOutletBreakdown(KpiEvaluation $evaluation, KpiEvaluationItem $item): array
     {
+        $formula = trim((string) ($item->formula ?? ''));
+        if ($formula !== '') {
+            $codes = $this->extractCodes($formula);
+            $dCodes = array_values(array_filter($codes, fn (string $c) => preg_match('/^D\d{3}$/', $c)));
+            if ($this->isJustAcademyConductFormula($dCodes) && count($dCodes) === count($codes)) {
+                return $this->assembleJustAcademyConductBreakdown(
+                    $item,
+                    $formula,
+                    $dCodes,
+                    collect(),
+                    collect(),
+                    collect(),
+                    [],
+                    $evaluation,
+                    $this->buildErpContext($evaluation),
+                );
+            }
+        }
+
         $bulk = $this->getBulkItemOutletBreakdowns($evaluation);
 
         return $bulk['items'][$item->id] ?? $this->unavailableItemBreakdown($item, 'Data breakdown tidak tersedia.');
@@ -2972,8 +2991,8 @@ class KpiEvaluationService
             'unit_suffix' => '%',
             'parameter_columns' => [],
             'portfolio_note' => $methodName
-                ? 'Dihitung dari training plan method Competency Assessment yang dibuat karyawan + bawahan. Conduct = status completed.'
-                : 'Dihitung dari training plan yang dibuat karyawan + bawahan. Conduct = status completed.',
+                ? 'Dihitung dari training plan method Competency Assessment yang dibuat karyawan + bawahan Regional Management (user aktif). Conduct = status completed.'
+                : 'Dihitung dari training plan yang dibuat karyawan + bawahan Regional Management (user aktif). Conduct = status completed.',
             'rows' => $rows,
             'summary' => [
                 'exceeding' => $scoring['level'] === 'exceeding' ? 1 : 0,

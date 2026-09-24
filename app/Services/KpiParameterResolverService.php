@@ -1289,7 +1289,10 @@ class KpiParameterResolverService
     }
 
     /**
-     * User + bawahan langsung (jabatan.id_atasan = jabatan user).
+     * User + bawahan untuk scope training Just Academy / calibration.
+     * Sumber: Regional Management (user_regional.supervisor_position_id = jabatan user),
+     * hanya user status aktif (A). Tidak memakai pohon jabatan org chart
+     * (supaya jabatan lain di bawah GM, mis. Chief Engineering, tidak ikut).
      *
      * @return list<int>
      */
@@ -1299,29 +1302,33 @@ class KpiParameterResolverService
             return [];
         }
 
-        $scopeIds = [$userId];
-        $jabatanId = (int) (DB::table('users')->where('id', $userId)->value('id_jabatan') ?? 0);
-
-        if ($jabatanId > 0 && DB::getSchemaBuilder()->hasTable('tbl_data_jabatan')) {
-            $subordinateJabatanIds = DB::table('tbl_data_jabatan')
-                ->where('id_atasan', $jabatanId)
-                ->where('status', 'A')
-                ->pluck('id_jabatan');
-
-            if ($subordinateJabatanIds->isNotEmpty()) {
-                $subordinateUserIds = DB::table('users')
-                    ->whereIn('id_jabatan', $subordinateJabatanIds)
-                    ->where('status', 'A')
-                    ->pluck('id')
-                    ->map(fn ($id) => (int) $id)
-                    ->filter(fn ($id) => $id > 0)
-                    ->all();
-
-                $scopeIds = array_merge($scopeIds, $subordinateUserIds);
-            }
+        $user = DB::table('users')->where('id', $userId)->first(['id', 'id_jabatan', 'status']);
+        if (! $user) {
+            return [];
         }
 
-        return array_values(array_unique($scopeIds));
+        $scopeIds = [(int) $user->id];
+        $jabatanId = (int) ($user->id_jabatan ?? 0);
+
+        if (
+            $jabatanId <= 0
+            || ! DB::getSchemaBuilder()->hasTable('user_regional')
+            || ! DB::getSchemaBuilder()->hasColumn('user_regional', 'supervisor_position_id')
+        ) {
+            return $scopeIds;
+        }
+
+        $regionalUserIds = DB::table('user_regional as ur')
+            ->join('users as u', 'u.id', '=', 'ur.user_id')
+            ->where('ur.supervisor_position_id', $jabatanId)
+            ->where('u.status', 'A')
+            ->pluck('ur.user_id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0 && $id !== (int) $user->id)
+            ->values()
+            ->all();
+
+        return array_values(array_unique(array_merge($scopeIds, $regionalUserIds)));
     }
 
     /**
