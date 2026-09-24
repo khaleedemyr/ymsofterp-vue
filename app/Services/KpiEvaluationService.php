@@ -580,7 +580,7 @@ class KpiEvaluationService
             $code === 'D017' || str_contains($lowerName, 'recipe compliance') || str_contains($lowerName, 'sop compliance')
                 => 'Skor % kepatuhan recipe dari QA2 Audits (BRA-1.5.3 & BRA-1.4.6): C / (C+NC) × 100 per outlet.',
             $code === 'D018' || str_contains($lowerName, 'just academy')
-                => 'Isi persentase modul Just Academy yang diselesaikan user ini sebagai peserta (0–100, tanpa simbol %).',
+                => 'Isi % jadwal training yang sudah di-conduct (status completed) dari total jadwal yang dibuat (0–100, tanpa simbol %).',
             $code === 'D021' || str_contains($lowerName, 'visit count')
                 => 'Isi jumlah hari kunjungan outlet dari absensi (bilangan bulat).',
             $code === 'D022' || str_contains($lowerName, 'target outlet visit')
@@ -694,8 +694,8 @@ class KpiEvaluationService
             'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
             'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan (semua parameter).',
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
-            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % modul selesai oleh user evaluasi sebagai peserta (training yang dijadwalkan kepadanya).',
-            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — completion % method Competency Assessment.',
+            'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user dan sudah di-conduct (status completed).',
+            'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — completion % method Competency Assessment (dibuat/ditrainer user + bawahan).',
             'regional_visit_report' => 'Sumber ERP: absensi kunjungan outlet.',
             'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',
             'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant.',

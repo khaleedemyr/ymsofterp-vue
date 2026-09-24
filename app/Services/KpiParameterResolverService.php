@@ -1460,97 +1460,6 @@ class KpiParameterResolverService
     /**
      * @return array{0: int, 1: int}
      */
-    private function countJustAcademyUserModuleCompletion(int $scheduleId, int $userId): array
-    {
-        $items = $this->getJustAcademyScheduleCurriculumItems($scheduleId);
-        if ($items->isEmpty() || $userId <= 0) {
-            return [0, 0];
-        }
-
-        $completed = 0;
-        $total = 0;
-        foreach ($items as $item) {
-            $total++;
-            if ($item->item_type === 'material' && $item->material_id) {
-                if (
-                    DB::getSchemaBuilder()->hasTable('ja_material_progress')
-                    && DB::table('ja_material_progress')
-                        ->where('schedule_id', $scheduleId)
-                        ->where('user_id', $userId)
-                        ->where('material_id', (int) $item->material_id)
-                        ->exists()
-                ) {
-                    $completed++;
-                }
-                continue;
-            }
-
-            if (
-                $item->item_type === 'quiz'
-                && $item->quiz_id
-                && DB::getSchemaBuilder()->hasTable('ja_quiz_attempts')
-                && DB::table('ja_quiz_attempts')
-                    ->where('schedule_id', $scheduleId)
-                    ->where('user_id', $userId)
-                    ->where('quiz_id', (int) $item->quiz_id)
-                    ->whereNotNull('submitted_at')
-                    ->exists()
-            ) {
-                $completed++;
-            }
-        }
-
-        return [$completed, $total];
-    }
-
-    /**
-     * Jadwal Just Academy di mana user adalah peserta (bukan declined) pada window data s/d evaluasi.
-     *
-     * @return list<int>
-     */
-    private function resolveJustAcademyParticipantScheduleIds(
-        int $userId,
-        string $periodMonth,
-        ?string $evaluationMonth = null,
-    ): array {
-        if ($userId <= 0 || ! preg_match('/^\d{4}-\d{2}$/', $periodMonth) || ! DB::getSchemaBuilder()->hasTable('ja_schedules')) {
-            return [];
-        }
-
-        if (! DB::getSchemaBuilder()->hasTable('ja_schedule_participants')) {
-            return [];
-        }
-
-        $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
-        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
-            ? $evaluationMonth
-            : $periodMonth;
-        if ($endMonth < $periodMonth) {
-            $endMonth = $periodMonth;
-        }
-        $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
-
-        return DB::table('ja_schedules as s')
-            ->join('ja_schedule_participants as sp', 'sp.schedule_id', '=', 's.id')
-            ->where('sp.user_id', $userId)
-            ->where(function ($q) {
-                $q->whereNull('sp.status')
-                    ->orWhere('sp.status', '!=', 'declined');
-            })
-            ->whereIn('s.status', ['published', 'ongoing', 'completed'])
-            ->where('s.start_at', '<=', $rangeEnd)
-            ->whereRaw('COALESCE(s.end_at, s.start_at) >= ?', [$rangeStart])
-            ->pluck('s.id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    /**
-     * @return array{0: int, 1: int}
-     */
     private function countJustAcademyScheduleModuleCompletion(int $scheduleId): array
     {
         $items = $this->getJustAcademyScheduleCurriculumItems($scheduleId);
@@ -1623,8 +1532,11 @@ class KpiParameterResolverService
 
     /**
      * Just Academy — completion training.
-     * D018 (method null): modul milik user evaluasi sebagai peserta (training yang dijadwalkan kepadanya).
-     * D019: method Competency Assessment, created/trainer user + bawahan (rata-rata peserta).
+     * D018 (method null): % jadwal yang di-conduct (status completed)
+     * dari training plan yang dibuat user evaluasi di periode.
+     * Contoh: buat 10, conduct 5 → 50%.
+     * D019: rata-rata % modul peserta pada plan Competency Assessment
+     * yang dibuat/ditrainer user (+ bawahan).
      */
     private function resolveJustAcademyTrainingCompletion(
         int $userId,
@@ -1637,7 +1549,7 @@ class KpiParameterResolverService
         }
 
         if ($methodName === null) {
-            return $this->resolveJustAcademyParticipantModuleCompletion($userId, $periodMonth, $evaluationMonth);
+            return $this->resolveJustAcademyCreatedScheduleConductPercent($userId, $periodMonth, $evaluationMonth);
         }
 
         $scheduleIds = $this->resolveJustAcademyScopedScheduleIds(
@@ -1647,14 +1559,71 @@ class KpiParameterResolverService
             $evaluationMonth,
             false,
         );
+
         if ($scheduleIds === []) {
             return null;
         }
 
+        return $this->averageJustAcademyScheduleCompletionPercents($scheduleIds);
+    }
+
+    /**
+     * D018 — (jadwal created_by user berstatus completed) / (jadwal created_by user
+     * published|ongoing|completed) × 100 pada window bulan data s/d bulan evaluasi.
+     * Tidak ada jadwal dibuat di periode = 100%.
+     */
+    private function resolveJustAcademyCreatedScheduleConductPercent(
+        int $userId,
+        string $periodMonth,
+        ?string $evaluationMonth = null,
+    ): ?float {
+        if (! DB::getSchemaBuilder()->hasTable('ja_schedules')) {
+            return null;
+        }
+
+        $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
+        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
+            ? $evaluationMonth
+            : $periodMonth;
+        if ($endMonth < $periodMonth) {
+            $endMonth = $periodMonth;
+        }
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
+
+        $stats = DB::table('ja_schedules')
+            ->where('created_by', $userId)
+            ->whereIn('status', ['published', 'ongoing', 'completed'])
+            ->where('start_at', '<=', $rangeEnd)
+            ->whereRaw('COALESCE(end_at, start_at) >= ?', [$rangeStart])
+            ->selectRaw(
+                'COUNT(*) as total, SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) as conducted',
+                ['completed'],
+            )
+            ->first();
+
+        $total = (int) ($stats->total ?? 0);
+        if ($total === 0) {
+            return 100.0;
+        }
+
+        return round(((int) ($stats->conducted ?? 0) / $total) * 100, 2);
+    }
+
+    /**
+     * Rata-rata % completion modul (peserta × curriculum) per jadwal.
+     * Jadwal tanpa curriculum di-skip (bukan dihitung 0).
+     *
+     * @param  list<int>  $scheduleIds
+     */
+    private function averageJustAcademyScheduleCompletionPercents(array $scheduleIds): ?float
+    {
         $percents = [];
         foreach ($scheduleIds as $scheduleId) {
-            $percent = $this->calculateJustAcademyScheduleModuleCompletionPercent($scheduleId);
-            $percents[] = $percent ?? 0.0;
+            $percent = $this->calculateJustAcademyScheduleModuleCompletionPercent((int) $scheduleId);
+            if ($percent === null) {
+                continue;
+            }
+            $percents[] = $percent;
         }
 
         if ($percents === []) {
@@ -1662,35 +1631,6 @@ class KpiParameterResolverService
         }
 
         return round(array_sum($percents) / count($percents), 2);
-    }
-
-    /**
-     * D018 — % modul (wajib, atau seluruh curriculum) yang diselesaikan user sendiri
-     * pada jadwal Just Academy di mana dia peserta. Tidak ada jadwal assigned = 100%.
-     */
-    private function resolveJustAcademyParticipantModuleCompletion(
-        int $userId,
-        string $periodMonth,
-        ?string $evaluationMonth = null,
-    ): ?float {
-        $scheduleIds = $this->resolveJustAcademyParticipantScheduleIds($userId, $periodMonth, $evaluationMonth);
-        if ($scheduleIds === []) {
-            return 100.0;
-        }
-
-        $completed = 0;
-        $total = 0;
-        foreach ($scheduleIds as $scheduleId) {
-            [$done, $count] = $this->countJustAcademyUserModuleCompletion($scheduleId, $userId);
-            $completed += $done;
-            $total += $count;
-        }
-
-        if ($total === 0) {
-            return 100.0;
-        }
-
-        return round(($completed / $total) * 100, 2);
     }
 
     /**
