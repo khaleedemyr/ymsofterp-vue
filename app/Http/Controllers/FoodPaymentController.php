@@ -546,9 +546,6 @@ class FoodPaymentController extends Controller
 
         $pdf = Pdf::loadView('exports.food_payment_bulk_pdf', [
             'groups' => $groups,
-            'total_count' => collect($groups)->sum(fn ($g) => count($g['items'])),
-            'logo_base64' => $this->prepareJustusLogoBase64(),
-            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
         ])->setPaper('a4', 'landscape');
 
         return $pdf->download('food-payment-export-'.now()->format('Ymd-His').'.pdf');
