@@ -3190,20 +3190,15 @@ class KpiParameterResolverService
 
         $monthStart = $periodMonth.'-01';
 
-        $rows = DB::table('competitor_benchmark_report_items as i')
+        // Hanya report yang dibuat user sendiri — PIC bersama di report food/beverage
+        // orang lain tidak ikut dihitung (hindari beverage dapat credit food & sebaliknya).
+        $count = (int) DB::table('competitor_benchmark_report_items as i')
             ->join('competitor_benchmark_reports as r', 'r.id', '=', 'i.report_id')
             ->whereNull('r.deleted_at')
             ->where('r.status', 'approved')
             ->whereDate('r.report_month', $monthStart)
-            ->get(['i.id', 'r.pics', 'r.created_by']);
-
-        $count = $rows->filter(function ($row) use ($userId) {
-            if ((int) ($row->created_by ?? 0) === $userId) {
-                return true;
-            }
-
-            return $this->userMatchesPicJson((string) ($row->pics ?? ''), $userId);
-        })->count();
+            ->where('r.created_by', $userId)
+            ->count('i.id');
 
         return (float) $count;
     }

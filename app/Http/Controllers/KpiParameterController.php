@@ -243,7 +243,7 @@ class KpiParameterController extends Controller
                 ['value' => 'employee_coaching_person_count', 'label' => 'Employee Coaching — jumlah karyawan unik di-coaching'],
                 ['value' => 'sop_development_completion_percent', 'label' => 'SOP Development Completion — % SOP dibuat user yang sudah upload/approved'],
                 ['value' => 'npd_approved_product_count', 'label' => 'NPD Plan & Report — jumlah produk NPD approved'],
-                ['value' => 'competitor_benchmark_execution_count', 'label' => 'Competitor Benchmark Report — jumlah benchmark visit'],
+                ['value' => 'competitor_benchmark_execution_count', 'label' => 'Competitor Benchmark Report — jumlah item di report yang dibuat user (bukan PIC bersama)'],
                 ['value' => 'fb_product_calibration_completion_percent', 'label' => 'F&B Product Calibration — % schedule selesai (conductor user + bawahan)'],
                 ['value' => 'cvcc_avg_resolution_hours', 'label' => 'CVCC — Avg Complaint Resolution (hours)'],
                 ['value' => 'cvcc_beverage_complaint_count', 'label' => 'CVCC — Beverage / Bar negative + CAPA filled'],
