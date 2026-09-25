@@ -89,9 +89,9 @@ FROM (
     -- KS04 Team Development (35%)
     SELECT 'KS04', 'KPI11',    10.00, 0, '100%' UNION ALL
     SELECT 'KS04', 'KPI12',    10.00, 1, '>= 85%' UNION ALL
-    SELECT 'KS04', 'KPI13',     5.00, 2, '22 Person & 100% on Time' UNION ALL
+    SELECT 'KS04', 'KPI13',     5.00, 2, '>= 2 Person & 100% on Time' UNION ALL
     SELECT 'KS04', 'KPI21',     5.00, 3, '100% on Time' UNION ALL
-    SELECT 'KS04', 'KPI22',     5.00, 4, '22 Person' UNION ALL
+    SELECT 'KS04', 'KPI22',     5.00, 4, '>= 2 Person' UNION ALL
     -- KS05 Compliance & Team Support (30%)
     SELECT 'KS05', 'KPI14',    10.00, 0, '>= 85%' UNION ALL
     SELECT 'KS05', 'KPI15',    10.00, 1, '>= 85%' UNION ALL

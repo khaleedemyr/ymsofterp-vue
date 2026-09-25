@@ -63,11 +63,11 @@ class RegionalVisitAnalyticsService
             ];
         }
 
-        $visitRows = $this->attendanceQuery($userIds, $startDate, $endDate)
+        $visitRows = $this->attendanceQuery($userIds, $startDate, $endDate, scanInOnly: false)
             ->select(
                 'o.id_outlet',
                 DB::raw('COUNT(DISTINCT DATE(a.scan_date)) as visit_days'),
-                DB::raw('COUNT(*) as scan_in_count'),
+                DB::raw('SUM(CASE WHEN a.inoutmode = 1 THEN 1 ELSE 0 END) as scan_in_count'),
                 DB::raw('MAX(a.scan_date) as last_visit'),
             )
             ->groupBy('o.id_outlet')
@@ -310,7 +310,7 @@ class RegionalVisitAnalyticsService
             return [];
         }
 
-        return $this->attendanceQuery([$userId], $startDate, $endDate)
+        return $this->attendanceQuery([$userId], $startDate, $endDate, scanInOnly: false)
             ->distinct()
             ->pluck('o.id_outlet')
             ->map(fn ($id) => (int) $id)
@@ -319,9 +319,13 @@ class RegionalVisitAnalyticsService
             ->all();
     }
 
-    private function attendanceQuery(array $userIds, string $startDate, string $endDate)
+    /**
+     * @param  array<int>  $userIds
+     * @param  bool  $scanInOnly  true = hanya scan IN; false = hari dengan scan IN/OUT (selaras detail outlet / D021)
+     */
+    private function attendanceQuery(array $userIds, string $startDate, string $endDate, bool $scanInOnly = true)
     {
-        return DB::table('att_log as a')
+        $query = DB::table('att_log as a')
             ->join('tbl_data_outlet as o', 'a.sn', '=', 'o.sn')
             ->join('user_pins as up', function ($q) {
                 $q->on('a.pin', '=', 'up.pin')
@@ -333,9 +337,14 @@ class RegionalVisitAnalyticsService
             ->where('o.status', 'A')
             ->whereNotNull('o.sn')
             ->where('o.sn', '!=', '')
-            ->where('a.inoutmode', 1)
             ->where('a.scan_date', '>=', $startDate . ' 00:00:00')
             ->where('a.scan_date', '<=', $endDate . ' 23:59:59');
+
+        if ($scanInOnly) {
+            $query->where('a.inoutmode', 1);
+        }
+
+        return $query;
     }
 
     /**

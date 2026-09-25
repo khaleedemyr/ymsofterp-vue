@@ -250,7 +250,7 @@ class KpiParameterController extends Controller
                 ['value' => 'cvcc_food_complaint_count', 'label' => 'CVCC — Food / Kitchen negative + CAPA filled'],
                 ['value' => 'cvcc_service_complaint_count', 'label' => 'CVCC — Service negative + CAPA filled'],
                 ['value' => 'cvcc_service_negative_complaint_count', 'label' => 'CVCC — Negative + CAPA Service filled'],
-                ['value' => 'cvcc_total_review_count', 'label' => 'CVCC — Total Review / Case Count'],
+                ['value' => 'cvcc_total_review_count', 'label' => 'CVCC — Total Complaint Count (all negative)'],
             ],
         ];
     }

@@ -19,7 +19,7 @@
 --   D052  Labor Cost %       → Manual Monthly Labor Cost
 --   D053  Resolution Hours   → CVCC (regional_assigned_at → resolved_at)
 --   D054  Service Complaints → CVCC negative + CAPA Service filled
---   D055  Total Reviews      → CVCC total cases
+--   D055  Total Complaints   → CVCC all negative complaints (denominator ratio)
 --   D018  Training           → Just Academy (modul wajib selesai)
 --   D016  QA Score           → QA2 Audit 1 (C / (C+NC))
 --   D021  Visit Actual       → absensi scan IN di outlet (Regional Visit Report)
@@ -51,7 +51,7 @@ INSERT INTO `kpi_parameters` (
 ('D052', 'Manual Labor Cost Ratio %',          'hybrid', 'outlet', 'percent', 'Labor cost % from Manual Monthly Labor Cost',   NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D053', 'CVCC Avg Resolution Hours',          'hybrid', 'outlet', 'hours',   'Avg hours regional assign → resolved (CVCC)',     NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
 ('D054', 'CVCC Service Negative w/ CAPA',      'hybrid', 'outlet', 'integer', 'Negative CVCC + CAPA Service filled',           NULL, 'lower_better',  'monthly', NULL, 1, 'A', NOW(), NOW()),
-('D055', 'CVCC Total Review Count',            'hybrid', 'outlet', 'integer', 'Total CVCC cases in period',                    NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW())
+('D055', 'CVCC Total Complaint Count',         'hybrid', 'outlet', 'integer', 'Total negative CVCC complaints in outlet scope', NULL, 'higher_better', 'monthly', NULL, 1, 'A', NOW(), NOW())
 ON DUPLICATE KEY UPDATE
     `name` = VALUES(`name`),
     `source_type` = VALUES(`source_type`),
@@ -109,7 +109,7 @@ INSERT INTO `kpi_parameters` (
 ('KPI06',  'Petty Cash Usage Control',                     'hybrid', 'outlet',   'percent', 'Petty cash usage vs MTD actual F&B revenue',               '<= 1%',           'lower_better',  'monthly',   'D008 / D001 * 100',       1, 'A', NOW(), NOW()),
 ('KPI_GM07','Monthly Labor Cost',                          'hybrid', 'outlet',   'percent', 'Labor cost from Manual Monthly Labor Cost',                '<= 11-13%',       'lower_better',  'monthly',   'D052',                    1, 'A', NOW(), NOW()),
 ('KPI_GM08','Customer Complaint Resolution',               'hybrid', 'outlet',   'hours',   'Avg complaint resolution from CVCC',                       '<= 24 hours',     'lower_better',  'monthly',   'D053',                    1, 'A', NOW(), NOW()),
-('KPI_GM09','Service Complaint Ratio',                     'hybrid', 'outlet',   'percent', 'Negative CVCC w/ Service CAPA / Total Review',             '<= 0.50%',        'lower_better',  'monthly',   'D054 / D055 * 100',       1, 'A', NOW(), NOW()),
+('KPI_GM09','Service Complaint Ratio',                     'hybrid', 'outlet',   'percent', 'Service CAPA complaints / all CVCC complaints', '<= 0.50%',        'lower_better',  'monthly',   'D054 / D055 * 100',       1, 'A', NOW(), NOW()),
 ('KPI11',  'Training Program & Module Completion',         'hybrid', 'employee', 'percent', 'Training completion',                                        '100%',            'higher_better', 'monthly',   'D018',                    1, 'A', NOW(), NOW()),
 ('KPI12',  'Employee Competency Assessment (Product Knowledge, Quality Consistency, Hygiene & Sanitation, Restaurant Ops, Cost Awareness, Leadership & Team Work, SOP & Prep. Understanding)', 'manual', 'employee', 'percent', 'Assessment Tool — 1 nilai agregat (input manual)', '>= 90%', 'higher_better', 'monthly', 'KPI12', 1, 'A', NOW(), NOW()),
 ('KPI13',  'JNG Program & Competency Task List Completion', 'manual', 'employee', 'integer', 'JNG Submission & Mentoring Progress Report (input manual)', '12 Person & 100% on Time', 'higher_better', 'quarterly', 'KPI13', 1, 'A', NOW(), NOW()),

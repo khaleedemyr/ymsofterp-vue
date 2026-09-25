@@ -623,13 +623,10 @@ class KpiParameterResolverService
             'just_academy_training_completion' => $this->resolveJustAcademyTrainingCompletion(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
-                null,
-                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'just_academy_competency_assessment_score' => $this->resolveJustAcademyCompetencyAssessmentScore(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
-                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'qa2_audit1_score' => $this->resolveQa2Audit1Score(
                 $outletIds,
@@ -710,7 +707,6 @@ class KpiParameterResolverService
                 $outletIds,
                 $periodMonth,
                 (int) ($context['user_id'] ?? 0),
-                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'employee_coaching_person_count' => $this->resolveEmployeeCoachingPersonCount(
                 (int) ($context['user_id'] ?? 0),
@@ -720,7 +716,6 @@ class KpiParameterResolverService
             'sop_development_completion_percent' => $this->resolveSopDevelopmentCompletionPercent(
                 (int) ($context['user_id'] ?? 0),
                 $periodMonth,
-                (string) ($context['evaluation_period_month'] ?? ''),
             ),
             'npd_approved_product_count' => $this->resolveNpdApprovedProductCount(
                 (int) ($context['user_id'] ?? 0),
@@ -1351,7 +1346,7 @@ class KpiParameterResolverService
     }
 
     /**
-     * Training plan yang overlap bulan data s/d bulan evaluasi.
+     * Training plan yang overlap bulan data KPI saja (bukan sampai bulan penilaian).
      * trainerOnly: hanya jadwal di mana user adalah trainer internal (bukan created_by / bawahan).
      * Selain itu: dibuat oleh atau trainer = user + bawahan langsung.
      *
@@ -1378,13 +1373,9 @@ class KpiParameterResolverService
         }
 
         $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
-        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
-            ? $evaluationMonth
-            : $periodMonth;
-        if ($endMonth < $periodMonth) {
-            $endMonth = $periodMonth;
-        }
-        $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
+        // Window KPI = bulan data saja. $evaluationMonth diabaikan (tetap di signature untuk kompatibilitas call site lama).
+        unset($evaluationMonth);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($periodMonth . '-01'));
 
         $query = DB::table('ja_schedules as s')
             ->whereIn('s.status', ['published', 'ongoing', 'completed'])
@@ -1560,7 +1551,7 @@ class KpiParameterResolverService
      * Just Academy — completion training.
      * D018 (method null) & D019 (Competency Assessment):
      * % jadwal yang di-conduct (status completed) dari training plan
-     * yang dibuat user evaluasi + bawahan langsung di periode.
+     * yang dibuat user evaluasi + bawahan langsung di bulan data KPI.
      * Contoh: buat 10, conduct 5 → 50%.
      * D019 hanya menghitung plan method Competency Assessment.
      */
@@ -1577,7 +1568,7 @@ class KpiParameterResolverService
         return $this->resolveJustAcademyCreatedScheduleConductPercent(
             $userId,
             $periodMonth,
-            $evaluationMonth,
+            null,
             $methodName,
         );
     }
@@ -1585,7 +1576,7 @@ class KpiParameterResolverService
     /**
      * (jadwal created_by user/bawahan berstatus completed) /
      * (jadwal created_by user/bawahan published|ongoing|completed) × 100
-     * pada window bulan data s/d bulan evaluasi.
+     * pada bulan data KPI saja.
      * Opsional filter method/category (mis. Competency Assessment untuk D019).
      * Tidak ada jadwal dibuat di periode = 100%.
      */
@@ -1598,7 +1589,7 @@ class KpiParameterResolverService
         $schedules = $this->listJustAcademyCreatedConductSchedules(
             $userId,
             $periodMonth,
-            $evaluationMonth,
+            null,
             $methodName,
         );
 
@@ -1651,13 +1642,9 @@ class KpiParameterResolverService
         }
 
         $rangeStart = sprintf('%s-01 00:00:00', $periodMonth);
-        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
-            ? $evaluationMonth
-            : $periodMonth;
-        if ($endMonth < $periodMonth) {
-            $endMonth = $periodMonth;
-        }
-        $rangeEnd = date('Y-m-t 23:59:59', strtotime($endMonth . '-01'));
+        // Window KPI = bulan data saja. $evaluationMonth diabaikan (kompatibilitas call site lama).
+        unset($evaluationMonth);
+        $rangeEnd = date('Y-m-t 23:59:59', strtotime($periodMonth . '-01'));
 
         $query = DB::table('ja_schedules as s')
             ->leftJoin('users as u', 'u.id', '=', 's.created_by')
@@ -1726,7 +1713,7 @@ class KpiParameterResolverService
             $userId,
             $periodMonth,
             'Competency Assessment',
-            $evaluationMonth,
+            null,
         );
     }
 
@@ -2860,6 +2847,10 @@ class KpiParameterResolverService
     }
 
     /**
+     * Total komplain CVCC yang masuk (severity negative) di outlet scope.
+     * Denominator untuk Service / Bar / Kitchen Complaint Ratio.
+     * Tidak filter CAPA / divisi — semua komplain masuk dihitung.
+     *
      * @param  list<int>  $outletIds
      */
     private function resolveCvccTotalReviewCount(
@@ -2869,6 +2860,7 @@ class KpiParameterResolverService
         ?int $outletId = null,
         array $outletIds = [],
     ): ?float {
+        // Tetap wajib Regional Management agar KPI complaint ratio punya konteks employee.
         $scope = $this->resolveCvccRegionalScope($userId);
         if ($scope === null) {
             return null;
@@ -2881,9 +2873,11 @@ class KpiParameterResolverService
             outletId: $outletId,
             outletIds: $outletIds,
         ) as $row) {
-            if ($this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
-                $count++;
+            if (! in_array(strtolower(trim((string) ($row->severity ?? ''))), self::CVCC_NEGATIVE_SEVERITIES, true)) {
+                continue;
             }
+
+            $count++;
         }
 
         return (float) $count;
@@ -3007,7 +3001,7 @@ class KpiParameterResolverService
      * % minggu induction tepat waktu di outlet scope KPI user.
      * Bukan induction milik user evaluasi — milik karyawan yang di-induction di outlet perhitungan.
      *
-     * Hanya minggu yang sudah terbuka (1..unlocked_week) dan jatuh tempo di jendela data–evaluasi.
+     * Hanya minggu yang sudah terbuka (1..unlocked_week) dan jatuh tempo di bulan data KPI.
      * Jam minggu 1 = max(start_date, created_at) supaya start yang di-backdate tidak langsung overdue.
      * Minggu berikutnya: 7 hari sejak minggu sebelumnya di-approve.
      * Tepat waktu = submit (atau approve jika submit kosong) ≤ due date minggu itu.
@@ -3031,13 +3025,9 @@ class KpiParameterResolverService
         }
 
         $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth()->startOfDay();
-        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
-            ? $evaluationMonth
-            : $periodMonth;
-        if ($endMonth < $periodMonth) {
-            $endMonth = $periodMonth;
-        }
-        $periodEnd = Carbon::createFromFormat('Y-m', $endMonth)->endOfMonth()->endOfDay();
+        // Window KPI = bulan data saja. $evaluationMonth diabaikan (kompatibilitas call site lama).
+        unset($evaluationMonth);
+        $periodEnd = Carbon::createFromFormat('Y-m', $periodMonth)->endOfMonth()->endOfDay();
         $now = now();
 
         $query = EmployeeOnboarding::query()
@@ -3194,13 +3184,9 @@ class KpiParameterResolverService
         }
 
         $periodStart = Carbon::createFromFormat('Y-m', $periodMonth)->startOfMonth()->startOfDay();
-        $endMonth = is_string($evaluationMonth) && preg_match('/^\d{4}-\d{2}$/', $evaluationMonth)
-            ? $evaluationMonth
-            : $periodMonth;
-        if ($endMonth < $periodMonth) {
-            $endMonth = $periodMonth;
-        }
-        $periodEnd = Carbon::createFromFormat('Y-m', $endMonth)->endOfMonth()->endOfDay();
+        // Window KPI = bulan data saja. $evaluationMonth diabaikan (kompatibilitas call site lama).
+        unset($evaluationMonth);
+        $periodEnd = Carbon::createFromFormat('Y-m', $periodMonth)->endOfMonth()->endOfDay();
 
         $rows = DB::table('sop_development_completions')
             ->where('user_id', $userId)

@@ -287,7 +287,7 @@ defineExpose({ show, preload });
                 <div class="font-bold text-lg text-green-800">{{ data.summary.visited_configured ?? 0 }}</div>
               </div>
               <div class="bg-blue-50 rounded-lg p-3">
-                <div class="text-blue-700 text-xs">Total Kunjungan (Target)</div>
+                <div class="text-blue-700 text-xs">Total Kunjungan (D021)</div>
                 <div class="font-bold text-lg text-blue-800">{{ formatNum(data.summary.total_visits) }}</div>
               </div>
               <div class="bg-amber-50 rounded-lg p-3">
@@ -367,7 +367,7 @@ defineExpose({ show, preload });
                 Hasil agregat evaluasi:
                 <strong>{{ formatAchievement(data.aggregate_achievement) }}</strong>
                 <span v-if="data.summary.total_visits != null && data.summary.portfolio_target">
-                  ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} kunjungan target)
+                  ({{ formatNum(data.summary.total_visits) }} / {{ formatNum(data.summary.portfolio_target) }} = D021 / D022)
                 </span>
               </template>
               <template v-else-if="data.breakdown_mode === 'ticket_follow_up'">

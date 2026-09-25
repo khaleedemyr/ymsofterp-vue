@@ -161,55 +161,6 @@ class KpiEvaluationService
         ];
     }
 
-    private function usesJustAcademyConductedPeriod(string $formula): bool
-    {
-        return (bool) preg_match('/\b(D018|D019)\b/', $formula);
-    }
-
-    private function usesInductionOutletPeriod(string $formula): bool
-    {
-        return (bool) preg_match('/\bD031\b/', $formula);
-    }
-
-    private function usesSopDevelopmentPeriod(string $formula): bool
-    {
-        return (bool) preg_match('/\bD033\b/', $formula);
-    }
-
-    /**
-     * Just Academy dihitung dari bulan data sampai bulan evaluasi (training yang di-conduct bulan ini ikut).
-     *
-     * @param  array{frequency: string, frequency_label: string, data_period_months: list<string>, data_window_label: string, data_window_month_count: int}  $window
-     * @return array{frequency: string, frequency_label: string, data_period_months: list<string>, data_window_label: string, data_window_month_count: int}
-     */
-    private function extendWindowThroughEvaluationMonth(array $window, string $evaluationPeriodMonth): array
-    {
-        if (! preg_match('/^\d{4}-\d{2}$/', $evaluationPeriodMonth)) {
-            return $window;
-        }
-
-        $months = array_values(array_unique(array_merge(
-            $window['data_period_months'] ?? [],
-            [$evaluationPeriodMonth],
-        )));
-        sort($months);
-
-        $outletAnalyzer = app(OutletAnalyzerService::class);
-        if (count($months) === 1) {
-            $windowLabel = $outletAnalyzer->calendarPeriod($months[0])['label'];
-        } else {
-            $first = Carbon::createFromFormat('Y-m', $months[0]);
-            $last = Carbon::createFromFormat('Y-m', $months[array_key_last($months)]);
-            $windowLabel = $first->locale('id')->translatedFormat('F').' – '.$last->locale('id')->translatedFormat('F Y');
-        }
-
-        $window['data_period_months'] = $months;
-        $window['data_window_label'] = $windowLabel;
-        $window['data_window_month_count'] = count($months);
-
-        return $window;
-    }
-
     /**
      * Skor key strategy = rata-rata tertimbang skor KPI dalam strategy (skala 0–100).
      */
@@ -271,12 +222,6 @@ class KpiEvaluationService
         return $items->map(function (KpiEvaluationItem $item) use ($evaluationPeriodMonth) {
             $row = $item->toArray();
             $window = $this->buildFrequencyWindowInfo((string) ($row['frequency'] ?? 'monthly'), $evaluationPeriodMonth);
-            if ($this->usesJustAcademyConductedPeriod((string) ($row['formula'] ?? ''))
-                || $this->usesInductionOutletPeriod((string) ($row['formula'] ?? ''))
-                || $this->usesSopDevelopmentPeriod((string) ($row['formula'] ?? ''))
-            ) {
-                $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
-            }
 
             return array_merge($row, $window, $this->resolveAchievementDisplayMeta($item));
         })->values()->all();
@@ -459,9 +404,6 @@ class KpiEvaluationService
             $row['frequency'] = $frequency;
             if ($evaluationPeriodMonth !== null) {
                 $window = $this->buildFrequencyWindowInfo($frequency, $evaluationPeriodMonth);
-                if (in_array((string) $pv->parameter_code, ['D018', 'D019', 'D031', 'D033'], true)) {
-                    $window = $this->extendWindowThroughEvaluationMonth($window, $evaluationPeriodMonth);
-                }
                 $row = array_merge($row, $window);
             }
 
@@ -737,7 +679,7 @@ class KpiEvaluationService
             'cvcc_food_complaint_count' => 'Sumber ERP: CVCC — komplain food/kitchen (negative + CAPA).',
             'cvcc_service_complaint_count' => 'Sumber ERP: CVCC — komplain service (negative + CAPA).',
             'cvcc_service_negative_complaint_count' => 'Sumber ERP: CVCC — negative + CAPA.',
-            'cvcc_total_review_count' => 'Sumber ERP: CVCC — total review.',
+            'cvcc_total_review_count' => 'Sumber ERP: CVCC — total komplain (negative) di outlet scope.',
             'qa2_audit1_score' => 'Sumber ERP: QA2 Audits — skor kepatuhan per divisi Regional Management (Bar→BRA, Service→SVA, Kitchen→KTA; rata-rata outlet scope).',
             'qa2_recipe_compliance_score' => 'Sumber ERP: QA2 Audits — recipe compliance BRA-1.5.3 & BRA-1.4.6 (C / (C+NC)).',
             'just_academy_training_completion' => 'Sumber ERP: Just Academy — % training plan yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
@@ -2612,7 +2554,15 @@ class KpiEvaluationService
         $endDate = (string) ($baseContext['period_end'] ?? '');
 
         $targetOutletIds = array_column($targetEntries, 'outlet_id');
-        $visitedOutletIds = $this->regionalVisits->getUserVisitedOutletIds($userId, $startDate, $endDate);
+        // Satu sumber dengan D021: hari kunjungan = DISTINCT tanggal scan IN (bukan detail modal yang ikut hari OUT-only).
+        $visitStats = $this->regionalVisits->getVisitStats([$userId], $startDate, $endDate);
+        $visitDaysByOutlet = collect($visitStats['outlets'] ?? [])->keyBy('id_outlet');
+        $visitedOutletIds = collect($visitStats['outlets'] ?? [])
+            ->filter(fn (array $row) => (int) ($row['visit_days'] ?? 0) > 0)
+            ->pluck('id_outlet')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
         $lookupIds = array_values(array_unique(array_merge($targetOutletIds, $visitedOutletIds)));
 
         $outletMeta = $lookupIds === []
@@ -2632,15 +2582,14 @@ class KpiEvaluationService
         };
 
         $configuredRows = [];
-        $totalActual = 0;
+        $totalActualConfigured = 0;
         $totalTarget = 0;
         $visitedConfigured = 0;
 
         foreach ($targetEntries as $entry) {
             $outletId = $entry['outlet_id'];
             $targetVisits = $entry['target_visits'];
-            $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
-            $actualVisits = (int) ($detail['summary']['visit_days'] ?? 0);
+            $actualVisits = (int) ($visitDaysByOutlet->get($outletId)['visit_days'] ?? 0);
 
             if ($actualVisits > 0) {
                 $visitedConfigured++;
@@ -2661,7 +2610,7 @@ class KpiEvaluationService
                 'performance_level' => $performanceLevel,
             ];
 
-            $totalActual += $actualVisits;
+            $totalActualConfigured += $actualVisits;
             $totalTarget += $targetVisits;
         }
 
@@ -2678,14 +2627,14 @@ class KpiEvaluationService
 
         $targetIdSet = array_flip($targetOutletIds);
         $nonCoverageRows = [];
+        $totalActualNonCoverage = 0;
 
         foreach ($visitedOutletIds as $outletId) {
             if (isset($targetIdSet[$outletId])) {
                 continue;
             }
 
-            $detail = $this->regionalVisits->getOutletVisitDetail([$userId], $outletId, $startDate, $endDate);
-            $actualVisits = (int) ($detail['summary']['visit_days'] ?? 0);
+            $actualVisits = (int) ($visitDaysByOutlet->get($outletId)['visit_days'] ?? 0);
             if ($actualVisits <= 0) {
                 continue;
             }
@@ -2696,6 +2645,7 @@ class KpiEvaluationService
                 'outlet_label' => $formatLabel($outletId),
                 'actual_visits' => $actualVisits,
             ];
+            $totalActualNonCoverage += $actualVisits;
         }
 
         usort($nonCoverageRows, function (array $a, array $b): int {
@@ -2712,6 +2662,16 @@ class KpiEvaluationService
             ? $this->resolver->resolve($d022Param, $baseContext)
             : ($totalTarget > 0 ? (float) $totalTarget : null);
 
+        // Samakan dengan D021: semua hari kunjungan (target + non-coverage).
+        $totalActual = $totalActualConfigured + $totalActualNonCoverage;
+        $d021Param = $parameters['D021'] ?? null;
+        if ($d021Param) {
+            $resolvedD021 = $this->resolver->resolve($d021Param, $baseContext);
+            if ($resolvedD021 !== null) {
+                $totalActual = (float) $resolvedD021;
+            }
+        }
+
         return [
             'available' => true,
             'breakdown_mode' => 'regional_visit',
@@ -2722,7 +2682,7 @@ class KpiEvaluationService
             'target_direction' => $item->target_direction,
             'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
             'parameter_columns' => [],
-            'portfolio_note' => 'Kunjungan dihitung dari absensi (hari kunjungan unik). Target outlet dari Regional Management.',
+            'portfolio_note' => 'Kunjungan = hari unik dengan scan IN absensi (sama D021). Target outlet dari Regional Management.',
             'configured_rows' => $configuredRows,
             'non_coverage_rows' => $nonCoverageRows,
             'rows' => [],
@@ -2731,6 +2691,8 @@ class KpiEvaluationService
                 'visited_configured' => $visitedConfigured,
                 'non_coverage_count' => count($nonCoverageRows),
                 'total_visits' => $totalActual,
+                'total_visits_configured' => $totalActualConfigured,
+                'total_visits_non_coverage' => $totalActualNonCoverage,
                 'portfolio_target' => $portfolioTarget,
                 'exceeding' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'exceeding')),
                 'meeting' => count(array_filter($configuredRows, fn (array $r) => $r['performance_level'] === 'meeting')),
@@ -2976,14 +2938,13 @@ class KpiEvaluationService
     ): array {
         $userId = (int) ($baseContext['user_id'] ?? 0);
         $periodMonth = (string) ($baseContext['data_period_month'] ?? $baseContext['period_month'] ?? '');
-        $evaluationMonth = (string) ($baseContext['evaluation_period_month'] ?? $evaluation->period_month ?? '');
         $code = $dCodes[0] ?? '';
         $methodName = $code === 'D019' ? 'Competency Assessment' : null;
 
         $schedules = $this->resolver->listJustAcademyCreatedConductSchedules(
             $userId,
             $periodMonth,
-            $evaluationMonth !== '' ? $evaluationMonth : null,
+            null,
             $methodName,
         );
 
