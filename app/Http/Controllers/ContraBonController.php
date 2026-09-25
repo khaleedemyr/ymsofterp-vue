@@ -1020,9 +1020,23 @@ class ContraBonController extends Controller
             ->orderBy('name')
             ->get();
 
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->where('is_outlet', 1)
+            ->select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $warehouses = DB::table('warehouses')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         return inertia('ContraBon/Form', [
             'availableRetailNonFoods' => $availableRetailNonFoods,
             'suppliers' => $suppliers,
+            'outlets' => $outlets,
+            'warehouses' => $warehouses,
             'filters' => $request->only(['supplier_id', 'date_from', 'date_to'])
         ]);
     }
@@ -2402,6 +2416,9 @@ class ContraBonController extends Controller
         try {
             $search = $request->input('search');
             $supplierId = $request->input('supplier_id');
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
+            $outletId = $request->filled('outlet_id') ? (int) $request->input('outlet_id') : null;
 
             $query = DB::table('retail_non_food as rnf')
                 ->leftJoin('suppliers as s', 'rnf.supplier_id', '=', 's.id')
@@ -2441,6 +2458,15 @@ class ContraBonController extends Controller
 
             if ($supplierId) {
                 $query->where('rnf.supplier_id', $supplierId);
+            }
+            if ($dateFrom) {
+                $query->whereDate('rnf.transaction_date', '>=', $dateFrom);
+            }
+            if ($dateTo) {
+                $query->whereDate('rnf.transaction_date', '<=', $dateTo);
+            }
+            if ($outletId) {
+                $query->where('rnf.outlet_id', $outletId);
             }
 
             $results = $query->orderBy('rnf.transaction_date', 'desc')->limit(100)->get();
@@ -2556,14 +2582,38 @@ class ContraBonController extends Controller
     /**
      * Daftar ringkas PO/GR untuk modal Contra Bon (tanpa item, tanpa COUNT global).
      */
-    private function getPOWithApprovedGRListFast(int $perPage, int $page, string $search)
-    {
+    private function getPOWithApprovedGRListFast(
+        int $perPage,
+        int $page,
+        string $search,
+        ?string $dateFrom = null,
+        ?string $dateTo = null,
+        ?int $outletId = null,
+    ) {
         $query = DB::table('food_good_receives as gr')
             ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
             ->join('suppliers as s', 'po.supplier_id', '=', 's.id');
 
-        $this->applyFastPoGrSearchFilter($query, $search);
+        if (mb_strlen($search) >= 2) {
+            $this->applyFastPoGrSearchFilter($query, $search);
+        }
         $this->applyAvailableGrItemExists($query);
+
+        if ($dateFrom) {
+            $query->whereDate('gr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('gr.receive_date', '<=', $dateTo);
+        }
+        if ($outletId) {
+            $query->whereExists(function ($q) use ($outletId) {
+                $q->select(DB::raw(1))
+                    ->from('purchase_order_food_items as poi_o')
+                    ->join('food_floor_orders as fo_o', 'poi_o.ro_id', '=', 'fo_o.id')
+                    ->whereColumn('poi_o.purchase_order_food_id', 'po.id')
+                    ->where('fo_o.id_outlet', $outletId);
+            });
+        }
 
         $query->select(
             'po.id as po_id',
@@ -2740,17 +2790,22 @@ class ContraBonController extends Controller
             $page = max((int) $request->get('page', 1), 1);
             $search = trim((string) $request->get('search', ''));
             $includeItems = $request->boolean('include_items', false);
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
+            $outletId = $request->filled('outlet_id') ? (int) $request->input('outlet_id') : null;
 
             if (!$includeItems) {
-                if (mb_strlen($search) < 2) {
+                $hasSearch = mb_strlen($search) >= 2;
+                $hasFilters = $dateFrom || $dateTo || $outletId;
+                if (!$hasSearch && !$hasFilters) {
                     return response()->json([
                         'data' => [],
                         'pagination' => $this->buildPoGrPaginationMeta($page, $perPage, 0, false),
-                        'message' => 'Ketik minimal 2 karakter (PO, GR, supplier, atau outlet) untuk mencari.',
+                        'message' => 'Ketik minimal 2 karakter, atau isi filter tanggal / outlet.',
                     ]);
                 }
 
-                return $this->getPOWithApprovedGRListFast($perPage, $page, $search);
+                return $this->getPOWithApprovedGRListFast($perPage, $page, $search, $dateFrom, $dateTo, $outletId);
             }
 
             if ($search === '') {
@@ -3145,6 +3200,9 @@ class ContraBonController extends Controller
         $perPage = min(max((int) $request->get('per_page', 50), 1), 100);
         $page = max((int) $request->get('page', 1), 1);
         $search = trim((string) $request->get('search', ''));
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $outletId = $request->filled('outlet_id') ? (int) $request->input('outlet_id') : null;
 
         $baseQuery = \DB::table('retail_food as rf')
             ->join('suppliers as s', 'rf.supplier_id', '=', 's.id')
@@ -3173,6 +3231,15 @@ class ContraBonController extends Controller
                     ->orWhere('o.nama_outlet', 'like', $term)
                     ->orWhere('wo.name', 'like', $term);
             });
+        }
+        if ($dateFrom) {
+            $baseQuery->whereDate('rf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $baseQuery->whereDate('rf.transaction_date', '<=', $dateTo);
+        }
+        if ($outletId) {
+            $baseQuery->where('rf.outlet_id', $outletId);
         }
 
         $total = (clone $baseQuery)->count();
@@ -3417,6 +3484,9 @@ class ContraBonController extends Controller
         $perPage = min(max((int) $request->get('per_page', 50), 1), 100);
         $page = max((int) $request->get('page', 1), 1);
         $search = trim((string) $request->get('search', ''));
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $warehouseId = $request->filled('warehouse_id') ? (int) $request->input('warehouse_id') : null;
 
         $baseQuery = \DB::table('retail_warehouse_food as rwf')
             ->join('suppliers as s', 'rwf.supplier_id', '=', 's.id')
@@ -3445,6 +3515,15 @@ class ContraBonController extends Controller
                     ->orWhere('w.name', 'like', $term)
                     ->orWhere('wd.name', 'like', $term);
             });
+        }
+        if ($dateFrom) {
+            $baseQuery->whereDate('rwf.transaction_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $baseQuery->whereDate('rwf.transaction_date', '<=', $dateTo);
+        }
+        if ($warehouseId) {
+            $baseQuery->where('rwf.warehouse_id', $warehouseId);
         }
 
         $total = (clone $baseQuery)->count();
@@ -3823,8 +3902,22 @@ class ContraBonController extends Controller
 
         $this->enrichContraBonForEditForm($contraBon);
 
+        $outlets = DB::table('tbl_data_outlet')
+            ->where('status', 'A')
+            ->where('is_outlet', 1)
+            ->select('id_outlet as id', 'nama_outlet as name')
+            ->orderBy('nama_outlet')
+            ->get();
+
+        $warehouses = DB::table('warehouses')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
         return inertia('ContraBon/Form', [
-            'contraBon' => $contraBon
+            'contraBon' => $contraBon,
+            'outlets' => $outlets,
+            'warehouses' => $warehouses,
         ]);
     }
 

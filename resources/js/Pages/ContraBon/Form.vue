@@ -9,6 +9,8 @@ const props = defineProps({
   contraBon: Object, // for edit, can be null for create
   availableRetailNonFoods: Array,
   suppliers: Array,
+  outlets: { type: Array, default: () => [] },
+  warehouses: { type: Array, default: () => [] },
   filters: Object,
 });
 
@@ -275,6 +277,28 @@ let retailNonFoodSearchTimeout = null;
 let warehouseRetailFoodSearchTimeout = null;
 let poGrAbortController = null;
 
+const poModalFilters = ref({ date_from: '', date_to: '', outlet_id: '' });
+const retailFoodModalFilters = ref({ date_from: '', date_to: '', outlet_id: '' });
+const warehouseRetailFoodModalFilters = ref({ date_from: '', date_to: '', warehouse_id: '' });
+const retailNonFoodModalFilters = ref({ date_from: '', date_to: '', outlet_id: '' });
+
+function hasPoModalCriteria() {
+  const q = poSearchQuery.value.trim();
+  return q.length >= 2
+    || !!poModalFilters.value.date_from
+    || !!poModalFilters.value.date_to
+    || !!poModalFilters.value.outlet_id;
+}
+
+function applyPoModalFilters() {
+  if (!hasPoModalCriteria()) {
+    poWithGRList.value = [];
+    filteredPOList.value = [];
+    return;
+  }
+  loadPOGRList(1, false, poSearchQuery.value.trim());
+}
+
 function filterPOList() {
   // Clear previous timeout
   if (searchTimeout) {
@@ -282,15 +306,21 @@ function filterPOList() {
   }
   
   // Show loading immediately if there's a query
-  if (poSearchQuery.value.trim()) {
+  if (poSearchQuery.value.trim() || hasPoModalCriteria()) {
     loadingPOGR.value = true;
   }
   
   // Debounce search - wait 600ms after user stops typing
   searchTimeout = setTimeout(async () => {
     const query = poSearchQuery.value.trim();
-    if (query.length > 0 && query.length < 2) {
+    if (query.length > 0 && query.length < 2 && !poModalFilters.value.date_from && !poModalFilters.value.date_to && !poModalFilters.value.outlet_id) {
       loadingPOGR.value = false;
+      return;
+    }
+    if (!hasPoModalCriteria()) {
+      loadingPOGR.value = false;
+      poWithGRList.value = [];
+      filteredPOList.value = [];
       return;
     }
     await loadPOGRList(1, false, query);
@@ -310,6 +340,10 @@ function filterRetailFoodList() {
   }, 500);
 }
 
+function applyRetailFoodModalFilters() {
+  loadRetailFoodList(1, false, retailFoodSearchQuery.value.trim());
+}
+
 function filterWarehouseRetailFoodList() {
   if (warehouseRetailFoodSearchTimeout) {
     clearTimeout(warehouseRetailFoodSearchTimeout);
@@ -323,10 +357,19 @@ function filterWarehouseRetailFoodList() {
   }, 500);
 }
 
+function applyWarehouseRetailFoodModalFilters() {
+  loadWarehouseRetailFoodList(1, false, warehouseRetailFoodSearchQuery.value.trim());
+}
+
+function applyRetailNonFoodModalFilters() {
+  loadRetailNonFoodList(retailNonFoodSearchQuery.value.trim());
+}
+
 // Modal functions
 async function openPOListModal() {
   showPOListModal.value = true;
   poSearchQuery.value = '';
+  poModalFilters.value = { date_from: '', date_to: '', outlet_id: '' };
   poWithGRList.value = [];
   filteredPOList.value = [];
   poGRPagination.value = {
@@ -364,6 +407,9 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
     if (searchQuery && searchQuery.trim()) {
       params.search = searchQuery.trim();
     }
+    if (poModalFilters.value.date_from) params.date_from = poModalFilters.value.date_from;
+    if (poModalFilters.value.date_to) params.date_to = poModalFilters.value.date_to;
+    if (poModalFilters.value.outlet_id) params.outlet_id = poModalFilters.value.outlet_id;
     
     const response = await axios.get('/api/contra-bon/po-with-approved-gr', {
       params,
@@ -408,7 +454,7 @@ async function loadPOGRList(page = 1, append = false, searchQuery = '') {
 
 async function loadMorePOGR() {
   const query = poSearchQuery.value.trim();
-  if (query.length < 2) return;
+  if (!hasPoModalCriteria()) return;
   if (poGRPagination.value.has_more || poGRPagination.value.current_page < poGRPagination.value.last_page) {
     await loadPOGRList(poGRPagination.value.current_page + 1, true, query);
   }
@@ -429,6 +475,9 @@ async function loadRetailFoodList(page = 1, append = false, searchQuery = '') {
     if (searchQuery && searchQuery.trim()) {
       params.search = searchQuery.trim();
     }
+    if (retailFoodModalFilters.value.date_from) params.date_from = retailFoodModalFilters.value.date_from;
+    if (retailFoodModalFilters.value.date_to) params.date_to = retailFoodModalFilters.value.date_to;
+    if (retailFoodModalFilters.value.outlet_id) params.outlet_id = retailFoodModalFilters.value.outlet_id;
     const response = await axios.get('/api/contra-bon/retail-food-contra-bon', { params });
     const data = response.data?.data || [];
     const pagination = response.data?.pagination || null;
@@ -463,6 +512,7 @@ async function loadMoreRetailFood() {
 async function openRetailFoodModal() {
   showRetailFoodModal.value = true;
   retailFoodSearchQuery.value = '';
+  retailFoodModalFilters.value = { date_from: '', date_to: '', outlet_id: '' };
   await loadRetailFoodList(1, false, '');
 }
 
@@ -481,6 +531,9 @@ async function loadWarehouseRetailFoodList(page = 1, append = false, searchQuery
     if (searchQuery && searchQuery.trim()) {
       params.search = searchQuery.trim();
     }
+    if (warehouseRetailFoodModalFilters.value.date_from) params.date_from = warehouseRetailFoodModalFilters.value.date_from;
+    if (warehouseRetailFoodModalFilters.value.date_to) params.date_to = warehouseRetailFoodModalFilters.value.date_to;
+    if (warehouseRetailFoodModalFilters.value.warehouse_id) params.warehouse_id = warehouseRetailFoodModalFilters.value.warehouse_id;
     const response = await axios.get('/api/contra-bon/warehouse-retail-food-contra-bon', { params });
     const data = response.data?.data || [];
     const pagination = response.data?.pagination || null;
@@ -515,33 +568,39 @@ async function loadMoreWarehouseRetailFood() {
 async function openWarehouseRetailFoodModal() {
   showWarehouseRetailFoodModal.value = true;
   warehouseRetailFoodSearchQuery.value = '';
+  warehouseRetailFoodModalFilters.value = { date_from: '', date_to: '', warehouse_id: '' };
   await loadWarehouseRetailFoodList(1, false, '');
 }
 
 function closePOListModal() {
   showPOListModal.value = false;
   poSearchQuery.value = '';
+  poModalFilters.value = { date_from: '', date_to: '', outlet_id: '' };
 }
 
 function closeRetailFoodModal() {
   showRetailFoodModal.value = false;
   retailFoodSearchQuery.value = '';
+  retailFoodModalFilters.value = { date_from: '', date_to: '', outlet_id: '' };
 }
 
 function closeWarehouseRetailFoodModal() {
   showWarehouseRetailFoodModal.value = false;
   warehouseRetailFoodSearchQuery.value = '';
+  warehouseRetailFoodModalFilters.value = { date_from: '', date_to: '', warehouse_id: '' };
 }
 
 function openRetailNonFoodModal() {
   showRetailNonFoodModal.value = true;
   retailNonFoodSearchQuery.value = '';
+  retailNonFoodModalFilters.value = { date_from: '', date_to: '', outlet_id: '' };
   loadRetailNonFoodList('');
 }
 
 function closeRetailNonFoodModal() {
   showRetailNonFoodModal.value = false;
   retailNonFoodSearchQuery.value = '';
+  retailNonFoodModalFilters.value = { date_from: '', date_to: '', outlet_id: '' };
 }
 
 function getRetailNonFoodCategoryName(rnf) {
@@ -559,6 +618,9 @@ async function loadRetailNonFoodList(searchQuery = '') {
     if (searchQuery && searchQuery.trim()) {
       params.search = searchQuery.trim();
     }
+    if (retailNonFoodModalFilters.value.date_from) params.date_from = retailNonFoodModalFilters.value.date_from;
+    if (retailNonFoodModalFilters.value.date_to) params.date_to = retailNonFoodModalFilters.value.date_to;
+    if (retailNonFoodModalFilters.value.outlet_id) params.outlet_id = retailNonFoodModalFilters.value.outlet_id;
     const response = await axios.get('/api/contra-bon/retail-non-food-contra-bon', { params });
     const data = response.data?.data || [];
     retailNonFoodList.value = data;
@@ -2107,7 +2169,24 @@ function getUnitName(item) {
               <i class="fa fa-times"></i>
             </button>
           </div>
-          <div class="mt-4">
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal GR dari</label>
+                <input type="date" v-model="poModalFilters.date_from" @change="applyPoModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tanggal GR sampai</label>
+                <input type="date" v-model="poModalFilters.date_to" @change="applyPoModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Outlet</label>
+                <select v-model="poModalFilters.outlet_id" @change="applyPoModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                  <option value="">Semua Outlet</option>
+                  <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+                </select>
+              </div>
+            </div>
             <input 
               v-model="poSearchQuery" 
               @input="filterPOList"
@@ -2122,8 +2201,8 @@ function getUnitName(item) {
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
             <p class="mt-2 text-gray-600">Memuat data...</p>
           </div>
-          <div v-else-if="!poSearchQuery.trim() || poSearchQuery.trim().length < 2" class="p-8 text-center text-gray-500">
-            Ketik minimal 2 karakter (nomor PO, GR, nama supplier, atau outlet) untuk mencari.
+          <div v-else-if="!hasPoModalCriteria()" class="p-8 text-center text-gray-500">
+            Isi filter tanggal/outlet, atau ketik minimal 2 karakter untuk mencari.
           </div>
           <div v-else-if="filteredPOList.length === 0" class="p-8 text-center text-gray-500">
             Tidak ada data yang ditemukan
@@ -2207,7 +2286,24 @@ function getUnitName(item) {
               <i class="fa fa-times"></i>
             </button>
           </div>
-          <div class="mt-4">
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tgl transaksi dari</label>
+                <input type="date" v-model="retailFoodModalFilters.date_from" @change="applyRetailFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tgl transaksi sampai</label>
+                <input type="date" v-model="retailFoodModalFilters.date_to" @change="applyRetailFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Outlet</label>
+                <select v-model="retailFoodModalFilters.outlet_id" @change="applyRetailFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-purple-500">
+                  <option value="">Semua Outlet</option>
+                  <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+                </select>
+              </div>
+            </div>
             <input 
               v-model="retailFoodSearchQuery" 
               @input="filterRetailFoodList"
@@ -2281,7 +2377,24 @@ function getUnitName(item) {
               <i class="fa fa-times"></i>
             </button>
           </div>
-          <div class="mt-4">
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tgl transaksi dari</label>
+                <input type="date" v-model="retailNonFoodModalFilters.date_from" @change="applyRetailNonFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tgl transaksi sampai</label>
+                <input type="date" v-model="retailNonFoodModalFilters.date_to" @change="applyRetailNonFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Outlet</label>
+                <select v-model="retailNonFoodModalFilters.outlet_id" @change="applyRetailNonFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500">
+                  <option value="">Semua Outlet</option>
+                  <option v-for="o in outlets" :key="o.id" :value="o.id">{{ o.name }}</option>
+                </select>
+              </div>
+            </div>
             <input 
               v-model="retailNonFoodSearchQuery" 
               @input="filterRetailNonFoodList"
@@ -2344,7 +2457,24 @@ function getUnitName(item) {
               <i class="fa fa-times"></i>
             </button>
           </div>
-          <div class="mt-4">
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tgl transaksi dari</label>
+                <input type="date" v-model="warehouseRetailFoodModalFilters.date_from" @change="applyWarehouseRetailFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Tgl transaksi sampai</label>
+                <input type="date" v-model="warehouseRetailFoodModalFilters.date_to" @change="applyWarehouseRetailFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-gray-600 mb-1">Warehouse</label>
+                <select v-model="warehouseRetailFoodModalFilters.warehouse_id" @change="applyWarehouseRetailFoodModalFilters" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                  <option value="">Semua Warehouse</option>
+                  <option v-for="w in warehouses" :key="w.id" :value="w.id">{{ w.name }}</option>
+                </select>
+              </div>
+            </div>
             <input 
               v-model="warehouseRetailFoodSearchQuery" 
               @input="filterWarehouseRetailFoodList"
