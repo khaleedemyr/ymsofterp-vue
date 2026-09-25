@@ -1228,18 +1228,20 @@ class CostReportController extends Controller
             ->get()
             ->groupBy('outlet_transfer_id');
 
-        $receivedByTransfer = DB::table('outlet_food_inventory_cost_histories as h')
-            ->join('outlet_transfers as t', 't.id', '=', 'h.reference_id')
-            ->join('outlet_transfer_items as d', 'd.outlet_transfer_id', '=', 't.id')
-            ->join('outlet_food_inventory_items as ofii', function ($j) {
-                $j->on('ofii.id', '=', 'h.inventory_item_id')->on('ofii.item_id', '=', 'd.item_id');
-            })
-            ->where('h.reference_type', 'outlet_transfer')
-            ->where('h.id_outlet', $outletId)
-            ->whereIn('t.id', $transferIds)
-            ->groupBy('t.id')
-            ->select('t.id as transfer_id', DB::raw('SUM(d.qty_small * COALESCE(h.mac, 0)) as total_received'))
-            ->pluck('total_received', 'transfer_id');
+        // Nilai transfer = value_in / value_out di kartu inventory (cost transfer aktual),
+        // BUKAN qty × MAC outlet (MAC = weighted avg setelah receive / MAC historis).
+        $cardTotals = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_transfer')
+            ->whereIn('reference_id', $transferIds)
+            ->where('id_outlet', $outletId)
+            ->groupBy('reference_id')
+            ->select(
+                'reference_id as transfer_id',
+                DB::raw('SUM(COALESCE(value_in, 0)) as total_in'),
+                DB::raw('SUM(COALESCE(value_out, 0)) as total_out')
+            )
+            ->get()
+            ->keyBy('transfer_id');
 
         $rows = [];
         foreach ($transfers as $t) {
@@ -1247,34 +1249,15 @@ class CostReportController extends Controller
             $toOutletId = (int) $t->to_outlet_id;
             $amount = 0.0;
             $direction = 'internal';
+            $card = $cardTotals->get($t->id);
 
             if ($toOutletId === $outletId) {
-                $amount += (float) ($receivedByTransfer[$t->id] ?? 0);
+                $amount += (float) ($card->total_in ?? 0);
                 $direction = $fromOutletId === $outletId ? 'internal' : 'in';
             }
 
             if ($fromOutletId === $outletId) {
-                $sent = 0.0;
-                foreach (($itemsByTransfer[$t->id] ?? collect()) as $item) {
-                    $qtySmall = (float) ($item->qty_small ?? 0);
-                    if ($qtySmall <= 0) {
-                        continue;
-                    }
-                    $ofii = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
-                    if (!$ofii) {
-                        continue;
-                    }
-                    $mac = DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $ofii->id)
-                        ->where('id_outlet', $fromOutletId)
-                        ->where('warehouse_outlet_id', $t->warehouse_outlet_from_id)
-                        ->where('date', '<=', $t->transfer_date)
-                        ->orderByDesc('date')
-                        ->orderByDesc('created_at')
-                        ->value('mac');
-                    $sent += $qtySmall * (float) ($mac ?? 0);
-                }
-                $amount -= $sent;
+                $amount -= (float) ($card->total_out ?? 0);
                 if ($direction !== 'internal') {
                     $direction = 'out';
                 } elseif ($toOutletId !== $outletId) {
@@ -1330,7 +1313,7 @@ class CostReportController extends Controller
         foreach ($items as $item) {
             $qtySmall = (float) ($item->qty_small ?? 0);
             $ofii = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
-            $mac = 0.0;
+            $unitCost = 0.0;
             $direction = 'out';
             $amount = 0.0;
             $warehouseName = '';
@@ -1338,47 +1321,55 @@ class CostReportController extends Controller
             if ($toOutletId === $outletId) {
                 $direction = $fromOutletId === $outletId ? 'internal_in' : 'in';
                 if ($ofii) {
-                    $mac = (float) (DB::table('outlet_food_inventory_cost_histories')
-                        ->where('inventory_item_id', $ofii->id)
-                        ->where('id_outlet', $outletId)
+                    $inCard = DB::table('outlet_food_inventory_cards')
                         ->where('reference_type', 'outlet_transfer')
                         ->where('reference_id', $transferId)
-                        ->orderByDesc('date')
-                        ->orderByDesc('created_at')
-                        ->value('mac') ?? 0);
+                        ->where('inventory_item_id', $ofii->id)
+                        ->where('id_outlet', $outletId)
+                        ->orderByDesc('id')
+                        ->first();
+                    if ($inCard) {
+                        $unitCost = (float) ($inCard->cost_per_small ?? 0);
+                        $amount = (float) ($inCard->value_in ?? 0);
+                    }
                 }
-                $amount = $qtySmall * $mac;
                 $warehouseName = 'IN';
             }
 
             if ($fromOutletId === $outletId && $toOutletId !== $outletId) {
                 $direction = 'out';
                 if ($ofii) {
-                    $mac = (float) (DB::table('outlet_food_inventory_cost_histories')
+                    $outCard = DB::table('outlet_food_inventory_cards')
+                        ->where('reference_type', 'outlet_transfer')
+                        ->where('reference_id', $transferId)
                         ->where('inventory_item_id', $ofii->id)
                         ->where('id_outlet', $fromOutletId)
                         ->where('warehouse_outlet_id', $fromWarehouseId)
-                        ->where('date', '<=', $transferDate)
-                        ->orderByDesc('date')
-                        ->orderByDesc('created_at')
-                        ->value('mac') ?? 0);
+                        ->orderByDesc('id')
+                        ->first();
+                    if ($outCard) {
+                        $unitCost = (float) ($outCard->cost_per_small ?? 0);
+                        $amount = -1 * (float) ($outCard->value_out ?? 0);
+                    }
                 }
-                $amount = -1 * ($qtySmall * $mac);
                 $warehouseName = 'OUT';
             } elseif ($fromOutletId === $outletId && $toOutletId === $outletId) {
-                // Internal: also show OUT side as negative companion if needed; keep net via received mac above.
-                // For detail, show one IN line already; add OUT line with from MAC.
+                // Internal: tampilkan baris OUT dari kartu value_out.
+                $macOut = 0.0;
+                $amountOut = 0.0;
                 if ($ofii) {
-                    $macOut = (float) (DB::table('outlet_food_inventory_cost_histories')
+                    $outCard = DB::table('outlet_food_inventory_cards')
+                        ->where('reference_type', 'outlet_transfer')
+                        ->where('reference_id', $transferId)
                         ->where('inventory_item_id', $ofii->id)
                         ->where('id_outlet', $fromOutletId)
                         ->where('warehouse_outlet_id', $fromWarehouseId)
-                        ->where('date', '<=', $transferDate)
-                        ->orderByDesc('date')
-                        ->orderByDesc('created_at')
-                        ->value('mac') ?? 0);
-                } else {
-                    $macOut = 0.0;
+                        ->orderByDesc('id')
+                        ->first();
+                    if ($outCard) {
+                        $macOut = (float) ($outCard->cost_per_small ?? 0);
+                        $amountOut = (float) ($outCard->value_out ?? 0);
+                    }
                 }
                 $rows[] = [
                     'item_name' => $item->item_name,
@@ -1389,7 +1380,7 @@ class CostReportController extends Controller
                     'direction' => 'internal_out',
                     'qty' => $qtySmall,
                     'unit_cost' => round($macOut, 4),
-                    'amount' => round(-1 * ($qtySmall * $macOut), 2),
+                    'amount' => round(-1 * $amountOut, 2),
                 ];
             }
 
@@ -1401,7 +1392,7 @@ class CostReportController extends Controller
                 'warehouse_name' => $warehouseName ?: ($direction === 'out' ? 'OUT' : 'IN'),
                 'direction' => $direction,
                 'qty' => $qtySmall,
-                'unit_cost' => round($mac, 4),
+                'unit_cost' => round($unitCost, 4),
                 'amount' => round($amount, 2),
             ];
         }
@@ -1412,10 +1403,10 @@ class CostReportController extends Controller
     private function getReportRowsCacheKey(string $dateFrom, string $dateTo = ''): string
     {
         if ($dateTo === '') {
-            return 'cost_report:report_rows:v4:' . $dateFrom;
+            return 'cost_report:report_rows:v5:' . $dateFrom;
         }
 
-        return 'cost_report:report_rows:v4:' . $dateFrom . '_' . $dateTo;
+        return 'cost_report:report_rows:v5:' . $dateFrom . '_' . $dateTo;
     }
 
     private function buildCostInventoryRows($outlets, Carbon $bulanSebelumnya, string $tanggalAkhirBulanSebelumnya, string $tanggal1BulanIni, string $tanggalAwalBulan, string $tanggalAkhirBulan): array
@@ -2419,57 +2410,24 @@ class CostReportController extends Controller
             $result[$oid] = 0;
         }
 
-        // 1. Nilai diterima (receiver): dari outlet_food_inventory_cost_histories (reference_type=outlet_transfer)
-        //    join transfer items → sum(qty_small * mac) per id_outlet
-        $receivedRows = DB::table('outlet_food_inventory_cost_histories as h')
-            ->join('outlet_transfers as t', 't.id', '=', 'h.reference_id')
-            ->join('outlet_transfer_items as d', function ($j) {
-                $j->on('d.outlet_transfer_id', '=', 't.id');
+        // Net per outlet = SUM(value_in - value_out) dari kartu inventory transfer.
+        // value_in/out = qty × cost transfer aktual (sama di sisi kirim & terima).
+        $rows = DB::table('outlet_food_inventory_cards as c')
+            ->join('outlet_transfers as t', function ($j) {
+                $j->on('t.id', '=', 'c.reference_id')
+                    ->where('c.reference_type', '=', 'outlet_transfer');
             })
-            ->join('outlet_food_inventory_items as ofii', function ($j) {
-                $j->on('ofii.id', '=', 'h.inventory_item_id')->on('ofii.item_id', '=', 'd.item_id');
-            })
-            ->where('h.reference_type', 'outlet_transfer')
-            ->where('t.status', 'approved')
-            ->whereBetween('h.date', [$tanggalAwal, $tanggalAkhir])
-            ->groupBy('h.id_outlet')
-            ->select('h.id_outlet', DB::raw('SUM(d.qty_small * COALESCE(h.mac, 0)) as total_received'))
-            ->get();
-        foreach ($receivedRows as $r) {
-            $result[$r->id_outlet] = (float) ($r->total_received ?? 0);
-        }
-
-        // 2. Nilai dikirim (sender): per transfer approved, outlet asal = warehouse_outlet_from → outlet_id
-        //    nilai = sum over items (qty_small * MAC di outlet asal pada transfer_date)
-        $transfers = DB::table('outlet_transfers as t')
-            ->join('warehouse_outlets as wo_from', 'wo_from.id', '=', 't.warehouse_outlet_from_id')
             ->where('t.status', 'approved')
             ->whereBetween('t.transfer_date', [$tanggalAwal, $tanggalAkhir])
-            ->select('t.id', 't.transfer_date', 't.warehouse_outlet_from_id', 'wo_from.outlet_id as from_outlet_id')
+            ->groupBy('c.id_outlet')
+            ->select(
+                'c.id_outlet',
+                DB::raw('SUM(COALESCE(c.value_in, 0) - COALESCE(c.value_out, 0)) as net_transfer')
+            )
             ->get();
 
-        foreach ($transfers as $t) {
-            $items = DB::table('outlet_transfer_items')->where('outlet_transfer_id', $t->id)->get();
-            foreach ($items as $item) {
-                $qtySmall = (float) ($item->qty_small ?? 0);
-                if ($qtySmall <= 0) {
-                    continue;
-                }
-                $ofii = DB::table('outlet_food_inventory_items')->where('item_id', $item->item_id)->first();
-                if (!$ofii) {
-                    continue;
-                }
-                $mac = DB::table('outlet_food_inventory_cost_histories')
-                    ->where('inventory_item_id', $ofii->id)
-                    ->where('id_outlet', $t->from_outlet_id)
-                    ->where('warehouse_outlet_id', $t->warehouse_outlet_from_id)
-                    ->where('date', '<=', $t->transfer_date)
-                    ->orderByDesc('date')
-                    ->orderByDesc('created_at')
-                    ->value('mac');
-                $valueSent = $qtySmall * (float) ($mac ?? 0);
-                $result[$t->from_outlet_id] -= $valueSent;
-            }
+        foreach ($rows as $r) {
+            $result[$r->id_outlet] = (float) ($r->net_transfer ?? 0);
         }
 
         return $result;
