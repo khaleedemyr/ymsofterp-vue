@@ -343,14 +343,22 @@ class OpexOutletDashboardService
         // Nilai utama card Ending = cost di stok (sama Cost Report MTD). Formula tetap di breakdown.
         $endingInventory = round((float) $endingStock['total'], 2);
 
-        // COGS % — selaras tab Actual Cost MTD Cost Report.
-        // Foods / Category / Meal pakai rumus yang sama dengan CostReportDataService
-        // supaya Pembanding & Deviasi match.
-        $costReport = app(CostReportDataService::class);
-        $cogsFoods = round((float) ($costReport->computeCogsStockCutByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
-        $categoryCostForCogs = round((float) ($costReport->computeCategoryCostByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
-        $mealEmployees = round((float) ($costReport->computeMealEmployeesByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
-        $costRnd = round((float) ($costReport->computeCostRndByOutlet($dateFrom, $dateTo)[$outletId] ?? 0), 2);
+        // COGS % — pakai data outlet-scoped yang sudah dihitung di atas.
+        // Hindari CostReportDataService::*ByOutlet (agregat SEMUA outlet + MAC detail → timeout).
+        $byTypeAmount = [];
+        foreach ($categoryCost['by_type'] ?? [] as $row) {
+            $byTypeAmount[(string) ($row['type'] ?? '')] = (float) ($row['amount'] ?? 0);
+        }
+        $cogsFoods = round((float) ($stockCut['total'] ?? 0), 2);
+        $categoryCostForCogs = round(
+            ($byTypeAmount['spoil'] ?? 0)
+            + ($byTypeAmount['waste'] ?? 0)
+            + ($byTypeAmount['guest_supplies'] ?? 0)
+            + ($byTypeAmount['non_commodity'] ?? 0),
+            2
+        );
+        $mealEmployees = round((float) ($byTypeAmount['internal_use'] ?? 0), 2);
+        $costRnd = round((float) (($byTypeAmount['r_and_d'] ?? 0) + ($byTypeAmount['marketing'] ?? 0)), 2);
         $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
         $officialCost = $this->sumOfficialCostForOutlet($outletId, $dateFrom, $dateTo);
         $availableGoods = round(

@@ -257,7 +257,14 @@
           </div>
 
         <!-- Source cards — di bawah Purchased (GSR/RF/RNF/Petty) -->
-        <div v-if="!sectionLoading.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
+        <div v-if="sectionError.overview" class="rounded-3xl bg-rose-50 border border-rose-100 px-4 py-3 mb-4 text-sm text-rose-700">
+          Gagal memuat KPI overview{{ typeof sectionError.overview === 'string' ? ': ' + sectionError.overview : '.' }}
+          Coba klik Tampilkan lagi.
+        </div>
+        <div v-else-if="sectionLoading.overview" class="rounded-3xl bg-white border border-amber-100 shadow-sm py-10 mb-4 text-center text-slate-400 text-sm">
+          <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat pembelian &amp; spend…
+        </div>
+        <div v-else-if="dashboardData.overview" class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
           <button
             v-for="card in sourceCards"
             :key="card.key"
@@ -401,7 +408,10 @@
         <div v-if="sectionLoading.overview" class="rounded-3xl bg-white border border-slate-100 shadow-sm py-16 mb-4 text-center text-slate-400 text-sm">
           <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat KPI…
         </div>
-        <template v-else>
+        <div v-else-if="sectionError.overview" class="rounded-3xl bg-rose-50 border border-rose-100 px-4 py-3 mb-4 text-sm text-rose-700">
+          Gagal memuat KPI revenue{{ typeof sectionError.overview === 'string' ? ': ' + sectionError.overview : '.' }}
+        </div>
+        <template v-else-if="dashboardData.overview">
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-4">
           <button
             type="button"
@@ -3203,7 +3213,7 @@ const fetchSection = async (section) => {
   try {
     const { data } = await axios.get('/opex-outlet-dashboard/section', {
       params: { section, ...filterParams() },
-      timeout: section === 'analytics' ? 120000 : 60000,
+      timeout: ['analytics', 'overview', 'charts'].includes(section) ? 180000 : 60000,
     })
     mergeSectionPayload(section, data)
   } catch (e) {

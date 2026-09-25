@@ -732,7 +732,7 @@ class KpiEvaluationService
             'employee_induction_on_time_percent' => 'Sumber ERP: Employee Onboarding — % minggu terbuka yang submit tepat waktu di outlet scope KPI (bukan induction user evaluasi).',
             'employee_coaching_person_count' => 'Sumber ERP: Employee Coaching — jumlah karyawan unik di-coaching.',
             'sop_development_completion_percent' => 'Sumber ERP: SOP Development Completion — % SOP yang dibuat user dan sudah di-upload/approved.',
-            'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi sejak assign regional.',
+            'cvcc_avg_resolution_hours' => 'Sumber ERP: CVCC — jam resolusi assign→resolve (negative + CAPA divisi + outlet).',
             'cvcc_beverage_complaint_count' => 'Sumber ERP: CVCC — komplain beverage/bar (negative + CAPA).',
             'cvcc_food_complaint_count' => 'Sumber ERP: CVCC — komplain food/kitchen (negative + CAPA).',
             'cvcc_service_complaint_count' => 'Sumber ERP: CVCC — komplain service (negative + CAPA).',

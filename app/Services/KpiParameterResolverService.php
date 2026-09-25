@@ -2742,6 +2742,13 @@ class KpiParameterResolverService
     }
 
     /**
+     * Rata-rata jam resolusi CVCC sejak assign regional.
+     * Scope sama dengan complaint ratio per divisi:
+     * - outlet (single / multi dari context)
+     * - divisi dari area Regional Management (bar / kitchen / service)
+     * - hanya negative + CAPA divisi sudah diisi
+     * - periode by event_at (selaras D040/D041/D042/D054)
+     *
      * @param  list<int>  $outletIds
      */
     private function resolveCvccAvgResolutionHours(
@@ -2763,18 +2770,24 @@ class KpiParameterResolverService
         }
 
         $hours = [];
-        foreach ($this->fetchCvccCasesByRegionalAssignedPeriod(
+        foreach ($this->fetchCvccCasesForPeriod(
             $startDate,
             $endDate,
             outletId: $outletId,
             outletIds: $outletIds,
         ) as $row) {
-            if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope)) {
+            if (! in_array(strtolower(trim((string) ($row->severity ?? ''))), self::CVCC_NEGATIVE_SEVERITIES, true)) {
+                continue;
+            }
+
+            // Wajib CAPA divisi (bar/kitchen/service sesuai area karyawan) sudah diisi —
+            // selaras beverage/food/service complaint ratio.
+            if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope, requireCapaInput: true)) {
                 continue;
             }
 
             $assignedAt = $this->extractRegionalAssignedAtTimestamp($row->meta);
-            if ($assignedAt === null || $assignedAt > $periodEndTs) {
+            if ($assignedAt === null) {
                 continue;
             }
 
@@ -2785,10 +2798,12 @@ class KpiParameterResolverService
             }
 
             // Belum resolve dalam periode data → anggap durasi sampai akhir bulan (biasanya > 24 jam).
-            $hours[] = ($periodEndTs - $assignedAt) / 3600;
+            if ($assignedAt <= $periodEndTs) {
+                $hours[] = max(0, ($periodEndTs - $assignedAt) / 3600);
+            }
         }
 
-        // Tidak ada komplain di periode = 0 jam resolusi (lebih baik dari target <= 24 jam).
+        // Tidak ada komplain divisi di periode = 0 jam resolusi (lebih baik dari target <= 24 jam).
         if ($hours === []) {
             return 0.0;
         }
