@@ -13,10 +13,77 @@ import AIAnalytics from './Components/AIAnalytics.vue';
 
 const props = defineProps({
     dashboardData: Object,
-    filters: Object
+    filters: Object,
+    lazy: { type: Boolean, default: true },
 });
 
 const loading = ref(false);
+
+function emptyDashboard() {
+    return {
+        overview: {
+            total_orders: 0,
+            total_revenue: 0,
+            avg_order_value: 0,
+            total_customers: 0,
+            avg_pax_per_order: 0,
+            avg_check: 0,
+            total_discount: 0,
+            total_service_charge: 0,
+            total_commission_fee: 0,
+            total_manual_discount: 0,
+            revenue_growth: 0,
+            order_growth: 0,
+            previous_period: { date_from: null, date_to: null, total_orders: 0, total_revenue: 0 },
+        },
+        salesTrend: [],
+        topItems: [],
+        paymentMethods: [],
+        hourlySales: [],
+        promoUsage: { orders_with_promo: 0, total_promo_usage: 0, promo_usage_percentage: 0 },
+        bankPromoDiscount: {
+            orders_with_bank_promo: 0,
+            total_bank_discount_amount: 0,
+            avg_bank_discount_amount: 0,
+            bank_promo_percentage: 0,
+        },
+        avgOrderValue: { avg_order_value: 0, min_order_value: 0, max_order_value: 0, median_order_value: 0 },
+        peakHours: [],
+        lunchDinnerOrders: {
+            lunch: { order_count: 0, total_revenue: 0, total_pax: 0, avg_order_value: 0 },
+            dinner: { order_count: 0, total_revenue: 0, total_pax: 0, avg_order_value: 0 },
+        },
+        weekdayWeekendRevenue: {
+            weekday: { order_count: 0, total_revenue: 0, total_pax: 0, avg_order_value: 0 },
+            weekend: { order_count: 0, total_revenue: 0, total_pax: 0, avg_order_value: 0 },
+        },
+        revenuePerOutlet: {},
+        revenuePerOutletLunchDinner: {},
+        revenuePerOutletWeekendWeekday: {},
+        revenuePerRegion: { total_revenue: [], lunch_dinner: {}, weekday_weekend: {} },
+        forecast: null,
+    };
+}
+
+const sectionLoading = ref({
+    overview: false,
+    trend: false,
+    charts: false,
+    catalog: false,
+    promo: false,
+    revenue: false,
+    forecast: false,
+});
+
+const bootstrapping = computed(() => Object.values(sectionLoading.value).some(Boolean));
+
+// Local mutable dashboard state (progressive section merge)
+const dashboardData = ref({
+    ...emptyDashboard(),
+    ...(props.dashboardData || {}),
+});
+
+const secondaryLoaded = ref(false);
 
 // Modal state for menu region analysis
 const showMenuModal = ref(false);
@@ -123,27 +190,19 @@ const periodRangeLabel = computed(() => {
     return `${fmt(filters.value.date_from)} – ${fmt(filters.value.date_to)}`;
 });
 
-// Computed property for dashboard data
-const dashboardData = computed(() => props.dashboardData);
-
 // ApexCharts data
 const salesTrendSeries = computed(() => {
-    if (!props.dashboardData?.salesTrend) return [];
-    
-    console.log('Sales Trend Data:', props.dashboardData.salesTrend);
-    console.log('Holidays Data:', holidaysData.value);
+    if (!dashboardData.value?.salesTrend) return [];
     
     // Create separate series for weekday, weekend, and holiday orders
     const weekdayOrders = [];
     const weekendOrders = [];
     const holidayOrders = [];
     
-    props.dashboardData.salesTrend.forEach((item, index) => {
+    dashboardData.value.salesTrend.forEach((item) => {
         const date = new Date(item.period);
         const dayOfWeek = date.getDay(); // 0 = Sunday, 6 = Saturday
         const dateString = item.period;
-        
-        console.log(`Date ${index}: ${dateString}, Day: ${dayOfWeek}, Orders: ${item.orders}`);
         
         // Check if this date is a holiday
         const isHoliday = holidaysData.value.some(holiday => holiday.date === dateString);
@@ -156,32 +215,22 @@ const salesTrendSeries = computed(() => {
             weekdayOrders.push(null);
             weekendOrders.push(null);
             holidayOrders.push(ordersValue);
-            console.log(`Holiday: ${dateString} - Orders: ${ordersValue} (pushed to holidayOrders)`);
         } else if (dayOfWeek === 0 || dayOfWeek === 6) {
             weekdayOrders.push(null);
             weekendOrders.push(ordersValue);
             holidayOrders.push(null);
-            console.log(`Weekend: ${dateString} - Orders: ${ordersValue} (pushed to weekendOrders)`);
         } else {
             weekdayOrders.push(ordersValue);
             weekendOrders.push(null);
             holidayOrders.push(null);
-            console.log(`Weekday: ${dateString} - Orders: ${ordersValue} (pushed to weekdayOrders)`);
         }
     });
     
-    console.log('Weekday Orders:', weekdayOrders);
-    console.log('Weekend Orders:', weekendOrders);
-    console.log('Holiday Orders:', holidayOrders);
-    console.log('First 3 weekday orders:', weekdayOrders.slice(0, 3));
-    console.log('First 3 weekend orders:', weekendOrders.slice(0, 3));
-    console.log('First 3 holiday orders:', holidayOrders.slice(0, 3));
-    
-    const series = [
+    return [
         {
             name: 'Revenue',
             type: 'line',
-            data: props.dashboardData.salesTrend.map(item => item.revenue),
+            data: dashboardData.value.salesTrend.map(item => item.revenue),
             zIndex: 1
         },
         {
@@ -203,9 +252,6 @@ const salesTrendSeries = computed(() => {
             zIndex: 2
         }
     ];
-    
-    console.log('Final Series:', series);
-    return series;
 });
 
 
@@ -227,7 +273,7 @@ const salesTrendOptions = computed(() => ({
                 // Handle clicks on Orders series (index 1, 2, 3)
                 if (config.seriesIndex === 1 || config.seriesIndex === 2 || config.seriesIndex === 3) {
                     const dateIndex = config.dataPointIndex;
-                    const salesTrendData = props.dashboardData?.salesTrend;
+                    const salesTrendData = dashboardData.value?.salesTrend;
                     if (salesTrendData && salesTrendData[dateIndex]) {
                         const selectedDateValue = salesTrendData[dateIndex].period;
                         openOutletDetailsModal(selectedDateValue);
@@ -259,7 +305,7 @@ const salesTrendOptions = computed(() => ({
         hover: { size: 0 } 
     },
     xaxis: {
-        categories: props.dashboardData?.salesTrend?.map(item => {
+        categories: dashboardData.value?.salesTrend?.map(item => {
             return new Date(item.period).toLocaleDateString('id-ID');
         }) || [],
         offsetX: 0,
@@ -299,7 +345,7 @@ const salesTrendOptions = computed(() => ({
         intersect: false,
         custom: function({ series, seriesIndex, dataPointIndex, w }) {
             const date = w.globals.labels[dataPointIndex];
-            const salesTrendData = props.dashboardData?.salesTrend;
+            const salesTrendData = dashboardData.value?.salesTrend;
             const dayData = salesTrendData[dataPointIndex];
             
             if (!dayData) return '';
@@ -399,18 +445,18 @@ const salesTrendOptions = computed(() => ({
 }));
 
 const hourlySalesSeries = computed(() => {
-    if (!props.dashboardData?.hourlySales) return [];
+    if (!dashboardData.value?.hourlySales) return [];
     
     return [
         {
             name: 'Orders',
             type: 'column',
-            data: props.dashboardData.hourlySales.map(item => item.orders)
+            data: dashboardData.value.hourlySales.map(item => item.orders)
         },
         {
             name: 'Revenue',
             type: 'line',
-            data: props.dashboardData.hourlySales.map(item => item.revenue)
+            data: dashboardData.value.hourlySales.map(item => item.revenue)
         }
     ];
 });
@@ -423,7 +469,7 @@ const hourlySalesOptions = computed(() => ({
         animations: { enabled: true, easing: 'easeinout', speed: 800 }
     },
     xaxis: {
-        categories: props.dashboardData?.hourlySales?.map(item => `${item.hour}:00`) || [],
+        categories: dashboardData.value?.hourlySales?.map(item => `${item.hour}:00`) || [],
         title: { text: 'Hour' },
         labels: { style: { fontWeight: 600 } }
     },
@@ -473,7 +519,7 @@ const hourlySalesOptions = computed(() => ({
         shared: true,
         intersect: false,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.hourlySales?.[dataPointIndex];
+            const data = dashboardData.value?.hourlySales?.[dataPointIndex];
             if (data) {
                 return `
                     <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
@@ -513,9 +559,9 @@ const hourlySalesOptions = computed(() => ({
 }));
 
 const paymentMethodsSeries = computed(() => {
-    if (!props.dashboardData?.paymentMethods || props.dashboardData.paymentMethods.length === 0) return [];
+    if (!dashboardData.value?.paymentMethods || dashboardData.value.paymentMethods.length === 0) return [];
     
-    return props.dashboardData.paymentMethods.map(item => parseFloat(item.total_amount) || 0);
+    return dashboardData.value.paymentMethods.map(item => parseFloat(item.total_amount) || 0);
 });
 
 const paymentMethodsOptions = computed(() => ({
@@ -524,7 +570,7 @@ const paymentMethodsOptions = computed(() => ({
         height: 350,
         toolbar: { show: true }
     },
-    labels: props.dashboardData?.paymentMethods?.map(item => item.payment_code) || [],
+    labels: dashboardData.value?.paymentMethods?.map(item => item.payment_code) || [],
     colors: ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#F97316', '#84CC16', '#06B6D4', '#8B5A2B', '#DC2626', '#059669'],
     legend: {
         position: 'bottom',
@@ -564,7 +610,7 @@ const paymentMethodsOptions = computed(() => ({
     },
     tooltip: {
         custom: function({series, seriesIndex, w}) {
-            const data = props.dashboardData?.paymentMethods?.[seriesIndex];
+            const data = dashboardData.value?.paymentMethods?.[seriesIndex];
             if (data) {
                 return `
                     <div class="px-3 py-2 rounded-lg bg-white shadow-lg border">
@@ -606,9 +652,9 @@ const paymentMethodsOptions = computed(() => ({
 }));
 
 const lunchDinnerSeries = computed(() => {
-    if (!props.dashboardData?.lunchDinnerOrders) return [];
+    if (!dashboardData.value?.lunchDinnerOrders) return [];
     
-    const data = props.dashboardData.lunchDinnerOrders;
+    const data = dashboardData.value.lunchDinnerOrders;
     return [
         {
             name: 'Revenue',
@@ -678,7 +724,7 @@ const lunchDinnerOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.lunchDinnerOrders;
+            const data = dashboardData.value?.lunchDinnerOrders;
             if (!data) return seriesName;
             
             if (seriesName === 'Revenue') {
@@ -708,7 +754,7 @@ const lunchDinnerOptions = computed(() => ({
         shared: true,
         intersect: false,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.lunchDinnerOrders;
+            const data = dashboardData.value?.lunchDinnerOrders;
             const period = dataPointIndex === 0 ? 'lunch' : 'dinner';
             const periodData = data?.[period];
             
@@ -756,9 +802,9 @@ const lunchDinnerOptions = computed(() => ({
 }));
 
 const weekdayWeekendSeries = computed(() => {
-    if (!props.dashboardData?.weekdayWeekendRevenue) return [];
+    if (!dashboardData.value?.weekdayWeekendRevenue) return [];
     
-    const data = props.dashboardData.weekdayWeekendRevenue;
+    const data = dashboardData.value.weekdayWeekendRevenue;
     return [
         {
             name: 'Revenue',
@@ -828,7 +874,7 @@ const weekdayWeekendOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.weekdayWeekendRevenue;
+            const data = dashboardData.value?.weekdayWeekendRevenue;
             if (!data) return seriesName;
             
             if (seriesName === 'Revenue') {
@@ -858,7 +904,7 @@ const weekdayWeekendOptions = computed(() => ({
         shared: true,
         intersect: false,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.weekdayWeekendRevenue;
+            const data = dashboardData.value?.weekdayWeekendRevenue;
             const period = dataPointIndex === 0 ? 'weekday' : 'weekend';
             const periodData = data?.[period];
             
@@ -907,9 +953,9 @@ const weekdayWeekendOptions = computed(() => ({
 
 // Revenue per Outlet by Region (Lunch/Dinner)
 const revenuePerOutletLunchDinnerSeries = computed(() => {
-    if (!props.dashboardData?.revenuePerOutletLunchDinner) return [];
+    if (!dashboardData.value?.revenuePerOutletLunchDinner) return [];
 
-    const data = props.dashboardData.revenuePerOutletLunchDinner;
+    const data = dashboardData.value.revenuePerOutletLunchDinner;
     const regions = Object.keys(data);
     
     if (regions.length === 0) return [];
@@ -983,7 +1029,7 @@ const revenuePerOutletLunchDinnerOptions = computed(() => ({
     xaxis: {
         categories: revenuePerOutletLunchDinnerSeries.value.length > 0 ? 
             (() => {
-                const data = props.dashboardData?.revenuePerOutletLunchDinner;
+                const data = dashboardData.value?.revenuePerOutletLunchDinner;
                 if (!data) return [];
                 
                 const allOutlets = new Set();
@@ -1025,7 +1071,7 @@ const revenuePerOutletLunchDinnerOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.revenuePerOutletLunchDinner;
+            const data = dashboardData.value?.revenuePerOutletLunchDinner;
             if (!data) return seriesName;
             
             // Parse series name to get region and meal period
@@ -1051,7 +1097,7 @@ const revenuePerOutletLunchDinnerOptions = computed(() => ({
         shared: false,
         intersect: true,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.revenuePerOutletLunchDinner;
+            const data = dashboardData.value?.revenuePerOutletLunchDinner;
             if (!data) return '';
             
             const regions = Object.keys(data);
@@ -1112,9 +1158,9 @@ const revenuePerOutletLunchDinnerOptions = computed(() => ({
 
 // Revenue per Outlet by Region (Weekend/Weekday)
 const revenuePerOutletWeekendWeekdaySeries = computed(() => {
-    if (!props.dashboardData?.revenuePerOutletWeekendWeekday) return [];
+    if (!dashboardData.value?.revenuePerOutletWeekendWeekday) return [];
 
-    const data = props.dashboardData.revenuePerOutletWeekendWeekday;
+    const data = dashboardData.value.revenuePerOutletWeekendWeekday;
     const regions = Object.keys(data);
     
     if (regions.length === 0) return [];
@@ -1188,7 +1234,7 @@ const revenuePerOutletWeekendWeekdayOptions = computed(() => ({
     xaxis: {
         categories: revenuePerOutletWeekendWeekdaySeries.value.length > 0 ? 
             (() => {
-                const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+                const data = dashboardData.value?.revenuePerOutletWeekendWeekday;
                 if (!data) return [];
                 
                 const allOutlets = new Set();
@@ -1230,7 +1276,7 @@ const revenuePerOutletWeekendWeekdayOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+            const data = dashboardData.value?.revenuePerOutletWeekendWeekday;
             if (!data) return seriesName;
             
             // Parse series name to get region and day type
@@ -1256,7 +1302,7 @@ const revenuePerOutletWeekendWeekdayOptions = computed(() => ({
         shared: false,
         intersect: true,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+            const data = dashboardData.value?.revenuePerOutletWeekendWeekday;
             if (!data) return '';
             
             const regions = Object.keys(data);
@@ -1317,9 +1363,9 @@ const revenuePerOutletWeekendWeekdayOptions = computed(() => ({
 
 // Revenue per Outlet by Region
 const revenuePerOutletSeries = computed(() => {
-    if (!props.dashboardData?.revenuePerOutlet) return [];
+    if (!dashboardData.value?.revenuePerOutlet) return [];
 
-    const data = props.dashboardData.revenuePerOutlet;
+    const data = dashboardData.value.revenuePerOutlet;
     const regions = Object.keys(data);
     
     if (regions.length === 0) return [];
@@ -1379,7 +1425,7 @@ const revenuePerOutletOptions = computed(() => ({
     xaxis: {
         categories: revenuePerOutletSeries.value.length > 0 ? 
             (() => {
-                const data = props.dashboardData?.revenuePerOutlet;
+                const data = dashboardData.value?.revenuePerOutlet;
                 if (!data) return [];
                 
                 const allOutlets = new Set();
@@ -1421,7 +1467,7 @@ const revenuePerOutletOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.revenuePerOutlet;
+            const data = dashboardData.value?.revenuePerOutlet;
             if (!data || !data[seriesName]) return seriesName;
             
             const regionData = data[seriesName];
@@ -1436,7 +1482,7 @@ const revenuePerOutletOptions = computed(() => ({
         shared: false,
         intersect: true,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.revenuePerOutlet;
+            const data = dashboardData.value?.revenuePerOutlet;
             if (!data) return '';
             
             const regions = Object.keys(data);
@@ -1504,9 +1550,9 @@ const revenuePerOutletOptions = computed(() => ({
 
 // Revenue per Region Charts
 const revenuePerRegionTotalSeries = computed(() => {
-    if (!props.dashboardData?.revenuePerRegion?.total_revenue) return [];
+    if (!dashboardData.value?.revenuePerRegion?.total_revenue) return [];
 
-    const data = props.dashboardData.revenuePerRegion.total_revenue;
+    const data = dashboardData.value.revenuePerRegion.total_revenue;
     
     return [{
         name: 'Revenue',
@@ -1522,7 +1568,7 @@ const revenuePerRegionTotalOptions = computed(() => ({
         animations: { enabled: true, easing: 'easeinout', speed: 800 }
     },
     xaxis: {
-        categories: props.dashboardData?.revenuePerRegion?.total_revenue?.map(region => region.region_name) || [],
+        categories: dashboardData.value?.revenuePerRegion?.total_revenue?.map(region => region.region_name) || [],
         title: { text: 'Regions' },
         labels: { 
             style: { fontWeight: 600 },
@@ -1558,7 +1604,7 @@ const revenuePerRegionTotalOptions = computed(() => ({
     },
     tooltip: {
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.revenuePerRegion?.total_revenue;
+            const data = dashboardData.value?.revenuePerRegion?.total_revenue;
             if (!data || !data[dataPointIndex]) return '';
             
             const region = data[dataPointIndex];
@@ -1605,9 +1651,9 @@ const revenuePerRegionTotalOptions = computed(() => ({
 
 // Lunch/Dinner Revenue per Region
 const revenuePerRegionLunchDinnerSeries = computed(() => {
-    if (!props.dashboardData?.revenuePerRegion?.lunch_dinner) return [];
+    if (!dashboardData.value?.revenuePerRegion?.lunch_dinner) return [];
 
-    const data = props.dashboardData.revenuePerRegion.lunch_dinner;
+    const data = dashboardData.value.revenuePerRegion.lunch_dinner;
     const regions = Object.keys(data);
     
     if (regions.length === 0) return [];
@@ -1633,7 +1679,7 @@ const revenuePerRegionLunchDinnerOptions = computed(() => ({
         animations: { enabled: true, easing: 'easeinout', speed: 800 }
     },
     xaxis: {
-        categories: Object.keys(props.dashboardData?.revenuePerRegion?.lunch_dinner || {}),
+        categories: Object.keys(dashboardData.value?.revenuePerRegion?.lunch_dinner || {}),
         title: { text: 'Regions' },
         labels: { 
             style: { fontWeight: 600 },
@@ -1663,7 +1709,7 @@ const revenuePerRegionLunchDinnerOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.revenuePerRegion?.lunch_dinner;
+            const data = dashboardData.value?.revenuePerRegion?.lunch_dinner;
             if (!data) return seriesName;
             
             let totalRevenue = 0;
@@ -1686,7 +1732,7 @@ const revenuePerRegionLunchDinnerOptions = computed(() => ({
         shared: false,
         intersect: true,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.revenuePerRegion?.lunch_dinner;
+            const data = dashboardData.value?.revenuePerRegion?.lunch_dinner;
             if (!data) return '';
             
             const regions = Object.keys(data);
@@ -1740,9 +1786,9 @@ const revenuePerRegionLunchDinnerOptions = computed(() => ({
 
 // Weekday/Weekend Revenue per Region
 const revenuePerRegionWeekdayWeekendSeries = computed(() => {
-    if (!props.dashboardData?.revenuePerRegion?.weekday_weekend) return [];
+    if (!dashboardData.value?.revenuePerRegion?.weekday_weekend) return [];
 
-    const data = props.dashboardData.revenuePerRegion.weekday_weekend;
+    const data = dashboardData.value.revenuePerRegion.weekday_weekend;
     const regions = Object.keys(data);
     
     if (regions.length === 0) return [];
@@ -1768,7 +1814,7 @@ const revenuePerRegionWeekdayWeekendOptions = computed(() => ({
         animations: { enabled: true, easing: 'easeinout', speed: 800 }
     },
     xaxis: {
-        categories: Object.keys(props.dashboardData?.revenuePerRegion?.weekday_weekend || {}),
+        categories: Object.keys(dashboardData.value?.revenuePerRegion?.weekday_weekend || {}),
         title: { text: 'Regions' },
         labels: { 
             style: { fontWeight: 600 },
@@ -1798,7 +1844,7 @@ const revenuePerRegionWeekdayWeekendOptions = computed(() => ({
         fontSize: '14px',
         fontWeight: 600,
         formatter: function(seriesName, opts) {
-            const data = props.dashboardData?.revenuePerRegion?.weekday_weekend;
+            const data = dashboardData.value?.revenuePerRegion?.weekday_weekend;
             if (!data) return seriesName;
             
             let totalRevenue = 0;
@@ -1821,7 +1867,7 @@ const revenuePerRegionWeekdayWeekendOptions = computed(() => ({
         shared: false,
         intersect: true,
         custom: function({series, seriesIndex, dataPointIndex, w}) {
-            const data = props.dashboardData?.revenuePerRegion?.weekday_weekend;
+            const data = dashboardData.value?.revenuePerRegion?.weekday_weekend;
             if (!data) return '';
             
             const regions = Object.keys(data);
@@ -1917,21 +1963,148 @@ function getGrowthIcon(growth) {
     return 'fa-minus';
 }
 
+const forecastData = computed(() => dashboardData.value?.forecast || null);
+const forecastSummary = computed(() => forecastData.value?.summary || null);
+const forecastOutlets = computed(() => forecastData.value?.outlets || []);
+
+const forecastByRegion = computed(() => {
+    const groups = {};
+    for (const row of forecastOutlets.value) {
+        const key = row.region_name || 'Unknown Region';
+        if (!groups[key]) {
+            groups[key] = {
+                region_name: key,
+                region_code: row.region_code || 'UNK',
+                outlets: [],
+                monthly_target: 0,
+                actual_mtd: 0,
+                projected_eom: 0,
+                forecast_pessimistic: 0,
+            };
+        }
+        groups[key].outlets.push(row);
+        if (row.has_target) {
+            groups[key].monthly_target += Number(row.monthly_target || 0);
+            groups[key].actual_mtd += Number(row.actual_mtd || 0);
+            groups[key].projected_eom += Number(row.projected_eom || 0);
+            groups[key].forecast_pessimistic += Number(row.forecast_pessimistic || 0);
+        }
+    }
+    return Object.values(groups);
+});
+
+const expandedForecastRegions = ref(new Set());
+
+function toggleForecastRegion(regionName) {
+    const next = new Set(expandedForecastRegions.value);
+    if (next.has(regionName)) next.delete(regionName);
+    else next.add(regionName);
+    expandedForecastRegions.value = next;
+}
+
+function forecastGapClass(gap) {
+    if (gap > 0) return 'text-emerald-600';
+    if (gap < 0) return 'text-rose-600';
+    return 'text-gray-600';
+}
+
 // Filter functions
+function mergeSectionPayload(data) {
+    if (!data || typeof data !== 'object') return;
+    dashboardData.value = {
+        ...dashboardData.value,
+        ...data,
+        overview: data.overview
+            ? { ...(dashboardData.value.overview || {}), ...data.overview }
+            : dashboardData.value.overview,
+        revenuePerRegion: data.revenuePerRegion
+            ? { ...(dashboardData.value.revenuePerRegion || {}), ...data.revenuePerRegion }
+            : dashboardData.value.revenuePerRegion,
+    };
+}
+
+async function fetchSection(section) {
+    sectionLoading.value[section] = true;
+    try {
+        const { data } = await axios.get('/sales-outlet-dashboard/section', {
+            params: {
+                section,
+                date_from: filters.value.date_from,
+                date_to: filters.value.date_to,
+            },
+        });
+        mergeSectionPayload(data);
+    } catch (e) {
+        console.error(`Failed loading section ${section}`, e);
+    } finally {
+        sectionLoading.value[section] = false;
+    }
+}
+
+async function loadDashboardLazy() {
+    dashboardData.value = emptyDashboard();
+    secondaryLoaded.value = false;
+
+    // Priority first: overview + trend (above the fold), then the rest in parallel
+    await Promise.all([
+        fetchSection('overview'),
+        fetchSection('trend'),
+        fetchHolidays(),
+    ]);
+
+    await Promise.all([
+        fetchSection('charts'),
+        fetchSection('catalog'),
+        fetchSection('promo'),
+        fetchSection('revenue'),
+        fetchSection('forecast'),
+    ]);
+
+    // Secondary tables after main dashboard is usable
+    await loadSecondaryData();
+}
+
+async function loadSecondaryData() {
+    if (secondaryLoaded.value) return;
+    secondaryLoaded.value = true;
+    await Promise.all([
+        fetchBankPromoTransactions(),
+        fetchNonPromoBankTransactions(),
+        ensureFilterLookups(),
+    ]);
+}
+
+async function ensureFilterLookups() {
+    if (!bankPromoOutlets.value.length) {
+        await Promise.all([
+            fetchBankPromoOutlets(),
+            fetchBankPromoRegions(),
+            fetchNonPromoBankOutlets(),
+            fetchNonPromoBankRegions(),
+        ]);
+    }
+}
+
 function applyFilters() {
     loading.value = true;
     router.get(route('sales-outlet-dashboard.index'), filters.value, {
         preserveState: true,
+        preserveScroll: true,
+        only: ['filters', 'lazy'],
         onFinish: () => {
             loading.value = false;
-        }
+            loadDashboardLazy();
+        },
     });
 }
 
 function resetFilters() {
     selectedMonth.value = currentMonthValue();
-    filters.value = getMonthRange(selectedMonth.value);
-    applyFilters();
+    const range = getMonthRange(selectedMonth.value);
+    // watch(selectedMonth) applies when range changes; force reload if same month
+    if (filters.value.date_from === range.date_from && filters.value.date_to === range.date_to) {
+        applyFilters();
+    }
 }
 
 watch(selectedMonth, (month) => {
@@ -1941,31 +2114,17 @@ watch(selectedMonth, (month) => {
     }
     filters.value.date_from = range.date_from;
     filters.value.date_to = range.date_to;
-});
-
-
-// Watch for filter changes
-watch(filters, () => {
     applyFilters();
-    fetchHolidays();
-}, { deep: true });
-
-// Initialize holidays data on mount
-onMounted(() => {
-    fetchHolidays();
-    fetchBankPromoTransactions();
-    fetchBankPromoOutlets();
-    fetchBankPromoRegions();
-    fetchNonPromoBankTransactions();
-    fetchNonPromoBankOutlets();
-    fetchNonPromoBankRegions();
 });
 
-// Watch for dashboard data changes to fetch bank promo transactions
-watch(dashboardData, () => {
-    fetchBankPromoTransactions();
-    fetchNonPromoBankTransactions();
-}, { deep: true });
+onMounted(() => {
+    loadDashboardLazy();
+});
+
+// Load outlet/region dropdowns only when user focuses a filter
+watch([bankPromoOutletFilter, bankPromoRegionFilter, nonPromoBankOutletFilter, nonPromoBankRegionFilter], () => {
+    ensureFilterLookups();
+});
 
 // Menu region analysis functions
 async function openMenuModal(menuItem) {
@@ -2444,7 +2603,7 @@ function handleChartClick(config) {
     const outletIndex = config.dataPointIndex;
     const regionIndex = config.seriesIndex;
     
-    const data = props.dashboardData?.revenuePerOutlet;
+    const data = dashboardData.value?.revenuePerOutlet;
     if (!data) {
         console.log('No revenue data available');
         return;
@@ -2496,7 +2655,7 @@ function handleLunchDinnerChartClick(config) {
     const outletIndex = config.dataPointIndex;
     const seriesIndex = config.seriesIndex;
     
-    const data = props.dashboardData?.revenuePerOutletLunchDinner;
+    const data = dashboardData.value?.revenuePerOutletLunchDinner;
     if (!data) {
         console.log('No lunch/dinner revenue data available');
         return;
@@ -2551,7 +2710,7 @@ function handleWeekendWeekdayChartClick(config) {
     const outletIndex = config.dataPointIndex;
     const seriesIndex = config.seriesIndex;
     
-    const data = props.dashboardData?.revenuePerOutletWeekendWeekday;
+    const data = dashboardData.value?.revenuePerOutletWeekendWeekday;
     if (!data) {
         console.log('No weekend/weekday revenue data available');
         return;
@@ -2748,22 +2907,35 @@ const menuRegionChartOptions = computed(() => ({
                         </button>
                         <button 
                             @click="applyFilters"
-                            :disabled="loading"
+                            :disabled="loading || bootstrapping"
                             class="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition-colors disabled:opacity-50"
                         >
-                            {{ loading ? 'Loading...' : 'Apply Filters' }}
+                            {{ (loading || bootstrapping) ? 'Loading...' : 'Apply Filters' }}
                         </button>
                     </div>
                 </div>
 
-                <!-- Loading State -->
-                <div v-if="loading" class="text-center py-12">
-                    <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-                    <p class="text-gray-600 mt-2">Memuat data dashboard...</p>
+                <div v-if="bootstrapping" class="mb-4 rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-700 flex items-center gap-2">
+                    <i class="fa-solid fa-spinner fa-spin"></i>
+                    Memuat data dashboard…
+                    <span class="text-blue-500 text-xs">
+                        (overview{{ sectionLoading.overview ? '…' : ' ✓' }},
+                        trend{{ sectionLoading.trend ? '…' : ' ✓' }},
+                        charts{{ sectionLoading.charts ? '…' : ' ✓' }},
+                        catalog{{ sectionLoading.catalog ? '…' : ' ✓' }},
+                        promo{{ sectionLoading.promo ? '…' : ' ✓' }},
+                        revenue{{ sectionLoading.revenue ? '…' : ' ✓' }},
+                        forecast{{ sectionLoading.forecast ? '…' : ' ✓' }})
+                    </span>
                 </div>
 
-                <!-- Dashboard Content -->
-                <div v-else>
+                <!-- Loading State (filter navigation only) -->
+                <div v-if="loading && !bootstrapping" class="text-center py-4 mb-4">
+                    <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                </div>
+
+                <!-- Dashboard Content — tetap tampil saat section load progresif -->
+                <div>
                     <!-- AI Analytics Insight -->
                     <AIAnalytics :filters="filters" />
                     
@@ -2914,6 +3086,141 @@ const menuRegionChartOptions = computed(() => ({
                                 </div>
                             </div>
                         </div>
+                    </div>
+
+                    <!-- Rolling Forecast (semua outlet) — logika sama Opex -->
+                    <div class="bg-white rounded-lg shadow-sm border p-6 mb-6">
+                        <div class="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-2 mb-5">
+                            <div>
+                                <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Rolling Auto Forecast</p>
+                                <h3 class="text-lg font-semibold text-gray-900 mt-0.5">Forecast semua outlet</h3>
+                                <p class="text-xs text-gray-500 mt-1">
+                                    Sama dengan Opex Outlet Dashboard ·
+                                    Forecast (RO) = skenario Pesimis ·
+                                    Projected EOM = Realistis ·
+                                    Periode {{ forecastData?.period_from || '—' }} s/d {{ forecastData?.period_to || '—' }}
+                                    <span v-if="forecastData?.as_of"> · as of {{ forecastData.as_of }}</span>
+                                </p>
+                            </div>
+                            <div v-if="sectionLoading.forecast" class="text-sm text-sky-600">
+                                <i class="fa-solid fa-spinner fa-spin mr-1"></i> Menghitung forecast…
+                            </div>
+                        </div>
+
+                        <div v-if="!sectionLoading.forecast && !forecastSummary" class="rounded-lg bg-amber-50 border border-amber-100 px-4 py-3 text-sm text-amber-800">
+                            Forecast belum tersedia untuk periode ini.
+                        </div>
+
+                        <template v-else-if="forecastSummary">
+                            <div class="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-5">
+                                <div class="rounded-xl bg-slate-50 border border-slate-100 p-4">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Monthly Target</p>
+                                    <p class="mt-2 text-lg font-bold text-slate-900">{{ formatCurrency(forecastSummary.monthly_target) }}</p>
+                                    <p class="text-[11px] text-slate-400 mt-1">{{ forecastSummary.outlets_with_target }} outlet ber-target</p>
+                                </div>
+                                <div class="rounded-xl bg-sky-50 border border-sky-100 p-4">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Actual MTD</p>
+                                    <p class="mt-2 text-lg font-bold text-sky-900">{{ formatCurrency(forecastSummary.actual_mtd) }}</p>
+                                </div>
+                                <div class="rounded-xl bg-rose-50 border border-rose-100 p-4">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-rose-700">Forecast (Pesimis)</p>
+                                    <p class="mt-2 text-lg font-bold text-rose-900">{{ formatCurrency(forecastSummary.forecast) }}</p>
+                                    <p class="text-[11px] text-rose-500 mt-1">= nilai Forecast di RO Opex</p>
+                                </div>
+                                <div
+                                    class="rounded-xl border p-4"
+                                    :class="(forecastSummary.gap_vs_target || 0) >= 0 ? 'bg-emerald-50 border-emerald-100' : 'bg-amber-50 border-amber-100'"
+                                >
+                                    <p class="text-xs font-semibold uppercase tracking-wide" :class="(forecastSummary.gap_vs_target || 0) >= 0 ? 'text-emerald-700' : 'text-amber-700'">
+                                        Projected EOM (Realistis)
+                                    </p>
+                                    <p class="mt-2 text-lg font-bold" :class="(forecastSummary.gap_vs_target || 0) >= 0 ? 'text-emerald-900' : 'text-amber-900'">
+                                        {{ formatCurrency(forecastSummary.projected_eom) }}
+                                    </p>
+                                    <p class="text-[11px] mt-1" :class="forecastGapClass(forecastSummary.gap_vs_target)">
+                                        {{ forecastSummary.pct_of_target }}% target · gap {{ formatCurrency(forecastSummary.gap_vs_target) }}
+                                    </p>
+                                </div>
+                                <div class="rounded-xl bg-indigo-50 border border-indigo-100 p-4">
+                                    <p class="text-xs font-semibold uppercase tracking-wide text-indigo-700">Optimis</p>
+                                    <p class="mt-2 text-lg font-bold text-indigo-900">{{ formatCurrency(forecastSummary.forecast_optimistic) }}</p>
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto border border-gray-100 rounded-xl">
+                                <table class="min-w-full text-sm">
+                                    <thead class="bg-gray-50 text-left text-xs uppercase tracking-wide text-gray-500">
+                                        <tr>
+                                            <th class="px-4 py-3">Outlet / Region</th>
+                                            <th class="px-4 py-3 text-right">Target</th>
+                                            <th class="px-4 py-3 text-right">Actual MTD</th>
+                                            <th class="px-4 py-3 text-right">Forecast (Pesimis)</th>
+                                            <th class="px-4 py-3 text-right">EOM Realistis</th>
+                                            <th class="px-4 py-3 text-right">Gap</th>
+                                            <th class="px-4 py-3 text-right">% Target</th>
+                                            <th class="px-4 py-3 text-right">Pace</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <template v-for="region in forecastByRegion" :key="region.region_name">
+                                            <tr
+                                                class="bg-slate-50/80 border-t border-gray-100 cursor-pointer hover:bg-slate-100"
+                                                @click="toggleForecastRegion(region.region_name)"
+                                            >
+                                                <td class="px-4 py-3 font-semibold text-slate-800">
+                                                    <i
+                                                        class="fa-solid mr-2 text-slate-400"
+                                                        :class="expandedForecastRegions.has(region.region_name) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                                                    ></i>
+                                                    {{ region.region_name }}
+                                                    <span class="ml-2 text-xs font-normal text-slate-400">{{ region.outlets.length }} outlet</span>
+                                                </td>
+                                                <td class="px-4 py-3 text-right font-medium">{{ formatCurrency(region.monthly_target) }}</td>
+                                                <td class="px-4 py-3 text-right">{{ formatCurrency(region.actual_mtd) }}</td>
+                                                <td class="px-4 py-3 text-right text-rose-700">{{ formatCurrency(region.forecast_pessimistic) }}</td>
+                                                <td class="px-4 py-3 text-right text-emerald-700">{{ formatCurrency(region.projected_eom) }}</td>
+                                                <td class="px-4 py-3 text-right" :class="forecastGapClass(region.projected_eom - region.monthly_target)">
+                                                    {{ formatCurrency(region.projected_eom - region.monthly_target) }}
+                                                </td>
+                                                <td class="px-4 py-3 text-right text-slate-500">
+                                                    {{ region.monthly_target > 0 ? ((region.projected_eom / region.monthly_target) * 100).toFixed(1) : '0.0' }}%
+                                                </td>
+                                                <td class="px-4 py-3 text-right text-slate-400">—</td>
+                                            </tr>
+                                            <tr
+                                                v-for="outlet in region.outlets"
+                                                v-show="expandedForecastRegions.has(region.region_name)"
+                                                :key="outlet.outlet_id"
+                                                class="border-t border-gray-50"
+                                                :class="outlet.has_target ? '' : 'opacity-60'"
+                                            >
+                                                <td class="px-4 py-2.5 pl-10 text-gray-800">{{ outlet.outlet_name }}</td>
+                                                <td class="px-4 py-2.5 text-right">
+                                                    <span v-if="outlet.has_target">{{ formatCurrency(outlet.monthly_target) }}</span>
+                                                    <span v-else class="text-xs text-amber-600">No target</span>
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right">{{ formatCurrency(outlet.actual_mtd) }}</td>
+                                                <td class="px-4 py-2.5 text-right text-rose-700">
+                                                    {{ outlet.has_target ? formatCurrency(outlet.forecast_pessimistic) : '—' }}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right text-emerald-700">
+                                                    {{ outlet.has_target ? formatCurrency(outlet.projected_eom) : '—' }}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right" :class="forecastGapClass(outlet.gap_vs_target)">
+                                                    {{ outlet.has_target ? formatCurrency(outlet.gap_vs_target) : '—' }}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right">
+                                                    {{ outlet.has_target ? outlet.pct_of_target + '%' : '—' }}
+                                                </td>
+                                                <td class="px-4 py-2.5 text-right text-slate-500">
+                                                    {{ outlet.pace_factor != null ? outlet.pace_factor : '—' }}
+                                                </td>
+                                            </tr>
+                                        </template>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </template>
                     </div>
 
                     <!-- Charts Row 1 -->

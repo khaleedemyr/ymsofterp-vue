@@ -687,6 +687,380 @@ class OutletRollingForecastService
     }
 
     /**
+     * Ringkasan rolling forecast untuk SEMUA outlet aktif (batch).
+     * Logika sama dengan build() / Opex Rolling Auto Forecast + Forecast RO (pesimis).
+     *
+     * @return array{
+     *   success: bool,
+     *   month: string,
+     *   as_of: string|null,
+     *   summary: array<string, mixed>,
+     *   outlets: list<array<string, mixed>>
+     * }
+     */
+    public function buildAllOutletsSummary(string $month): array
+    {
+        if (! preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = now()->format('Y-m');
+        }
+
+        $monthStart = Carbon::createFromFormat('Y-m', $month)->startOfMonth();
+        $monthEnd = $monthStart->copy()->endOfMonth();
+        $today = Carbon::today();
+        $isCurrentMonth = $today->format('Y-m') === $month;
+        $isFutureMonth = $monthStart->gt($today->copy()->startOfMonth());
+        $isPastMonth = $monthEnd->lt($today);
+
+        if ($isCurrentMonth) {
+            $asOf = $today->copy()->subDay();
+            if ($asOf->lt($monthStart)) {
+                $asOf = $monthStart->copy()->subDay();
+            }
+        } elseif ($isPastMonth) {
+            $asOf = $monthEnd->copy();
+        } else {
+            $asOf = $monthStart->copy()->subDay();
+        }
+
+        $threeMonthsAgoStart = $monthStart->copy()->subMonths(3)->startOfMonth();
+        $previousMonthEnd = $monthStart->copy()->subMonth()->endOfMonth();
+
+        $holidaysMeta = $this->loadHolidays(
+            $threeMonthsAgoStart->toDateString(),
+            $monthEnd->toDateString()
+        );
+        $holidaySet = $holidaysMeta['set'];
+        $holidayNames = $holidaysMeta['names'];
+
+        $outlets = DB::table('tbl_data_outlet as o')
+            ->leftJoin('regions as r', 'o.region_id', '=', 'r.id')
+            ->leftJoin('outlet_revenue_target_headers as h', function ($join) use ($monthStart) {
+                $join->on('h.outlet_id', '=', 'o.id_outlet')
+                    ->where('h.target_month', '=', $monthStart->toDateString());
+            })
+            ->where('o.status', 'A')
+            ->whereNotNull('o.qr_code')
+            ->where('o.qr_code', '!=', '')
+            ->orderBy('r.name')
+            ->orderBy('o.nama_outlet')
+            ->get([
+                'o.id_outlet',
+                'o.qr_code',
+                'o.nama_outlet',
+                'r.name as region_name',
+                'r.code as region_code',
+                'h.monthly_target',
+            ]);
+
+        $qrCodes = $outlets->pluck('qr_code')->filter()->unique()->values()->all();
+
+        $histAll = $this->dailyRevenueMapsByOutlet(
+            $qrCodes,
+            $threeMonthsAgoStart->toDateString() . ' 00:00:00',
+            $previousMonthEnd->toDateString() . ' 23:59:59'
+        );
+        $actualAll = $this->dailyRevenueMapsByOutlet(
+            $qrCodes,
+            $monthStart->toDateString() . ' 00:00:00',
+            $monthEnd->toDateString() . ' 23:59:59'
+        );
+
+        $rows = [];
+        $totals = [
+            'outlets_with_target' => 0,
+            'outlets_without_target' => 0,
+            'monthly_target' => 0.0,
+            'actual_mtd' => 0.0,
+            'projected_eom' => 0.0,
+            'forecast_pessimistic' => 0.0,
+            'forecast_optimistic' => 0.0,
+            'gap_vs_target' => 0.0,
+        ];
+
+        foreach ($outlets as $outlet) {
+            $monthlyTarget = (float) ($outlet->monthly_target ?? 0);
+            $qrCode = (string) $outlet->qr_code;
+            $histRevenueByDate = $histAll[$qrCode] ?? [];
+            $actualByDate = $actualAll[$qrCode] ?? [];
+
+            if ($monthlyTarget <= 0) {
+                $totals['outlets_without_target']++;
+                $rows[] = [
+                    'outlet_id' => (int) $outlet->id_outlet,
+                    'outlet_name' => $outlet->nama_outlet,
+                    'region_name' => $outlet->region_name ?: 'Unknown Region',
+                    'region_code' => $outlet->region_code ?: 'UNK',
+                    'has_target' => false,
+                    'monthly_target' => 0.0,
+                    'actual_mtd' => round(array_sum($actualByDate), 2),
+                    'projected_eom' => 0.0,
+                    'forecast_pessimistic' => 0.0,
+                    'forecast_optimistic' => 0.0,
+                    'gap_vs_target' => 0.0,
+                    'pct_of_target' => 0.0,
+                    'pace_factor' => null,
+                    'mode' => 'no_target',
+                    'scenarios' => null,
+                ];
+                continue;
+            }
+
+            $computed = $this->computeRollingCore(
+                $monthlyTarget,
+                $monthStart,
+                $monthEnd,
+                $asOf,
+                $isFutureMonth,
+                $holidaySet,
+                $holidayNames,
+                $histRevenueByDate,
+                $actualByDate
+            );
+
+            $totals['outlets_with_target']++;
+            $totals['monthly_target'] += $computed['monthly_target'];
+            $totals['actual_mtd'] += $computed['actual_mtd'];
+            $totals['projected_eom'] += $computed['projected_eom'];
+            $totals['forecast_pessimistic'] += $computed['forecast_pessimistic'];
+            $totals['forecast_optimistic'] += $computed['forecast_optimistic'];
+            $totals['gap_vs_target'] += $computed['gap_vs_target'];
+
+            $rows[] = [
+                'outlet_id' => (int) $outlet->id_outlet,
+                'outlet_name' => $outlet->nama_outlet,
+                'region_name' => $outlet->region_name ?: 'Unknown Region',
+                'region_code' => $outlet->region_code ?: 'UNK',
+                'has_target' => true,
+                'monthly_target' => $computed['monthly_target'],
+                'actual_mtd' => $computed['actual_mtd'],
+                'projected_eom' => $computed['projected_eom'],
+                'forecast_pessimistic' => $computed['forecast_pessimistic'],
+                'forecast_optimistic' => $computed['forecast_optimistic'],
+                'gap_vs_target' => $computed['gap_vs_target'],
+                'pct_of_target' => $computed['pct_of_target'],
+                'pace_factor' => $computed['pace_factor'],
+                'mode' => $computed['mode'],
+                'scenarios' => $computed['scenarios'],
+            ];
+        }
+
+        // Sort: region, then gap ascending (underperforming first)
+        usort($rows, function ($a, $b) {
+            $ra = $a['region_name'] <=> $b['region_name'];
+            if ($ra !== 0) {
+                return $ra;
+            }
+            if ($a['has_target'] !== $b['has_target']) {
+                return $a['has_target'] ? -1 : 1;
+            }
+
+            return $a['gap_vs_target'] <=> $b['gap_vs_target'];
+        });
+
+        $targetSum = $totals['monthly_target'];
+
+        return [
+            'success' => true,
+            'month' => $month,
+            'as_of' => $asOf->toDateString(),
+            'period_from' => $monthStart->toDateString(),
+            'period_to' => $monthEnd->toDateString(),
+            'summary' => [
+                'outlets_total' => count($rows),
+                'outlets_with_target' => $totals['outlets_with_target'],
+                'outlets_without_target' => $totals['outlets_without_target'],
+                'monthly_target' => round($totals['monthly_target'], 2),
+                'actual_mtd' => round($totals['actual_mtd'], 2),
+                // Realistis — sama dengan kartu utama Rolling Forecast Opex
+                'projected_eom' => round($totals['projected_eom'], 2),
+                // Pesimis — sama dengan "Forecast" di RO Forecast Opex
+                'forecast' => round($totals['forecast_pessimistic'], 2),
+                'forecast_source' => 'rolling_pessimistic',
+                'forecast_optimistic' => round($totals['forecast_optimistic'], 2),
+                'gap_vs_target' => round($totals['gap_vs_target'], 2),
+                'pct_of_target' => $targetSum > 0
+                    ? round(($totals['projected_eom'] / $targetSum) * 100, 1)
+                    : 0.0,
+            ],
+            'outlets' => $rows,
+        ];
+    }
+
+    /**
+     * @param  list<string>  $qrCodes
+     * @return array<string, array<string, float>>  kode_outlet => [Y-m-d => revenue]
+     */
+    private function dailyRevenueMapsByOutlet(array $qrCodes, string $fromDt, string $toDt): array
+    {
+        if ($qrCodes === []) {
+            return [];
+        }
+
+        $rows = DB::table('orders')
+            ->whereIn('kode_outlet', $qrCodes)
+            ->where('created_at', '>=', $fromDt)
+            ->where('created_at', '<=', $toDt)
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw('kode_outlet, DATE(created_at) as dt, SUM(grand_total) as revenue')
+            ->groupBy('kode_outlet', 'dt')
+            ->get();
+
+        $maps = [];
+        foreach ($rows as $row) {
+            $maps[$row->kode_outlet][$row->dt] = (float) $row->revenue;
+        }
+
+        return $maps;
+    }
+
+    /**
+     * Inti perhitungan rolling — sama dengan build(), tanpa days/history_compare.
+     *
+     * @param  array<string, true>  $holidaySet
+     * @param  array<string, string>  $holidayNames
+     * @param  array<string, float>  $histRevenueByDate
+     * @param  array<string, float>  $actualByDate
+     * @return array<string, mixed>
+     */
+    private function computeRollingCore(
+        float $monthlyTarget,
+        Carbon $monthStart,
+        Carbon $monthEnd,
+        Carbon $asOf,
+        bool $isFutureMonth,
+        array $holidaySet,
+        array $holidayNames,
+        array $histRevenueByDate,
+        array $actualByDate
+    ): array {
+        $threeMonthsAgoStart = $monthStart->copy()->subMonths(3)->startOfMonth();
+        $previousMonthEnd = $monthStart->copy()->subMonth()->endOfMonth();
+
+        $stats = $this->buildHistoricalStats($threeMonthsAgoStart, $previousMonthEnd, $histRevenueByDate, $holidaySet);
+        $baselineRows = $this->buildBaselineDays(
+            $monthStart,
+            $monthEnd,
+            $monthlyTarget,
+            $stats['avg_by_dow'],
+            $stats['avg_by_type'],
+            $holidaySet,
+            $holidayNames,
+            $stats['holiday_boost'],
+            $stats['ramadan_boost']
+        );
+
+        $actualMtd = 0.0;
+        $expectedToDate = 0.0;
+        $daysPassedWithBaseline = 0;
+
+        foreach ($baselineRows as $row) {
+            $dateKey = $row['forecast_date'];
+            if ($dateKey > $asOf->toDateString()) {
+                continue;
+            }
+            $actualMtd += (float) ($actualByDate[$dateKey] ?? 0);
+            $expectedToDate += (float) $row['baseline'];
+            $daysPassedWithBaseline++;
+        }
+
+        $usePace = ! $isFutureMonth
+            && $daysPassedWithBaseline >= self::MIN_DAYS_FOR_PACE
+            && $expectedToDate > 0
+            && $actualMtd > 0;
+
+        $paceFactor = 1.0;
+        if ($usePace) {
+            $paceFactor = max(self::PACE_MIN, min(self::PACE_MAX, $actualMtd / $expectedToDate));
+        }
+
+        $sumPesimis = 0.0;
+        $sumRealistis = 0.0;
+        $sumOptimis = 0.0;
+        $forecastDayBaselines = 0.0;
+
+        foreach ($baselineRows as $row) {
+            $dateKey = $row['forecast_date'];
+            if ($dateKey <= $asOf->toDateString()) {
+                continue;
+            }
+
+            $baseline = (float) $row['baseline'];
+            $histAvg = (float) $row['hist_avg'];
+            $forecastDayBaselines += $baseline;
+
+            $scenarios = $this->scenarioDayValues($baseline, $histAvg, $paceFactor);
+            $sumPesimis += $scenarios['pessimistic'];
+            $sumRealistis += $scenarios['realistic'];
+            $sumOptimis += $scenarios['optimistic'];
+        }
+
+        if ($isFutureMonth) {
+            $eomAll = round(array_sum(array_column($baselineRows, 'baseline')), 2);
+            $projectedEomPesimis = $eomAll;
+            $projectedEomRealistis = $eomAll;
+            $projectedEomOptimis = $eomAll;
+            $mode = 'baseline';
+            $actualMtd = 0.0;
+            $paceFactor = 1.0;
+        } elseif (! $usePace) {
+            $eom = round($actualMtd + $forecastDayBaselines, 2);
+            $projectedEomPesimis = $eom;
+            $projectedEomRealistis = $eom;
+            $projectedEomOptimis = $eom;
+            $mode = $actualMtd <= 0 ? 'baseline' : 'early_month';
+            $paceFactor = 1.0;
+        } else {
+            $projectedEomPesimis = round($actualMtd + $sumPesimis, 2);
+            $projectedEomRealistis = round($actualMtd + $sumRealistis, 2);
+            $projectedEomOptimis = round($actualMtd + $sumOptimis, 2);
+            $mode = 'rolling';
+        }
+
+        $projectedEom = $projectedEomRealistis;
+        $gapVsTarget = round($projectedEom - $monthlyTarget, 2);
+
+        $scenarios = [
+            'pessimistic' => $this->scenarioSummary(
+                'Pesimis',
+                'Sisa hari lanjut di pace MTD saat ini.',
+                $projectedEomPesimis,
+                $monthlyTarget,
+                $actualMtd
+            ),
+            'realistic' => $this->scenarioSummary(
+                'Realistis',
+                'Blend 50% pace MTD + 50% baseline plan.',
+                $projectedEomRealistis,
+                $monthlyTarget,
+                $actualMtd
+            ),
+            'optimistic' => $this->scenarioSummary(
+                'Optimis',
+                'Skenario atas.',
+                $projectedEomOptimis,
+                $monthlyTarget,
+                $actualMtd
+            ),
+        ];
+
+        return [
+            'monthly_target' => round($monthlyTarget, 2),
+            'actual_mtd' => round($actualMtd, 2),
+            'projected_eom' => $projectedEom,
+            'forecast_pessimistic' => $projectedEomPesimis,
+            'forecast_optimistic' => $projectedEomOptimis,
+            'gap_vs_target' => $gapVsTarget,
+            'pct_of_target' => $monthlyTarget > 0
+                ? round(($projectedEom / $monthlyTarget) * 100, 1)
+                : 0.0,
+            'pace_factor' => round($paceFactor, 4),
+            'mode' => $mode,
+            'scenarios' => $scenarios,
+        ];
+    }
+
+    /**
      * @param  list<float|int>  $values
      */
     private function average(array $values): float

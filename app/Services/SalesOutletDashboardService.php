@@ -2,65 +2,136 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
+/**
+ * Optimized sales outlet dashboard data builder.
+ * - Avoids DATE(created_at) in WHERE (index-friendly range)
+ * - Consolidates overlapping scans into fewer queries
+ * - Supports progressive section loading
+ */
 class SalesOutletDashboardService
 {
-    /**
-     * Calculate comprehensive sales metrics for dashboard
-     */
-    public function calculateMetrics($outletCode = 'ALL', $dateFrom = null, $dateTo = null)
+    public function emptyDashboard(): array
     {
-        $dateFrom = $dateFrom ?: Carbon::now()->startOfMonth()->format('Y-m-d');
-        $dateTo = $dateTo ?: Carbon::now()->format('Y-m-d');
-        $outletFilter = $outletCode !== 'ALL' ? "AND kode_outlet = '{$outletCode}'" : '';
-
         return [
-            'overview' => $this->getOverviewMetrics($outletFilter, $dateFrom, $dateTo),
-            'sales_trend' => $this->getSalesTrend($outletFilter, $dateFrom, $dateTo),
-            'top_items' => $this->getTopItems($outletFilter, $dateFrom, $dateTo),
-            'payment_methods' => $this->getPaymentMethods($outletFilter, $dateFrom, $dateTo),
-            'hourly_sales' => $this->getHourlySales($outletFilter, $dateFrom, $dateTo),
-            'order_status' => $this->getOrderStatusDistribution($outletFilter, $dateFrom, $dateTo),
-            'promo_usage' => $this->getPromoUsage($outletFilter, $dateFrom, $dateTo),
-            'peak_hours' => $this->getPeakHoursAnalysis($outletFilter, $dateFrom, $dateTo),
-            'customer_analysis' => $this->getCustomerAnalysis($outletFilter, $dateFrom, $dateTo),
-            'revenue_breakdown' => $this->getRevenueBreakdown($outletFilter, $dateFrom, $dateTo)
+            'overview' => [
+                'total_orders' => 0,
+                'total_revenue' => 0.0,
+                'avg_order_value' => 0.0,
+                'total_customers' => 0,
+                'avg_pax_per_order' => 0.0,
+                'avg_check' => 0.0,
+                'total_discount' => 0.0,
+                'total_service_charge' => 0.0,
+                'total_commission_fee' => 0.0,
+                'total_manual_discount' => 0.0,
+                'revenue_growth' => 0.0,
+                'order_growth' => 0.0,
+                'previous_period' => [
+                    'date_from' => null,
+                    'date_to' => null,
+                    'total_orders' => 0,
+                    'total_revenue' => 0.0,
+                ],
+            ],
+            'salesTrend' => [],
+            'topItems' => [],
+            'paymentMethods' => [],
+            'hourlySales' => [],
+            'promoUsage' => [
+                'orders_with_promo' => 0,
+                'total_promo_usage' => 0,
+                'promo_usage_percentage' => 0,
+            ],
+            'bankPromoDiscount' => [
+                'orders_with_bank_promo' => 0,
+                'total_bank_discount_amount' => 0.0,
+                'avg_bank_discount_amount' => 0.0,
+                'bank_promo_percentage' => 0,
+            ],
+            'avgOrderValue' => (object) [
+                'avg_order_value' => 0,
+                'min_order_value' => 0,
+                'max_order_value' => 0,
+                'median_order_value' => 0,
+            ],
+            'peakHours' => [],
+            'lunchDinnerOrders' => [
+                'lunch' => ['order_count' => 0, 'total_revenue' => 0, 'total_pax' => 0, 'avg_order_value' => 0],
+                'dinner' => ['order_count' => 0, 'total_revenue' => 0, 'total_pax' => 0, 'avg_order_value' => 0],
+            ],
+            'weekdayWeekendRevenue' => [
+                'weekday' => ['order_count' => 0, 'total_revenue' => 0, 'total_pax' => 0, 'avg_order_value' => 0],
+                'weekend' => ['order_count' => 0, 'total_revenue' => 0, 'total_pax' => 0, 'avg_order_value' => 0],
+            ],
+            'revenuePerOutlet' => [],
+            'revenuePerOutletLunchDinner' => [],
+            'revenuePerOutletWeekendWeekday' => [],
+            'revenuePerRegion' => [
+                'total_revenue' => [],
+                'lunch_dinner' => [],
+                'weekday_weekend' => [],
+            ],
+            'forecast' => null,
         ];
     }
 
-    /**
-     * Get overview metrics with growth calculations
-     */
-    private function getOverviewMetrics($outletFilter, $dateFrom, $dateTo)
+    public function getFullDashboard(string $dateFrom, string $dateTo): array
     {
-        $currentPeriod = $this->getCurrentPeriodMetrics($outletFilter, $dateFrom, $dateTo);
-        $previousPeriod = $this->getPreviousPeriodMetrics($outletFilter, $dateFrom, $dateTo);
+        $data = $this->emptyDashboard();
+        foreach (['overview', 'trend', 'charts', 'catalog', 'promo', 'revenue', 'forecast'] as $section) {
+            $data = array_replace($data, $this->buildSection($section, $dateFrom, $dateTo));
+        }
 
-        return [
-            'total_orders' => $currentPeriod['total_orders'],
-            'total_revenue' => $currentPeriod['total_revenue'],
-            'avg_order_value' => $currentPeriod['avg_order_value'],
-            'total_customers' => $currentPeriod['total_customers'],
-            'avg_pax_per_order' => $currentPeriod['avg_pax_per_order'],
-            'total_discount' => $currentPeriod['total_discount'],
-            'total_service_charge' => $currentPeriod['total_service_charge'],
-            'total_commission_fee' => $currentPeriod['total_commission_fee'],
-            'total_manual_discount' => $currentPeriod['total_manual_discount'],
-            'revenue_growth' => $this->calculateGrowth($currentPeriod['total_revenue'], $previousPeriod['total_revenue']),
-            'order_growth' => $this->calculateGrowth($currentPeriod['total_orders'], $previousPeriod['total_orders']),
-            'customer_growth' => $this->calculateGrowth($currentPeriod['total_customers'], $previousPeriod['total_customers'])
-        ];
+        return $data;
+    }
+
+    public function buildSection(string $section, string $dateFrom, string $dateTo): array
+    {
+        return match ($section) {
+            'overview' => $this->sectionOverview($dateFrom, $dateTo),
+            'trend' => ['salesTrend' => $this->getSalesTrend($dateFrom, $dateTo)],
+            'charts' => $this->sectionCharts($dateFrom, $dateTo),
+            'catalog' => $this->sectionCatalog($dateFrom, $dateTo),
+            'promo' => $this->sectionPromo($dateFrom, $dateTo),
+            'revenue' => $this->sectionRevenue($dateFrom, $dateTo),
+            'forecast' => $this->sectionForecast($dateFrom, $dateTo),
+            default => [],
+        };
     }
 
     /**
-     * Get current period metrics
+     * @return array{0:string,1:string} [startInclusive, endExclusive]
      */
-    private function getCurrentPeriodMetrics($outletFilter, $dateFrom, $dateTo)
+    public function bounds(string $dateFrom, string $dateTo): array
     {
-        $query = "
-            SELECT 
+        $start = Carbon::parse($dateFrom)->startOfDay()->format('Y-m-d H:i:s');
+        $endExclusive = Carbon::parse($dateTo)->addDay()->startOfDay()->format('Y-m-d H:i:s');
+
+        return [$start, $endExclusive];
+    }
+
+    /**
+     * Rolling Auto Forecast + nilai Forecast RO (pesimis) untuk semua outlet.
+     * Sumber logika: OutletRollingForecastService (sama dengan Opex Outlet Dashboard).
+     */
+    private function sectionForecast(string $dateFrom, string $dateTo): array
+    {
+        $month = Carbon::parse($dateFrom)->format('Y-m');
+
+        return [
+            'forecast' => app(OutletRollingForecastService::class)->buildAllOutletsSummary($month),
+        ];
+    }
+
+    private function sectionOverview(string $dateFrom, string $dateTo): array
+    {
+        [$start, $end] = $this->bounds($dateFrom, $dateTo);
+
+        $result = DB::selectOne("
+            SELECT
                 COUNT(*) as total_orders,
                 COALESCE(SUM(grand_total), 0) as total_revenue,
                 COALESCE(AVG(grand_total), 0) as avg_order_value,
@@ -69,325 +140,596 @@ class SalesOutletDashboardService
                 COALESCE(SUM(discount), 0) as total_discount,
                 COALESCE(SUM(service), 0) as total_service_charge,
                 COALESCE(SUM(commfee), 0) as total_commission_fee,
-                COALESCE(SUM(manual_discount_amount), 0) as total_manual_discount
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-        ";
+                COALESCE(SUM(manual_discount_amount), 0) as total_manual_discount,
+                COALESCE(MIN(grand_total), 0) as min_order_value,
+                COALESCE(MAX(grand_total), 0) as max_order_value
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
+        ", [$start, $end]);
 
-        $result = DB::select($query)[0];
-        
-        return [
-            'total_orders' => (int) $result->total_orders,
-            'total_revenue' => (float) $result->total_revenue,
-            'avg_order_value' => (float) $result->avg_order_value,
-            'total_customers' => (int) $result->total_customers,
-            'avg_pax_per_order' => (float) $result->avg_pax_per_order,
-            'total_discount' => (float) $result->total_discount,
-            'total_service_charge' => (float) $result->total_service_charge,
-            'total_commission_fee' => (float) $result->total_commission_fee,
-            'total_manual_discount' => (float) $result->total_manual_discount
-        ];
-    }
-
-    /**
-     * Get previous period metrics for comparison
-     */
-    private function getPreviousPeriodMetrics($outletFilter, $dateFrom, $dateTo)
-    {
-        $daysDiff = Carbon::parse($dateFrom)->diffInDays(Carbon::parse($dateTo));
-        $prevDateFrom = Carbon::parse($dateFrom)->subDays($daysDiff + 1)->format('Y-m-d');
+        $days = Carbon::parse($dateFrom)->diffInDays(Carbon::parse($dateTo));
+        $prevDateFrom = Carbon::parse($dateFrom)->subDays($days)->format('Y-m-d');
         $prevDateTo = Carbon::parse($dateFrom)->subDay()->format('Y-m-d');
+        [$prevStart, $prevEnd] = $this->bounds($prevDateFrom, $prevDateTo);
 
-        $query = "
-            SELECT 
+        $prev = DB::selectOne("
+            SELECT
                 COUNT(*) as total_orders,
-                COALESCE(SUM(grand_total), 0) as total_revenue,
-                COALESCE(SUM(pax), 0) as total_customers
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$prevDateFrom}' AND '{$prevDateTo}' 
-            {$outletFilter}
-        ";
+                COALESCE(SUM(grand_total), 0) as total_revenue
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
+        ", [$prevStart, $prevEnd]);
 
-        $result = DB::select($query)[0];
-        
+        $totalRevenue = (float) $result->total_revenue;
+        $totalOrders = (int) $result->total_orders;
+        $totalCustomers = (int) $result->total_customers;
+        $prevRevenue = (float) $prev->total_revenue;
+        $prevOrders = (int) $prev->total_orders;
+        $avgOrderValue = (float) $result->avg_order_value;
+
         return [
-            'total_orders' => (int) $result->total_orders,
-            'total_revenue' => (float) $result->total_revenue,
-            'total_customers' => (int) $result->total_customers
+            'overview' => [
+                'total_orders' => $totalOrders,
+                'total_revenue' => $totalRevenue,
+                'avg_order_value' => $avgOrderValue,
+                'total_customers' => $totalCustomers,
+                'avg_pax_per_order' => (float) $result->avg_pax_per_order,
+                'avg_check' => $totalCustomers > 0 ? $totalRevenue / $totalCustomers : 0.0,
+                'total_discount' => (float) $result->total_discount,
+                'total_service_charge' => (float) $result->total_service_charge,
+                'total_commission_fee' => (float) $result->total_commission_fee,
+                'total_manual_discount' => (float) $result->total_manual_discount,
+                'revenue_growth' => $prevRevenue > 0
+                    ? (($totalRevenue - $prevRevenue) / $prevRevenue) * 100
+                    : 0.0,
+                'order_growth' => $prevOrders > 0
+                    ? (($totalOrders - $prevOrders) / $prevOrders) * 100
+                    : 0.0,
+                'previous_period' => [
+                    'date_from' => $prevDateFrom,
+                    'date_to' => $prevDateTo,
+                    'total_orders' => $prevOrders,
+                    'total_revenue' => $prevRevenue,
+                ],
+            ],
+            // Derived from overview — avoids a second full scan
+            'avgOrderValue' => (object) [
+                'avg_order_value' => $avgOrderValue,
+                'min_order_value' => (float) $result->min_order_value,
+                'max_order_value' => (float) $result->max_order_value,
+                'median_order_value' => $avgOrderValue,
+            ],
         ];
     }
 
-    /**
-     * Calculate growth percentage
-     */
-    private function calculateGrowth($current, $previous)
+    private function getSalesTrend(string $dateFrom, string $dateTo): array
     {
-        if ($previous == 0) {
-            return $current > 0 ? 100 : 0;
-        }
-        return (($current - $previous) / $previous) * 100;
-    }
+        [$start, $end] = $this->bounds($dateFrom, $dateTo);
 
-    /**
-     * Get sales trend data
-     */
-    private function getSalesTrend($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
+        return DB::select("
+            SELECT
                 DATE(created_at) as period,
                 COUNT(*) as orders,
                 COALESCE(SUM(grand_total), 0) as revenue,
                 COALESCE(AVG(grand_total), 0) as avg_order_value,
                 COALESCE(SUM(pax), 0) as customers
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
             GROUP BY DATE(created_at)
             ORDER BY period ASC
-        ";
-
-        return DB::select($query);
+        ", [$start, $end]);
     }
 
     /**
-     * Get top selling items
+     * One bucket scan → hourly, peak, lunch/dinner, weekday/weekend.
      */
-    private function getTopItems($outletFilter, $dateFrom, $dateTo)
+    private function sectionCharts(string $dateFrom, string $dateTo): array
     {
-        $query = "
-            SELECT 
+        [$start, $end] = $this->bounds($dateFrom, $dateTo);
+
+        $rows = DB::select("
+            SELECT
+                HOUR(created_at) as hour,
+                CASE WHEN DAYOFWEEK(created_at) IN (1, 7) THEN 'Weekend' ELSE 'Weekday' END as day_type,
+                COUNT(*) as orders,
+                COALESCE(SUM(grand_total), 0) as revenue,
+                COALESCE(SUM(pax), 0) as customers,
+                COALESCE(AVG(grand_total), 0) as avg_order_value
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
+            GROUP BY HOUR(created_at), CASE WHEN DAYOFWEEK(created_at) IN (1, 7) THEN 'Weekend' ELSE 'Weekday' END
+        ", [$start, $end]);
+
+        $hourlyMap = [];
+        $lunchDinner = [
+            'lunch' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'revenue_sum_for_avg' => 0.0],
+            'dinner' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'revenue_sum_for_avg' => 0.0],
+        ];
+        $weekdayWeekend = [
+            'weekday' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'revenue_sum_for_avg' => 0.0],
+            'weekend' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'revenue_sum_for_avg' => 0.0],
+        ];
+
+        foreach ($rows as $row) {
+            $hour = (int) $row->hour;
+            $orders = (int) $row->orders;
+            $revenue = (float) $row->revenue;
+            $customers = (int) $row->customers;
+
+            if (! isset($hourlyMap[$hour])) {
+                $hourlyMap[$hour] = [
+                    'hour' => $hour,
+                    'orders' => 0,
+                    'revenue' => 0.0,
+                    'customers' => 0,
+                    'weighted_avg_sum' => 0.0,
+                ];
+            }
+            $hourlyMap[$hour]['orders'] += $orders;
+            $hourlyMap[$hour]['revenue'] += $revenue;
+            $hourlyMap[$hour]['customers'] += $customers;
+            $hourlyMap[$hour]['weighted_avg_sum'] += ((float) $row->avg_order_value) * $orders;
+
+            $meal = $hour <= 17 ? 'lunch' : 'dinner';
+            $lunchDinner[$meal]['order_count'] += $orders;
+            $lunchDinner[$meal]['total_revenue'] += $revenue;
+            $lunchDinner[$meal]['total_pax'] += $customers;
+
+            $dayKey = strtolower($row->day_type);
+            $weekdayWeekend[$dayKey]['order_count'] += $orders;
+            $weekdayWeekend[$dayKey]['total_revenue'] += $revenue;
+            $weekdayWeekend[$dayKey]['total_pax'] += $customers;
+        }
+
+        $hourlySales = [];
+        foreach ($hourlyMap as $hour => $data) {
+            $hourlySales[] = (object) [
+                'hour' => $hour,
+                'orders' => $data['orders'],
+                'revenue' => $data['revenue'],
+                'avg_order_value' => $data['orders'] > 0
+                    ? $data['weighted_avg_sum'] / $data['orders']
+                    : 0,
+            ];
+        }
+        usort($hourlySales, fn ($a, $b) => $a->hour <=> $b->hour);
+
+        $peakHours = array_map(function ($row) {
+            return (object) [
+                'hour' => $row->hour,
+                'order_count' => $row->orders,
+                'revenue' => $row->revenue,
+                'avg_order_value' => $row->avg_order_value,
+                'total_customers' => $hourlyMap[$row->hour]['customers'] ?? 0,
+            ];
+        }, $hourlySales);
+        usort($peakHours, fn ($a, $b) => $b->order_count <=> $a->order_count);
+        $peakHours = array_slice($peakHours, 0, 5);
+
+        foreach (['lunch', 'dinner'] as $key) {
+            $c = $lunchDinner[$key]['order_count'];
+            $lunchDinner[$key] = [
+                'order_count' => $lunchDinner[$key]['order_count'],
+                'total_revenue' => $lunchDinner[$key]['total_revenue'],
+                'total_pax' => $lunchDinner[$key]['total_pax'],
+                'avg_order_value' => $c > 0
+                    ? $lunchDinner[$key]['total_revenue'] / $c
+                    : 0.0,
+            ];
+        }
+
+        foreach (['weekday', 'weekend'] as $key) {
+            $c = $weekdayWeekend[$key]['order_count'];
+            $weekdayWeekend[$key] = [
+                'order_count' => $weekdayWeekend[$key]['order_count'],
+                'total_revenue' => $weekdayWeekend[$key]['total_revenue'],
+                'total_pax' => $weekdayWeekend[$key]['total_pax'],
+                'avg_order_value' => $c > 0
+                    ? $weekdayWeekend[$key]['total_revenue'] / $c
+                    : 0.0,
+            ];
+        }
+
+        return [
+            'hourlySales' => $hourlySales,
+            'peakHours' => $peakHours,
+            'lunchDinnerOrders' => $lunchDinner,
+            'weekdayWeekendRevenue' => $weekdayWeekend,
+        ];
+    }
+
+    private function sectionCatalog(string $dateFrom, string $dateTo): array
+    {
+        [$start, $end] = $this->bounds($dateFrom, $dateTo);
+
+        $topItems = DB::select("
+            SELECT
                 oi.item_name,
                 SUM(oi.qty) as total_qty,
                 SUM(oi.subtotal) as total_revenue,
                 COUNT(DISTINCT oi.order_id) as order_count,
-                AVG(oi.price) as avg_price,
-                (SUM(oi.subtotal) / SUM(oi.qty)) as revenue_per_unit
+                AVG(oi.price) as avg_price
             FROM order_items oi
             INNER JOIN orders o ON oi.order_id = o.id
-            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
+            WHERE o.created_at >= ? AND o.created_at < ?
             GROUP BY oi.item_name
             ORDER BY total_revenue DESC
-            LIMIT 15
-        ";
+            LIMIT 10
+        ", [$start, $end]);
 
-        return DB::select($query);
-    }
+        $chartData = DB::select("
+            SELECT
+                op.payment_code,
+                COUNT(*) as transaction_count,
+                SUM(op.amount) as total_amount,
+                AVG(op.amount) as avg_amount
+            FROM order_payment op
+            INNER JOIN orders o ON op.order_id = o.id
+            WHERE o.created_at >= ? AND o.created_at < ?
+            GROUP BY op.payment_code
+            ORDER BY total_amount DESC
+        ", [$start, $end]);
 
-    /**
-     * Get payment methods analysis
-     */
-    private function getPaymentMethods($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
+        $detailData = DB::select("
+            SELECT
+                op.payment_code,
                 op.payment_type,
                 COUNT(*) as transaction_count,
                 SUM(op.amount) as total_amount,
-                AVG(op.amount) as avg_amount,
-                (COUNT(*) * 100.0 / (SELECT COUNT(*) FROM order_payment op2 
-                 INNER JOIN orders o2 ON op2.order_id = o2.id 
-                 WHERE DATE(o2.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' {$outletFilter})) as percentage
+                AVG(op.amount) as avg_amount
             FROM order_payment op
             INNER JOIN orders o ON op.order_id = o.id
-            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-            GROUP BY op.payment_type
-            ORDER BY total_amount DESC
-        ";
+            WHERE o.created_at >= ? AND o.created_at < ?
+            GROUP BY op.payment_code, op.payment_type
+            ORDER BY op.payment_code, total_amount DESC
+        ", [$start, $end]);
 
-        return DB::select($query);
+        $groupedDetails = [];
+        foreach ($detailData as $detail) {
+            $groupedDetails[$detail->payment_code][] = $detail;
+        }
+
+        $paymentMethods = [];
+        foreach ($chartData as $chart) {
+            $paymentMethods[] = [
+                'payment_code' => $chart->payment_code,
+                'transaction_count' => $chart->transaction_count,
+                'total_amount' => $chart->total_amount,
+                'avg_amount' => $chart->avg_amount,
+                'details' => $groupedDetails[$chart->payment_code] ?? [],
+            ];
+        }
+
+        return [
+            'topItems' => $topItems,
+            'paymentMethods' => $paymentMethods,
+        ];
     }
 
-    /**
-     * Get hourly sales analysis
-     */
-    private function getHourlySales($outletFilter, $dateFrom, $dateTo)
+    private function sectionPromo(string $dateFrom, string $dateTo): array
     {
-        $query = "
-            SELECT 
-                HOUR(created_at) as hour,
-                COUNT(*) as orders,
-                COALESCE(SUM(grand_total), 0) as revenue,
-                COALESCE(AVG(grand_total), 0) as avg_order_value,
-                COALESCE(SUM(pax), 0) as customers
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-            GROUP BY HOUR(created_at)
-            ORDER BY hour ASC
-        ";
+        [$start, $end] = $this->bounds($dateFrom, $dateTo);
 
-        return DB::select($query);
-    }
+        // Single scan for total orders + bank promo aggregates
+        $totals = DB::selectOne("
+            SELECT
+                COUNT(*) as total_orders,
+                SUM(CASE WHEN manual_discount_reason LIKE '%BANK%' THEN 1 ELSE 0 END) as orders_with_bank_promo,
+                COALESCE(SUM(CASE WHEN manual_discount_reason LIKE '%BANK%' THEN manual_discount_amount ELSE 0 END), 0) as total_bank_discount_amount,
+                COALESCE(AVG(CASE WHEN manual_discount_reason LIKE '%BANK%' THEN manual_discount_amount ELSE NULL END), 0) as avg_bank_discount_amount
+            FROM orders
+            WHERE created_at >= ? AND created_at < ?
+        ", [$start, $end]);
 
-    /**
-     * Get order status distribution
-     */
-    private function getOrderStatusDistribution($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
-                status,
-                COUNT(*) as count,
-                COALESCE(SUM(grand_total), 0) as total_revenue,
-                (COUNT(*) * 100.0 / (SELECT COUNT(*) FROM orders WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' {$outletFilter})) as percentage
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-            GROUP BY status
-            ORDER BY count DESC
-        ";
-
-        return DB::select($query);
-    }
-
-    /**
-     * Get promo usage analysis
-     */
-    private function getPromoUsage($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
+        $promo = DB::selectOne("
+            SELECT
                 COUNT(DISTINCT op.order_id) as orders_with_promo,
                 COUNT(op.id) as total_promo_usage
             FROM order_promos op
             INNER JOIN orders o ON op.order_id = o.id
-            WHERE DATE(o.created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-        ";
+            INNER JOIN promos p ON op.promo_id = p.id
+            WHERE o.created_at >= ? AND o.created_at < ?
+              AND p.status = 'active'
+              AND o.discount > 0
+        ", [$start, $end]);
 
-        $result = DB::select($query)[0];
-
-        $totalOrdersQuery = "
-            SELECT COUNT(*) as total_orders
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-        ";
-
-        $totalOrders = DB::select($totalOrdersQuery)[0]->total_orders;
+        $totalOrders = (int) $totals->total_orders;
+        $ordersWithPromo = (int) $promo->orders_with_promo;
+        $ordersWithBank = (int) $totals->orders_with_bank_promo;
 
         return [
-            'orders_with_promo' => (int) $result->orders_with_promo,
-            'total_promo_usage' => (int) $result->total_promo_usage,
-            'promo_usage_percentage' => $totalOrders > 0 ? (($result->orders_with_promo / $totalOrders) * 100) : 0
+            'promoUsage' => [
+                'orders_with_promo' => $ordersWithPromo,
+                'total_promo_usage' => (int) $promo->total_promo_usage,
+                'promo_usage_percentage' => $totalOrders > 0
+                    ? ($ordersWithPromo / $totalOrders) * 100
+                    : 0,
+            ],
+            'bankPromoDiscount' => [
+                'orders_with_bank_promo' => $ordersWithBank,
+                'total_bank_discount_amount' => (float) $totals->total_bank_discount_amount,
+                'avg_bank_discount_amount' => (float) $totals->avg_bank_discount_amount,
+                'bank_promo_percentage' => $totalOrders > 0
+                    ? ($ordersWithBank / $totalOrders) * 100
+                    : 0,
+            ],
         ];
     }
 
     /**
-     * Get peak hours analysis
+     * One outlet×hour×day_type scan → all outlet/region revenue views.
      */
-    private function getPeakHoursAnalysis($outletFilter, $dateFrom, $dateTo)
+    private function sectionRevenue(string $dateFrom, string $dateTo): array
     {
-        $query = "
-            SELECT 
-                HOUR(created_at) as hour,
+        [$start, $end] = $this->bounds($dateFrom, $dateTo);
+
+        $rows = DB::select("
+            SELECT
+                o.kode_outlet,
+                COALESCE(outlet.nama_outlet, o.kode_outlet) as outlet_name,
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code,
+                HOUR(o.created_at) as hour,
+                CASE WHEN DAYOFWEEK(o.created_at) IN (1, 7) THEN 'Weekend' ELSE 'Weekday' END as day_type,
                 COUNT(*) as order_count,
-                COALESCE(SUM(grand_total), 0) as revenue,
-                COALESCE(AVG(grand_total), 0) as avg_order_value,
-                COALESCE(SUM(pax), 0) as total_customers
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-            GROUP BY HOUR(created_at)
-            ORDER BY order_count DESC
-            LIMIT 5
-        ";
+                COALESCE(SUM(o.grand_total), 0) as total_revenue,
+                COALESCE(SUM(o.pax), 0) as total_pax
+            FROM orders o
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
+            WHERE o.created_at >= ? AND o.created_at < ?
+            GROUP BY
+                o.kode_outlet,
+                outlet.nama_outlet,
+                region.name,
+                region.code,
+                HOUR(o.created_at),
+                CASE WHEN DAYOFWEEK(o.created_at) IN (1, 7) THEN 'Weekend' ELSE 'Weekday' END
+        ", [$start, $end]);
 
-        return DB::select($query);
-    }
+        $revenuePerOutlet = [];
+        $revenuePerOutletLunchDinner = [];
+        $revenuePerOutletWeekendWeekday = [];
+        $regionTotals = [];
+        $regionLunchDinner = [];
+        $regionWeekdayWeekend = [];
 
-    /**
-     * Get customer analysis
-     */
-    private function getCustomerAnalysis($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
-                COUNT(DISTINCT member_id) as unique_customers,
-                COUNT(CASE WHEN member_id IS NOT NULL THEN 1 END) as member_orders,
-                COUNT(CASE WHEN member_id IS NULL THEN 1 END) as walk_in_orders,
-                AVG(pax) as avg_pax_per_order,
-                MAX(pax) as max_pax_per_order,
-                MIN(pax) as min_pax_per_order
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-        ";
+        foreach ($rows as $row) {
+            $regionName = $row->region_name;
+            $regionCode = $row->region_code;
+            $outletKey = $row->outlet_name;
+            $hour = (int) $row->hour;
+            $dayType = $row->day_type;
+            $orders = (int) $row->order_count;
+            $revenue = (float) $row->total_revenue;
+            $pax = (int) $row->total_pax;
+            $avg = $orders > 0 ? $revenue / $orders : 0.0;
 
-        return DB::select($query)[0];
-    }
+            // --- revenuePerOutlet (all hours) ---
+            if (! isset($revenuePerOutlet[$regionName])) {
+                $revenuePerOutlet[$regionName] = [
+                    'region_code' => $regionCode,
+                    'outlets' => [],
+                    'total_revenue' => 0.0,
+                    'total_orders' => 0,
+                    'total_pax' => 0,
+                ];
+            }
+            if (! isset($revenuePerOutlet[$regionName]['outlets'][$outletKey])) {
+                $revenuePerOutlet[$regionName]['outlets'][$outletKey] = [
+                    'outlet_code' => $row->kode_outlet,
+                    'outlet_name' => $row->outlet_name,
+                    'order_count' => 0,
+                    'total_revenue' => 0.0,
+                    'total_pax' => 0,
+                ];
+            }
+            $revenuePerOutlet[$regionName]['outlets'][$outletKey]['order_count'] += $orders;
+            $revenuePerOutlet[$regionName]['outlets'][$outletKey]['total_revenue'] += $revenue;
+            $revenuePerOutlet[$regionName]['outlets'][$outletKey]['total_pax'] += $pax;
+            $revenuePerOutlet[$regionName]['total_revenue'] += $revenue;
+            $revenuePerOutlet[$regionName]['total_orders'] += $orders;
+            $revenuePerOutlet[$regionName]['total_pax'] += $pax;
 
-    /**
-     * Get revenue breakdown
-     */
-    private function getRevenueBreakdown($outletFilter, $dateFrom, $dateTo)
-    {
-        $query = "
-            SELECT 
-                COALESCE(SUM(grand_total), 0) as gross_revenue,
-                COALESCE(SUM(discount), 0) as total_discount,
-                COALESCE(SUM(service), 0) as service_charge,
-                COALESCE(SUM(commfee), 0) as commission_fee,
-                COALESCE(SUM(manual_discount_amount), 0) as manual_discount,
-                COALESCE(SUM(grand_total - discount - service - commfee - manual_discount_amount), 0) as net_revenue
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            {$outletFilter}
-        ";
+            // --- region total ---
+            if (! isset($regionTotals[$regionName])) {
+                $regionTotals[$regionName] = [
+                    'region_name' => $regionName,
+                    'region_code' => $regionCode,
+                    'total_orders' => 0,
+                    'total_revenue' => 0.0,
+                    'total_pax' => 0,
+                ];
+            }
+            $regionTotals[$regionName]['total_orders'] += $orders;
+            $regionTotals[$regionName]['total_revenue'] += $revenue;
+            $regionTotals[$regionName]['total_pax'] += $pax;
 
-        return DB::select($query)[0];
-    }
+            // --- lunch/dinner per outlet (11-15 / 17-22) ---
+            $mealPeriod = null;
+            if ($hour >= 11 && $hour <= 15) {
+                $mealPeriod = 'Lunch';
+            } elseif ($hour >= 17 && $hour <= 22) {
+                $mealPeriod = 'Dinner';
+            }
 
-    /**
-     * Get outlet performance comparison
-     */
-    public function getOutletComparison($dateFrom = null, $dateTo = null)
-    {
-        $dateFrom = $dateFrom ?: Carbon::now()->startOfMonth()->format('Y-m-d');
-        $dateTo = $dateTo ?: Carbon::now()->format('Y-m-d');
+            if ($mealPeriod !== null) {
+                if (! isset($revenuePerOutletLunchDinner[$regionName])) {
+                    $revenuePerOutletLunchDinner[$regionName] = [
+                        'region_code' => $regionCode,
+                        'outlets' => [],
+                        'lunch' => ['total_revenue' => 0.0, 'total_orders' => 0, 'total_pax' => 0],
+                        'dinner' => ['total_revenue' => 0.0, 'total_orders' => 0, 'total_pax' => 0],
+                        'total_revenue' => 0.0,
+                        'total_orders' => 0,
+                        'total_pax' => 0,
+                    ];
+                }
+                if (! isset($revenuePerOutletLunchDinner[$regionName]['outlets'][$outletKey])) {
+                    $revenuePerOutletLunchDinner[$regionName]['outlets'][$outletKey] = [
+                        'outlet_code' => $row->kode_outlet,
+                        'outlet_name' => $row->outlet_name,
+                        'lunch' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                        'dinner' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                        'total_revenue' => 0.0,
+                        'total_orders' => 0,
+                        'total_pax' => 0,
+                    ];
+                }
 
-        $query = "
-            SELECT 
-                kode_outlet,
-                COUNT(*) as total_orders,
-                COALESCE(SUM(grand_total), 0) as total_revenue,
-                COALESCE(AVG(grand_total), 0) as avg_order_value,
-                COALESCE(SUM(pax), 0) as total_customers
-            FROM orders 
-            WHERE DATE(created_at) BETWEEN '{$dateFrom}' AND '{$dateTo}' 
-            AND kode_outlet IS NOT NULL
-            GROUP BY kode_outlet
-            ORDER BY total_revenue DESC
-        ";
+                $mealKey = strtolower($mealPeriod);
+                $slot = &$revenuePerOutletLunchDinner[$regionName]['outlets'][$outletKey][$mealKey];
+                $slot['order_count'] += $orders;
+                $slot['total_revenue'] += $revenue;
+                $slot['total_pax'] += $pax;
+                $slot['avg_order_value'] = $slot['order_count'] > 0
+                    ? $slot['total_revenue'] / $slot['order_count']
+                    : 0.0;
+                unset($slot);
 
-        return DB::select($query);
-    }
+                $revenuePerOutletLunchDinner[$regionName][$mealKey]['total_revenue'] += $revenue;
+                $revenuePerOutletLunchDinner[$regionName][$mealKey]['total_orders'] += $orders;
+                $revenuePerOutletLunchDinner[$regionName][$mealKey]['total_pax'] += $pax;
+                $revenuePerOutletLunchDinner[$regionName]['outlets'][$outletKey]['total_revenue'] += $revenue;
+                $revenuePerOutletLunchDinner[$regionName]['outlets'][$outletKey]['total_orders'] += $orders;
+                $revenuePerOutletLunchDinner[$regionName]['outlets'][$outletKey]['total_pax'] += $pax;
+                $revenuePerOutletLunchDinner[$regionName]['total_revenue'] += $revenue;
+                $revenuePerOutletLunchDinner[$regionName]['total_orders'] += $orders;
+                $revenuePerOutletLunchDinner[$regionName]['total_pax'] += $pax;
+            }
 
-    /**
-     * Get daily performance summary
-     */
-    public function getDailyPerformance($outletCode = 'ALL', $date = null)
-    {
-        $date = $date ?: Carbon::now()->format('Y-m-d');
-        $outletFilter = $outletCode !== 'ALL' ? "AND kode_outlet = '{$outletCode}'" : '';
+            // --- region lunch/dinner uses <=17 definition (legacy) ---
+            $regionMeal = $hour <= 17 ? 'lunch' : 'dinner';
+            if (! isset($regionLunchDinner[$regionName])) {
+                $regionLunchDinner[$regionName] = [
+                    'region_code' => $regionCode,
+                    'lunch' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                    'dinner' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                ];
+            }
+            $regionLunchDinner[$regionName][$regionMeal]['order_count'] += $orders;
+            $regionLunchDinner[$regionName][$regionMeal]['total_revenue'] += $revenue;
+            $regionLunchDinner[$regionName][$regionMeal]['total_pax'] += $pax;
 
-        $query = "
-            SELECT 
-                COUNT(*) as total_orders,
-                COALESCE(SUM(grand_total), 0) as total_revenue,
-                COALESCE(AVG(grand_total), 0) as avg_order_value,
-                COALESCE(SUM(pax), 0) as total_customers,
-                COALESCE(SUM(discount), 0) as total_discount,
-                COALESCE(SUM(service), 0) as service_charge
-            FROM orders 
-            WHERE DATE(created_at) = '{$date}' 
-            {$outletFilter}
-        ";
+            // --- weekend/weekday per outlet ---
+            if (! isset($revenuePerOutletWeekendWeekday[$regionName])) {
+                $revenuePerOutletWeekendWeekday[$regionName] = [
+                    'region_code' => $regionCode,
+                    'outlets' => [],
+                    'weekend' => ['total_revenue' => 0.0, 'total_orders' => 0, 'total_pax' => 0],
+                    'weekday' => ['total_revenue' => 0.0, 'total_orders' => 0, 'total_pax' => 0],
+                    'total_revenue' => 0.0,
+                    'total_orders' => 0,
+                    'total_pax' => 0,
+                ];
+            }
+            if (! isset($revenuePerOutletWeekendWeekday[$regionName]['outlets'][$outletKey])) {
+                $revenuePerOutletWeekendWeekday[$regionName]['outlets'][$outletKey] = [
+                    'outlet_code' => $row->kode_outlet,
+                    'outlet_name' => $row->outlet_name,
+                    'weekend' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                    'weekday' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                    'total_revenue' => 0.0,
+                    'total_orders' => 0,
+                    'total_pax' => 0,
+                ];
+            }
 
-        return DB::select($query)[0];
+            $dayKey = strtolower($dayType);
+            $daySlot = &$revenuePerOutletWeekendWeekday[$regionName]['outlets'][$outletKey][$dayKey];
+            $daySlot['order_count'] += $orders;
+            $daySlot['total_revenue'] += $revenue;
+            $daySlot['total_pax'] += $pax;
+            $daySlot['avg_order_value'] = $daySlot['order_count'] > 0
+                ? $daySlot['total_revenue'] / $daySlot['order_count']
+                : 0.0;
+            unset($daySlot);
+
+            $revenuePerOutletWeekendWeekday[$regionName][$dayKey]['total_revenue'] += $revenue;
+            $revenuePerOutletWeekendWeekday[$regionName][$dayKey]['total_orders'] += $orders;
+            $revenuePerOutletWeekendWeekday[$regionName][$dayKey]['total_pax'] += $pax;
+            $revenuePerOutletWeekendWeekday[$regionName]['outlets'][$outletKey]['total_revenue'] += $revenue;
+            $revenuePerOutletWeekendWeekday[$regionName]['outlets'][$outletKey]['total_orders'] += $orders;
+            $revenuePerOutletWeekendWeekday[$regionName]['outlets'][$outletKey]['total_pax'] += $pax;
+            $revenuePerOutletWeekendWeekday[$regionName]['total_revenue'] += $revenue;
+            $revenuePerOutletWeekendWeekday[$regionName]['total_orders'] += $orders;
+            $revenuePerOutletWeekendWeekday[$regionName]['total_pax'] += $pax;
+
+            if (! isset($regionWeekdayWeekend[$regionName])) {
+                $regionWeekdayWeekend[$regionName] = [
+                    'region_code' => $regionCode,
+                    'weekday' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                    'weekend' => ['order_count' => 0, 'total_revenue' => 0.0, 'total_pax' => 0, 'avg_order_value' => 0.0],
+                ];
+            }
+            $regionWeekdayWeekend[$regionName][$dayKey]['order_count'] += $orders;
+            $regionWeekdayWeekend[$regionName][$dayKey]['total_revenue'] += $revenue;
+            $regionWeekdayWeekend[$regionName][$dayKey]['total_pax'] += $pax;
+        }
+
+        // Finalize outlet lists + avg_order_value
+        foreach ($revenuePerOutlet as $regionName => &$region) {
+            $outlets = [];
+            foreach ($region['outlets'] as $outlet) {
+                $outlet['avg_order_value'] = $outlet['order_count'] > 0
+                    ? $outlet['total_revenue'] / $outlet['order_count']
+                    : 0.0;
+                $outlets[] = $outlet;
+            }
+            usort($outlets, fn ($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+            $region['outlets'] = $outlets;
+        }
+        unset($region);
+
+        foreach ($revenuePerOutletLunchDinner as $regionName => &$region) {
+            $region['outlets'] = array_values($region['outlets']);
+        }
+        unset($region);
+
+        foreach ($revenuePerOutletWeekendWeekday as $regionName => &$region) {
+            $region['outlets'] = array_values($region['outlets']);
+        }
+        unset($region);
+
+        foreach ($regionLunchDinner as $regionName => &$data) {
+            foreach (['lunch', 'dinner'] as $meal) {
+                $c = $data[$meal]['order_count'];
+                $data[$meal]['avg_order_value'] = $c > 0 ? $data[$meal]['total_revenue'] / $c : 0.0;
+            }
+        }
+        unset($data);
+
+        foreach ($regionWeekdayWeekend as $regionName => &$data) {
+            foreach (['weekday', 'weekend'] as $day) {
+                $c = $data[$day]['order_count'];
+                $data[$day]['avg_order_value'] = $c > 0 ? $data[$day]['total_revenue'] / $c : 0.0;
+            }
+        }
+        unset($data);
+
+        $totalRevenueList = array_values(array_map(function ($row) {
+            return [
+                'region_name' => $row['region_name'],
+                'region_code' => $row['region_code'],
+                'total_orders' => $row['total_orders'],
+                'total_revenue' => $row['total_revenue'],
+                'total_pax' => $row['total_pax'],
+                'avg_order_value' => $row['total_orders'] > 0
+                    ? $row['total_revenue'] / $row['total_orders']
+                    : 0.0,
+            ];
+        }, $regionTotals));
+        usort($totalRevenueList, fn ($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+
+        return [
+            'revenuePerOutlet' => $revenuePerOutlet,
+            'revenuePerOutletLunchDinner' => $revenuePerOutletLunchDinner,
+            'revenuePerOutletWeekendWeekday' => $revenuePerOutletWeekendWeekday,
+            'revenuePerRegion' => [
+                'total_revenue' => $totalRevenueList,
+                'lunch_dinner' => $regionLunchDinner,
+                'weekday_weekend' => $regionWeekdayWeekend,
+            ],
+        ];
     }
 }
