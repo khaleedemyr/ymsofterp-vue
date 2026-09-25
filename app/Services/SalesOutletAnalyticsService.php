@@ -312,7 +312,7 @@ class SalesOutletAnalyticsService
             'avg_check_effect' => round($checkEffect, 2),
             'pax_share_pct' => $paxShare,
             'avg_check_share_pct' => $checkShare,
-            'severity' => $this->severityText($direction, $primary, $delta),
+            'headline' => $this->headlineText($direction, $primary, $delta),
         ];
     }
 
