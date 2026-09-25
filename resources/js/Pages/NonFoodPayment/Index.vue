@@ -11,6 +11,28 @@
           </button>
         </div>
       </div>
+
+      <div v-if="selectedIds.length > 0" class="flex flex-wrap gap-2 mb-4 items-center bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+        <span class="text-sm font-semibold text-blue-800 mr-2">{{ selectedIds.length }} dipilih</span>
+        <button
+          @click="exportBulkPdf"
+          class="bg-red-600 text-white px-4 py-2 rounded-xl shadow hover:bg-red-700 transition font-semibold text-sm"
+        >
+          <i class="fa-solid fa-file-pdf mr-1"></i> Print PDF
+        </button>
+        <button
+          @click="exportBulkExcel"
+          class="bg-green-600 text-white px-4 py-2 rounded-xl shadow hover:bg-green-700 transition font-semibold text-sm"
+        >
+          <i class="fa-solid fa-file-excel mr-1"></i> Export Excel
+        </button>
+        <button
+          @click="clearSelection"
+          class="bg-gray-200 text-gray-700 px-3 py-2 rounded-xl hover:bg-gray-300 transition text-sm"
+        >
+          Clear
+        </button>
+      </div>
       
       <div class="flex flex-wrap gap-3 mb-4 items-center">
         <!-- Search Box -->
@@ -97,7 +119,15 @@
         <table class="w-full min-w-full divide-y divide-gray-200">
           <thead class="bg-gradient-to-r from-blue-100 to-blue-200">
             <tr>
-              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl">No. Payment</th>
+              <th class="px-4 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider rounded-tl-2xl w-10">
+                <input
+                  type="checkbox"
+                  :checked="isAllSelected"
+                  @change="toggleSelectAll"
+                  class="rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                />
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">No. Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Tanggal Payment</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">Supplier</th>
               <th class="px-6 py-3 text-left text-xs font-bold text-blue-700 uppercase tracking-wider">COA</th>
@@ -113,12 +143,22 @@
           </thead>
           <tbody>
             <tr v-if="!payments.data || !payments.data.length">
-              <td colspan="12" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
+              <td colspan="13" class="text-center py-10 text-gray-400">Belum ada data Non Food Payment.</td>
             </tr>
             <template v-for="payment in payments.data" :key="payment.id">
               <tr v-for="(outlet, index) in (payment.outlet_breakdown || [])" :key="`${payment.id}-${outlet?.outlet_id || index}`" 
                   class="hover:bg-blue-50 transition shadow-sm"
                   :class="{ 'border-t-2 border-blue-200': index > 0 }">
+                <!-- Checkbox (only show on first row) -->
+                <td v-if="index === 0" class="px-4 py-3" :rowspan="(payment.outlet_breakdown || []).length">
+                  <input
+                    type="checkbox"
+                    :value="payment.id"
+                    :checked="selectedIds.includes(payment.id)"
+                    @change="toggleSelect(payment.id)"
+                    class="rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </td>
                 <!-- Payment Number (only show on first row) -->
                 <td v-if="index === 0" class="px-6 py-3 font-mono font-semibold text-blue-700" :rowspan="(payment.outlet_breakdown || []).length">
                   {{ payment.payment_number }}
@@ -278,6 +318,45 @@ const isLoading = ref(false);
 
 // Global loading untuk spinner overlay
 const { showLoading, hideLoading } = useLoading();
+
+const selectedIds = ref([]);
+
+const pageIds = computed(() => (props.payments?.data || []).map((p) => p.id));
+const isAllSelected = computed(() => pageIds.value.length > 0 && pageIds.value.every((id) => selectedIds.value.includes(id)));
+
+function toggleSelect(id) {
+  const idx = selectedIds.value.indexOf(id);
+  if (idx === -1) {
+    selectedIds.value.push(id);
+  } else {
+    selectedIds.value.splice(idx, 1);
+  }
+}
+
+function toggleSelectAll(event) {
+  if (event.target.checked) {
+    const merged = new Set([...selectedIds.value, ...pageIds.value]);
+    selectedIds.value = Array.from(merged);
+  } else {
+    selectedIds.value = selectedIds.value.filter((id) => !pageIds.value.includes(id));
+  }
+}
+
+function clearSelection() {
+  selectedIds.value = [];
+}
+
+function exportBulkPdf() {
+  if (!selectedIds.value.length) return;
+  const ids = selectedIds.value.join(',');
+  window.open(`/non-food-payments/export-bulk-pdf?ids=${ids}`, '_blank');
+}
+
+function exportBulkExcel() {
+  if (!selectedIds.value.length) return;
+  const ids = selectedIds.value.join(',');
+  window.location.href = `/non-food-payments/export-bulk-excel?ids=${ids}`;
+}
 
 // Watch perubahan props.dataLoaded
 watch(() => props.dataLoaded, (newVal) => {

@@ -2005,8 +2005,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
 // Non Food Payments
 Route::middleware(['auth', 'verified'])->group(function () {
-    // Print preview must be before resource routes
+    // Print preview + bulk export must be before resource routes
     Route::get('non-food-payments/print-preview', [\App\Http\Controllers\NonFoodPaymentController::class, 'printPreview'])->name('non-food-payments.print-preview');
+    Route::get('non-food-payments/export-bulk-pdf', [\App\Http\Controllers\NonFoodPaymentController::class, 'exportBulkPdf'])->name('non-food-payments.export-bulk-pdf');
+    Route::get('non-food-payments/export-bulk-excel', [\App\Http\Controllers\NonFoodPaymentController::class, 'exportBulkExcel'])->name('non-food-payments.export-bulk-excel');
     Route::get('non-food-payments/create-from-asset-service/{assetServiceOrder}', [\App\Http\Controllers\NonFoodPaymentController::class, 'createFromAssetService'])->name('non-food-payments.create-from-asset-service');
     Route::resource('non-food-payments', \App\Http\Controllers\NonFoodPaymentController::class);
     Route::get('non-food-payments/po-items/{poId}', [\App\Http\Controllers\NonFoodPaymentController::class, 'getPOItems'])->name('non-food-payments.po-items');

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\NonFoodPaymentBulkExport;
 use App\Models\AssetServiceOrder;
 use App\Models\NonFoodPayment;
 use App\Models\PurchaseOrderOps;
@@ -10,6 +11,7 @@ use App\Models\PurchaseRequisitionCategory;
 use App\Models\PurchaseRequisitionOutletBudget;
 use App\Models\RetailNonFood;
 use App\Models\Supplier;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,6 +19,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class NonFoodPaymentController extends Controller
 {
@@ -2689,6 +2692,90 @@ class NonFoodPaymentController extends Controller
         } catch (\Exception $e) {
             return back()->with('error', 'Gagal membatalkan Non Food Payment: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Bulk export selected Non Food Payments as landscape PDF (payment schedule).
+     */
+    public function exportBulkPdf(Request $request)
+    {
+        $groups = $this->buildBulkExportGroups($request);
+        if ($groups === null) {
+            return redirect()->back()->with('error', 'Pilih minimal 1 Non Food Payment.');
+        }
+
+        $pdf = Pdf::loadView('exports.non_food_payment_bulk_pdf', [
+            'groups' => $groups,
+        ])->setPaper('a4', 'landscape');
+
+        return $pdf->download('non-food-payment-export-'.now()->format('Ymd-His').'.pdf');
+    }
+
+    /**
+     * Bulk export selected Non Food Payments as Excel (payment schedule).
+     */
+    public function exportBulkExcel(Request $request)
+    {
+        $groups = $this->buildBulkExportGroups($request);
+        if ($groups === null) {
+            return redirect()->back()->with('error', 'Pilih minimal 1 Non Food Payment.');
+        }
+
+        return Excel::download(
+            new NonFoodPaymentBulkExport($groups),
+            'non-food-payment-export-'.now()->format('Ymd-His').'.xlsx'
+        );
+    }
+
+    /**
+     * @return array<int, array{date_key: string, date_label: string, items: array<int, array<string, mixed>>}>|null
+     */
+    protected function buildBulkExportGroups(Request $request): ?array
+    {
+        $ids = $request->input('ids', []);
+        if (is_string($ids)) {
+            $ids = array_filter(array_map('trim', explode(',', $ids)));
+        }
+        if (! is_array($ids) || count($ids) === 0) {
+            return null;
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $ids)));
+        $payments = NonFoodPayment::with(['supplier'])
+            ->whereIn('id', $ids)
+            ->orderBy('payment_date')
+            ->orderBy('id')
+            ->get();
+
+        if ($payments->isEmpty()) {
+            return null;
+        }
+
+        $grouped = [];
+        foreach ($payments as $payment) {
+            $dateKey = optional($payment->payment_date)->format('Y-m-d') ?: 'unknown';
+            $dateLabel = optional($payment->payment_date)->format('d/m/Y') ?: '-';
+
+            if (! isset($grouped[$dateKey])) {
+                $grouped[$dateKey] = [
+                    'date_key' => $dateKey,
+                    'date_label' => $dateLabel,
+                    'items' => [],
+                ];
+            }
+
+            $supplier = $payment->supplier;
+            $grouped[$dateKey]['items'][] = [
+                'supplier_name' => optional($supplier)->name ?? '-',
+                'nfp_number' => $payment->payment_number ?? '',
+                'nominal' => (float) $payment->amount,
+                'bank_account_number' => optional($supplier)->bank_account_number ?? '',
+                'bank_name' => optional($supplier)->bank_name ?? '',
+                'bank_account_name' => optional($supplier)->bank_account_name ?? '',
+            ];
+        }
+
+        return array_values($grouped);
     }
 
     /**
