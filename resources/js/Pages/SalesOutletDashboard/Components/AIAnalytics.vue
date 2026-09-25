@@ -1,719 +1,382 @@
 <template>
-  <div class="space-y-6 mb-6">
-    <!-- Q&A Chat Section -->
-    <div class="bg-gradient-to-br from-white via-purple-50/30 to-white rounded-2xl shadow-2xl border border-purple-100/50 flex flex-col overflow-hidden backdrop-blur-sm" style="height: 700px;">
-      <!-- Modern Header with Gradient -->
-      <div class="relative bg-gradient-to-r from-purple-600 via-purple-500 to-indigo-600 p-5 border-b border-purple-300/30">
-        <div class="absolute inset-0 bg-gradient-to-r from-purple-600/90 to-indigo-600/90 backdrop-blur-sm"></div>
-        <div class="relative flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="relative">
-              <div class="absolute inset-0 bg-purple-400 rounded-full blur-lg opacity-50 animate-pulse"></div>
-              <div class="relative bg-gradient-to-br from-purple-500 to-indigo-600 p-3 rounded-2xl shadow-lg">
-                <span class="text-2xl">🤖</span>
-              </div>
-            </div>
-            <div>
-              <h3 class="text-xl font-bold text-white flex items-center gap-2 drop-shadow-lg">
-                Tanya YMSoft AI
-              </h3>
-              <p class="text-xs text-purple-100 flex items-center gap-1 mt-0.5">
-                <i class="fa-solid fa-bolt text-yellow-300"></i>
-                Powered By Claude Sonnet
-              </p>
-            </div>
-          </div>
-          <button
-            @click="clearChat"
-            :disabled="chatHistory.length === 0"
-            class="relative px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur-sm text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 flex items-center gap-2 text-sm font-medium border border-white/30 shadow-lg hover:shadow-xl transform hover:scale-105"
-            title="Hapus semua chat"
-          >
-            <i class="fa-solid fa-trash"></i>
-            <span class="hidden sm:inline">Hapus Chat</span>
-          </button>
-        </div>
-      </div>
-      
-      <!-- Chat History Container with Modern Scrollbar -->
-      <div ref="chatContainer" class="flex-1 overflow-y-auto p-6 space-y-5 bg-gradient-to-b from-gray-50/50 to-white" style="scrollbar-width: thin; scrollbar-color: rgba(147, 51, 234, 0.3) transparent;">
-        <!-- Debug Info (temporary) -->
-        <div v-if="false" class="text-xs text-gray-500 p-2 bg-yellow-50 rounded mb-2">
-          Debug: chatHistory.length = {{ chatHistory.length }}, 
-          qaLoading = {{ qaLoading }}, 
-          sessionId = {{ sessionId }}
-        </div>
-        
-        <!-- Empty State -->
-        <div v-if="chatHistory.length === 0 && !qaLoading" class="flex flex-col items-center justify-center h-full text-gray-400">
-          <div class="relative mb-6">
-            <div class="absolute inset-0 bg-purple-200 rounded-full blur-2xl opacity-30 animate-pulse"></div>
-            <div class="relative bg-gradient-to-br from-purple-100 to-indigo-100 p-8 rounded-3xl shadow-xl">
-              <i class="fa-solid fa-comments text-6xl text-purple-500"></i>
-            </div>
-          </div>
-          <p class="text-xl font-semibold text-gray-600 mb-2">Mulai percakapan dengan AI</p>
-          <p class="text-sm text-gray-500">Masukkan pertanyaan di bawah untuk mendapatkan jawaban yang cerdas</p>
-        </div>
-        
-        <!-- Chat Messages -->
-        <div
-          v-for="(chat, index) in chatHistory"
-          :key="chat.id || index"
-          class="space-y-4 animate-fade-in"
-        >
-          <!-- User Question -->
-          <div class="flex justify-end" :data-chat-id="chat.id">
-            <div class="max-w-[85%] bg-gradient-to-br from-purple-600 to-indigo-600 text-white rounded-2xl rounded-tr-sm px-5 py-4 shadow-xl transform hover:scale-[1.02] transition-transform duration-200">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center">
-                  <i class="fa-solid fa-user text-xs"></i>
-                </div>
-                <p class="text-xs font-semibold opacity-90">Anda</p>
-              </div>
-              <p class="text-sm whitespace-pre-line leading-relaxed">{{ chat.question }}</p>
-              <p class="text-xs opacity-70 mt-3 flex items-center gap-1">
-                <i class="fa-solid fa-clock text-xs"></i>
-                {{ chat.created_at_formatted }}
-              </p>
-            </div>
-          </div>
-          
-          <!-- AI Answer -->
-          <div class="flex justify-start">
-            <div class="max-w-[85%] bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-5 py-4 shadow-xl hover:shadow-2xl transition-all duration-200 relative overflow-hidden">
-              <!-- Decorative gradient line -->
-              <div class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-indigo-500"></div>
-              
-              <div class="flex items-center gap-2 mb-3">
-                <div class="relative">
-                  <div class="absolute inset-0 bg-purple-200 rounded-full blur-md opacity-50"></div>
-                  <div class="relative bg-gradient-to-br from-purple-500 to-indigo-600 p-2 rounded-xl">
-                    <i class="fa-solid fa-robot text-white text-sm"></i>
-                  </div>
-                </div>
-                <div>
-                  <p class="text-sm font-semibold text-gray-800">YMSoft AI</p>
-                  <p class="text-xs text-gray-500 flex items-center gap-1">
-                    <i class="fa-solid fa-bolt text-yellow-500 text-xs"></i>
-                    Claude Sonnet
-                  </p>
-                </div>
-              </div>
-              
-              <div class="text-sm text-gray-700 whitespace-pre-line leading-relaxed prose prose-sm max-w-none" v-html="formatAnswer(chat.answer)"></div>
-              
-              <p class="text-xs text-gray-400 mt-4 flex items-center gap-1 pt-3 border-t border-gray-100">
-                <i class="fa-solid fa-clock text-xs"></i>
-                {{ chat.created_at_formatted }}
-              </p>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Loading Indicator with Thinking Animation -->
-        <div v-if="qaLoading" class="flex justify-start animate-fade-in">
-          <div class="max-w-[85%] bg-white border border-gray-200 rounded-2xl rounded-tl-sm px-5 py-4 shadow-xl hover:shadow-2xl transition-all duration-200 relative overflow-hidden">
-            <!-- Decorative gradient line -->
-            <div class="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-purple-500 to-indigo-500"></div>
-            
-            <div class="flex items-center gap-3">
-              <div class="relative">
-                <div class="absolute inset-0 bg-purple-200 rounded-full blur-md opacity-50 animate-pulse"></div>
-                <div class="relative bg-gradient-to-br from-purple-500 to-indigo-600 p-2 rounded-xl">
-                  <i class="fa-solid fa-robot text-white text-sm"></i>
-                </div>
-              </div>
-              <div class="flex-1">
-                <div class="flex items-center gap-2 mb-1">
-                  <p class="text-sm font-semibold text-gray-800">YMSoft AI</p>
-                  <span class="text-xs text-gray-500 flex items-center gap-1">
-                    <i class="fa-solid fa-bolt text-yellow-500 text-xs"></i>
-                    Claude Sonnet
-                  </span>
-                </div>
-                <!-- Typing Animation -->
-                <div class="flex items-center gap-1">
-                  <span class="text-sm text-gray-600 font-medium">Sedang memikirkan</span>
-                  <div class="flex gap-1 ml-1">
-                    <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 0s;"></span>
-                    <span class="w-2 h-2 bg-indigo-500 rounded-full animate-bounce" style="animation-delay: 0.2s;"></span>
-                    <span class="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style="animation-delay: 0.4s;"></span>
-                  </div>
-                </div>
-                <!-- Thinking waves animation -->
-                <div class="mt-2 flex items-center gap-1">
-                  <div class="flex-1 h-1 bg-gradient-to-r from-purple-200 via-purple-400 to-purple-200 rounded-full overflow-hidden relative">
-                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/80 to-transparent" style="animation: shimmer 1.5s ease-in-out infinite;"></div>
-                  </div>
-                </div>
-                <p class="text-xs text-gray-500 mt-2 flex items-center gap-1">
-                  <i class="fa-solid fa-brain text-purple-500 animate-pulse"></i>
-                  <span>Menganalisis data dashboard...</span>
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- Error Display -->
-      <div v-if="qaError" class="mx-6 mb-4 bg-gradient-to-r from-red-50 to-pink-50 border border-red-200 rounded-xl p-4 shadow-lg animate-shake">
-        <div class="flex items-center gap-3 text-red-800">
-          <div class="bg-red-100 p-2 rounded-lg">
-            <i class="fa-solid fa-exclamation-circle text-red-600"></i>
-          </div>
-          <p class="text-sm font-medium">{{ qaError }}</p>
-        </div>
-      </div>
-      
-      <!-- Modern Question Input -->
-      <div class="p-5 bg-gradient-to-r from-white via-purple-50/30 to-white border-t border-purple-100/50 backdrop-blur-sm">
-        <div class="flex gap-3">
-          <div class="flex-1 relative">
-            <div class="absolute inset-0 bg-gradient-to-r from-purple-100/50 to-indigo-100/50 rounded-2xl blur-sm"></div>
-            <input
-              v-model="question"
-              @keyup.enter.prevent="askQuestion"
-              @keydown.enter.prevent
-              @submit.prevent
-              type="text"
-              placeholder="Tanyakan sesuatu tentang dashboard..."
-              class="relative w-full px-5 py-3.5 bg-white border-2 border-purple-200 rounded-2xl focus:outline-none focus:ring-4 focus:ring-purple-300/50 focus:border-purple-400 transition-all duration-300 text-sm shadow-lg hover:shadow-xl"
-              :disabled="qaLoading"
-            />
-          </div>
-          <button
-            type="button"
-            @click="askQuestion"
-            :disabled="qaLoading || !question || question.trim() === ''"
-            class="relative px-6 py-3.5 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl hover:from-purple-700 hover:to-indigo-700 disabled:from-gray-400 disabled:to-gray-500 disabled:cursor-not-allowed transition-all duration-300 flex items-center gap-2 font-semibold shadow-lg hover:shadow-xl transform hover:scale-105 disabled:transform-none group"
-          >
-            <div class="absolute inset-0 bg-white/20 rounded-2xl blur-md opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-            <i class="fa-solid fa-paper-plane relative z-10" :class="{ 'fa-spin': qaLoading }"></i>
-            <span class="relative z-10 hidden sm:inline">{{ qaLoading ? 'Mengirim...' : 'Kirim' }}</span>
-          </button>
-        </div>
-        <div class="flex items-center justify-between mt-3">
-          <p class="text-xs text-gray-500 flex items-center gap-1.5">
-            <i class="fa-solid fa-lightbulb text-yellow-500"></i>
-            <span class="hidden sm:inline">Contoh: </span>
-            <span class="text-gray-400">"Kenapa revenue turun?", "Item apa yang paling menguntungkan?"</span>
+  <div class="mb-6 space-y-4">
+    <div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+      <div class="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div>
+          <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">Sales Analytics</p>
+          <h3 class="text-lg font-bold text-slate-900 mt-0.5">Analisa omzet otomatis</h3>
+          <p class="text-xs text-slate-500 mt-1">
+            Bandingkan periode terpilih vs rata-rata 3 bulan sebelumnya · decomposisi Pax vs Average Check · region, outlet, daypart, menu
           </p>
-          <div class="flex items-center gap-2 text-xs text-gray-400 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-200">
-            <i class="fa-solid fa-bolt text-yellow-500"></i>
-            <span class="font-medium">Powered By Claude Sonnet</span>
+        </div>
+        <div v-if="loading" class="text-sm text-indigo-600">
+          <i class="fa-solid fa-spinner fa-spin mr-1"></i> Menyusun analisa…
+        </div>
+      </div>
+
+      <div v-if="!loading && !data" class="px-5 py-8 text-center text-slate-400 text-sm">
+        Analisa belum tersedia.
+      </div>
+
+      <div v-else-if="data" class="p-5 space-y-5">
+        <!-- Headline / narrative -->
+        <div
+          class="rounded-xl border px-4 py-4"
+          :class="severityBoxClass"
+        >
+          <div class="flex items-start gap-3">
+            <div class="mt-0.5 rounded-lg p-2" :class="severityIconWrap">
+              <i class="fa-solid text-sm" :class="severityIcon"></i>
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-bold" :class="severityTitleClass">{{ data.driver?.label }}</p>
+              <p class="mt-2 text-sm text-slate-700 whitespace-pre-line leading-relaxed">{{ data.narrative }}</p>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-    
-    <!-- Auto Insight Section (Optional - bisa di-hide jika tidak perlu) -->
-    <div v-if="showInsight" class="bg-white rounded-lg shadow-lg p-6 border-l-4 border-blue-500">
-      <div class="flex items-center justify-between mb-4">
-        <h3 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-          <span class="text-2xl">🤖</span>
-          AI Insight
-        </h3>
-        <button
-          @click="loadInsight"
-          :disabled="loading"
-          class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
-        >
-          <i class="fa-solid fa-refresh" :class="{ 'fa-spin': loading }"></i>
-          {{ loading ? 'Loading...' : 'Refresh' }}
-        </button>
-      </div>
-      
-      <div v-if="loading && !insight" class="text-center py-8">
-        <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-        <p class="mt-2 text-gray-600">Menganalisa data...</p>
-      </div>
-      
-      <div v-else-if="error" class="bg-red-50 border border-red-200 rounded-lg p-4">
-        <div class="flex items-center gap-2 text-red-800">
-          <i class="fa-solid fa-exclamation-circle"></i>
-          <p>{{ error }}</p>
+
+        <!-- KPI comparison -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <div class="rounded-xl border border-slate-100 bg-slate-50/70 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Omzet periode</p>
+            <p class="mt-1 text-xl font-bold text-slate-900">{{ formatCurrency(data.current?.revenue) }}</p>
+            <p class="text-xs mt-1" :class="pctClass(data.vs_avg_last_3?.revenue_pct)">
+              {{ fmtPct(data.vs_avg_last_3?.revenue_pct) }} vs avg 3 bln
+            </p>
+          </div>
+          <div class="rounded-xl border border-slate-100 bg-sky-50/70 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-sky-600">Pax</p>
+            <p class="mt-1 text-xl font-bold text-sky-900">{{ formatNumber(data.current?.pax) }}</p>
+            <p class="text-xs mt-1" :class="pctClass(data.vs_avg_last_3?.pax_pct)">
+              {{ fmtPct(data.vs_avg_last_3?.pax_pct) }} · share driver {{ data.driver?.pax_share_pct }}%
+            </p>
+          </div>
+          <div class="rounded-xl border border-slate-100 bg-amber-50/70 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-amber-700">Avg Check</p>
+            <p class="mt-1 text-xl font-bold text-amber-900">{{ formatCurrency(data.current?.avg_check) }}</p>
+            <p class="text-xs mt-1" :class="pctClass(data.vs_avg_last_3?.avg_check_pct)">
+              {{ fmtPct(data.vs_avg_last_3?.avg_check_pct) }} · share driver {{ data.driver?.avg_check_share_pct }}%
+            </p>
+          </div>
+          <div class="rounded-xl border border-slate-100 bg-violet-50/70 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-violet-700">AOV (per order)</p>
+            <p class="mt-1 text-xl font-bold text-violet-900">{{ formatCurrency(data.current?.aov) }}</p>
+            <p class="text-xs mt-1" :class="pctClass(data.vs_avg_last_3?.aov_pct)">
+              {{ fmtPct(data.vs_avg_last_3?.aov_pct) }} vs avg 3 bln
+            </p>
+          </div>
         </div>
-      </div>
-      
-      <div v-else-if="insight" class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border-l-4 border-blue-500">
-        <div class="prose prose-sm max-w-none">
-          <div class="whitespace-pre-line text-gray-700 leading-relaxed text-sm">{{ insight }}</div>
+
+        <!-- Attribution bar -->
+        <div class="rounded-xl border border-slate-100 p-4">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <p class="text-sm font-semibold text-slate-800">Atribusi perubahan omzet</p>
+            <p class="text-xs text-slate-500">Omzet ≈ Pax × Average Check</p>
+          </div>
+          <div class="h-3 rounded-full overflow-hidden flex bg-slate-100">
+            <div
+              class="h-full bg-sky-500 transition-all"
+              :style="{ width: (data.driver?.pax_share_pct || 0) + '%' }"
+              :title="'Pax ' + data.driver?.pax_share_pct + '%'"
+            ></div>
+            <div
+              class="h-full bg-amber-500 transition-all"
+              :style="{ width: (data.driver?.avg_check_share_pct || 0) + '%' }"
+              :title="'Avg Check ' + data.driver?.avg_check_share_pct + '%'"
+            ></div>
+          </div>
+          <div class="mt-2 flex flex-wrap gap-4 text-xs text-slate-600">
+            <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-sky-500 mr-1"></span>Pax {{ data.driver?.pax_share_pct }}% (Δ {{ formatCurrency(data.driver?.pax_effect) }})</span>
+            <span><span class="inline-block w-2.5 h-2.5 rounded-sm bg-amber-500 mr-1"></span>Avg Check {{ data.driver?.avg_check_share_pct }}% (Δ {{ formatCurrency(data.driver?.avg_check_effect) }})</span>
+          </div>
         </div>
-        <div class="mt-4 text-xs text-gray-500 flex items-center gap-2">
-          <i class="fa-solid fa-clock"></i>
-          <span>Terakhir diupdate: {{ lastUpdated }}</span>
+
+        <!-- 3-month table -->
+        <div>
+          <h4 class="text-sm font-semibold text-slate-800 mb-2">Perbandingan 3 bulan ke belakang</h4>
+          <div class="overflow-x-auto border border-slate-100 rounded-xl">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 text-right">
+                <tr>
+                  <th class="px-3 py-2 text-left">Bulan</th>
+                  <th class="px-3 py-2">Omzet</th>
+                  <th class="px-3 py-2">Pax</th>
+                  <th class="px-3 py-2">Avg Check</th>
+                  <th class="px-3 py-2">periode vs bulan</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="border-t border-slate-100 bg-indigo-50/40 font-semibold">
+                  <td class="px-3 py-2 text-left text-indigo-900">{{ data.period?.label }} (periode)</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(data.current?.revenue) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(data.current?.pax) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(data.current?.avg_check) }}</td>
+                  <td class="px-3 py-2 text-right text-slate-400">—</td>
+                </tr>
+                <tr
+                  v-for="m in data.compare_months"
+                  :key="m.key"
+                  class="border-t border-slate-50"
+                >
+                  <td class="px-3 py-2 text-left text-slate-700">{{ m.label }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(m.revenue) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(m.pax) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(m.avg_check) }}</td>
+                  <td class="px-3 py-2 text-right" :class="pctClass(m.vs_current?.revenue_pct)">
+                    {{ fmtPct(m.vs_current?.revenue_pct) }}
+                  </td>
+                </tr>
+                <tr class="border-t border-slate-200 bg-slate-50 font-medium">
+                  <td class="px-3 py-2 text-left">Rata-rata 3 bulan</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(data.avg_last_3_months?.revenue) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(data.avg_last_3_months?.pax) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(data.avg_last_3_months?.avg_check) }}</td>
+                  <td class="px-3 py-2 text-right" :class="pctClass(data.vs_avg_last_3?.revenue_pct)">
+                    {{ fmtPct(data.vs_avg_last_3?.revenue_pct) }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-      
-      <div v-else class="text-center py-8 text-gray-500">
-        <i class="fa-solid fa-robot text-4xl mb-2"></i>
-        <p>Klik "Refresh" untuk mendapatkan insight AI</p>
+
+        <!-- Findings chips -->
+        <div v-if="data.findings?.length" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div
+            v-for="(f, idx) in data.findings"
+            :key="idx"
+            class="rounded-xl border px-4 py-3"
+            :class="findingClass(f.severity)"
+          >
+            <p class="text-xs font-semibold uppercase tracking-wide opacity-70">{{ f.category }}</p>
+            <p class="text-sm font-semibold mt-1">{{ f.headline }}</p>
+            <p class="text-xs mt-1 opacity-90 leading-relaxed">{{ f.detail }}</p>
+          </div>
+        </div>
+
+        <!-- Region + Outlet -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div class="rounded-xl border border-slate-100 overflow-hidden">
+            <div class="px-4 py-3 bg-rose-50 border-b border-rose-100">
+              <p class="text-sm font-semibold text-rose-800">Region terlemah vs avg 3 bulan</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th class="px-3 py-2 text-left">Region</th>
+                    <th class="px-3 py-2 text-right">Omzet %</th>
+                    <th class="px-3 py-2 text-right">Pax %</th>
+                    <th class="px-3 py-2 text-right">Check %</th>
+                    <th class="px-3 py-2 text-left">Driver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="r in data.regions?.worst || []" :key="r.region_name" class="border-t border-slate-50">
+                    <td class="px-3 py-2">{{ r.region_name }}</td>
+                    <td class="px-3 py-2 text-right" :class="pctClass(r.vs_avg_last_3?.revenue_pct)">{{ fmtPct(r.vs_avg_last_3?.revenue_pct) }}</td>
+                    <td class="px-3 py-2 text-right" :class="pctClass(r.vs_avg_last_3?.pax_pct)">{{ fmtPct(r.vs_avg_last_3?.pax_pct) }}</td>
+                    <td class="px-3 py-2 text-right" :class="pctClass(r.vs_avg_last_3?.avg_check_pct)">{{ fmtPct(r.vs_avg_last_3?.avg_check_pct) }}</td>
+                    <td class="px-3 py-2 text-xs text-slate-600">{{ driverLabel(r.driver?.primary) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-slate-100 overflow-hidden">
+            <div class="px-4 py-3 bg-rose-50 border-b border-rose-100">
+              <p class="text-sm font-semibold text-rose-800">Outlet paling drop (Δ omzet)</p>
+            </div>
+            <div class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead class="text-xs text-slate-500 uppercase">
+                  <tr>
+                    <th class="px-3 py-2 text-left">Outlet</th>
+                    <th class="px-3 py-2 text-right">Δ Omzet</th>
+                    <th class="px-3 py-2 text-right">Pax %</th>
+                    <th class="px-3 py-2 text-right">Check %</th>
+                    <th class="px-3 py-2 text-left">Driver</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="o in data.outlets?.worst || []" :key="o.outlet_code" class="border-t border-slate-50">
+                    <td class="px-3 py-2">
+                      <div class="font-medium text-slate-800">{{ o.outlet_name }}</div>
+                      <div class="text-[11px] text-slate-400">{{ o.region_name }}</div>
+                    </td>
+                    <td class="px-3 py-2 text-right text-rose-700">{{ formatCurrency(o.vs_avg_last_3?.revenue_delta) }}</td>
+                    <td class="px-3 py-2 text-right" :class="pctClass(o.vs_avg_last_3?.pax_pct)">{{ fmtPct(o.vs_avg_last_3?.pax_pct) }}</td>
+                    <td class="px-3 py-2 text-right" :class="pctClass(o.vs_avg_last_3?.avg_check_pct)">{{ fmtPct(o.vs_avg_last_3?.avg_check_pct) }}</td>
+                    <td class="px-3 py-2 text-xs text-slate-600">{{ driverLabel(o.driver_primary) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <!-- Daypart + weekday -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+          <div v-for="block in daypartCards" :key="block.key" class="rounded-xl border border-slate-100 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ block.label }}</p>
+            <p class="mt-1 text-lg font-bold text-slate-900">{{ formatCurrency(block.revenue) }}</p>
+            <p class="text-xs mt-1" :class="pctClass(block.revenue_pct)">Omzet {{ fmtPct(block.revenue_pct) }}</p>
+            <p class="text-xs text-slate-500 mt-1">Pax {{ fmtPct(block.pax_pct) }} · Check {{ fmtPct(block.check_pct) }}</p>
+          </div>
+        </div>
+
+        <!-- Menu decliners / gainers -->
+        <div class="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          <div class="rounded-xl border border-slate-100 overflow-hidden">
+            <div class="px-4 py-3 bg-amber-50 border-b border-amber-100">
+              <p class="text-sm font-semibold text-amber-900">Menu paling turun vs avg 3 bulan</p>
+            </div>
+            <ul class="divide-y divide-slate-50">
+              <li
+                v-for="item in data.menu?.top_decliners || []"
+                :key="item.item_name"
+                class="px-4 py-2.5 flex items-center justify-between gap-3 text-sm"
+              >
+                <span class="text-slate-800 truncate">{{ item.item_name }}</span>
+                <span class="text-rose-600 font-medium whitespace-nowrap">{{ formatCurrency(item.revenue_delta) }}</span>
+              </li>
+            </ul>
+          </div>
+          <div class="rounded-xl border border-slate-100 overflow-hidden">
+            <div class="px-4 py-3 bg-emerald-50 border-b border-emerald-100">
+              <p class="text-sm font-semibold text-emerald-900">Menu paling naik vs avg 3 bulan</p>
+            </div>
+            <ul class="divide-y divide-slate-50">
+              <li
+                v-for="item in data.menu?.top_gainers || []"
+                :key="item.item_name"
+                class="px-4 py-2.5 flex items-center justify-between gap-3 text-sm"
+              >
+                <span class="text-slate-800 truncate">{{ item.item_name }}</span>
+                <span class="text-emerald-600 font-medium whitespace-nowrap">{{ formatCurrency(item.revenue_delta) }}</span>
+              </li>
+            </ul>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, nextTick, watch } from 'vue';
-import axios from 'axios';
+import { computed } from 'vue';
 
 const props = defineProps({
-  filters: {
-    type: Object,
-    required: true
-  }
+  data: { type: Object, default: null },
+  loading: { type: Boolean, default: false },
 });
 
-// Session ID untuk chat history
-const sessionId = ref(null);
-
-// Q&A Chat State
-const question = ref('');
-const chatHistory = ref([]);
-const qaLoading = ref(false);
-const qaError = ref(null);
-const chatContainer = ref(null);
-
-// Auto Insight State (optional)
-const showInsight = ref(false); // Set to true jika ingin tampilkan auto insight
-const insight = ref(null);
-const loading = ref(false);
-const error = ref(null);
-const lastUpdated = ref(null);
-
-// Format answer untuk markdown rendering
-const formatAnswer = (text) => {
-  if (!text) return '';
-  
-  // Convert markdown headers
-  text = text.replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold text-gray-800 mt-4 mb-2">$1</h3>');
-  text = text.replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold text-gray-900 mt-6 mb-3 border-b border-gray-200 pb-2">$1</h2>');
-  text = text.replace(/^# (.*$)/gim, '<h1 class="text-2xl font-bold text-gray-900 mt-6 mb-4">$1</h1>');
-  
-  // Convert bold
-  text = text.replace(/\*\*(.*?)\*\*/gim, '<strong class="font-semibold text-gray-900">$1</strong>');
-  
-  // Convert bullet points
-  text = text.replace(/^\- (.*$)/gim, '<li class="ml-4 mb-1">$1</li>');
-  text = text.replace(/^(\d+)\. (.*$)/gim, '<li class="ml-4 mb-1 list-decimal">$2</li>');
-  
-  // Wrap lists
-  text = text.replace(/(<li.*<\/li>)/gim, '<ul class="list-disc space-y-1 my-2">$1</ul>');
-  
-  // Convert line breaks
-  text = text.replace(/\n/gim, '<br>');
-  
-  return text;
-};
-
-// Get or create session ID
-const getOrCreateSessionId = () => {
-  if (!sessionId.value) {
-    // Cek dari cookie atau localStorage
-    const storedSessionId = localStorage.getItem('ai_chat_session_id');
-    if (storedSessionId) {
-      sessionId.value = storedSessionId;
-    } else {
-      // Generate new session ID
-      sessionId.value = 'ai_chat_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('ai_chat_session_id', sessionId.value);
-    }
-  }
-  return sessionId.value;
-};
-
-// Load chat history
-const loadChatHistory = async () => {
-  try {
-    console.log('=== Loading Chat History ===');
-    
-    // Strategy: Load tanpa session_id untuk mendapatkan semua chat user
-    // Backend akan otomatis mencari session_id terbaru atau menampilkan semua
-    const response = await axios.get('/sales-outlet-dashboard/ai/chat-history', {
-      params: {
-        session_id: '' // Kosongkan untuk auto-detect dari backend
-      },
-      withCredentials: true
-    });
-    
-    console.log('=== Chat History Response ===');
-    console.log('Full response:', JSON.stringify(response.data, null, 2));
-    console.log('Success:', response.data.success);
-    console.log('History type:', typeof response.data.history);
-    console.log('History is array:', Array.isArray(response.data.history));
-    console.log('History count:', response.data.history ? response.data.history.length : 0);
-    
-    if (response.data.success) {
-      const historyData = response.data.history || [];
-      
-      // Pastikan format data benar - harus array
-      if (Array.isArray(historyData)) {
-        chatHistory.value = historyData;
-        console.log('✅ Chat history loaded successfully:', chatHistory.value.length, 'items');
-        
-        // Log first item untuk debugging
-        if (chatHistory.value.length > 0) {
-          console.log('First chat item:', chatHistory.value[0]);
-        }
-      } else {
-        console.error('❌ History is not an array:', historyData);
-        chatHistory.value = [];
-      }
-      
-      // Update session_id dari server jika ada
-      if (response.data.session_id) {
-        sessionId.value = response.data.session_id;
-        localStorage.setItem('ai_chat_session_id', response.data.session_id);
-        console.log('✅ Updated session_id to:', response.data.session_id);
-      }
-      
-      // Force Vue reactivity update
-      await nextTick();
-      scrollToBottom();
-    } else {
-      console.error('❌ Failed to load chat history:', response.data.message);
-      chatHistory.value = [];
-    }
-  } catch (err) {
-    console.error('❌ Load Chat History Error:', err);
-    if (err.response) {
-      console.error('Error response:', err.response.data);
-      console.error('Error status:', err.response.status);
-    }
-    if (err.request) {
-      console.error('Error request:', err.request);
-    }
-    chatHistory.value = [];
-  }
-};
-
-// Clear chat history
-const clearChat = async () => {
-  if (!confirm('Apakah Anda yakin ingin menghapus semua chat?')) {
-    return;
-  }
-  
-  try {
-    const currentSessionId = getOrCreateSessionId();
-    await axios.delete('/sales-outlet-dashboard/ai/chat-history', {
-      params: {
-        session_id: currentSessionId
-      },
-      withCredentials: true
-    });
-    
-    chatHistory.value = [];
-    qaError.value = null;
-  } catch (err) {
-    console.error('Clear Chat Error:', err);
-    qaError.value = 'Gagal menghapus chat history';
-  }
-};
-
-// Scroll to bottom of chat
-const scrollToBottom = () => {
-  nextTick(() => {
-    if (chatContainer.value) {
-      chatContainer.value.scrollTop = chatContainer.value.scrollHeight;
-    }
-  });
-};
-
-// Scroll to specific question (scroll ke pertanyaan user, bukan ke bawah)
-const scrollToQuestion = (chatId) => {
-  nextTick(() => {
-    if (chatContainer.value && chatId) {
-      // Cari element pertanyaan user berdasarkan chatId
-      const questionElement = chatContainer.value.querySelector(`[data-chat-id="${chatId}"]`);
-      if (questionElement) {
-        // Scroll ke pertanyaan user dengan offset ke atas agar user bisa baca dari awal
-        questionElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'start',
-          inline: 'nearest'
-        });
-        
-        // Tambahkan sedikit offset ke atas setelah scroll
-        setTimeout(() => {
-          if (chatContainer.value) {
-            chatContainer.value.scrollTop = Math.max(0, chatContainer.value.scrollTop - 30);
-          }
-        }, 300);
-      }
-      // Jika element tidak ditemukan, tidak perlu scroll (biarkan user di posisi sekarang)
-    }
-  });
-};
-
-// Watch chat history untuk auto scroll - DISABLED
-// watch(chatHistory, () => {
-//   scrollToBottom();
-// }, { deep: true });
-
-const loadInsight = async () => {
-  loading.value = true;
-  error.value = null;
-  
-  try {
-    const response = await axios.get('/sales-outlet-dashboard/ai/insight', {
-      params: {
-        date_from: props.filters.date_from,
-        date_to: props.filters.date_to
-      },
-      withCredentials: true
-    });
-    
-    if (response.data.success) {
-      insight.value = response.data.insight;
-      lastUpdated.value = new Date().toLocaleString('id-ID', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } else {
-      error.value = response.data.message || 'Gagal memuat insight';
-    }
-  } catch (err) {
-    console.error('AI Insight Error:', err);
-    if (err.response && err.response.data && err.response.data.message) {
-      error.value = err.response.data.message;
-    } else {
-      error.value = 'Gagal memuat insight. Silakan coba lagi nanti.';
-    }
-  } finally {
-    loading.value = false;
-  }
-};
-
-const askQuestion = async (event) => {
-  // Prevent default form submission jika ada event
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-  }
-  
-  if (!question.value || question.value.trim() === '') {
-    return;
-  }
-  
-  const currentQuestion = question.value.trim();
-  const currentSessionId = getOrCreateSessionId();
-  
-  // Clear input
-  question.value = '';
-  
-  qaLoading.value = true;
-  qaError.value = null;
-  
-  try {
-    // Pastikan menggunakan POST method secara eksplisit
-    // Ambil CSRF token dari meta tag
-    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    
-    const requestHeaders = {
-      'Content-Type': 'application/json',
-      'X-Requested-With': 'XMLHttpRequest',
-      'Accept': 'application/json'
-    };
-    
-    // Tambahkan CSRF token jika ada
-    if (csrfToken) {
-      requestHeaders['X-CSRF-TOKEN'] = csrfToken;
-    }
-    
-    const requestData = {
-      question: currentQuestion,
-      date_from: props.filters.date_from,
-      date_to: props.filters.date_to,
-      session_id: currentSessionId
-    };
-    
-    // Log request config untuk debugging
-    console.log('🔵 AI Q&A Request Config (Before Axios):', {
-      method: 'POST',
-      url: '/sales-outlet-dashboard/ai/ask',
-      hasData: !!requestData,
-      dataKeys: Object.keys(requestData),
-      hasCsrfToken: !!csrfToken,
-      headers: requestHeaders
-    });
-    
-    // Gunakan axios.post() langsung untuk memastikan method POST
-    const response = await axios.post(
-      '/sales-outlet-dashboard/ai/ask',
-      requestData,
-      {
-        headers: requestHeaders,
-        withCredentials: true,
-        maxRedirects: 0,
-        validateStatus: function (status) {
-          return status >= 200 && status < 300;
-        }
-      }
-    );
-    
-    console.log('🟢 AI Q&A Response received:', {
-      status: response.status,
-      success: response.data?.success
-    });
-    
-    if (response.data.success) {
-      // Update session ID if returned
-      if (response.data.session_id) {
-        sessionId.value = response.data.session_id;
-        localStorage.setItem('ai_chat_session_id', response.data.session_id);
-      }
-      
-      // Add to chat history
-      const newChat = {
-        id: response.data.chat_id,
-        question: currentQuestion,
-        answer: response.data.answer,
-        date_from: response.data.date_from,
-        date_to: response.data.date_to,
-        created_at: new Date().toISOString(),
-        created_at_formatted: new Date().toLocaleString('id-ID', {
-          day: 'numeric',
-          month: 'short',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        })
-      };
-      
-      chatHistory.value.push(newChat);
-      
-      // Scroll ke posisi pertanyaan user (bukan ke paling bawah)
-      // Biarkan user baca jawaban dari awal tanpa harus scroll ke atas
-      await nextTick();
-      scrollToQuestion(newChat.id);
-    } else {
-      qaError.value = response.data.message || 'Gagal mendapatkan jawaban';
-    }
-  } catch (err) {
-    console.error('AI Q&A Error:', err);
-    console.error('Error details:', {
-      message: err.message,
-      response: err.response,
-      request: err.config,
-      status: err.response?.status,
-      statusText: err.response?.statusText
-    });
-    
-    if (err.response && err.response.data && err.response.data.message) {
-      qaError.value = err.response.data.message;
-      
-      // Jika error 405 (Method Not Allowed), beri pesan yang lebih jelas
-      if (err.response.status === 405) {
-        qaError.value = 'Error: Request menggunakan method yang salah. Silakan refresh halaman dan coba lagi.';
-        console.error('Method error detected - request config:', err.config);
-      }
-    } else {
-      qaError.value = 'Gagal mendapatkan jawaban. Silakan coba lagi nanti.';
-    }
-  } finally {
-    qaLoading.value = false;
-  }
-};
-
-// Auto load chat history saat component mount
-onMounted(() => {
-  loadChatHistory();
-  if (showInsight.value) {
-    loadInsight();
-  }
+const severityBoxClass = computed(() => {
+  const d = props.data?.driver?.direction;
+  if (d === 'down') return 'border-rose-200 bg-rose-50/60';
+  if (d === 'up') return 'border-emerald-200 bg-emerald-50/60';
+  return 'border-slate-200 bg-slate-50/60';
 });
+const severityIconWrap = computed(() => {
+  const d = props.data?.driver?.direction;
+  if (d === 'down') return 'bg-rose-100 text-rose-700';
+  if (d === 'up') return 'bg-emerald-100 text-emerald-700';
+  return 'bg-slate-100 text-slate-600';
+});
+const severityIcon = computed(() => {
+  const d = props.data?.driver?.direction;
+  if (d === 'down') return 'fa-arrow-trend-down';
+  if (d === 'up') return 'fa-arrow-trend-up';
+  return 'fa-minus';
+});
+const severityTitleClass = computed(() => {
+  const d = props.data?.driver?.direction;
+  if (d === 'down') return 'text-rose-900';
+  if (d === 'up') return 'text-emerald-900';
+  return 'text-slate-900';
+});
+
+const daypartCards = computed(() => {
+  const d = props.data;
+  if (!d) return [];
+  return [
+    {
+      key: 'lunch',
+      label: 'Lunch',
+      revenue: d.daypart?.lunch?.current?.revenue,
+      revenue_pct: d.daypart?.lunch?.vs_avg_last_3?.revenue_pct,
+      pax_pct: d.daypart?.lunch?.vs_avg_last_3?.pax_pct,
+      check_pct: d.daypart?.lunch?.vs_avg_last_3?.avg_check_pct,
+    },
+    {
+      key: 'dinner',
+      label: 'Dinner',
+      revenue: d.daypart?.dinner?.current?.revenue,
+      revenue_pct: d.daypart?.dinner?.vs_avg_last_3?.revenue_pct,
+      pax_pct: d.daypart?.dinner?.vs_avg_last_3?.pax_pct,
+      check_pct: d.daypart?.dinner?.vs_avg_last_3?.avg_check_pct,
+    },
+    {
+      key: 'weekday',
+      label: 'Weekday',
+      revenue: d.weekday_weekend?.weekday?.current?.revenue,
+      revenue_pct: d.weekday_weekend?.weekday?.vs_avg_last_3?.revenue_pct,
+      pax_pct: d.weekday_weekend?.weekday?.vs_avg_last_3?.pax_pct,
+      check_pct: d.weekday_weekend?.weekday?.vs_avg_last_3?.avg_check_pct,
+    },
+    {
+      key: 'weekend',
+      label: 'Weekend',
+      revenue: d.weekday_weekend?.weekend?.current?.revenue,
+      revenue_pct: d.weekday_weekend?.weekend?.vs_avg_last_3?.revenue_pct,
+      pax_pct: d.weekday_weekend?.weekend?.vs_avg_last_3?.pax_pct,
+      check_pct: d.weekday_weekend?.weekend?.vs_avg_last_3?.avg_check_pct,
+    },
+  ];
+});
+
+function formatCurrency(amount) {
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+  }).format(Number(amount || 0));
+}
+
+function formatNumber(n) {
+  return new Intl.NumberFormat('id-ID').format(Number(n || 0));
+}
+
+function fmtPct(v) {
+  if (v === null || v === undefined) return 'n/a';
+  const n = Number(v);
+  return (n >= 0 ? '+' : '') + n.toFixed(1) + '%';
+}
+
+function invertPct(v) {
+  // vs_current was computed as current - month, so for "how does this month look vs current" invert
+  if (v === null || v === undefined) return null;
+  return -Number(v);
+}
+
+function pctClass(v) {
+  if (v === null || v === undefined) return 'text-slate-400';
+  if (v > 0) return 'text-emerald-600';
+  if (v < 0) return 'text-rose-600';
+  return 'text-slate-500';
+}
+
+function driverLabel(primary) {
+  if (primary === 'pax') return 'Pax';
+  if (primary === 'avg_check') return 'Avg Check';
+  return 'Campuran';
+}
+
+function findingClass(severity) {
+  if (severity === 'critical') return 'border-rose-200 bg-rose-50 text-rose-900';
+  if (severity === 'warning') return 'border-amber-200 bg-amber-50 text-amber-900';
+  if (severity === 'positive') return 'border-emerald-200 bg-emerald-50 text-emerald-900';
+  return 'border-slate-200 bg-slate-50 text-slate-800';
+}
 </script>
-
-<style scoped>
-/* Custom Scrollbar */
-.chat-container::-webkit-scrollbar {
-  width: 8px;
-}
-
-.chat-container::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.chat-container::-webkit-scrollbar-thumb {
-  background: linear-gradient(to bottom, rgba(147, 51, 234, 0.3), rgba(99, 102, 241, 0.3));
-  border-radius: 10px;
-}
-
-.chat-container::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(to bottom, rgba(147, 51, 234, 0.5), rgba(99, 102, 241, 0.5));
-}
-
-/* Animations */
-@keyframes fade-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-  20%, 40%, 60%, 80% { transform: translateX(5px); }
-}
-
-@keyframes shimmer {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(100%);
-  }
-}
-
-@keyframes thinking-pulse {
-  0%, 100% {
-    opacity: 0.4;
-  }
-  50% {
-    opacity: 1;
-  }
-}
-
-.animate-fade-in {
-  animation: fade-in 0.3s ease-out;
-}
-
-.animate-shake {
-  animation: shake 0.5s ease-in-out;
-}
-
-/* Prose styling untuk AI answers */
-.prose {
-  font-size: 14px;
-}
-
-.prose h1, .prose h2, .prose h3 {
-  margin-top: 1.5em;
-  margin-bottom: 0.5em;
-}
-
-.prose ul {
-  margin: 1em 0;
-  padding-left: 1.5em;
-}
-
-.prose li {
-  margin: 0.5em 0;
-}
-
-.prose strong {
-  font-weight: 600;
-  color: #1f2937;
-}
-</style>

@@ -38,6 +38,8 @@ function emptyDashboard() {
         },
         salesTrend: [],
         topItems: [],
+        topItemsByType: { food: [], beverage: [] },
+        topItemsByRegion: [],
         paymentMethods: [],
         hourlySales: [],
         promoUsage: { orders_with_promo: 0, total_promo_usage: 0, promo_usage_percentage: 0 },
@@ -62,6 +64,7 @@ function emptyDashboard() {
         revenuePerOutletWeekendWeekday: {},
         revenuePerRegion: { total_revenue: [], lunch_dinner: {}, weekday_weekend: {} },
         forecast: null,
+        analytics: null,
     };
 }
 
@@ -73,6 +76,7 @@ const sectionLoading = ref({
     promo: false,
     revenue: false,
     forecast: false,
+    analytics: false,
 });
 
 const bootstrapping = computed(() => Object.values(sectionLoading.value).some(Boolean));
@@ -1994,6 +1998,9 @@ const forecastByRegion = computed(() => {
 });
 
 const expandedForecastRegions = ref(new Set());
+const topItemTypeTab = ref('food'); // food | beverage
+const topItemViewMode = ref('region'); // region | overall
+const expandedTopItemRegions = ref(new Set());
 
 function toggleForecastRegion(regionName) {
     const next = new Set(expandedForecastRegions.value);
@@ -2001,6 +2008,31 @@ function toggleForecastRegion(regionName) {
     else next.add(regionName);
     expandedForecastRegions.value = next;
 }
+
+function toggleTopItemRegion(regionName) {
+    const next = new Set(expandedTopItemRegions.value);
+    if (next.has(regionName)) next.delete(regionName);
+    else next.add(regionName);
+    expandedTopItemRegions.value = next;
+}
+
+function expandAllTopItemRegions() {
+    const names = (dashboardData.value?.topItemsByRegion || []).map((r) => r.region_name);
+    expandedTopItemRegions.value = new Set(names);
+}
+
+const overallTopItems = computed(() => {
+    const byType = dashboardData.value?.topItemsByType || {};
+    return byType[topItemTypeTab.value] || [];
+});
+
+const regionTopItems = computed(() => dashboardData.value?.topItemsByRegion || []);
+
+watch(regionTopItems, (list) => {
+    if (list.length && expandedTopItemRegions.value.size === 0) {
+        expandAllTopItemRegions();
+    }
+});
 
 function forecastGapClass(gap) {
     if (gap > 0) return 'text-emerald-600';
@@ -2058,6 +2090,7 @@ async function loadDashboardLazy() {
         fetchSection('promo'),
         fetchSection('revenue'),
         fetchSection('forecast'),
+        fetchSection('analytics'),
     ]);
 
     // Secondary tables after main dashboard is usable
@@ -2925,7 +2958,8 @@ const menuRegionChartOptions = computed(() => ({
                         catalog{{ sectionLoading.catalog ? '…' : ' ✓' }},
                         promo{{ sectionLoading.promo ? '…' : ' ✓' }},
                         revenue{{ sectionLoading.revenue ? '…' : ' ✓' }},
-                        forecast{{ sectionLoading.forecast ? '…' : ' ✓' }})
+                        forecast{{ sectionLoading.forecast ? '…' : ' ✓' }},
+                        analytics{{ sectionLoading.analytics ? '…' : ' ✓' }})
                     </span>
                 </div>
 
@@ -2936,8 +2970,11 @@ const menuRegionChartOptions = computed(() => ({
 
                 <!-- Dashboard Content — tetap tampil saat section load progresif -->
                 <div>
-                    <!-- AI Analytics Insight -->
-                    <AIAnalytics :filters="filters" />
+                    <!-- Sales Analytics (auto, no chat) -->
+                    <AIAnalytics
+                        :data="dashboardData?.analytics"
+                        :loading="sectionLoading.analytics"
+                    />
                     
                     <!-- Overview Metrics -->
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-5 gap-4 mb-6">
@@ -3794,37 +3831,163 @@ const menuRegionChartOptions = computed(() => ({
                         </div>
                     </div>
 
-                    <!-- Top Items -->
+                    <!-- Top Items: Food / Beverage × Region -->
                     <div class="bg-white rounded-lg shadow-sm border p-6 mb-6">
-                        <h3 class="text-lg font-semibold text-gray-900 mb-4">Top Selling Items</h3>
-                        <div class="overflow-x-auto">
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3 mb-4">
+                            <div>
+                                <h3 class="text-lg font-semibold text-gray-900">Top Selling Items</h3>
+                                <p class="text-xs text-gray-500 mt-0.5">Dipisah Food & Beverages · breakdown per region</p>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <div class="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+                                    <button
+                                        type="button"
+                                        class="px-3 py-1.5 text-sm rounded-md transition"
+                                        :class="topItemTypeTab === 'food' ? 'bg-white shadow text-orange-700 font-semibold' : 'text-gray-600 hover:text-gray-900'"
+                                        @click="topItemTypeTab = 'food'"
+                                    >
+                                        <i class="fa-solid fa-utensils mr-1"></i> Food
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="px-3 py-1.5 text-sm rounded-md transition"
+                                        :class="topItemTypeTab === 'beverage' ? 'bg-white shadow text-sky-700 font-semibold' : 'text-gray-600 hover:text-gray-900'"
+                                        @click="topItemTypeTab = 'beverage'"
+                                    >
+                                        <i class="fa-solid fa-glass-water mr-1"></i> Beverages
+                                    </button>
+                                </div>
+                                <div class="inline-flex rounded-lg border border-gray-200 p-0.5 bg-gray-50">
+                                    <button
+                                        type="button"
+                                        class="px-3 py-1.5 text-sm rounded-md transition"
+                                        :class="topItemViewMode === 'region' ? 'bg-white shadow text-indigo-700 font-semibold' : 'text-gray-600'"
+                                        @click="topItemViewMode = 'region'; expandAllTopItemRegions()"
+                                    >
+                                        Per Region
+                                    </button>
+                                    <button
+                                        type="button"
+                                        class="px-3 py-1.5 text-sm rounded-md transition"
+                                        :class="topItemViewMode === 'overall' ? 'bg-white shadow text-indigo-700 font-semibold' : 'text-gray-600'"
+                                        @click="topItemViewMode = 'overall'"
+                                    >
+                                        Semua Outlet
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Overall view -->
+                        <div v-if="topItemViewMode === 'overall'" class="overflow-x-auto">
                             <table class="min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty Sold</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Revenue</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Orders</th>
-                                        <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Avg Price</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Qty Sold</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Orders</th>
+                                        <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Avg Price</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-200">
-                                    <tr v-for="item in dashboardData?.topItems || []" :key="item.item_name">
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                            <button 
+                                    <tr v-for="(item, idx) in overallTopItems" :key="item.item_name">
+                                        <td class="px-4 py-3 text-sm text-gray-400">{{ idx + 1 }}</td>
+                                        <td class="px-4 py-3 text-sm font-medium">
+                                            <button
+                                                type="button"
                                                 @click="openMenuModal(item)"
-                                                class="text-blue-600 hover:text-blue-800 hover:underline cursor-pointer transition-colors"
+                                                class="text-blue-600 hover:text-blue-800 hover:underline"
                                             >
                                                 {{ item.item_name }}
                                             </button>
                                         </td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(item.total_qty) }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(item.total_revenue) }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatNumber(item.order_count) }}</td>
-                                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{{ formatCurrency(item.avg_price) }}</td>
+                                        <td class="px-4 py-3 text-sm text-right text-gray-600">{{ formatNumber(item.total_qty) }}</td>
+                                        <td class="px-4 py-3 text-sm text-right text-gray-600">{{ formatCurrency(item.total_revenue) }}</td>
+                                        <td class="px-4 py-3 text-sm text-right text-gray-600">{{ formatNumber(item.order_count) }}</td>
+                                        <td class="px-4 py-3 text-sm text-right text-gray-600">{{ formatCurrency(item.avg_price) }}</td>
+                                    </tr>
+                                    <tr v-if="!overallTopItems.length">
+                                        <td colspan="6" class="px-4 py-8 text-center text-gray-400 text-sm">
+                                            Belum ada data {{ topItemTypeTab === 'food' ? 'Food' : 'Beverages' }}
+                                        </td>
                                     </tr>
                                 </tbody>
                             </table>
+                        </div>
+
+                        <!-- Per region view -->
+                        <div v-else class="space-y-3">
+                            <div
+                                v-for="region in regionTopItems"
+                                :key="region.region_name"
+                                class="border border-gray-100 rounded-xl overflow-hidden"
+                            >
+                                <button
+                                    type="button"
+                                    class="w-full px-4 py-3 flex items-center justify-between bg-slate-50 hover:bg-slate-100 transition text-left"
+                                    @click="toggleTopItemRegion(region.region_name)"
+                                >
+                                    <div class="flex items-center gap-2">
+                                        <i
+                                            class="fa-solid text-slate-400 text-xs"
+                                            :class="expandedTopItemRegions.has(region.region_name) ? 'fa-chevron-down' : 'fa-chevron-right'"
+                                        ></i>
+                                        <span class="font-semibold text-slate-800">{{ region.region_name }}</span>
+                                        <span class="text-xs text-slate-400">{{ region.region_code }}</span>
+                                    </div>
+                                    <div class="text-xs text-slate-500 flex gap-3">
+                                        <span>Food {{ formatCurrency(region.food_revenue) }}</span>
+                                        <span>Bev {{ formatCurrency(region.beverage_revenue) }}</span>
+                                    </div>
+                                </button>
+
+                                <div v-show="expandedTopItemRegions.has(region.region_name)" class="overflow-x-auto">
+                                    <table class="min-w-full divide-y divide-gray-100">
+                                        <thead class="bg-white">
+                                            <tr>
+                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">#</th>
+                                                <th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Item</th>
+                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Qty</th>
+                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Revenue</th>
+                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Orders</th>
+                                                <th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">Avg Price</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-gray-50">
+                                            <tr
+                                                v-for="(item, idx) in (topItemTypeTab === 'food' ? region.food : region.beverage)"
+                                                :key="region.region_name + '-' + item.item_name"
+                                            >
+                                                <td class="px-4 py-2.5 text-sm text-gray-400">{{ idx + 1 }}</td>
+                                                <td class="px-4 py-2.5 text-sm font-medium">
+                                                    <button
+                                                        type="button"
+                                                        @click="openMenuModal(item)"
+                                                        class="text-blue-600 hover:text-blue-800 hover:underline"
+                                                    >
+                                                        {{ item.item_name }}
+                                                    </button>
+                                                </td>
+                                                <td class="px-4 py-2.5 text-sm text-right text-gray-600">{{ formatNumber(item.total_qty) }}</td>
+                                                <td class="px-4 py-2.5 text-sm text-right text-gray-600">{{ formatCurrency(item.total_revenue) }}</td>
+                                                <td class="px-4 py-2.5 text-sm text-right text-gray-600">{{ formatNumber(item.order_count) }}</td>
+                                                <td class="px-4 py-2.5 text-sm text-right text-gray-600">{{ formatCurrency(item.avg_price) }}</td>
+                                            </tr>
+                                            <tr v-if="!(topItemTypeTab === 'food' ? region.food : region.beverage)?.length">
+                                                <td colspan="6" class="px-4 py-6 text-center text-gray-400 text-sm">
+                                                    Tidak ada item {{ topItemTypeTab === 'food' ? 'Food' : 'Beverages' }} di region ini
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div v-if="!regionTopItems.length" class="py-8 text-center text-gray-400 text-sm">
+                                Belum ada data top selling items
+                            </div>
                         </div>
                     </div>
 

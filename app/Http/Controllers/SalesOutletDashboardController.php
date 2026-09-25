@@ -60,7 +60,7 @@ class SalesOutletDashboardController extends Controller
         $dateFrom = $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'));
         $dateTo = $request->get('date_to', Carbon::now()->endOfMonth()->format('Y-m-d'));
 
-        $allowed = ['overview', 'trend', 'charts', 'catalog', 'promo', 'revenue', 'forecast'];
+        $allowed = ['overview', 'trend', 'charts', 'catalog', 'promo', 'revenue', 'forecast', 'analytics'];
         if (! in_array($section, $allowed, true)) {
             return response()->json(['error' => 'Invalid section'], 400);
         }

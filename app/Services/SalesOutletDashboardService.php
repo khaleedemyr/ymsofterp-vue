@@ -38,6 +38,11 @@ class SalesOutletDashboardService
             ],
             'salesTrend' => [],
             'topItems' => [],
+            'topItemsByType' => [
+                'food' => [],
+                'beverage' => [],
+            ],
+            'topItemsByRegion' => [],
             'paymentMethods' => [],
             'hourlySales' => [],
             'promoUsage' => [
@@ -75,13 +80,14 @@ class SalesOutletDashboardService
                 'weekday_weekend' => [],
             ],
             'forecast' => null,
+            'analytics' => null,
         ];
     }
 
     public function getFullDashboard(string $dateFrom, string $dateTo): array
     {
         $data = $this->emptyDashboard();
-        foreach (['overview', 'trend', 'charts', 'catalog', 'promo', 'revenue', 'forecast'] as $section) {
+        foreach (['overview', 'trend', 'charts', 'catalog', 'promo', 'revenue', 'forecast', 'analytics'] as $section) {
             $data = array_replace($data, $this->buildSection($section, $dateFrom, $dateTo));
         }
 
@@ -98,6 +104,7 @@ class SalesOutletDashboardService
             'promo' => $this->sectionPromo($dateFrom, $dateTo),
             'revenue' => $this->sectionRevenue($dateFrom, $dateTo),
             'forecast' => $this->sectionForecast($dateFrom, $dateTo),
+            'analytics' => $this->sectionAnalytics($dateFrom, $dateTo),
             default => [],
         };
     }
@@ -123,6 +130,13 @@ class SalesOutletDashboardService
 
         return [
             'forecast' => app(OutletRollingForecastService::class)->buildAllOutletsSummary($month),
+        ];
+    }
+
+    private function sectionAnalytics(string $dateFrom, string $dateTo): array
+    {
+        return [
+            'analytics' => app(SalesOutletAnalyticsService::class)->build($dateFrom, $dateTo),
         ];
     }
 
@@ -342,8 +356,26 @@ class SalesOutletDashboardService
     {
         [$start, $end] = $this->bounds($dateFrom, $dateTo);
 
-        $topItems = DB::select("
+        // Food vs Beverage via items.type (Food*, Beverages)
+        $bucketExpr = "
+            CASE
+                WHEN LOWER(COALESCE(i.type, '')) LIKE '%beverage%' THEN 'beverage'
+                WHEN LOWER(COALESCE(i.type, '')) LIKE 'food%'
+                  OR LOWER(COALESCE(i.type, '')) LIKE '%hidangan%'
+                  OR LOWER(COALESCE(i.type, '')) LIKE '%dessert%'
+                THEN 'food'
+                WHEN LOWER(COALESCE(c.name, '')) = 'bar'
+                  OR LOWER(COALESCE(c.name, '')) LIKE '%drink%'
+                THEN 'beverage'
+                ELSE 'other'
+            END
+        ";
+
+        $rows = DB::select("
             SELECT
+                COALESCE(region.name, 'Unknown Region') as region_name,
+                COALESCE(region.code, 'UNK') as region_code,
+                {$bucketExpr} as item_bucket,
                 oi.item_name,
                 SUM(oi.qty) as total_qty,
                 SUM(oi.subtotal) as total_revenue,
@@ -351,11 +383,102 @@ class SalesOutletDashboardService
                 AVG(oi.price) as avg_price
             FROM order_items oi
             INNER JOIN orders o ON oi.order_id = o.id
+            LEFT JOIN items i ON oi.item_id = i.id
+            LEFT JOIN categories c ON i.category_id = c.id
+            LEFT JOIN tbl_data_outlet outlet ON o.kode_outlet = outlet.qr_code
+            LEFT JOIN regions region ON outlet.region_id = region.id
             WHERE o.created_at >= ? AND o.created_at < ?
-            GROUP BY oi.item_name
+            GROUP BY
+                COALESCE(region.name, 'Unknown Region'),
+                COALESCE(region.code, 'UNK'),
+                {$bucketExpr},
+                oi.item_name
             ORDER BY total_revenue DESC
-            LIMIT 10
         ", [$start, $end]);
+
+        $byType = ['food' => [], 'beverage' => []];
+        $byRegion = [];
+
+        foreach ($rows as $row) {
+            $bucket = $row->item_bucket;
+            if (! in_array($bucket, ['food', 'beverage'], true)) {
+                continue;
+            }
+            $regionName = $row->region_name;
+            $item = [
+                'item_name' => $row->item_name,
+                'item_bucket' => $bucket,
+                'region_name' => $regionName,
+                'region_code' => $row->region_code,
+                'total_qty' => (float) $row->total_qty,
+                'total_revenue' => (float) $row->total_revenue,
+                'order_count' => (int) $row->order_count,
+                'avg_price' => (float) $row->avg_price,
+            ];
+
+            // Aggregate overall per type (sum across regions later)
+            $key = $bucket . '|' . $row->item_name;
+            if (! isset($byType[$bucket][$key])) {
+                $byType[$bucket][$key] = [
+                    'item_name' => $row->item_name,
+                    'item_bucket' => $bucket,
+                    'total_qty' => 0.0,
+                    'total_revenue' => 0.0,
+                    'order_count' => 0,
+                    'avg_price_weighted' => 0.0,
+                    'avg_price_qty' => 0.0,
+                ];
+            }
+            $byType[$bucket][$key]['total_qty'] += (float) $row->total_qty;
+            $byType[$bucket][$key]['total_revenue'] += (float) $row->total_revenue;
+            $byType[$bucket][$key]['order_count'] += (int) $row->order_count;
+            $byType[$bucket][$key]['avg_price_weighted'] += ((float) $row->avg_price) * ((float) $row->total_qty);
+            $byType[$bucket][$key]['avg_price_qty'] += (float) $row->total_qty;
+
+            if (! isset($byRegion[$regionName])) {
+                $byRegion[$regionName] = [
+                    'region_name' => $regionName,
+                    'region_code' => $row->region_code,
+                    'food' => [],
+                    'beverage' => [],
+                    'food_revenue' => 0.0,
+                    'beverage_revenue' => 0.0,
+                ];
+            }
+            $byRegion[$regionName][$bucket][] = $item;
+            $byRegion[$regionName][$bucket . '_revenue'] += (float) $row->total_revenue;
+        }
+
+        // Finalize overall top 10 per type
+        $topItemsByType = [];
+        foreach (['food', 'beverage'] as $bucket) {
+            $list = array_values($byType[$bucket] ?? []);
+            foreach ($list as &$it) {
+                $it['avg_price'] = $it['avg_price_qty'] > 0
+                    ? $it['avg_price_weighted'] / $it['avg_price_qty']
+                    : 0;
+                unset($it['avg_price_weighted'], $it['avg_price_qty']);
+            }
+            unset($it);
+            usort($list, fn ($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+            $topItemsByType[$bucket] = array_slice($list, 0, 10);
+        }
+
+        // Per region: keep top 10 food + top 10 beverage
+        $topItemsByRegion = [];
+        foreach ($byRegion as $region) {
+            usort($region['food'], fn ($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+            usort($region['beverage'], fn ($a, $b) => $b['total_revenue'] <=> $a['total_revenue']);
+            $region['food'] = array_slice($region['food'], 0, 10);
+            $region['beverage'] = array_slice($region['beverage'], 0, 10);
+            $topItemsByRegion[] = $region;
+        }
+        usort($topItemsByRegion, fn ($a, $b) =>
+            ($b['food_revenue'] + $b['beverage_revenue']) <=> ($a['food_revenue'] + $a['beverage_revenue'])
+        );
+
+        // Backward-compatible flat list = overall food top (legacy UI)
+        $topItems = $topItemsByType['food'];
 
         $chartData = DB::select("
             SELECT
@@ -402,6 +525,8 @@ class SalesOutletDashboardService
 
         return [
             'topItems' => $topItems,
+            'topItemsByType' => $topItemsByType,
+            'topItemsByRegion' => $topItemsByRegion,
             'paymentMethods' => $paymentMethods,
         ];
     }
