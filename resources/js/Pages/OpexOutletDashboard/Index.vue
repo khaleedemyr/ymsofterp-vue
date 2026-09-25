@@ -67,6 +67,11 @@
           Memuat data dashboard secara bertahap…
         </div>
 
+        <AIAnalytics
+          :data="dashboardData?.analytics"
+          :loading="sectionLoading.analytics"
+        />
+
         <RollingForecastPanel
           :outlet-id="filters.outlet_id"
           :month="rollingForecastMonth"
@@ -2855,6 +2860,7 @@ import { Head, router, usePage } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import CardHelpTip from '@/Components/CardHelpTip.vue'
 import RollingForecastPanel from './Components/RollingForecastPanel.vue'
+import AIAnalytics from './Components/AIAnalytics.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import axios from 'axios'
 
@@ -2970,6 +2976,7 @@ const emptyDashboard = () => ({
   ro_forecast: null,
   outlet_name: null,
   attendance: null,
+  analytics: null,
 })
 
 const dashboardData = ref({ ...emptyDashboard(), ...(props.dashboardData || {}) })
@@ -3039,6 +3046,7 @@ const sectionLoading = ref({
   payments: false,
   charts: false,
   attendance: false,
+  analytics: false,
 })
 const sectionError = ref({
   meta: false,
@@ -3048,10 +3056,12 @@ const sectionError = ref({
   payments: false,
   charts: false,
   attendance: false,
+  analytics: false,
 })
 
 const bootstrapping = computed(() =>
-  Object.values(sectionLoading.value).some(Boolean)
+  ['meta', 'overview', 'member', 'ro_forecast', 'charts', 'payments', 'attendance']
+    .some((s) => sectionLoading.value[s])
 )
 
 const monthNames = [
@@ -3180,6 +3190,9 @@ const mergeSectionPayload = (section, data) => {
   if (data.attendance !== undefined) {
     dashboardData.value.attendance = data.attendance
   }
+  if (data.analytics !== undefined) {
+    dashboardData.value.analytics = data.analytics
+  }
 }
 
 const fetchSection = async (section) => {
@@ -3208,6 +3221,7 @@ const loadDashboardLazy = async () => {
   dashboardData.value = emptyDashboard()
 
   // Semua section paralel; halaman shell sudah tampil tanpa menunggu Inertia berat.
+  // Priority first: KPI & charts, lalu analytics (lebih berat, punya loading sendiri).
   await Promise.all([
     fetchSection('meta'),
     fetchSection('overview'),
@@ -3217,6 +3231,8 @@ const loadDashboardLazy = async () => {
     fetchSection('payments'),
     fetchSection('attendance'),
   ])
+
+  fetchSection('analytics')
 }
 
 const applyFilters = () => {

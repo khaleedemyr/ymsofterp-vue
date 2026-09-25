@@ -66,7 +66,7 @@ class OpexOutletDashboardController extends Controller
             ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
             : $userOutletId;
 
-        $allowed = ['meta', 'overview', 'member', 'ro_forecast', 'payments', 'charts', 'attendance'];
+        $allowed = ['meta', 'overview', 'member', 'ro_forecast', 'payments', 'charts', 'attendance', 'analytics'];
         if (! $outletId || ! in_array($section, $allowed, true)) {
             return response()->json(['error' => 'Outlet and valid section required'], 400);
         }

@@ -90,8 +90,19 @@ class OpexOutletDashboardService
             'payments' => $this->buildSectionPayments($outletId, $dateFrom, $dateTo),
             'charts' => $this->buildSectionCharts($outletId, $dateFrom, $dateTo),
             'attendance' => $this->buildSectionAttendance($outletId, $dateFrom, $dateTo),
+            'analytics' => $this->sectionAnalytics($outletId, $dateFrom, $dateTo),
             default => ['error' => 'Unknown section'],
         };
+    }
+
+    /**
+     * @return array{analytics: array<string, mixed>}
+     */
+    private function sectionAnalytics(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        return [
+            'analytics' => app(OpexOutletAnalyticsService::class)->build($outletId, $dateFrom, $dateTo),
+        ];
     }
 
     /**
@@ -109,6 +120,55 @@ class OpexOutletDashboardService
             'ro_forecast' => null,
             'outlet_name' => null,
             'attendance' => null,
+            'analytics' => null,
+        ];
+    }
+
+    /**
+     * Snapshot ringan untuk analytics (tanpa inventory/COGS berat).
+     *
+     * @return array<string, mixed>
+     */
+    public function buildAnalyticsSnapshot(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->first(['qr_code', 'nama_outlet']);
+
+        $qrCode = $outlet?->qr_code;
+        $revenue = $this->sumRevenue($qrCode, $dateFrom, $dateTo);
+        $gsrRo = $this->sumGsrRo($outletId, $dateFrom, $dateTo);
+        $rf = $this->sumRetailFood($outletId, $dateFrom, $dateTo);
+        $rnf = $this->sumRetailNonFood($outletId, $dateFrom, $dateTo);
+        $mcs = $this->sumMcsPurchase($outletId, $dateFrom, $dateTo);
+        $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
+        $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
+
+        $totalSpend = round((float) $gsrRo['total'] + (float) $rf['total'] + (float) $rnf['total'], 2);
+        $spendRatio = $revenue['total'] > 0 ? round(($totalSpend / $revenue['total']) * 100, 2) : null;
+        $discountRatio = $revenue['gross_before_discount'] > 0
+            ? round(($revenue['discount'] / $revenue['gross_before_discount']) * 100, 2)
+            : null;
+        $pettyCash = round((float) $rf['cash_total'] + (float) $rnf['cash_total'], 2);
+
+        return [
+            'outlet_name' => $outlet?->nama_outlet,
+            'revenue' => round((float) $revenue['total'], 2),
+            'cover' => (int) $revenue['cover'],
+            'avg_pax' => round((float) $revenue['avg_pax'], 2),
+            'avg_check' => round((float) $revenue['avg_check'], 2),
+            'discount' => round((float) $revenue['discount'], 2),
+            'discount_ratio_percent' => $discountRatio,
+            'gsr_ro' => round((float) $gsrRo['total'], 2),
+            'retail_food' => round((float) $rf['total'], 2),
+            'retail_non_food' => round((float) $rnf['total'], 2),
+            'petty_cash' => $pettyCash,
+            'mcs_purchase' => round((float) $mcs['total'], 2),
+            'stock_cut' => round((float) $stockCut['total'], 2),
+            'category_cost' => round((float) $categoryCost['total'], 2),
+            'total_spend' => $totalSpend,
+            'spend_ratio_percent' => $spendRatio,
+            'net' => round((float) $revenue['total'] - $totalSpend, 2),
         ];
     }
 
