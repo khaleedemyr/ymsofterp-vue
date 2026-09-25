@@ -70,6 +70,7 @@
         <AIAnalytics
           :data="dashboardData?.analytics"
           :loading="sectionLoading.analytics"
+          :error="sectionError.analytics"
         />
 
         <RollingForecastPanel
@@ -3202,11 +3203,15 @@ const fetchSection = async (section) => {
   try {
     const { data } = await axios.get('/opex-outlet-dashboard/section', {
       params: { section, ...filterParams() },
+      timeout: section === 'analytics' ? 120000 : 60000,
     })
     mergeSectionPayload(section, data)
   } catch (e) {
     console.error(`Failed loading section ${section}`, e)
-    sectionError.value[section] = true
+    const msg = e?.code === 'ECONNABORTED'
+      ? 'Timeout — coba refresh'
+      : (e?.response?.data?.error || e?.message || true)
+    sectionError.value[section] = msg
   } finally {
     sectionLoading.value[section] = false
   }

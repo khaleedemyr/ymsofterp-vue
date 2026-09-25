@@ -2156,25 +2156,25 @@ class OpexOutletDashboardService
      */
     public function sumGsrRo(int $outletId, string $dateFrom, string $dateTo): array
     {
+        // Avoid OR-join on floor_order_items (explodes rows). Split FO vs RO price joins.
         $grTotal = (float) DB::table('outlet_food_good_receive_items as ofgri')
             ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
             ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
             ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
             ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
-            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
-            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
-                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
-                    ->where(function ($q) {
-                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
-                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
-                    });
+            ->leftJoin('food_floor_order_items as ffoi_do', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi_do.item_id')
+                    ->whereColumn('ffoi_do.floor_order_id', 'do.floor_order_id');
+            })
+            ->leftJoin('food_floor_order_items as ffoi_ro', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi_ro.item_id')
+                    ->whereColumn('ffoi_ro.floor_order_id', 'po.source_id');
             })
             ->whereNull('ofgr.deleted_at')
             ->where('ofgr.outlet_id', $outletId)
             ->whereDate('ofgr.receive_date', '>=', $dateFrom)
             ->whereDate('ofgr.receive_date', '<=', $dateTo)
-            ->sum(DB::raw('ofgri.received_qty * COALESCE(ffoi.price, 0)'));
+            ->sum(DB::raw('ofgri.received_qty * COALESCE(ffoi_do.price, ffoi_ro.price, 0)'));
 
         $grCount = (int) DB::table('outlet_food_good_receives as ofgr')
             ->whereNull('ofgr.deleted_at')
@@ -2512,20 +2512,20 @@ class OpexOutletDashboardService
             ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
             ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
             ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
-            ->leftJoin('food_floor_orders as ffo_ro', 'po.source_id', '=', 'ffo_ro.id')
-            ->leftJoin('food_floor_order_items as ffoi', function ($join) {
-                $join->on('ofgri.item_id', '=', 'ffoi.item_id')
-                    ->where(function ($q) {
-                        $q->whereColumn('ffoi.floor_order_id', 'do.floor_order_id')
-                            ->orWhereColumn('ffoi.floor_order_id', 'ffo_ro.id');
-                    });
+            ->leftJoin('food_floor_order_items as ffoi_do', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi_do.item_id')
+                    ->whereColumn('ffoi_do.floor_order_id', 'do.floor_order_id');
+            })
+            ->leftJoin('food_floor_order_items as ffoi_ro', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi_ro.item_id')
+                    ->whereColumn('ffoi_ro.floor_order_id', 'po.source_id');
             })
             ->whereNull('ofgr.deleted_at')
             ->where('ofgr.outlet_id', $outletId)
-            ->whereDate('ofgr.receive_date', '>=', $dateFrom)
-            ->whereDate('ofgr.receive_date', '<=', $dateTo)
-            ->selectRaw('DATE(ofgr.receive_date) as d, SUM(ofgri.received_qty * COALESCE(ffoi.price, 0)) as total')
-            ->groupBy(DB::raw('DATE(ofgr.receive_date)'))
+            ->where('ofgr.receive_date', '>=', $dateFrom)
+            ->where('ofgr.receive_date', '<=', $dateTo)
+            ->selectRaw('ofgr.receive_date as d, SUM(ofgri.received_qty * COALESCE(ffoi_do.price, ffoi_ro.price, 0)) as total')
+            ->groupBy('ofgr.receive_date')
             ->pluck('total', 'd')
             ->map(fn ($v) => (float) $v)
             ->all();

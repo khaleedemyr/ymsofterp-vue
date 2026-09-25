@@ -3,17 +3,15 @@
 namespace App\Services;
 
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
- * Auto diagnostics for Outlet Opex Dashboard.
- * Explains net / spend movement vs same day-span average of last 3 months.
+ * Fast auto diagnostics for Outlet Opex Dashboard.
+ * One batched pass per metric across current + 3 compare windows (datetime ranges, no whereDate).
  */
 class OpexOutletAnalyticsService
 {
-    public function __construct(
-        private OpexOutletDashboardService $opex
-    ) {}
-
     /**
      * @return array<string, mixed>
      */
@@ -24,34 +22,48 @@ class OpexOutletAnalyticsService
         $monthKey = $periodStart->format('Y-m');
         $endDay = $periodEnd->day;
 
-        $compareMonths = [];
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->first(['qr_code', 'nama_outlet']);
+        $qrCode = trim((string) ($outlet?->qr_code ?? ''));
+
+        $windows = [
+            [
+                'key' => 'current',
+                'label' => $periodStart->locale('id')->translatedFormat('F Y'),
+                'from' => $dateFrom,
+                'to' => $dateTo,
+            ],
+        ];
         for ($i = 1; $i <= 3; $i++) {
             $m = $periodStart->copy()->subMonthsNoOverflow($i);
-            $from = $m->copy()->startOfMonth();
             $toDay = min($endDay, $m->daysInMonth);
-            $to = $m->copy()->startOfMonth()->day($toDay);
-            $compareMonths[] = [
+            $windows[] = [
                 'key' => $m->format('Y-m'),
                 'label' => $m->locale('id')->translatedFormat('F Y'),
-                'from' => $from->toDateString(),
-                'to' => $to->toDateString(),
+                'from' => $m->copy()->startOfMonth()->toDateString(),
+                'to' => $m->copy()->startOfMonth()->day($toDay)->toDateString(),
             ];
         }
 
-        $current = $this->opex->buildAnalyticsSnapshot($outletId, $dateFrom, $dateTo);
+        $byKey = $this->batchSnapshots($outletId, $qrCode, $windows);
+        $current = $byKey['current'] ?? $this->emptySnapshot($outlet?->nama_outlet);
 
         $priorMonths = [];
-        foreach ($compareMonths as $cm) {
-            $row = $this->opex->buildAnalyticsSnapshot($outletId, $cm['from'], $cm['to']);
-            $priorMonths[] = array_merge($cm, $row, [
+        foreach ($windows as $w) {
+            if ($w['key'] === 'current') {
+                continue;
+            }
+            $row = $byKey[$w['key']] ?? $this->emptySnapshot($outlet?->nama_outlet);
+            $priorMonths[] = array_merge($w, $row, [
                 'vs_current' => $this->deltaBlock($current, $row),
             ]);
         }
 
         $keys = [
             'revenue', 'cover', 'avg_check', 'discount', 'discount_ratio_percent',
-            'gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash', 'mcs_purchase',
-            'stock_cut', 'category_cost', 'total_spend', 'spend_ratio_percent', 'net',
+            'gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash',
+            'total_spend', 'spend_ratio_percent', 'net',
         ];
         $avg3 = $this->averageTotals(array_map(
             fn ($p) => array_intersect_key($p, array_flip($keys)),
@@ -69,7 +81,7 @@ class OpexOutletAnalyticsService
                 'date_to' => $dateTo,
                 'month' => $monthKey,
                 'label' => $periodStart->locale('id')->translatedFormat('F Y'),
-                'outlet_name' => $current['outlet_name'] ?? null,
+                'outlet_name' => $outlet?->nama_outlet,
                 'compare_day_span' => $periodStart->day.'–'.$endDay,
             ],
             'current' => $current,
@@ -84,13 +96,310 @@ class OpexOutletAnalyticsService
     }
 
     /**
+     * @param  list<array{key: string, label: string, from: string, to: string}>  $windows
+     * @return array<string, array<string, mixed>>
+     */
+    private function batchSnapshots(int $outletId, string $qrCode, array $windows): array
+    {
+        $revenue = $this->batchRevenue($qrCode, $windows);
+        $gsr = $this->batchGsrRo($outletId, $windows);
+        $rf = $this->batchRetail('retail_food', $outletId, $windows);
+        $rnf = $this->batchRetail('retail_non_food', $outletId, $windows);
+
+        $out = [];
+        foreach ($windows as $w) {
+            $key = $w['key'];
+            $rev = $revenue[$key] ?? ['total' => 0.0, 'cover' => 0.0, 'discount' => 0.0, 'gross' => 0.0, 'count' => 0];
+            $gsrTotal = (float) ($gsr[$key] ?? 0);
+            $rfRow = $rf[$key] ?? ['total' => 0.0, 'cash' => 0.0];
+            $rnfRow = $rnf[$key] ?? ['total' => 0.0, 'cash' => 0.0];
+            $totalSpend = round($gsrTotal + (float) $rfRow['total'] + (float) $rnfRow['total'], 2);
+            $revenueTotal = (float) $rev['total'];
+            $cover = (float) $rev['cover'];
+            $discount = (float) $rev['discount'];
+            $gross = (float) $rev['gross'];
+            $count = (int) $rev['count'];
+            $petty = round((float) $rfRow['cash'] + (float) $rnfRow['cash'], 2);
+
+            $out[$key] = [
+                'outlet_name' => null,
+                'revenue' => round($revenueTotal, 2),
+                'cover' => (int) $cover,
+                'avg_pax' => $count > 0 ? round($cover / $count, 2) : null,
+                'avg_check' => $cover > 0 ? round($revenueTotal / $cover) : null,
+                'discount' => round($discount, 2),
+                'discount_ratio_percent' => $gross > 0 ? round(($discount / $gross) * 100, 2) : null,
+                'gsr_ro' => round($gsrTotal, 2),
+                'retail_food' => round((float) $rfRow['total'], 2),
+                'retail_non_food' => round((float) $rnfRow['total'], 2),
+                'petty_cash' => $petty,
+                'total_spend' => $totalSpend,
+                'spend_ratio_percent' => $revenueTotal > 0 ? round(($totalSpend / $revenueTotal) * 100, 2) : null,
+                'net' => round($revenueTotal - $totalSpend, 2),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<array{key: string, from: string, to: string}>  $windows
+     * @return array<string, array{total: float, cover: float, discount: float, gross: float, count: int}>
+     */
+    private function batchRevenue(string $qrCode, array $windows): array
+    {
+        $empty = [];
+        foreach ($windows as $w) {
+            $empty[$w['key']] = ['total' => 0.0, 'cover' => 0.0, 'discount' => 0.0, 'gross' => 0.0, 'count' => 0];
+        }
+        if ($qrCode === '') {
+            return $empty;
+        }
+
+        [$selects, $bindings, $histFrom, $histToEx] = $this->windowCaseSelects(
+            $windows,
+            'created_at',
+            true,
+            [
+                'total' => 'grand_total',
+                'cover' => 'pax',
+                'discount' => '(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0))',
+                'gross' => 'COALESCE(total, 0)',
+                'count' => '1',
+            ]
+        );
+
+        $row = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->where('created_at', '>=', $histFrom)
+            ->where('created_at', '<', $histToEx)
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw(implode(",\n", $selects), $bindings)
+            ->first();
+
+        return $this->mapWindowAgg($windows, $row, ['total', 'cover', 'discount', 'gross', 'count']);
+    }
+
+    /**
+     * @param  list<array{key: string, from: string, to: string}>  $windows
+     * @return array<string, float>
+     */
+    private function batchGsrRo(int $outletId, array $windows): array
+    {
+        $out = [];
+        foreach ($windows as $w) {
+            $out[$w['key']] = 0.0;
+        }
+
+        // GR: join berat tapi 1x untuk semua window (range datetime/date tanpa whereDate).
+        [$grSelects, $grBindings, $grFrom, $grTo] = $this->windowCaseSelects(
+            $windows,
+            'ofgr.receive_date',
+            false,
+            ['total' => 'ofgri.received_qty * COALESCE(ffoi_do.price, ffoi_ro.price, 0)']
+        );
+
+        $grRow = DB::table('outlet_food_good_receive_items as ofgri')
+            ->join('outlet_food_good_receives as ofgr', 'ofgri.outlet_food_good_receive_id', '=', 'ofgr.id')
+            ->join('delivery_orders as do', 'ofgr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_good_receives as gr_ro', 'do.ro_supplier_gr_id', '=', 'gr_ro.id')
+            ->leftJoin('purchase_order_foods as po', 'gr_ro.po_id', '=', 'po.id')
+            ->leftJoin('food_floor_order_items as ffoi_do', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi_do.item_id')
+                    ->whereColumn('ffoi_do.floor_order_id', 'do.floor_order_id');
+            })
+            ->leftJoin('food_floor_order_items as ffoi_ro', function ($join) {
+                $join->on('ofgri.item_id', '=', 'ffoi_ro.item_id')
+                    ->whereColumn('ffoi_ro.floor_order_id', 'po.source_id');
+            })
+            ->whereNull('ofgr.deleted_at')
+            ->where('ofgr.outlet_id', $outletId)
+            ->where('ofgr.receive_date', '>=', $grFrom)
+            ->where('ofgr.receive_date', '<=', $grTo)
+            ->selectRaw(implode(",\n", $grSelects), $grBindings)
+            ->first();
+
+        foreach ($windows as $i => $w) {
+            $out[$w['key']] += (float) ($grRow->{'total_'.$i} ?? 0);
+        }
+
+        if (Schema::hasTable('outlet_serial_receive_headers') && Schema::hasTable('outlet_serial_receive_items')) {
+            // Same unit conversion as OpexOutletDashboardService::serialGrPriceSql
+            $priceSql = '(CASE
+                WHEN si.unit_id = it.large_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1) * COALESCE(it.medium_conversion_qty, 1)
+                WHEN si.unit_id = it.medium_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1)
+                ELSE COALESCE(si.cost_small, 0)
+            END)';
+
+            [$gsrSelects, $gsrBindings, $gsrFrom, $gsrTo] = $this->windowCaseSelects(
+                $windows,
+                'h.receive_date',
+                false,
+                ['total' => "si.qty * ({$priceSql})"]
+            );
+
+            $gsrRow = DB::table('outlet_serial_receive_items as si')
+                ->join('outlet_serial_receive_headers as h', 'si.header_id', '=', 'h.id')
+                ->join('items as it', 'si.item_id', '=', 'it.id')
+                ->whereNull('h.deleted_at')
+                ->where('h.status', 'completed')
+                ->where('h.outlet_id', $outletId)
+                ->where('h.receive_date', '>=', $gsrFrom)
+                ->where('h.receive_date', '<=', $gsrTo)
+                ->selectRaw(implode(",\n", $gsrSelects), $gsrBindings)
+                ->first();
+
+            foreach ($windows as $i => $w) {
+                $out[$w['key']] += (float) ($gsrRow->{'total_'.$i} ?? 0);
+            }
+        }
+
+        foreach ($out as $k => $v) {
+            $out[$k] = round($v, 2);
+        }
+
+        return $out;
+    }
+
+    /**
+     * @param  list<array{key: string, from: string, to: string}>  $windows
+     * @return array<string, array{total: float, cash: float}>
+     */
+    private function batchRetail(string $table, int $outletId, array $windows): array
+    {
+        $empty = [];
+        foreach ($windows as $w) {
+            $empty[$w['key']] = ['total' => 0.0, 'cash' => 0.0];
+        }
+        if (! Schema::hasTable($table)) {
+            return $empty;
+        }
+
+        [$selects, $bindings, $from, $to] = $this->windowCaseSelects(
+            $windows,
+            'transaction_date',
+            false,
+            [
+                'total' => 'total_amount',
+                'cash' => "CASE WHEN payment_method = 'cash' THEN total_amount ELSE 0 END",
+            ]
+        );
+
+        $row = DB::table($table)
+            ->where('outlet_id', $outletId)
+            ->where('status', 'approved')
+            ->whereNull('deleted_at')
+            ->where('transaction_date', '>=', $from)
+            ->where('transaction_date', '<=', $to)
+            ->selectRaw(implode(",\n", $selects), $bindings)
+            ->first();
+
+        $mapped = $this->mapWindowAgg($windows, $row, ['total', 'cash']);
+        $out = [];
+        foreach ($windows as $w) {
+            $out[$w['key']] = [
+                'total' => (float) ($mapped[$w['key']]['total'] ?? 0),
+                'cash' => (float) ($mapped[$w['key']]['cash'] ?? 0),
+            ];
+        }
+
+        return $out;
+    }
+
+    /**
+     * Build CASE WHEN aggregates for each window.
+     *
+     * @param  list<array{key: string, from: string, to: string}>  $windows
+     * @param  array<string, string>  $metrics  alias => SQL expression
+     * @return array{0: list<string>, 1: list<mixed>, 2: string, 3: string}
+     */
+    private function windowCaseSelects(array $windows, string $dateColumn, bool $isDateTime, array $metrics): array
+    {
+        $selects = [];
+        $bindings = [];
+        $histFrom = null;
+        $histTo = null;
+        $histToEx = null;
+
+        foreach ($windows as $i => $w) {
+            if ($isDateTime) {
+                $from = $w['from'].' 00:00:00';
+                $toEx = Carbon::parse($w['to'])->addDay()->format('Y-m-d').' 00:00:00';
+                $cond = "{$dateColumn} >= ? AND {$dateColumn} < ?";
+                foreach ($metrics as $alias => $expr) {
+                    $selects[] = "COALESCE(SUM(CASE WHEN {$cond} THEN {$expr} ELSE 0 END), 0) as {$alias}_{$i}";
+                    $bindings[] = $from;
+                    $bindings[] = $toEx;
+                }
+                $histFrom = $histFrom === null || $from < $histFrom ? $from : $histFrom;
+                $histToEx = $histToEx === null || $toEx > $histToEx ? $toEx : $histToEx;
+            } else {
+                $from = $w['from'];
+                $to = $w['to'];
+                $cond = "{$dateColumn} >= ? AND {$dateColumn} <= ?";
+                foreach ($metrics as $alias => $expr) {
+                    $selects[] = "COALESCE(SUM(CASE WHEN {$cond} THEN {$expr} ELSE 0 END), 0) as {$alias}_{$i}";
+                    $bindings[] = $from;
+                    $bindings[] = $to;
+                }
+                $histFrom = $histFrom === null || $from < $histFrom ? $from : $histFrom;
+                $histTo = $histTo === null || $to > $histTo ? $to : $histTo;
+            }
+        }
+
+        return [$selects, $bindings, $histFrom, $isDateTime ? $histToEx : $histTo];
+    }
+
+    /**
+     * @param  list<array{key: string}>  $windows
+     * @param  list<string>  $aliases
+     * @return array<string, array<string, float>>
+     */
+    private function mapWindowAgg(array $windows, ?object $row, array $aliases): array
+    {
+        $out = [];
+        foreach ($windows as $i => $w) {
+            $item = [];
+            foreach ($aliases as $alias) {
+                $item[$alias] = round((float) ($row?->{"{$alias}_{$i}"} ?? 0), 2);
+            }
+            $out[$w['key']] = $item;
+        }
+
+        return $out;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptySnapshot(?string $outletName = null): array
+    {
+        return [
+            'outlet_name' => $outletName,
+            'revenue' => 0.0,
+            'cover' => 0,
+            'avg_pax' => null,
+            'avg_check' => null,
+            'discount' => 0.0,
+            'discount_ratio_percent' => null,
+            'gsr_ro' => 0.0,
+            'retail_food' => 0.0,
+            'retail_non_food' => 0.0,
+            'petty_cash' => 0.0,
+            'total_spend' => 0.0,
+            'spend_ratio_percent' => null,
+            'net' => 0.0,
+        ];
+    }
+
+    /**
      * @param  list<array<string, mixed>>  $rows
      * @param  list<string>  $keys
      * @return array<string, float|null>
      */
     private function averageTotals(array $rows, array $keys): array
     {
-        $n = max(1, count($rows));
         $out = [];
         foreach ($keys as $key) {
             $sum = 0.0;
@@ -117,8 +426,8 @@ class OpexOutletAnalyticsService
     {
         $keys = [
             'revenue', 'cover', 'avg_check', 'discount', 'discount_ratio_percent',
-            'gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash', 'mcs_purchase',
-            'stock_cut', 'category_cost', 'total_spend', 'spend_ratio_percent', 'net',
+            'gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash',
+            'total_spend', 'spend_ratio_percent', 'net',
         ];
         $out = [];
         foreach ($keys as $key) {
@@ -145,8 +454,6 @@ class OpexOutletAnalyticsService
     }
 
     /**
-     * Net ≈ Revenue − Spend → attribute net movement to revenue vs spend.
-     *
      * @param  array<string, mixed>  $delta
      * @param  array<string, mixed>  $current
      * @param  array<string, mixed>  $base
@@ -166,7 +473,6 @@ class OpexOutletAnalyticsService
 
         $revDelta = (float) ($delta['revenue'] ?? 0);
         $spendDelta = (float) ($delta['total_spend'] ?? 0);
-        // Higher spend hurts net → spend effect on net is -spendDelta
         $revEffect = $revDelta;
         $spendEffect = -$spendDelta;
         $absTotal = abs($revEffect) + abs($spendEffect);
@@ -205,20 +511,15 @@ class OpexOutletAnalyticsService
             'spend_effect' => round($spendEffect, 2),
             'revenue_share_pct' => $revShare,
             'spend_share_pct' => $spendShare,
-            'headline' => $this->headlineText($direction, $primary, $delta),
+            'headline' => $this->headlineText($primary, $delta),
         ];
     }
 
     /**
      * @param  array<string, mixed>  $delta
      */
-    private function headlineText(string $direction, string $primary, array $delta): string
+    private function headlineText(string $primary, array $delta): string
     {
-        $net = $delta['net_pct'];
-        $rev = $delta['revenue_pct'];
-        $spd = $delta['total_spend_pct'];
-        $ratio = $delta['spend_ratio_percent'];
-
         $fmt = static function (?float $v): string {
             if ($v === null) {
                 return 'n/a';
@@ -227,9 +528,11 @@ class OpexOutletAnalyticsService
             return ($v >= 0 ? '+' : '').$v.'%';
         };
 
-        return 'Vs rata-rata 3 bulan (span hari sama): Net '.$fmt($net)
-            .', Revenue '.$fmt($rev)
-            .', Spend '.$fmt($spd)
+        $ratio = $delta['spend_ratio_percent'] ?? null;
+
+        return 'Vs rata-rata 3 bulan (span hari sama): Net '.$fmt($delta['net_pct'] ?? null)
+            .', Revenue '.$fmt($delta['revenue_pct'] ?? null)
+            .', Spend '.$fmt($delta['total_spend_pct'] ?? null)
             .', Spend ratio '.($ratio === null ? 'n/a' : (($ratio >= 0 ? '+' : '').$ratio.' pp'))
             .'. Driver utama: '
             .($primary === 'revenue' ? 'Revenue' : ($primary === 'spend' ? 'Spend' : 'campuran keduanya'))
@@ -240,7 +543,7 @@ class OpexOutletAnalyticsService
      * @param  array<string, mixed>  $delta
      * @param  array<string, mixed>  $current
      * @param  array<string, mixed>  $base
-     * @return array{items: list<array<string, mixed>>, top_driver: string|null}
+     * @return array{items: list<array<string, mixed>>, top_driver: string|null, top_label: string|null}
      */
     private function spendMixDrivers(array $delta, array $current, array $base): array
     {
@@ -359,16 +662,6 @@ class OpexOutletAnalyticsService
             ];
         }
 
-        $catPct = $vs['category_cost_pct'] ?? null;
-        if ($catPct !== null && (float) $catPct > 10) {
-            $findings[] = [
-                'category' => 'category_cost',
-                'severity' => 'warning',
-                'headline' => 'Category Cost naik '.$this->fmtPct($catPct).'%',
-                'detail' => 'Periksa spoil / waste / internal use vs rata-rata 3 bulan.',
-            ];
-        }
-
         return $findings;
     }
 
@@ -416,8 +709,7 @@ class OpexOutletAnalyticsService
                 .' ('.$this->fmtPct($top['pct']).'%, share ~'.$top['share_of_spend_change_pct'].'%).';
         }
 
-        $extra = array_slice($findings, 1, 3);
-        foreach ($extra as $f) {
+        foreach (array_slice($findings, 1, 3) as $f) {
             $lines[] = '• '.$f['headline'].($f['detail'] ? ' — '.$f['detail'] : '');
         }
 

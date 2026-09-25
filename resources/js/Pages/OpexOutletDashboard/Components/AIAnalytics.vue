@@ -15,7 +15,8 @@
       </div>
 
       <div v-if="!loading && !data" class="px-5 py-8 text-center text-slate-400 text-sm">
-        Analisa belum tersedia.
+        <p>{{ error ? 'Gagal memuat analisa.' : 'Analisa belum tersedia.' }}</p>
+        <p v-if="error" class="mt-1 text-xs text-rose-500">{{ error }}</p>
       </div>
 
       <div v-else-if="data" class="p-5 space-y-5">
@@ -115,9 +116,9 @@
             <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.discount_pct)">{{ fmtPct(data.vs_avg_last_3?.discount_pct) }}</p>
           </div>
           <div class="rounded-xl border border-slate-100 p-4">
-            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Category Cost</p>
-            <p class="mt-1 text-lg font-bold text-slate-900">{{ formatCurrency(data.current?.category_cost) }}</p>
-            <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.category_cost_pct)">{{ fmtPct(data.vs_avg_last_3?.category_cost_pct) }}</p>
+            <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Petty Cash</p>
+            <p class="mt-1 text-lg font-bold text-slate-900">{{ formatCurrency(data.current?.petty_cash) }}</p>
+            <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.petty_cash_pct)">{{ fmtPct(data.vs_avg_last_3?.petty_cash_pct) }}</p>
           </div>
         </div>
 
@@ -189,6 +190,7 @@ import { computed } from 'vue'
 const props = defineProps({
   data: { type: Object, default: null },
   loading: { type: Boolean, default: false },
+  error: { type: [Boolean, String], default: false },
 })
 
 const severityBoxClass = computed(() => {
