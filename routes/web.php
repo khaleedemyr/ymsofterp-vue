@@ -2127,6 +2127,8 @@ Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWare
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-rws-unreceived', [\App\Http\Controllers\RwsUnreceivedReportController::class, 'index'])->name('report-rws-unreceived.index');
     Route::get('/report-rws-unreceived/export', [\App\Http\Controllers\RwsUnreceivedReportController::class, 'export'])->name('report-rws-unreceived.export');
+    Route::get('/report-rws-received', [\App\Http\Controllers\RwsReceivedReportController::class, 'index'])->name('report-rws-received.index');
+    Route::get('/report-rws-received/export', [\App\Http\Controllers\RwsReceivedReportController::class, 'export'])->name('report-rws-received.export');
 });
 
 // Sales Outlet Dashboard Routes

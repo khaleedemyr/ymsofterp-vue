@@ -6,7 +6,7 @@
           <p class="text-xs font-semibold uppercase tracking-wide text-teal-600">Opex Analytics</p>
           <h3 class="text-lg font-bold text-slate-900 mt-0.5">Analisa net &amp; spend otomatis</h3>
           <p class="text-xs text-slate-500 mt-1">
-            Bandingkan periode terpilih vs rata-rata 3 bulan (span hari sama) · Net ≈ Revenue − Spend · mix GSR/RO · Retail Food · Non Food
+            Bandingkan periode terpilih vs rata-rata 3 bulan (span hari sama) · Net ≈ Revenue − Spend · mix GSR/RO · Retail Food · Non Food · % COGS
           </p>
         </div>
         <div v-if="loading" class="text-sm text-teal-600">
@@ -60,6 +60,93 @@
             <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.spend_ratio_percent)">
               {{ fmtPp(data.vs_avg_last_3?.spend_ratio_percent) }} vs avg 3 bln
             </p>
+          </div>
+        </div>
+
+        <!-- Analisa COGS -->
+        <div class="rounded-xl border border-indigo-100 overflow-hidden">
+          <div class="px-4 py-3 bg-indigo-50/60 border-b border-indigo-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div>
+              <p class="text-sm font-semibold text-indigo-900">Analisa COGS</p>
+              <p class="text-[11px] text-indigo-700/80 mt-0.5">
+                Rumus sama overview / Cost Report · % COGS Actual After Disc vs rata-rata 3 bulan
+              </p>
+            </div>
+            <p
+              v-if="data.cogs_driver?.label"
+              class="text-xs font-medium px-2.5 py-1 rounded-lg"
+              :class="cogsDriverBadgeClass"
+            >
+              {{ data.cogs_driver.label }}
+            </p>
+          </div>
+          <div class="p-4 space-y-4">
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="rounded-xl border border-indigo-50 bg-indigo-50/40 p-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-indigo-600">% COGS After Disc</p>
+                <p class="mt-1 text-xl font-bold text-indigo-950">
+                  {{ data.current?.cogs_pct != null ? fmtNumber(data.current.cogs_pct) + '%' : '—' }}
+                </p>
+                <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.cogs_pct)">
+                  {{ fmtPp(data.vs_avg_last_3?.cogs_pct) }} vs avg
+                  <span v-if="data.avg_last_3_months?.cogs_pct != null" class="text-slate-400">
+                    ({{ fmtNumber(data.avg_last_3_months.cogs_pct) }}%)
+                  </span>
+                </p>
+              </div>
+              <div class="rounded-xl border border-slate-100 p-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">COGS Aktual</p>
+                <p class="mt-1 text-lg font-bold text-slate-900">{{ formatCurrency(data.current?.cogs_aktual) }}</p>
+                <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.cogs_aktual_pct)">
+                  {{ fmtPct(data.vs_avg_last_3?.cogs_aktual_pct) }}
+                </p>
+              </div>
+              <div class="rounded-xl border border-slate-100 p-4">
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">COGS Pembanding</p>
+                <p class="mt-1 text-lg font-bold text-slate-900">{{ formatCurrency(data.current?.cogs_pembanding) }}</p>
+                <p class="text-xs mt-1" :class="invertPctClass(data.vs_avg_last_3?.cogs_pembanding_pct)">
+                  {{ fmtPct(data.vs_avg_last_3?.cogs_pembanding_pct) }}
+                </p>
+              </div>
+              <div
+                class="rounded-xl border p-4"
+                :class="data.current?.cogs_within_toleransi === false
+                  ? 'border-rose-200 bg-rose-50/50'
+                  : 'border-emerald-100 bg-emerald-50/40'"
+              >
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Deviasi</p>
+                <p
+                  class="mt-1 text-lg font-bold"
+                  :class="data.current?.cogs_within_toleransi === false ? 'text-rose-700' : 'text-emerald-800'"
+                >
+                  {{ formatCurrency(data.current?.cogs_deviasi) }}
+                  <span v-if="data.current?.cogs_pct_deviasi != null" class="text-sm font-semibold">
+                    ({{ data.current.cogs_pct_deviasi > 0 ? '+' : '' }}{{ data.current.cogs_pct_deviasi }}%)
+                  </span>
+                </p>
+                <p class="text-[11px] mt-1 text-slate-500">
+                  {{ data.current?.cogs_within_toleransi === false ? 'Di luar' : 'Dalam' }} toleransi 2%
+                </p>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div
+                v-for="item in (data.cogs_driver?.components || [])"
+                :key="item.key"
+                class="rounded-xl border border-slate-100 p-4"
+              >
+                <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">{{ item.label }}</p>
+                <p class="mt-1 text-lg font-bold text-slate-900">
+                  {{ formatCurrency(cogsComponentCurrent(item.key)) }}
+                </p>
+                <p class="text-xs mt-1" :class="invertPctClass(item.pct)">{{ fmtPct(item.pct) }} vs avg</p>
+                <p class="text-[11px] text-slate-400 mt-1">
+                  Δ {{ formatCurrency(item.delta) }}
+                  <span v-if="item.key === data.cogs_driver?.top_component" class="text-indigo-600 font-medium"> · driver</span>
+                </p>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -151,6 +238,8 @@
                   <th class="px-3 py-2 font-semibold text-right">Revenue</th>
                   <th class="px-3 py-2 font-semibold text-right">Spend</th>
                   <th class="px-3 py-2 font-semibold text-right">Ratio</th>
+                  <th class="px-3 py-2 font-semibold text-right">% COGS</th>
+                  <th class="px-3 py-2 font-semibold text-right">COGS Aktual</th>
                 </tr>
               </thead>
               <tbody>
@@ -160,6 +249,10 @@
                   <td class="px-3 py-2 text-right">{{ formatCurrency(data.current?.revenue) }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(data.current?.total_spend) }}</td>
                   <td class="px-3 py-2 text-right">{{ fmtNumber(data.current?.spend_ratio_percent) }}%</td>
+                  <td class="px-3 py-2 text-right font-medium text-indigo-800">
+                    {{ data.current?.cogs_pct != null ? fmtNumber(data.current.cogs_pct) + '%' : '—' }}
+                  </td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(data.current?.cogs_aktual) }}</td>
                 </tr>
                 <tr
                   v-for="m in data.compare_months || []"
@@ -174,6 +267,10 @@
                   <td class="px-3 py-2 text-right">{{ formatCurrency(m.revenue) }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(m.total_spend) }}</td>
                   <td class="px-3 py-2 text-right">{{ fmtNumber(m.spend_ratio_percent) }}%</td>
+                  <td class="px-3 py-2 text-right">
+                    {{ m.cogs_pct != null ? fmtNumber(m.cogs_pct) + '%' : '—' }}
+                  </td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(m.cogs_aktual) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -218,6 +315,21 @@ const severityTitleClass = computed(() => {
   return 'text-slate-900'
 })
 
+const cogsDriverBadgeClass = computed(() => {
+  const d = props.data?.cogs_driver?.direction
+  if (d === 'up') return 'bg-rose-100 text-rose-800'
+  if (d === 'down') return 'bg-emerald-100 text-emerald-800'
+  return 'bg-slate-100 text-slate-700'
+})
+
+function cogsComponentCurrent(key) {
+  const c = props.data?.current || {}
+  if (key === 'cogs_foods') return c.cogs_foods
+  if (key === 'cogs_category_cost') return c.cogs_category_cost
+  if (key === 'cogs_meal_employees') return c.cogs_meal_employees
+  return null
+}
+
 function formatCurrency(amount) {
   return new Intl.NumberFormat('id-ID', {
     style: 'currency',
@@ -254,7 +366,7 @@ function pctClass(v) {
   return 'text-slate-500'
 }
 
-/** Spend naik = buruk (merah), spend turun = baik (hijau) */
+/** Spend / COGS naik = buruk (merah), turun = baik (hijau) */
 function invertPctClass(v) {
   if (v === null || v === undefined) return 'text-slate-400'
   if (v > 0) return 'text-rose-600'

@@ -125,7 +125,7 @@ class OpexOutletDashboardService
     }
 
     /**
-     * Snapshot ringan untuk analytics (tanpa inventory/COGS berat).
+     * Snapshot ringan untuk analytics (spend/revenue saja; COGS dihitung terpisah per window).
      *
      * @return array<string, mixed>
      */
@@ -169,6 +169,131 @@ class OpexOutletDashboardService
             'total_spend' => $totalSpend,
             'spend_ratio_percent' => $spendRatio,
             'net' => round((float) $revenue['total'] - $totalSpend, 2),
+        ];
+    }
+
+    /**
+     * Snapshot COGS untuk Opex Analytics (rumus sama overview / Cost Report Actual Cost MTD).
+     *
+     * @return array{cogs_pct: float|null, cogs: array<string, mixed>}
+     */
+    public function buildCogsAnalyticsSnapshot(int $outletId, string $dateFrom, string $dateTo): array
+    {
+        $outlet = DB::table('tbl_data_outlet')
+            ->where('id_outlet', $outletId)
+            ->first(['qr_code']);
+        $qrCode = $outlet?->qr_code;
+
+        $revenue = $this->sumRevenue($qrCode, $dateFrom, $dateTo);
+        $stockCut = $this->sumStockCut($outletId, $dateFrom, $dateTo);
+        $categoryCost = $this->sumCategoryCost($outletId, $dateFrom, $dateTo);
+        $beginInventory = $this->sumBeginInventory($outletId, $dateFrom);
+        $outletTransferSummary = $this->sumOutletTransferMovements($outletId, $dateFrom, $dateTo);
+        $endingStock = $this->sumEndingStockSanitized($outletId, $dateTo, $dateFrom);
+
+        return $this->computeCogsSummary(
+            $outletId,
+            $qrCode,
+            $dateFrom,
+            $dateTo,
+            $stockCut,
+            $categoryCost,
+            $beginInventory,
+            $outletTransferSummary,
+            $endingStock,
+            (float) $revenue['gross_before_discount'],
+            (float) $revenue['discount']
+        );
+    }
+
+    /**
+     * Rumus COGS outlet-scoped (hindari CostReportDataService::*ByOutlet → timeout).
+     *
+     * @param  array<string, mixed>  $stockCut
+     * @param  array<string, mixed>  $categoryCost
+     * @param  array<string, mixed>  $beginInventory
+     * @param  array<string, mixed>  $outletTransferSummary
+     * @param  array<string, mixed>  $endingStock
+     * @return array{cogs_pct: float|null, cogs: array<string, mixed>}
+     */
+    private function computeCogsSummary(
+        int $outletId,
+        ?string $qrCode,
+        string $dateFrom,
+        string $dateTo,
+        array $stockCut,
+        array $categoryCost,
+        array $beginInventory,
+        array $outletTransferSummary,
+        array $endingStock,
+        float $grossBeforeDiscountFallback,
+        float $discount
+    ): array {
+        $byTypeAmount = [];
+        foreach ($categoryCost['by_type'] ?? [] as $row) {
+            $byTypeAmount[(string) ($row['type'] ?? '')] = (float) ($row['amount'] ?? 0);
+        }
+        $cogsFoods = round((float) ($stockCut['total'] ?? 0), 2);
+        $categoryCostForCogs = round(
+            ($byTypeAmount['spoil'] ?? 0)
+            + ($byTypeAmount['waste'] ?? 0)
+            + ($byTypeAmount['guest_supplies'] ?? 0)
+            + ($byTypeAmount['non_commodity'] ?? 0),
+            2
+        );
+        $mealEmployees = round((float) ($byTypeAmount['internal_use'] ?? 0), 2);
+        $costRnd = round((float) (($byTypeAmount['r_and_d'] ?? 0) + ($byTypeAmount['marketing'] ?? 0)), 2);
+        $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
+        $officialCost = $this->sumOfficialCostForOutlet($outletId, $dateFrom, $dateTo);
+        $availableGoods = round(
+            (float) $beginInventory['total']
+            + $officialCost
+            - $costRnd
+            + (float) $outletTransferSummary['net_total'],
+            2
+        );
+        $cogsAktual = round($availableGoods - (float) $endingStock['total'], 2);
+        // Denominator sama Cost Report: before = Σ(qty×price); after = before − discount.
+        $salesBefore = $this->sumSalesBeforeDiscountForCogs($qrCode, $dateFrom, $dateTo);
+        if ($salesBefore <= 0) {
+            $salesBefore = $grossBeforeDiscountFallback;
+        }
+        $salesAfter = max(0.0, round($salesBefore - $discount, 2));
+        $pctOrNull = static function (float $num, float $den): ?float {
+            return $den > 0 ? round(($num / $den) * 100, 2) : null;
+        };
+        $deviasi = round($cogsPembanding - $cogsAktual, 2);
+        $pctDeviasiSigned = $cogsPembanding > 0 ? round(($deviasi / $cogsPembanding) * 100, 2) : null;
+        $toleransiMaxAmount = round($cogsAktual * 0.02, 2);
+        $withinToleransi = abs($deviasi) <= $toleransiMaxAmount;
+        $pctAfter = $pctOrNull($cogsAktual, $salesAfter);
+
+        $cogsSummary = [
+            'cogs_foods' => $cogsFoods,
+            'category_cost' => $categoryCostForCogs,
+            'meal_employees' => $mealEmployees,
+            'cost_rnd' => $costRnd,
+            'official_cost' => $officialCost,
+            'cogs_pembanding' => $cogsPembanding,
+            'cogs_aktual' => $cogsAktual,
+            'available_goods' => $availableGoods,
+            'ending_stock' => round((float) $endingStock['total'], 2),
+            'sales_before_discount' => round($salesBefore, 2),
+            'sales_after_discount' => round($salesAfter, 2),
+            'deviasi' => $deviasi,
+            'pct_deviasi' => $pctDeviasiSigned,
+            'toleransi_max_pct' => 2.0,
+            'toleransi_max_amount' => $toleransiMaxAmount,
+            'within_toleransi' => $withinToleransi,
+            'pct_cogs_foods' => $pctOrNull($cogsFoods, $salesBefore),
+            'pct_cogs_pembanding' => $pctOrNull($cogsPembanding, $salesBefore),
+            'pct_cogs_actual_before_disc' => $pctOrNull($cogsAktual, $salesBefore),
+            'pct_cogs_actual_after_disc' => $pctAfter,
+        ];
+
+        return [
+            'cogs_pct' => $pctAfter,
+            'cogs' => $cogsSummary,
         ];
     }
 
@@ -343,69 +468,22 @@ class OpexOutletDashboardService
         // Nilai utama card Ending = cost di stok (sama Cost Report MTD). Formula tetap di breakdown.
         $endingInventory = round((float) $endingStock['total'], 2);
 
-        // COGS % — pakai data outlet-scoped yang sudah dihitung di atas.
-        // Hindari CostReportDataService::*ByOutlet (agregat SEMUA outlet + MAC detail → timeout).
-        $byTypeAmount = [];
-        foreach ($categoryCost['by_type'] ?? [] as $row) {
-            $byTypeAmount[(string) ($row['type'] ?? '')] = (float) ($row['amount'] ?? 0);
-        }
-        $cogsFoods = round((float) ($stockCut['total'] ?? 0), 2);
-        $categoryCostForCogs = round(
-            ($byTypeAmount['spoil'] ?? 0)
-            + ($byTypeAmount['waste'] ?? 0)
-            + ($byTypeAmount['guest_supplies'] ?? 0)
-            + ($byTypeAmount['non_commodity'] ?? 0),
-            2
+        // COGS % — rumus sama Cost Report; dihitung sekali lewat helper (juga dipakai analytics).
+        $cogsPack = $this->computeCogsSummary(
+            $outletId,
+            $qrCode,
+            $dateFrom,
+            $dateTo,
+            $stockCut,
+            $categoryCost,
+            $beginInventory,
+            $outletTransferSummary,
+            $endingStock,
+            (float) $revenue['gross_before_discount'],
+            (float) $revenue['discount']
         );
-        $mealEmployees = round((float) ($byTypeAmount['internal_use'] ?? 0), 2);
-        $costRnd = round((float) (($byTypeAmount['r_and_d'] ?? 0) + ($byTypeAmount['marketing'] ?? 0)), 2);
-        $cogsPembanding = round($cogsFoods + $categoryCostForCogs + $mealEmployees, 2);
-        $officialCost = $this->sumOfficialCostForOutlet($outletId, $dateFrom, $dateTo);
-        $availableGoods = round(
-            (float) $beginInventory['total']
-            + $officialCost
-            - $costRnd
-            + (float) $outletTransferSummary['net_total'],
-            2
-        );
-        $cogsAktual = round($availableGoods - (float) $endingStock['total'], 2);
-        // Denominator sama Cost Report: before = Σ(qty×price); after = before − discount.
-        // Jangan pakai grand_total (bisa lebih besar karena pajak → % after disc jadi aneh / lebih kecil).
-        $salesBefore = $this->sumSalesBeforeDiscountForCogs($qrCode, $dateFrom, $dateTo);
-        if ($salesBefore <= 0) {
-            $salesBefore = (float) $revenue['gross_before_discount'];
-        }
-        $salesAfter = max(0.0, round($salesBefore - (float) $revenue['discount'], 2));
-        $pctOrNull = static function (float $num, float $den): ?float {
-            return $den > 0 ? round(($num / $den) * 100, 2) : null;
-        };
-        $deviasi = round($cogsPembanding - $cogsAktual, 2);
-        // Sama Cost Report: % Deviasi = Deviasi ÷ COGS Pembanding; Toleransi 2% = 2% × COGS Aktual.
-        $pctDeviasiSigned = $cogsPembanding > 0 ? round(($deviasi / $cogsPembanding) * 100, 2) : null;
-        $toleransiMaxAmount = round($cogsAktual * 0.02, 2);
-        $withinToleransi = abs($deviasi) <= $toleransiMaxAmount;
-        $cogsSummary = [
-            'cogs_foods' => $cogsFoods,
-            'category_cost' => $categoryCostForCogs,
-            'meal_employees' => $mealEmployees,
-            'cost_rnd' => $costRnd,
-            'official_cost' => $officialCost,
-            'cogs_pembanding' => $cogsPembanding,
-            'cogs_aktual' => $cogsAktual,
-            'available_goods' => $availableGoods,
-            'ending_stock' => round((float) $endingStock['total'], 2),
-            'sales_before_discount' => round($salesBefore, 2),
-            'sales_after_discount' => round($salesAfter, 2),
-            'deviasi' => $deviasi,
-            'pct_deviasi' => $pctDeviasiSigned,
-            'toleransi_max_pct' => 2.0,
-            'toleransi_max_amount' => $toleransiMaxAmount,
-            'within_toleransi' => $withinToleransi,
-            'pct_cogs_foods' => $pctOrNull($cogsFoods, $salesBefore),
-            'pct_cogs_pembanding' => $pctOrNull($cogsPembanding, $salesBefore),
-            'pct_cogs_actual_before_disc' => $pctOrNull($cogsAktual, $salesBefore),
-            'pct_cogs_actual_after_disc' => $pctOrNull($cogsAktual, $salesAfter),
-        ];
+        $cogsSummary = $cogsPack['cogs'];
+        $availableGoods = (float) ($cogsSummary['available_goods'] ?? 0);
 
         return [
             'revenue' => $revenue['total'],

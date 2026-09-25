@@ -47,6 +47,39 @@ class OpexOutletAnalyticsService
         }
 
         $byKey = $this->batchSnapshots($outletId, $qrCode, $windows);
+        $dashboard = app(OpexOutletDashboardService::class);
+        foreach ($windows as $w) {
+            $key = $w['key'];
+            try {
+                $cogsPack = $dashboard->buildCogsAnalyticsSnapshot($outletId, $w['from'], $w['to']);
+                $cogs = $cogsPack['cogs'] ?? [];
+                $byKey[$key] = array_merge($byKey[$key] ?? $this->emptySnapshot($outlet?->nama_outlet), [
+                    'cogs_pct' => $cogsPack['cogs_pct'] ?? null,
+                    'cogs_aktual' => $cogs['cogs_aktual'] ?? null,
+                    'cogs_pembanding' => $cogs['cogs_pembanding'] ?? null,
+                    'cogs_foods' => $cogs['cogs_foods'] ?? null,
+                    'cogs_category_cost' => $cogs['category_cost'] ?? null,
+                    'cogs_meal_employees' => $cogs['meal_employees'] ?? null,
+                    'cogs_pct_foods' => $cogs['pct_cogs_foods'] ?? null,
+                    'cogs_pct_pembanding' => $cogs['pct_cogs_pembanding'] ?? null,
+                    'cogs_pct_before_disc' => $cogs['pct_cogs_actual_before_disc'] ?? null,
+                    'cogs_pct_deviasi' => $cogs['pct_deviasi'] ?? null,
+                    'cogs_deviasi' => $cogs['deviasi'] ?? null,
+                    'cogs_within_toleransi' => $cogs['within_toleransi'] ?? null,
+                    'cogs' => $cogs,
+                ]);
+            } catch (\Throwable $e) {
+                \Log::warning('Opex analytics COGS snapshot failed', [
+                    'outlet_id' => $outletId,
+                    'window' => $key,
+                    'from' => $w['from'],
+                    'to' => $w['to'],
+                    'error' => $e->getMessage(),
+                ]);
+                $byKey[$key] = array_merge($byKey[$key] ?? $this->emptySnapshot($outlet?->nama_outlet), $this->emptyCogsFlat());
+            }
+        }
+
         $current = $byKey['current'] ?? $this->emptySnapshot($outlet?->nama_outlet);
 
         $priorMonths = [];
@@ -64,6 +97,10 @@ class OpexOutletAnalyticsService
             'revenue', 'cover', 'avg_check', 'discount', 'discount_ratio_percent',
             'gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash',
             'total_spend', 'spend_ratio_percent', 'net',
+            'cogs_pct', 'cogs_aktual', 'cogs_pembanding', 'cogs_foods',
+            'cogs_category_cost', 'cogs_meal_employees',
+            'cogs_pct_foods', 'cogs_pct_pembanding', 'cogs_pct_before_disc',
+            'cogs_pct_deviasi', 'cogs_deviasi',
         ];
         $avg3 = $this->averageTotals(array_map(
             fn ($p) => array_intersect_key($p, array_flip($keys)),
@@ -73,7 +110,8 @@ class OpexOutletAnalyticsService
         $vsAvg3 = $this->deltaBlock($current, $avg3);
         $driver = $this->diagnoseDriver($vsAvg3, $current, $avg3);
         $spendMix = $this->spendMixDrivers($vsAvg3, $current, $avg3);
-        $findings = $this->composeFindings($driver, $vsAvg3, $spendMix, $current, $avg3);
+        $cogsDriver = $this->diagnoseCogsDriver($vsAvg3, $current, $avg3);
+        $findings = $this->composeFindings($driver, $vsAvg3, $spendMix, $current, $avg3, $cogsDriver);
 
         return [
             'period' => [
@@ -90,8 +128,9 @@ class OpexOutletAnalyticsService
             'vs_avg_last_3' => $vsAvg3,
             'driver' => $driver,
             'spend_mix' => $spendMix,
+            'cogs_driver' => $cogsDriver,
             'findings' => $findings,
-            'narrative' => $this->buildNarrative($driver, $vsAvg3, $spendMix, $findings, $current, $avg3),
+            'narrative' => $this->buildNarrative($driver, $vsAvg3, $spendMix, $findings, $current, $avg3, $cogsDriver),
         ];
     }
 
@@ -375,7 +414,7 @@ class OpexOutletAnalyticsService
      */
     private function emptySnapshot(?string $outletName = null): array
     {
-        return [
+        return array_merge([
             'outlet_name' => $outletName,
             'revenue' => 0.0,
             'cover' => 0,
@@ -390,6 +429,28 @@ class OpexOutletAnalyticsService
             'total_spend' => 0.0,
             'spend_ratio_percent' => null,
             'net' => 0.0,
+        ], $this->emptyCogsFlat());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyCogsFlat(): array
+    {
+        return [
+            'cogs_pct' => null,
+            'cogs_aktual' => null,
+            'cogs_pembanding' => null,
+            'cogs_foods' => null,
+            'cogs_category_cost' => null,
+            'cogs_meal_employees' => null,
+            'cogs_pct_foods' => null,
+            'cogs_pct_pembanding' => null,
+            'cogs_pct_before_disc' => null,
+            'cogs_pct_deviasi' => null,
+            'cogs_deviasi' => null,
+            'cogs_within_toleransi' => null,
+            'cogs' => null,
         ];
     }
 
@@ -428,6 +489,10 @@ class OpexOutletAnalyticsService
             'revenue', 'cover', 'avg_check', 'discount', 'discount_ratio_percent',
             'gsr_ro', 'retail_food', 'retail_non_food', 'petty_cash',
             'total_spend', 'spend_ratio_percent', 'net',
+            'cogs_pct', 'cogs_aktual', 'cogs_pembanding', 'cogs_foods',
+            'cogs_category_cost', 'cogs_meal_employees',
+            'cogs_pct_foods', 'cogs_pct_pembanding', 'cogs_pct_before_disc',
+            'cogs_pct_deviasi', 'cogs_deviasi',
         ];
         $out = [];
         foreach ($keys as $key) {
@@ -584,14 +649,84 @@ class OpexOutletAnalyticsService
     }
 
     /**
+     * @param  array<string, mixed>  $delta
+     * @param  array<string, mixed>  $current
+     * @param  array<string, mixed>  $base
+     * @return array<string, mixed>
+     */
+    private function diagnoseCogsDriver(array $delta, array $current, array $base): array
+    {
+        $pctDelta = $delta['cogs_pct'] ?? null; // point difference (pp), not % change of %
+        // Prefer absolute pp change for % COGS: current - avg (already in delta['cogs_pct'])
+        $ppChange = $pctDelta;
+        $pctChangeOfPct = $delta['cogs_pct_pct'] ?? null;
+
+        $direction = 'flat';
+        if ($ppChange !== null) {
+            if ($ppChange > 0.3) {
+                $direction = 'up'; // COGS % naik = buruk
+            } elseif ($ppChange < -0.3) {
+                $direction = 'down'; // COGS % turun = baik
+            }
+        }
+
+        $components = [
+            ['key' => 'cogs_foods', 'label' => 'COGS Foods', 'delta' => (float) ($delta['cogs_foods'] ?? 0), 'pct' => $delta['cogs_foods_pct'] ?? null],
+            ['key' => 'cogs_category_cost', 'label' => 'Category Cost', 'delta' => (float) ($delta['cogs_category_cost'] ?? 0), 'pct' => $delta['cogs_category_cost_pct'] ?? null],
+            ['key' => 'cogs_meal_employees', 'label' => 'Meal Employees', 'delta' => (float) ($delta['cogs_meal_employees'] ?? 0), 'pct' => $delta['cogs_meal_employees_pct'] ?? null],
+        ];
+        usort($components, fn ($a, $b) => abs($b['delta']) <=> abs($a['delta']));
+        $top = $components[0] ?? null;
+
+        $aktualDelta = (float) ($delta['cogs_aktual'] ?? 0);
+        $pembandingDelta = (float) ($delta['cogs_pembanding'] ?? 0);
+
+        $label = match (true) {
+            $direction === 'up' && $aktualDelta > 0 => '% COGS naik: COGS Aktual meningkat vs rata-rata 3 bulan',
+            $direction === 'up' => '% COGS naik (tekanan cost vs sales after disc)',
+            $direction === 'down' && $aktualDelta < 0 => '% COGS membaik: COGS Aktual turun vs rata-rata 3 bulan',
+            $direction === 'down' => '% COGS membaik vs rata-rata 3 bulan',
+            default => '% COGS relatif stabil vs rata-rata 3 bulan',
+        };
+
+        $within = $current['cogs_within_toleransi'] ?? null;
+        $deviasi = $current['cogs_deviasi'] ?? null;
+        $pctDeviasi = $current['cogs_pct_deviasi'] ?? null;
+
+        return [
+            'direction' => $direction,
+            'label' => $label,
+            'cogs_pct_pp' => $ppChange !== null ? round((float) $ppChange, 2) : null,
+            'cogs_pct_change_pct' => $pctChangeOfPct,
+            'top_component' => $top['key'] ?? null,
+            'top_label' => $top['label'] ?? null,
+            'components' => $components,
+            'aktual_delta' => round($aktualDelta, 2),
+            'pembanding_delta' => round($pembandingDelta, 2),
+            'within_toleransi' => $within,
+            'deviasi' => $deviasi,
+            'pct_deviasi' => $pctDeviasi,
+            'headline' => sprintf(
+                '%% COGS after disc %s%% vs avg %s%% (%s pp). Aktual %s vs pembanding Δ %s.',
+                $current['cogs_pct'] ?? 'n/a',
+                $base['cogs_pct'] ?? 'n/a',
+                $this->fmtPct($ppChange !== null ? (float) $ppChange : null),
+                number_format((float) ($current['cogs_aktual'] ?? 0), 0, ',', '.'),
+                number_format((float) ($current['cogs_deviasi'] ?? 0), 0, ',', '.')
+            ),
+        ];
+    }
+
+    /**
      * @param  array<string, mixed>  $driver
      * @param  array<string, mixed>  $vs
      * @param  array<string, mixed>  $spendMix
      * @param  array<string, mixed>  $current
      * @param  array<string, mixed>  $avg
+     * @param  array<string, mixed>  $cogsDriver
      * @return list<array{headline: string, severity: string, category: string, detail: string}>
      */
-    private function composeFindings(array $driver, array $vs, array $spendMix, array $current, array $avg): array
+    private function composeFindings(array $driver, array $vs, array $spendMix, array $current, array $avg, array $cogsDriver = []): array
     {
         $findings = [];
         $severity = $driver['direction'] === 'down' ? 'critical' : ($driver['direction'] === 'up' ? 'positive' : 'info');
@@ -603,6 +738,31 @@ class OpexOutletAnalyticsService
                 .' Kontribusi Revenue ~'.$driver['revenue_share_pct']
                 .'%, Spend ~'.$driver['spend_share_pct'].'%.',
         ];
+
+        if (! empty($cogsDriver)) {
+            $cogsSeverity = match ($cogsDriver['direction'] ?? 'flat') {
+                'up' => 'warning',
+                'down' => 'positive',
+                default => 'info',
+            };
+            if (($cogsDriver['within_toleransi'] ?? null) === false) {
+                $cogsSeverity = 'critical';
+            }
+            $findings[] = [
+                'category' => 'cogs',
+                'severity' => $cogsSeverity,
+                'headline' => $cogsDriver['label'] ?? 'Analisa COGS',
+                'detail' => ($cogsDriver['headline'] ?? '')
+                    .(! empty($cogsDriver['top_label'])
+                        ? ' Komponen Δ terkuat: '.$cogsDriver['top_label'].'.'
+                        : '')
+                    .(($cogsDriver['within_toleransi'] ?? null) === false
+                        ? ' Deviasi di luar toleransi 2% COGS Aktual.'
+                        : (($cogsDriver['within_toleransi'] ?? null) === true
+                            ? ' Deviasi dalam toleransi 2%.'
+                            : '')),
+            ];
+        }
 
         $top = $spendMix['items'][0] ?? null;
         if ($top && abs((float) $top['delta']) > 0 && ($top['pct'] ?? 0) != 0) {
@@ -688,7 +848,8 @@ class OpexOutletAnalyticsService
         array $spendMix,
         array $findings,
         array $current,
-        array $avg
+        array $avg,
+        array $cogsDriver = []
     ): string {
         $lines = [];
         $lines[] = $driver['label'].'.';
@@ -703,13 +864,26 @@ class OpexOutletAnalyticsService
             $current['spend_ratio_percent'] ?? 'n/a'
         );
 
+        if (! empty($cogsDriver['label'])) {
+            $lines[] = $cogsDriver['label'].'. '
+                .sprintf(
+                    '%% COGS %s%% vs avg %s%% (%s pp).',
+                    $current['cogs_pct'] ?? 'n/a',
+                    $avg['cogs_pct'] ?? 'n/a',
+                    $this->fmtPct(isset($cogsDriver['cogs_pct_pp']) ? (float) $cogsDriver['cogs_pct_pp'] : null)
+                );
+            if (! empty($cogsDriver['top_label'])) {
+                $lines[] = 'Δ komponen COGS terkuat: '.$cogsDriver['top_label'].'.';
+            }
+        }
+
         if (! empty($spendMix['top_label'])) {
             $top = $spendMix['items'][0];
             $lines[] = 'Perubahan spend paling kuat di '.$top['label']
                 .' ('.$this->fmtPct($top['pct']).'%, share ~'.$top['share_of_spend_change_pct'].'%).';
         }
 
-        foreach (array_slice($findings, 1, 3) as $f) {
+        foreach (array_slice($findings, 1, 4) as $f) {
             $lines[] = '• '.$f['headline'].($f['detail'] ? ' — '.$f['detail'] : '');
         }
 

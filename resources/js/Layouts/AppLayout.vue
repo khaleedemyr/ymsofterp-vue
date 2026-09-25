@@ -366,6 +366,12 @@ const menuGroups = [
            
             //{ name: () => t('sidebar.menus.pr_payment'), icon: 'fa-solid fa-credit-card', route: '/payments', code: 'pr_payment' },
             {
+                name: () => t('sidebar.menus.report_rws_received'),
+                icon: 'fa-solid fa-circle-check',
+                route: '/report-rws-received',
+                code: 'report_rws_received',
+            },
+            {
                 name: () => t('sidebar.menus.report_penjualan_pivot_per_outlet_per_sub_kategori'),
                 icon: 'fa-solid fa-table-columns',
                 route: '/report-sales-pivot-per-outlet-sub-category',
