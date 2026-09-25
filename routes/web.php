@@ -2123,6 +2123,12 @@ Route::post('/retail-warehouse-sale', [App\Http\Controllers\RetailWarehouseSaleC
 Route::get('/retail-warehouse-sale/{id}', [App\Http\Controllers\RetailWarehouseSaleController::class, 'show'])->name('retail-warehouse-sale.show');
 Route::get('/retail-warehouse-sale/{id}/print', [App\Http\Controllers\RetailWarehouseSaleController::class, 'print'])->name('retail-warehouse-sale.print');
 
+// Report RWS belum diterima di Retail Food (semua outlet)
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('/report-rws-unreceived', [\App\Http\Controllers\RwsUnreceivedReportController::class, 'index'])->name('report-rws-unreceived.index');
+    Route::get('/report-rws-unreceived/export', [\App\Http\Controllers\RwsUnreceivedReportController::class, 'export'])->name('report-rws-unreceived.export');
+});
+
 // Sales Outlet Dashboard Routes
 Route::get('/sales-outlet-dashboard', [App\Http\Controllers\SalesOutletDashboardController::class, 'index'])->name('sales-outlet-dashboard.index');
 Route::get('/sales-outlet-dashboard/section', [App\Http\Controllers\SalesOutletDashboardController::class, 'getSection'])->name('sales-outlet-dashboard.section');

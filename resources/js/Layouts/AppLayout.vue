@@ -577,6 +577,12 @@ const menuGroups = [
                 code: 'report_retail_food',
             },
             {
+                name: () => t('sidebar.menus.report_rws_unreceived'),
+                icon: 'fa-solid fa-triangle-exclamation',
+                route: '/report-rws-unreceived',
+                code: 'report_rws_unreceived',
+            },
+            {
                 name: () => t('sidebar.menus.stock_opname_adjustment_report'),
                 icon: 'fa-solid fa-chart-bar',
                 route: '/stock-opname-adjustment-report',

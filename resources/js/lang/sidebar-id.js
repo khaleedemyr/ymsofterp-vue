@@ -239,6 +239,7 @@ export default {
     "packing_list": "Packing List",
     "delivery_order": "Delivery Order",
     "penjualan_warehouse_retail": "Penjualan Warehouse Retail",
+    "report_rws_unreceived": "Report RWS Belum Diterima",
     "warehouse_retail_food": "Warehouse Retail Food",
     "saldo_awal_stok": "Saldo Awal Stok",
     "laporan_stok_akhir": "Laporan Stok Akhir",
