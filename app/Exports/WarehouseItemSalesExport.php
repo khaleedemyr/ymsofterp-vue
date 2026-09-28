@@ -65,8 +65,8 @@ class WarehouseItemSalesItemsSheet implements FromArray, WithTitle, WithHeadings
             'Nilai Antar Gudang',
             'Qty Retail',
             'Nilai Retail',
-            'Qty Outlet GR',
-            'Nilai Outlet GR',
+            'Qty Distribusi Outlet',
+            'Nilai Distribusi Outlet',
         ];
     }
 
@@ -146,8 +146,8 @@ class WarehouseItemSalesMonthlySheet implements FromArray, WithTitle, WithHeadin
             'Nilai Antar Gudang',
             'Qty Retail',
             'Nilai Retail',
-            'Qty Outlet GR',
-            'Nilai Outlet GR',
+            'Qty Distribusi Outlet',
+            'Nilai Distribusi Outlet',
         ];
     }
 

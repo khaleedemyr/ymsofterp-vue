@@ -1659,50 +1659,58 @@ class WarehouseReportController extends Controller
 
     protected function fetchWarehouseItemSalesOutletGr(?string $dateFrom, ?string $dateTo, ?int $warehouseId, ?int $itemId, ?string $search)
     {
+        // Distribusi outlet = qty keluar gudang via Delivery Order + Packing List
+        // (bukan GR outlet — GR sering belum ada / packing_list_id=0 untuk supplier path)
         $qtySmallExpr = '
             CASE
-                WHEN i.unit_id = it.small_unit_id THEN COALESCE(i.received_qty, 0)
-                WHEN i.unit_id = it.medium_unit_id THEN COALESCE(i.received_qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
-                WHEN i.unit_id = it.large_unit_id THEN COALESCE(i.received_qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
-                ELSE COALESCE(i.received_qty, 0)
+                WHEN pli.unit = us.name OR pli.unit IS NULL OR pli.unit = "" THEN COALESCE(pli.qty, 0)
+                WHEN pli.unit = um.name THEN COALESCE(pli.qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN pli.unit = ul.name THEN COALESCE(pli.qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE COALESCE(pli.qty, 0)
             END
         ';
 
-        $query = DB::table('outlet_food_good_receives as gr')
-            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
-            ->join('items as it', 'i.item_id', '=', 'it.id')
-            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
-            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+        $query = DB::table('delivery_orders as do')
+            ->join('food_packing_lists as pl', function ($join) {
+                $join->on('do.packing_list_id', '=', 'pl.id')
+                    ->where('do.packing_list_id', '>', 0);
+            })
             ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
-            ->leftJoin('food_floor_order_items as fo', function ($join) {
-                $join->on('i.item_id', '=', 'fo.item_id')
-                    ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
-            })
-            ->whereNull('gr.deleted_at')
+            ->join('food_packing_list_items as pli', 'pl.id', '=', 'pli.packing_list_id')
+            ->join('food_floor_order_items as foi', 'pli.food_floor_order_item_id', '=', 'foi.id')
+            ->join('items as it', 'foi.item_id', '=', 'it.id')
+            ->leftJoin('units as us', 'it.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'it.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'it.large_unit_id', '=', 'ul.id')
+            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
                 DB::raw('COALESCE(u.name, "-") as unit_name'),
-                DB::raw("DATE_FORMAT(gr.receive_date, '%Y-%m') as month_key"),
+                DB::raw("DATE_FORMAT(do.created_at, '%Y-%m') as month_key"),
                 DB::raw("'outlet_gr' as source"),
                 DB::raw("SUM({$qtySmallExpr}) as qty_small"),
-                DB::raw('SUM(COALESCE(i.received_qty, 0) * COALESCE(fo.price, 0)) as value')
+                DB::raw("SUM(COALESCE(pli.qty, 0) * COALESCE(foi.price, 0)) as value")
             )
-            ->groupBy('it.id', 'it.name', 'u.name', DB::raw("DATE_FORMAT(gr.receive_date, '%Y-%m')"));
+            ->groupBy(
+                'it.id',
+                'it.name',
+                'u.name',
+                DB::raw("DATE_FORMAT(do.created_at, '%Y-%m')")
+            );
 
         if ($dateFrom) {
-            $query->whereDate('gr.receive_date', '>=', $dateFrom);
+            $query->whereDate('do.created_at', '>=', $dateFrom);
         }
         if ($dateTo) {
-            $query->whereDate('gr.receive_date', '<=', $dateTo);
+            $query->whereDate('do.created_at', '<=', $dateTo);
         }
         if ($warehouseId) {
             $query->where('w.id', $warehouseId);
         }
         if ($itemId) {
-            $query->where('i.item_id', $itemId);
+            $query->where('foi.item_id', $itemId);
         }
         if ($search) {
             $query->where('it.name', 'like', '%' . $search . '%');

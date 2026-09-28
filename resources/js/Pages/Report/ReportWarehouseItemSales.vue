@@ -3,7 +3,7 @@
     <div class="w-full min-h-screen bg-gray-50 py-4 px-4">
       <h1 class="text-2xl font-bold mb-2 text-gray-900">Track Penjualan Item Warehouse</h1>
       <p class="text-sm text-gray-500 mb-6">
-        Total &amp; tren bulanan dari penjualan antar gudang, retail warehouse, dan distribusi ke outlet (GR).
+        Total &amp; tren bulanan dari penjualan antar gudang, retail warehouse, dan distribusi ke outlet (Delivery Order).
       </p>
 
       <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-4 mb-6">
@@ -55,7 +55,7 @@
           </label>
           <label class="inline-flex items-center gap-2 text-sm text-gray-700">
             <input v-model="sources.outlet_gr" type="checkbox" class="rounded border-gray-300 text-blue-600" />
-            Outlet GR
+            Distribusi Outlet
           </label>
         </div>
 
@@ -109,7 +109,7 @@
             <div class="text-sm text-gray-500 mt-1">{{ formatRupiah(summary.retail_value) }}</div>
           </div>
           <div class="bg-white rounded-xl border border-amber-100 shadow-sm p-4">
-            <div class="text-xs font-semibold uppercase text-amber-600 mb-1">Outlet GR</div>
+            <div class="text-xs font-semibold uppercase text-amber-600 mb-1">Distribusi Outlet</div>
             <div class="text-2xl font-bold text-gray-900">{{ formatQty(summary.outlet_gr_qty) }}</div>
             <div class="text-sm text-gray-500 mt-1">{{ formatRupiah(summary.outlet_gr_value) }}</div>
           </div>
@@ -133,7 +133,7 @@
                 <th class="px-4 py-2 text-right border-b">Nilai Total</th>
                 <th class="px-4 py-2 text-right border-b">Qty Antar Gudang</th>
                 <th class="px-4 py-2 text-right border-b">Qty Retail</th>
-                <th class="px-4 py-2 text-right border-b">Qty Outlet GR</th>
+                <th class="px-4 py-2 text-right border-b">Qty Distribusi</th>
               </tr>
             </thead>
             <tbody>
@@ -163,7 +163,7 @@
                 <th class="px-4 py-2 text-right border-b">Nilai Total</th>
                 <th class="px-4 py-2 text-right border-b">Antar Gudang</th>
                 <th class="px-4 py-2 text-right border-b">Retail</th>
-                <th class="px-4 py-2 text-right border-b">Outlet GR</th>
+                <th class="px-4 py-2 text-right border-b">Distribusi</th>
               </tr>
             </thead>
             <tbody>
@@ -236,7 +236,7 @@ const canLoad = computed(() => Boolean(dateFrom.value && dateTo.value && sources
 const chartSeries = computed(() => [
   { name: 'Antar Gudang', data: props.monthly.map((m) => Number(m.antar_gudang_qty) || 0) },
   { name: 'Retail', data: props.monthly.map((m) => Number(m.retail_qty) || 0) },
-  { name: 'Outlet GR', data: props.monthly.map((m) => Number(m.outlet_gr_qty) || 0) },
+  { name: 'Distribusi Outlet', data: props.monthly.map((m) => Number(m.outlet_gr_qty) || 0) },
 ]);
 
 const chartOptions = computed(() => ({
