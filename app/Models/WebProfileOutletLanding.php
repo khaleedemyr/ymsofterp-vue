@@ -53,8 +53,9 @@ class WebProfileOutletLanding extends Model
             return false;
         }
 
+        $introPlain = trim(html_entity_decode(strip_tags((string) $this->intro_paragraph), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
         $hasText = trim((string) $this->headline) !== ''
-            || trim((string) $this->intro_paragraph) !== '';
+            || $introPlain !== '';
 
         return $hasText;
     }

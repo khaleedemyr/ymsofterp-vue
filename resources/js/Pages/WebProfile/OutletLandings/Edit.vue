@@ -4,6 +4,7 @@ import { Link, router, usePage } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import TextInput from '@/Components/TextInput.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import RichTextEditor from '@/Components/RichTextEditor.vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -178,12 +179,26 @@ function submit() {
             <TextInput v-model="form.headline" class="mt-1 w-full" />
           </div>
           <div>
-            <InputLabel value="Paragraf Intro (pisahkan paragraf dengan baris kosong)" />
-            <textarea v-model="form.intro_paragraph" rows="5" class="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
+            <InputLabel value="Paragraf Intro" />
+            <p class="mt-0.5 text-xs text-gray-500">Bisa bold, italic, alignment, dan list.</p>
+            <div class="mt-1">
+              <RichTextEditor
+                v-model="form.intro_paragraph"
+                min-height="160px"
+                placeholder="Tulis paragraf intro..."
+              />
+            </div>
           </div>
           <div>
             <InputLabel value="Paragraf Setelah Hero" />
-            <textarea v-model="form.secondary_paragraph" rows="4" class="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500" />
+            <p class="mt-0.5 text-xs text-gray-500">Bisa bold, italic, alignment, dan list.</p>
+            <div class="mt-1">
+              <RichTextEditor
+                v-model="form.secondary_paragraph"
+                min-height="140px"
+                placeholder="Tulis paragraf setelah hero..."
+              />
+            </div>
           </div>
         </div>
 

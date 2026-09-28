@@ -187,8 +187,8 @@ class WebProfileOutletLandingController extends Controller
             'slug' => $slug,
             'is_active' => $request->boolean('is_active'),
             'headline' => $request->input('headline'),
-            'intro_paragraph' => $request->input('intro_paragraph'),
-            'secondary_paragraph' => $request->input('secondary_paragraph'),
+            'intro_paragraph' => $this->sanitizeLandingHtml($request->input('intro_paragraph')),
+            'secondary_paragraph' => $this->sanitizeLandingHtml($request->input('secondary_paragraph')),
             'book_now_label' => $request->input('book_now_label') ?: 'BOOK NOW',
             'see_map_label' => $request->input('see_map_label') ?: 'SEE MAP',
             'hero_image' => $heroPath,
@@ -257,10 +257,8 @@ class WebProfileOutletLandingController extends Controller
         $address = $this->resolveOutletAddress($outlet);
         $mapUrl = $this->resolveOutletMapUrl($outlet);
 
-        $intro = trim((string) $landing->intro_paragraph);
-        $introParagraphs = $intro !== ''
-            ? preg_split("/\n\s*\n/", $intro) ?: []
-            : [];
+        $introHtml = $this->sanitizeLandingHtml($landing->intro_paragraph);
+        $secondaryHtml = $this->sanitizeLandingHtml($landing->secondary_paragraph);
 
         $gallery = collect($brand?->galleries ?? [])
             ->filter(fn ($row) => is_string($row->image) && trim($row->image) !== '')
@@ -274,8 +272,10 @@ class WebProfileOutletLandingController extends Controller
             'slug' => $landing->slug,
             'outlet_name' => (string) ($outlet?->nama_outlet ?? ''),
             'headline' => $landing->headline,
-            'intro_paragraphs' => array_values(array_filter(array_map('trim', $introParagraphs))),
-            'secondary_paragraph' => $landing->secondary_paragraph,
+            'intro_html' => $introHtml !== '' ? $introHtml : null,
+            'intro_paragraphs' => $this->htmlToPlainParagraphs($introHtml),
+            'secondary_paragraph' => $secondaryHtml !== '' ? $secondaryHtml : null,
+            'secondary_html' => $secondaryHtml !== '' ? $secondaryHtml : null,
             'hero_image_url' => $landing->hero_image ? $this->publicStorageUrl($landing->hero_image) : null,
             'logo_url' => $logoPath ? $this->publicStorageUrl($logoPath) : null,
             'gallery_images' => $gallery,
@@ -289,6 +289,98 @@ class WebProfileOutletLandingController extends Controller
             'book_now_outlet_id' => (int) $landing->outlet_id,
             'google_reviews' => $this->resolveGoogleReviews($outlet),
         ];
+    }
+
+    private function sanitizeLandingHtml(?string $html): string
+    {
+        $html = trim((string) $html);
+        if ($html === '') {
+            return '';
+        }
+
+        // Konten lama plain text → simpan apa adanya (nest akan fallback ke paragraph split)
+        if (! preg_match('/<[a-z][\s\S]*>/i', $html)) {
+            return $html;
+        }
+
+        $allowed = '<p><br><strong><b><em><i><u><ul><ol><li><div><span>';
+        $clean = strip_tags($html, $allowed);
+
+        // Hapus event handler / javascript:
+        $clean = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $clean) ?? $clean;
+        $clean = preg_replace('/\shref\s*=\s*([\'"])\s*javascript:[^\'"]*\1/i', '', $clean) ?? $clean;
+
+        // Batasi atribut style hanya text-align
+        $clean = preg_replace_callback(
+            '/\sstyle\s*=\s*([\'"])(.*?)\1/i',
+            function ($matches) {
+                $style = strtolower((string) $matches[2]);
+                if (preg_match('/text-align\s*:\s*(left|center|right|justify)\b/', $style, $align)) {
+                    return ' style="text-align: '.$align[1].';"';
+                }
+
+                return '';
+            },
+            $clean
+        ) ?? $clean;
+
+        // Buang atribut selain style / align (legacy)
+        $clean = preg_replace_callback(
+            '/<(p|div|span|li|ul|ol|strong|b|em|i|u|br)(\s[^>]*)?>/i',
+            function ($matches) {
+                $tag = strtolower($matches[1]);
+                $attrs = (string) ($matches[2] ?? '');
+                $keep = [];
+
+                if (preg_match('/\sstyle\s*=\s*([\'"])(.*?)\1/i', $attrs, $styleMatch)) {
+                    $keep[] = 'style="'.$styleMatch[2].'"';
+                }
+                if (preg_match('/\salign\s*=\s*([\'"])?(left|center|right|justify)\1?/i', $attrs, $alignMatch)) {
+                    $keep[] = 'style="text-align: '.strtolower($alignMatch[2]).'"';
+                }
+
+                if ($tag === 'br') {
+                    return '<br>';
+                }
+
+                return $keep ? '<'.$tag.' '.implode(' ', $keep).'>' : '<'.$tag.'>';
+            },
+            $clean
+        ) ?? $clean;
+
+        $clean = trim($clean);
+        if (in_array($clean, ['<br>', '<p><br></p>', '<div><br></div>', '<p></p>'], true)) {
+            return '';
+        }
+
+        return $clean;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function htmlToPlainParagraphs(string $html): array
+    {
+        $html = trim($html);
+        if ($html === '') {
+            return [];
+        }
+
+        if (! preg_match('/<[a-z][\s\S]*>/i', $html)) {
+            $parts = preg_split("/\n\s*\n/", $html) ?: [];
+
+            return array_values(array_filter(array_map('trim', $parts)));
+        }
+
+        $normalized = preg_replace('/<\/(p|div|li)>/i', "\n\n", $html) ?? $html;
+        $normalized = preg_replace('/<br\s*\/?>/i', "\n", $normalized) ?? $normalized;
+        $plain = html_entity_decode(strip_tags($normalized), ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $parts = preg_split("/\n\s*\n/", $plain) ?: [];
+
+        return array_values(array_filter(array_map(
+            static fn ($part) => trim(preg_replace("/[ \t]+/", ' ', str_replace("\n", ' ', $part)) ?? ''),
+            $parts
+        )));
     }
 
     /**
