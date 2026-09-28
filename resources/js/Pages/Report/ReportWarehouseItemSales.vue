@@ -152,14 +152,17 @@
         <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
           <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-3">
             <h2 class="text-lg font-semibold text-gray-900">Detail per Item</h2>
-            <span class="text-xs text-gray-500">{{ items.length }} item</span>
+            <span class="text-xs text-gray-500">{{ items.length }} item · qty utama = unit kecil</span>
           </div>
           <table class="min-w-full text-sm">
             <thead>
               <tr class="bg-yellow-200 text-gray-900">
                 <th class="px-4 py-2 text-left border-b">Item</th>
                 <th class="px-4 py-2 text-left border-b">Unit</th>
-                <th class="px-4 py-2 text-right border-b">Qty Total</th>
+                <th class="px-4 py-2 text-left border-b">Konversi</th>
+                <th class="px-4 py-2 text-right border-b">Qty Small</th>
+                <th class="px-4 py-2 text-right border-b">Qty Medium</th>
+                <th class="px-4 py-2 text-right border-b">Qty Large</th>
                 <th class="px-4 py-2 text-right border-b">Nilai Total</th>
                 <th class="px-4 py-2 text-right border-b">Antar Gudang</th>
                 <th class="px-4 py-2 text-right border-b">Retail</th>
@@ -168,12 +171,44 @@
             </thead>
             <tbody>
               <tr v-if="!items.length">
-                <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data untuk filter ini.</td>
+                <td colspan="10" class="text-center py-10 text-gray-400">Tidak ada data untuk filter ini.</td>
               </tr>
               <tr v-for="row in items" :key="row.item_id" class="border-b border-gray-100 hover:bg-gray-50">
                 <td class="px-4 py-2">{{ row.item_name }}</td>
-                <td class="px-4 py-2">{{ row.unit_name }}</td>
-                <td class="px-4 py-2 text-right font-medium">{{ formatQty(row.qty) }}</td>
+                <td class="px-4 py-2 whitespace-nowrap">
+                  <div class="font-medium text-gray-900">{{ row.unit_small || row.unit_name || '-' }}</div>
+                  <div class="text-xs text-gray-500" v-if="row.unit_medium && row.unit_medium !== '-' && row.unit_medium !== row.unit_small">
+                    Med: {{ row.unit_medium }}
+                  </div>
+                  <div class="text-xs text-gray-500" v-if="row.unit_large && row.unit_large !== '-' && row.unit_large !== row.unit_medium && row.unit_large !== row.unit_small">
+                    Lrg: {{ row.unit_large }}
+                  </div>
+                </td>
+                <td class="px-4 py-2 text-xs text-gray-600 whitespace-nowrap">
+                  <div>{{ row.conversion_label || '-' }}</div>
+                  <div class="text-gray-400 mt-0.5" v-if="hasConversion(row)">
+                    small×{{ formatConv(row.small_conversion_qty) }}
+                    <span v-if="Number(row.medium_conversion_qty) !== 1"> · med×{{ formatConv(row.medium_conversion_qty) }}</span>
+                  </div>
+                </td>
+                <td class="px-4 py-2 text-right font-medium whitespace-nowrap">
+                  {{ formatQty(row.qty_small ?? row.qty) }}
+                  <span class="text-xs text-gray-500 ml-1">{{ row.unit_small || row.unit_name }}</span>
+                </td>
+                <td class="px-4 py-2 text-right whitespace-nowrap">
+                  <template v-if="showMediumQty(row)">
+                    {{ formatQty(row.qty_medium) }}
+                    <span class="text-xs text-gray-500 ml-1">{{ row.unit_medium }}</span>
+                  </template>
+                  <span v-else class="text-gray-300">-</span>
+                </td>
+                <td class="px-4 py-2 text-right whitespace-nowrap">
+                  <template v-if="showLargeQty(row)">
+                    {{ formatQty(row.qty_large) }}
+                    <span class="text-xs text-gray-500 ml-1">{{ row.unit_large }}</span>
+                  </template>
+                  <span v-else class="text-gray-300">-</span>
+                </td>
                 <td class="px-4 py-2 text-right">{{ formatRupiah(row.value) }}</td>
                 <td class="px-4 py-2 text-right">{{ formatQty(row.antar_gudang_qty) }}</td>
                 <td class="px-4 py-2 text-right">{{ formatQty(row.retail_qty) }}</td>
@@ -328,6 +363,30 @@ function formatQty(value) {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(Number(value) || 0);
+}
+
+function formatConv(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '-';
+  return new Intl.NumberFormat('id-ID', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 4,
+  }).format(n);
+}
+
+function hasConversion(row) {
+  return Number(row?.small_conversion_qty) > 1 || Number(row?.medium_conversion_qty) > 1;
+}
+
+function showMediumQty(row) {
+  return row?.unit_medium && row.unit_medium !== '-' && row.unit_medium !== row.unit_small;
+}
+
+function showLargeQty(row) {
+  return row?.unit_large
+    && row.unit_large !== '-'
+    && row.unit_large !== row.unit_small
+    && row.unit_large !== row.unit_medium;
 }
 
 function formatMonth(monthKey) {

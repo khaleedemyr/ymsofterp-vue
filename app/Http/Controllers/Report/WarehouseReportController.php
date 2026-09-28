@@ -1542,19 +1542,18 @@ class WarehouseReportController extends Controller
         $query = DB::table('warehouse_sales as ws')
             ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
             ->join('items as it', 'wsi.item_id', '=', 'it.id')
-            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
+            ->leftJoin('units as us', 'it.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'it.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'it.large_unit_id', '=', 'ul.id')
             ->whereNull('ws.deleted_at')
             ->whereNull('wsi.deleted_at')
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                DB::raw('COALESCE(u.name, "-") as unit_name'),
-                DB::raw("DATE_FORMAT(ws.date, '%Y-%m') as month_key"),
-                DB::raw("'antar_gudang' as source"),
-                DB::raw("SUM({$qtyExpr}) as qty_small"),
-                DB::raw('SUM(COALESCE(wsi.total, 0)) as value')
-            )
-            ->groupBy('it.id', 'it.name', 'u.name', DB::raw("DATE_FORMAT(ws.date, '%Y-%m')"));
+            ->select($this->warehouseItemSalesSelectColumns(
+                "DATE_FORMAT(ws.date, '%Y-%m')",
+                "'antar_gudang'",
+                "SUM({$qtyExpr})",
+                'SUM(COALESCE(wsi.total, 0))'
+            ))
+            ->groupBy($this->warehouseItemSalesGroupByColumns("DATE_FORMAT(ws.date, '%Y-%m')"));
 
         if ($dateFrom) {
             $query->whereDate('ws.date', '>=', $dateFrom);
@@ -1585,6 +1584,7 @@ class WarehouseReportController extends Controller
                 ELSE COALESCE(rwsi.qty, 0)
             END
         ';
+        $monthExpr = "DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m')";
 
         $normal = DB::table('retail_warehouse_sales as rws')
             ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
@@ -1592,44 +1592,29 @@ class WarehouseReportController extends Controller
             ->leftJoin('units as us', 'it.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'it.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'it.large_unit_id', '=', 'ul.id')
-            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                DB::raw('COALESCE(u.name, "-") as unit_name'),
-                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m') as month_key"),
-                DB::raw("'retail' as source"),
-                DB::raw("SUM({$qtySmallExpr}) as qty_small"),
-                DB::raw('SUM(COALESCE(rwsi.subtotal, 0)) as value')
-            )
-            ->groupBy(
-                'it.id',
-                'it.name',
-                'u.name',
-                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m')")
-            );
+            ->select($this->warehouseItemSalesSelectColumns(
+                $monthExpr,
+                "'retail'",
+                "SUM({$qtySmallExpr})",
+                'SUM(COALESCE(rwsi.subtotal, 0))'
+            ))
+            ->groupBy($this->warehouseItemSalesGroupByColumns($monthExpr));
 
         $this->applyRetailWarehouseItemSalesFilters($normal, $dateFrom, $dateTo, $warehouseId, $itemId, $search, 'rwsi.item_id');
 
         $serial = DB::table('retail_warehouse_sales as rws')
             ->join('retail_warehouse_sale_serial_items as rwss', 'rws.id', '=', 'rwss.retail_warehouse_sale_id')
             ->join('items as it', 'rwss.item_id', '=', 'it.id')
-            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                DB::raw('COALESCE(u.name, "-") as unit_name'),
-                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m') as month_key"),
-                DB::raw("'retail' as source"),
-                DB::raw('SUM(COALESCE(rwss.qty_small, rwss.qty, 0)) as qty_small'),
-                DB::raw('SUM(COALESCE(rwss.subtotal, 0)) as value')
-            )
-            ->groupBy(
-                'it.id',
-                'it.name',
-                'u.name',
-                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m')")
-            );
+            ->leftJoin('units as us', 'it.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'it.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'it.large_unit_id', '=', 'ul.id')
+            ->select($this->warehouseItemSalesSelectColumns(
+                $monthExpr,
+                "'retail'",
+                'SUM(COALESCE(rwss.qty_small, rwss.qty, 0))',
+                'SUM(COALESCE(rwss.subtotal, 0))'
+            ))
+            ->groupBy($this->warehouseItemSalesGroupByColumns($monthExpr));
 
         $this->applyRetailWarehouseItemSalesFilters($serial, $dateFrom, $dateTo, $warehouseId, $itemId, $search, 'rwss.item_id');
 
@@ -1669,6 +1654,7 @@ class WarehouseReportController extends Controller
                 ELSE COALESCE(pli.qty, 0)
             END
         ';
+        $monthExpr = "DATE_FORMAT(do.created_at, '%Y-%m')";
 
         $query = DB::table('delivery_orders as do')
             ->join('food_packing_lists as pl', function ($join) {
@@ -1683,22 +1669,13 @@ class WarehouseReportController extends Controller
             ->leftJoin('units as us', 'it.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'it.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'it.large_unit_id', '=', 'ul.id')
-            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
-            ->select(
-                'it.id as item_id',
-                'it.name as item_name',
-                DB::raw('COALESCE(u.name, "-") as unit_name'),
-                DB::raw("DATE_FORMAT(do.created_at, '%Y-%m') as month_key"),
-                DB::raw("'outlet_gr' as source"),
-                DB::raw("SUM({$qtySmallExpr}) as qty_small"),
-                DB::raw("SUM(COALESCE(pli.qty, 0) * COALESCE(foi.price, 0)) as value")
-            )
-            ->groupBy(
-                'it.id',
-                'it.name',
-                'u.name',
-                DB::raw("DATE_FORMAT(do.created_at, '%Y-%m')")
-            );
+            ->select($this->warehouseItemSalesSelectColumns(
+                $monthExpr,
+                "'outlet_gr'",
+                "SUM({$qtySmallExpr})",
+                'SUM(COALESCE(pli.qty, 0) * COALESCE(foi.price, 0))'
+            ))
+            ->groupBy($this->warehouseItemSalesGroupByColumns($monthExpr));
 
         if ($dateFrom) {
             $query->whereDate('do.created_at', '>=', $dateFrom);
@@ -1717,6 +1694,69 @@ class WarehouseReportController extends Controller
         }
 
         return $query->get();
+    }
+
+    /**
+     * Shared SELECT columns for warehouse item sales sources.
+     */
+    protected function warehouseItemSalesSelectColumns(string $monthExpr, string $sourceLiteral, string $qtyExpr, string $valueExpr): array
+    {
+        return [
+            'it.id as item_id',
+            'it.name as item_name',
+            DB::raw('COALESCE(us.name, "-") as unit_name'),
+            DB::raw('COALESCE(us.name, "-") as unit_small'),
+            DB::raw('COALESCE(um.name, "-") as unit_medium'),
+            DB::raw('COALESCE(ul.name, "-") as unit_large'),
+            DB::raw('COALESCE(NULLIF(it.small_conversion_qty, 0), 1) as small_conversion_qty'),
+            DB::raw('COALESCE(NULLIF(it.medium_conversion_qty, 0), 1) as medium_conversion_qty'),
+            DB::raw("{$monthExpr} as month_key"),
+            DB::raw("{$sourceLiteral} as source"),
+            DB::raw("{$qtyExpr} as qty_small"),
+            DB::raw("{$valueExpr} as value"),
+        ];
+    }
+
+    /**
+     * Shared GROUP BY columns for warehouse item sales sources.
+     */
+    protected function warehouseItemSalesGroupByColumns(string $monthExpr): array
+    {
+        return [
+            'it.id',
+            'it.name',
+            'us.name',
+            'um.name',
+            'ul.name',
+            'it.small_conversion_qty',
+            'it.medium_conversion_qty',
+            DB::raw($monthExpr),
+        ];
+    }
+
+    protected function buildUnitConversionLabel(?string $small, ?string $medium, ?string $large, float $smallConv, float $mediumConv): string
+    {
+        $fmt = function (float $n): string {
+            $formatted = number_format($n, 4, '.', '');
+            $formatted = rtrim(rtrim($formatted, '0'), '.');
+            return $formatted === '' ? '0' : $formatted;
+        };
+
+        $small = $small && $small !== '-' ? $small : null;
+        $medium = $medium && $medium !== '-' ? $medium : null;
+        $large = $large && $large !== '-' ? $large : null;
+        $parts = [];
+
+        if ($medium && $small && $medium !== $small) {
+            $parts[] = "1 {$medium} = {$fmt($smallConv)} {$small}";
+        }
+        if ($large && $medium && $large !== $medium) {
+            $parts[] = "1 {$large} = {$fmt($mediumConv)} {$medium}";
+        } elseif ($large && $small && (!$medium || $medium === $small) && $large !== $small) {
+            $parts[] = "1 {$large} = {$fmt($smallConv * $mediumConv)} {$small}";
+        }
+
+        return $parts ? implode(' · ', $parts) : '-';
     }
 
     /**
@@ -1790,11 +1830,32 @@ class WarehouseReportController extends Controller
 
             if ($itemId > 0) {
                 if (!isset($itemMap[$itemId])) {
+                    $smallConv = max(1.0, (float) ($row->small_conversion_qty ?? 1));
+                    $mediumConv = max(1.0, (float) ($row->medium_conversion_qty ?? 1));
+                    $unitSmall = $row->unit_small ?? $row->unit_name ?? '-';
+                    $unitMedium = $row->unit_medium ?? '-';
+                    $unitLarge = $row->unit_large ?? '-';
+
                     $itemMap[$itemId] = [
                         'item_id' => $itemId,
                         'item_name' => $row->item_name,
-                        'unit_name' => $row->unit_name ?: '-',
+                        'unit_name' => $unitSmall ?: '-',
+                        'unit_small' => $unitSmall ?: '-',
+                        'unit_medium' => $unitMedium ?: '-',
+                        'unit_large' => $unitLarge ?: '-',
+                        'small_conversion_qty' => $smallConv,
+                        'medium_conversion_qty' => $mediumConv,
+                        'conversion_label' => $this->buildUnitConversionLabel(
+                            $unitSmall,
+                            $unitMedium,
+                            $unitLarge,
+                            $smallConv,
+                            $mediumConv
+                        ),
                         'qty' => 0.0,
+                        'qty_small' => 0.0,
+                        'qty_medium' => 0.0,
+                        'qty_large' => 0.0,
                         'value' => 0.0,
                         'antar_gudang_qty' => 0.0,
                         'antar_gudang_value' => 0.0,
@@ -1805,6 +1866,7 @@ class WarehouseReportController extends Controller
                     ];
                 }
                 $itemMap[$itemId]['qty'] += $qty;
+                $itemMap[$itemId]['qty_small'] += $qty;
                 $itemMap[$itemId]['value'] += $value;
                 if ($source === 'antar_gudang') {
                     $itemMap[$itemId]['antar_gudang_qty'] += $qty;
@@ -1829,12 +1891,29 @@ class WarehouseReportController extends Controller
             return $m;
         }, $monthlyMap));
 
+        $skipRoundKeys = [
+            'item_id', 'item_name', 'unit_name', 'unit_small', 'unit_medium', 'unit_large', 'conversion_label',
+        ];
+
         $items = array_values($itemMap);
         usort($items, fn ($a, $b) => strcmp((string) $a['item_name'], (string) $b['item_name']));
-        $items = array_map(function ($item) {
+        $items = array_map(function ($item) use ($skipRoundKeys) {
+            $smallConv = max(1.0, (float) ($item['small_conversion_qty'] ?? 1));
+            $mediumConv = max(1.0, (float) ($item['medium_conversion_qty'] ?? 1));
+            $qtySmall = (float) ($item['qty_small'] ?? $item['qty'] ?? 0);
+            $item['qty_small'] = round($qtySmall, 2);
+            $item['qty'] = round($qtySmall, 2);
+            $item['qty_medium'] = round($qtySmall / $smallConv, 4);
+            $item['qty_large'] = round($qtySmall / ($smallConv * $mediumConv), 4);
+
             foreach ($item as $k => $v) {
-                if (is_float($v) || (is_numeric($v) && $k !== 'item_id')) {
-                    if ($k !== 'item_id' && $k !== 'item_name' && $k !== 'unit_name') {
+                if (in_array($k, $skipRoundKeys, true)) {
+                    continue;
+                }
+                if (is_float($v) || is_numeric($v)) {
+                    if (in_array($k, ['qty_medium', 'qty_large', 'small_conversion_qty', 'medium_conversion_qty'], true)) {
+                        $item[$k] = round((float) $v, 4);
+                    } else {
                         $item[$k] = round((float) $v, 2);
                     }
                 }
