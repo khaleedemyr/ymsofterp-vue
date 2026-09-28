@@ -95,22 +95,38 @@
         <div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
           <div class="bg-white rounded-xl border border-blue-100 shadow-sm p-4">
             <div class="text-xs font-semibold uppercase text-blue-600 mb-1">Total Qty</div>
-            <div class="text-2xl font-bold text-gray-900">{{ formatQty(summary.total_qty) }}</div>
+            <div class="text-2xl font-bold text-gray-900">
+              {{ formatQty(summary.total_qty) }}
+              <span class="text-base font-semibold text-gray-500 ml-1">{{ summaryUnitSmall }}</span>
+            </div>
+            <div class="text-sm text-gray-500 mt-1" v-if="summaryMediumLabel">≈ {{ summaryMediumLabel }}</div>
             <div class="text-sm text-gray-500 mt-1">{{ formatRupiah(summary.total_value) }}</div>
           </div>
           <div class="bg-white rounded-xl border border-indigo-100 shadow-sm p-4">
             <div class="text-xs font-semibold uppercase text-indigo-600 mb-1">Antar Gudang</div>
-            <div class="text-2xl font-bold text-gray-900">{{ formatQty(summary.antar_gudang_qty) }}</div>
+            <div class="text-2xl font-bold text-gray-900">
+              {{ formatQty(summary.antar_gudang_qty) }}
+              <span class="text-base font-semibold text-gray-500 ml-1">{{ summaryUnitSmall }}</span>
+            </div>
+            <div class="text-sm text-gray-500 mt-1" v-if="summarySourceMedium(summary.antar_gudang_qty)">≈ {{ summarySourceMedium(summary.antar_gudang_qty) }}</div>
             <div class="text-sm text-gray-500 mt-1">{{ formatRupiah(summary.antar_gudang_value) }}</div>
           </div>
           <div class="bg-white rounded-xl border border-emerald-100 shadow-sm p-4">
             <div class="text-xs font-semibold uppercase text-emerald-600 mb-1">Retail</div>
-            <div class="text-2xl font-bold text-gray-900">{{ formatQty(summary.retail_qty) }}</div>
+            <div class="text-2xl font-bold text-gray-900">
+              {{ formatQty(summary.retail_qty) }}
+              <span class="text-base font-semibold text-gray-500 ml-1">{{ summaryUnitSmall }}</span>
+            </div>
+            <div class="text-sm text-gray-500 mt-1" v-if="summarySourceMedium(summary.retail_qty)">≈ {{ summarySourceMedium(summary.retail_qty) }}</div>
             <div class="text-sm text-gray-500 mt-1">{{ formatRupiah(summary.retail_value) }}</div>
           </div>
           <div class="bg-white rounded-xl border border-amber-100 shadow-sm p-4">
             <div class="text-xs font-semibold uppercase text-amber-600 mb-1">Distribusi Outlet</div>
-            <div class="text-2xl font-bold text-gray-900">{{ formatQty(summary.outlet_gr_qty) }}</div>
+            <div class="text-2xl font-bold text-gray-900">
+              {{ formatQty(summary.outlet_gr_qty) }}
+              <span class="text-base font-semibold text-gray-500 ml-1">{{ summaryUnitSmall }}</span>
+            </div>
+            <div class="text-sm text-gray-500 mt-1" v-if="summarySourceMedium(summary.outlet_gr_qty)">≈ {{ summarySourceMedium(summary.outlet_gr_qty) }}</div>
             <div class="text-sm text-gray-500 mt-1">{{ formatRupiah(summary.outlet_gr_value) }}</div>
           </div>
         </div>
@@ -180,7 +196,7 @@
                   <div class="text-xs text-gray-500" v-if="row.unit_medium && row.unit_medium !== '-' && row.unit_medium !== row.unit_small">
                     Med: {{ row.unit_medium }}
                   </div>
-                  <div class="text-xs text-gray-500" v-if="row.unit_large && row.unit_large !== '-' && row.unit_large !== row.unit_medium && row.unit_large !== row.unit_small">
+                  <div class="text-xs text-gray-500" v-if="row.unit_large && row.unit_large !== '-' && row.unit_large !== row.unit_small">
                     Lrg: {{ row.unit_large }}
                   </div>
                 </td>
@@ -267,6 +283,47 @@ const sourcesParam = computed(() => {
 });
 
 const canLoad = computed(() => Boolean(dateFrom.value && dateTo.value && sourcesParam.value));
+
+const summaryUnitMeta = computed(() => {
+  const list = props.items || [];
+  if (!list.length) {
+    return { unitSmall: 'unit kecil', unitMedium: null, smallConv: 1, mediumConv: 1 };
+  }
+  if (list.length === 1) {
+    const row = list[0];
+    return {
+      unitSmall: row.unit_small || row.unit_name || 'unit kecil',
+      unitMedium: showMediumQty(row) ? row.unit_medium : null,
+      smallConv: Math.max(1, Number(row.small_conversion_qty) || 1),
+      mediumConv: Math.max(1, Number(row.medium_conversion_qty) || 1),
+    };
+  }
+  const units = [...new Set(list.map((i) => i.unit_small || i.unit_name).filter(Boolean))];
+  return {
+    unitSmall: units.length === 1 ? units[0] : 'unit kecil',
+    unitMedium: null,
+    smallConv: 1,
+    mediumConv: 1,
+  };
+});
+
+const summaryUnitSmall = computed(() => summaryUnitMeta.value.unitSmall);
+
+const summaryMediumLabel = computed(() => {
+  const meta = summaryUnitMeta.value;
+  if (!meta.unitMedium || !props.summary) return '';
+  const qtyMed = Number(props.summary.total_qty || 0) / meta.smallConv;
+  if (!qtyMed) return '';
+  return `${formatQty(qtyMed)} ${meta.unitMedium}`;
+});
+
+function summarySourceMedium(qtySmall) {
+  const meta = summaryUnitMeta.value;
+  if (!meta.unitMedium) return '';
+  const n = Number(qtySmall || 0);
+  if (!n) return '';
+  return `${formatQty(n / meta.smallConv)} ${meta.unitMedium}`;
+}
 
 const chartSeries = computed(() => [
   { name: 'Antar Gudang', data: props.monthly.map((m) => Number(m.antar_gudang_qty) || 0) },
@@ -379,14 +436,12 @@ function hasConversion(row) {
 }
 
 function showMediumQty(row) {
-  return row?.unit_medium && row.unit_medium !== '-' && row.unit_medium !== row.unit_small;
+  return Boolean(row?.unit_medium && row.unit_medium !== '-' && row.unit_medium !== row.unit_small);
 }
 
 function showLargeQty(row) {
-  return row?.unit_large
-    && row.unit_large !== '-'
-    && row.unit_large !== row.unit_small
-    && row.unit_large !== row.unit_medium;
+  // Tampilkan large meski namanya sama dengan medium (banyak item Pack/Pack)
+  return Boolean(row?.unit_large && row.unit_large !== '-' && row.unit_large !== row.unit_small);
 }
 
 function formatMonth(monthKey) {
