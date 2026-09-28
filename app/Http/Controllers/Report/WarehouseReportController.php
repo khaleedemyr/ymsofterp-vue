@@ -32,6 +32,8 @@ use Inertia\Inertia;
  * - warehouseSalesDetail: Warehouse sales detail API
  * - warehouseDetailPdf: Export warehouse detail to PDF
  * - warehouseDetailExcel: Export warehouse detail to Excel
+ * - reportWarehouseItemSales: Track item sales from antar gudang + retail + outlet GR
+ * - exportWarehouseItemSales: Export warehouse item sales tracking to Excel
  */
 class WarehouseReportController extends Controller
 {
@@ -1420,5 +1422,426 @@ class WarehouseReportController extends Controller
             Log::error('Warehouse Detail Excel error: ' . $e->getMessage());
             return response()->json(['error' => 'Terjadi kesalahan saat generate Excel: ' . $e->getMessage()], 500);
         }
+    }
+
+    /**
+     * Track Penjualan Item Warehouse
+     *
+     * Aggregate qty/value from antar gudang, retail warehouse sale, and outlet GR.
+     */
+    public function reportWarehouseItemSales(Request $request)
+    {
+        $warehouses = $this->getCachedWarehouses();
+        $items = DB::table('items')
+            ->where('status', 'active')
+            ->select('id', 'name')
+            ->orderBy('name')
+            ->get();
+
+        $filters = [
+            'dateFrom' => $request->input('dateFrom', ''),
+            'dateTo' => $request->input('dateTo', ''),
+            'warehouse_id' => $request->input('warehouse_id', ''),
+            'item_id' => $request->input('item_id', ''),
+            'sources' => $request->input('sources', 'antar_gudang,retail,outlet_gr'),
+            'search' => $request->input('search', ''),
+        ];
+
+        $shouldLoad = $request->filled('dateFrom') || $request->filled('dateTo') || $request->boolean('load');
+
+        if (!$shouldLoad) {
+            return Inertia::render('Report/ReportWarehouseItemSales', [
+                'warehouses' => $warehouses,
+                'itemOptions' => $items,
+                'summary' => null,
+                'monthly' => [],
+                'items' => [],
+                'filters' => $filters,
+                'loaded' => false,
+            ]);
+        }
+
+        $aggregated = $this->buildWarehouseItemSalesData($request);
+
+        return Inertia::render('Report/ReportWarehouseItemSales', [
+            'warehouses' => $warehouses,
+            'itemOptions' => $items,
+            'summary' => $aggregated['summary'],
+            'monthly' => $aggregated['monthly'],
+            'items' => $aggregated['items'],
+            'filters' => $filters,
+            'loaded' => true,
+        ]);
+    }
+
+    /**
+     * Export Track Penjualan Item Warehouse to Excel
+     */
+    public function exportWarehouseItemSales(Request $request)
+    {
+        if (!$request->filled('dateFrom') && !$request->filled('dateTo')) {
+            return redirect()->back()->with('error', 'Pilih rentang tanggal terlebih dahulu.');
+        }
+
+        $aggregated = $this->buildWarehouseItemSalesData($request);
+
+        return \Maatwebsite\Excel\Facades\Excel::download(
+            new \App\Exports\WarehouseItemSalesExport(
+                $aggregated['items'],
+                $aggregated['monthly'],
+                $aggregated['summary'],
+                [
+                    'dateFrom' => $request->input('dateFrom'),
+                    'dateTo' => $request->input('dateTo'),
+                    'warehouse_id' => $request->input('warehouse_id'),
+                    'item_id' => $request->input('item_id'),
+                    'sources' => $request->input('sources', 'antar_gudang,retail,outlet_gr'),
+                ]
+            ),
+            'Track_Penjualan_Item_Warehouse_' . ($request->dateFrom ?: 'all') . '_' . ($request->dateTo ?: 'all') . '.xlsx'
+        );
+    }
+
+    /**
+     * Build aggregated warehouse item sales from 3 sources.
+     *
+     * @return array{summary: array, monthly: array, items: array}
+     */
+    protected function buildWarehouseItemSalesData(Request $request): array
+    {
+        $dateFrom = $request->input('dateFrom');
+        $dateTo = $request->input('dateTo');
+        $warehouseId = $request->filled('warehouse_id') ? (int) $request->warehouse_id : null;
+        $itemId = $request->filled('item_id') ? (int) $request->item_id : null;
+        $search = $request->input('search');
+
+        $enabledSources = array_filter(array_map('trim', explode(',', (string) $request->input('sources', 'antar_gudang,retail,outlet_gr'))));
+        if (empty($enabledSources)) {
+            $enabledSources = ['antar_gudang', 'retail', 'outlet_gr'];
+        }
+
+        $rows = collect();
+
+        if (in_array('antar_gudang', $enabledSources, true)) {
+            $rows = $rows->merge($this->fetchWarehouseItemSalesAntarGudang($dateFrom, $dateTo, $warehouseId, $itemId, $search));
+        }
+        if (in_array('retail', $enabledSources, true)) {
+            $rows = $rows->merge($this->fetchWarehouseItemSalesRetail($dateFrom, $dateTo, $warehouseId, $itemId, $search));
+        }
+        if (in_array('outlet_gr', $enabledSources, true)) {
+            $rows = $rows->merge($this->fetchWarehouseItemSalesOutletGr($dateFrom, $dateTo, $warehouseId, $itemId, $search));
+        }
+
+        return $this->aggregateWarehouseItemSalesRows($rows);
+    }
+
+    protected function fetchWarehouseItemSalesAntarGudang(?string $dateFrom, ?string $dateTo, ?int $warehouseId, ?int $itemId, ?string $search)
+    {
+        $qtyExpr = 'COALESCE(wsi.qty_small, 0)';
+
+        $query = DB::table('warehouse_sales as ws')
+            ->join('warehouse_sale_items as wsi', 'ws.id', '=', 'wsi.warehouse_sale_id')
+            ->join('items as it', 'wsi.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
+            ->whereNull('ws.deleted_at')
+            ->whereNull('wsi.deleted_at')
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                DB::raw('COALESCE(u.name, "-") as unit_name'),
+                DB::raw("DATE_FORMAT(ws.date, '%Y-%m') as month_key"),
+                DB::raw("'antar_gudang' as source"),
+                DB::raw("SUM({$qtyExpr}) as qty_small"),
+                DB::raw('SUM(COALESCE(wsi.total, 0)) as value')
+            )
+            ->groupBy('it.id', 'it.name', 'u.name', DB::raw("DATE_FORMAT(ws.date, '%Y-%m')"));
+
+        if ($dateFrom) {
+            $query->whereDate('ws.date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('ws.date', '<=', $dateTo);
+        }
+        if ($warehouseId) {
+            $query->where('ws.source_warehouse_id', $warehouseId);
+        }
+        if ($itemId) {
+            $query->where('wsi.item_id', $itemId);
+        }
+        if ($search) {
+            $query->where('it.name', 'like', '%' . $search . '%');
+        }
+
+        return $query->get();
+    }
+
+    protected function fetchWarehouseItemSalesRetail(?string $dateFrom, ?string $dateTo, ?int $warehouseId, ?int $itemId, ?string $search)
+    {
+        $qtySmallExpr = '
+            CASE
+                WHEN rwsi.unit = us.name OR rwsi.unit IS NULL OR rwsi.unit = "" THEN COALESCE(rwsi.qty, 0)
+                WHEN rwsi.unit = um.name THEN COALESCE(rwsi.qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN rwsi.unit = ul.name THEN COALESCE(rwsi.qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE COALESCE(rwsi.qty, 0)
+            END
+        ';
+
+        $normal = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_items as rwsi', 'rws.id', '=', 'rwsi.retail_warehouse_sale_id')
+            ->join('items as it', 'rwsi.item_id', '=', 'it.id')
+            ->leftJoin('units as us', 'it.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'it.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'it.large_unit_id', '=', 'ul.id')
+            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                DB::raw('COALESCE(u.name, "-") as unit_name'),
+                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m') as month_key"),
+                DB::raw("'retail' as source"),
+                DB::raw("SUM({$qtySmallExpr}) as qty_small"),
+                DB::raw('SUM(COALESCE(rwsi.subtotal, 0)) as value')
+            )
+            ->groupBy(
+                'it.id',
+                'it.name',
+                'u.name',
+                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m')")
+            );
+
+        $this->applyRetailWarehouseItemSalesFilters($normal, $dateFrom, $dateTo, $warehouseId, $itemId, $search, 'rwsi.item_id');
+
+        $serial = DB::table('retail_warehouse_sales as rws')
+            ->join('retail_warehouse_sale_serial_items as rwss', 'rws.id', '=', 'rwss.retail_warehouse_sale_id')
+            ->join('items as it', 'rwss.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                DB::raw('COALESCE(u.name, "-") as unit_name'),
+                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m') as month_key"),
+                DB::raw("'retail' as source"),
+                DB::raw('SUM(COALESCE(rwss.qty_small, rwss.qty, 0)) as qty_small'),
+                DB::raw('SUM(COALESCE(rwss.subtotal, 0)) as value')
+            )
+            ->groupBy(
+                'it.id',
+                'it.name',
+                'u.name',
+                DB::raw("DATE_FORMAT(COALESCE(rws.sale_date, DATE(rws.created_at)), '%Y-%m')")
+            );
+
+        $this->applyRetailWarehouseItemSalesFilters($serial, $dateFrom, $dateTo, $warehouseId, $itemId, $search, 'rwss.item_id');
+
+        return $normal->get()->merge($serial->get());
+    }
+
+    protected function applyRetailWarehouseItemSalesFilters($query, ?string $dateFrom, ?string $dateTo, ?int $warehouseId, ?int $itemId, ?string $search, string $itemColumn): void
+    {
+        $dateExpr = 'COALESCE(rws.sale_date, DATE(rws.created_at))';
+
+        if ($dateFrom) {
+            $query->whereRaw("{$dateExpr} >= ?", [$dateFrom]);
+        }
+        if ($dateTo) {
+            $query->whereRaw("{$dateExpr} <= ?", [$dateTo]);
+        }
+        if ($warehouseId) {
+            $query->where('rws.warehouse_id', $warehouseId);
+        }
+        if ($itemId) {
+            $query->where($itemColumn, $itemId);
+        }
+        if ($search) {
+            $query->where('it.name', 'like', '%' . $search . '%');
+        }
+    }
+
+    protected function fetchWarehouseItemSalesOutletGr(?string $dateFrom, ?string $dateTo, ?int $warehouseId, ?int $itemId, ?string $search)
+    {
+        $qtySmallExpr = '
+            CASE
+                WHEN i.unit_id = it.small_unit_id THEN COALESCE(i.received_qty, 0)
+                WHEN i.unit_id = it.medium_unit_id THEN COALESCE(i.received_qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1)
+                WHEN i.unit_id = it.large_unit_id THEN COALESCE(i.received_qty, 0) * COALESCE(NULLIF(it.small_conversion_qty, 0), 1) * COALESCE(NULLIF(it.medium_conversion_qty, 0), 1)
+                ELSE COALESCE(i.received_qty, 0)
+            END
+        ';
+
+        $query = DB::table('outlet_food_good_receives as gr')
+            ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
+            ->join('items as it', 'i.item_id', '=', 'it.id')
+            ->leftJoin('units as u', 'it.small_unit_id', '=', 'u.id')
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->join('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
+            ->join('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
+            ->join('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
+            ->leftJoin('food_floor_order_items as fo', function ($join) {
+                $join->on('i.item_id', '=', 'fo.item_id')
+                    ->on('fo.floor_order_id', '=', 'pl.food_floor_order_id');
+            })
+            ->whereNull('gr.deleted_at')
+            ->select(
+                'it.id as item_id',
+                'it.name as item_name',
+                DB::raw('COALESCE(u.name, "-") as unit_name'),
+                DB::raw("DATE_FORMAT(gr.receive_date, '%Y-%m') as month_key"),
+                DB::raw("'outlet_gr' as source"),
+                DB::raw("SUM({$qtySmallExpr}) as qty_small"),
+                DB::raw('SUM(COALESCE(i.received_qty, 0) * COALESCE(fo.price, 0)) as value')
+            )
+            ->groupBy('it.id', 'it.name', 'u.name', DB::raw("DATE_FORMAT(gr.receive_date, '%Y-%m')"));
+
+        if ($dateFrom) {
+            $query->whereDate('gr.receive_date', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('gr.receive_date', '<=', $dateTo);
+        }
+        if ($warehouseId) {
+            $query->where('w.id', $warehouseId);
+        }
+        if ($itemId) {
+            $query->where('i.item_id', $itemId);
+        }
+        if ($search) {
+            $query->where('it.name', 'like', '%' . $search . '%');
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * @param \Illuminate\Support\Collection<int, object> $rows
+     * @return array{summary: array, monthly: array, items: array}
+     */
+    protected function aggregateWarehouseItemSalesRows($rows): array
+    {
+        $summary = [
+            'total_qty' => 0.0,
+            'total_value' => 0.0,
+            'antar_gudang_qty' => 0.0,
+            'antar_gudang_value' => 0.0,
+            'retail_qty' => 0.0,
+            'retail_value' => 0.0,
+            'outlet_gr_qty' => 0.0,
+            'outlet_gr_value' => 0.0,
+        ];
+
+        $monthlyMap = [];
+        $itemMap = [];
+
+        foreach ($rows as $row) {
+            $qty = (float) ($row->qty_small ?? 0);
+            $value = (float) ($row->value ?? 0);
+            $source = (string) ($row->source ?? '');
+            $month = (string) ($row->month_key ?? '');
+            $itemId = (int) ($row->item_id ?? 0);
+
+            $summary['total_qty'] += $qty;
+            $summary['total_value'] += $value;
+
+            if ($source === 'antar_gudang') {
+                $summary['antar_gudang_qty'] += $qty;
+                $summary['antar_gudang_value'] += $value;
+            } elseif ($source === 'retail') {
+                $summary['retail_qty'] += $qty;
+                $summary['retail_value'] += $value;
+            } elseif ($source === 'outlet_gr') {
+                $summary['outlet_gr_qty'] += $qty;
+                $summary['outlet_gr_value'] += $value;
+            }
+
+            if ($month !== '') {
+                if (!isset($monthlyMap[$month])) {
+                    $monthlyMap[$month] = [
+                        'month' => $month,
+                        'qty' => 0.0,
+                        'value' => 0.0,
+                        'antar_gudang_qty' => 0.0,
+                        'antar_gudang_value' => 0.0,
+                        'retail_qty' => 0.0,
+                        'retail_value' => 0.0,
+                        'outlet_gr_qty' => 0.0,
+                        'outlet_gr_value' => 0.0,
+                    ];
+                }
+                $monthlyMap[$month]['qty'] += $qty;
+                $monthlyMap[$month]['value'] += $value;
+                if ($source === 'antar_gudang') {
+                    $monthlyMap[$month]['antar_gudang_qty'] += $qty;
+                    $monthlyMap[$month]['antar_gudang_value'] += $value;
+                } elseif ($source === 'retail') {
+                    $monthlyMap[$month]['retail_qty'] += $qty;
+                    $monthlyMap[$month]['retail_value'] += $value;
+                } elseif ($source === 'outlet_gr') {
+                    $monthlyMap[$month]['outlet_gr_qty'] += $qty;
+                    $monthlyMap[$month]['outlet_gr_value'] += $value;
+                }
+            }
+
+            if ($itemId > 0) {
+                if (!isset($itemMap[$itemId])) {
+                    $itemMap[$itemId] = [
+                        'item_id' => $itemId,
+                        'item_name' => $row->item_name,
+                        'unit_name' => $row->unit_name ?: '-',
+                        'qty' => 0.0,
+                        'value' => 0.0,
+                        'antar_gudang_qty' => 0.0,
+                        'antar_gudang_value' => 0.0,
+                        'retail_qty' => 0.0,
+                        'retail_value' => 0.0,
+                        'outlet_gr_qty' => 0.0,
+                        'outlet_gr_value' => 0.0,
+                    ];
+                }
+                $itemMap[$itemId]['qty'] += $qty;
+                $itemMap[$itemId]['value'] += $value;
+                if ($source === 'antar_gudang') {
+                    $itemMap[$itemId]['antar_gudang_qty'] += $qty;
+                    $itemMap[$itemId]['antar_gudang_value'] += $value;
+                } elseif ($source === 'retail') {
+                    $itemMap[$itemId]['retail_qty'] += $qty;
+                    $itemMap[$itemId]['retail_value'] += $value;
+                } elseif ($source === 'outlet_gr') {
+                    $itemMap[$itemId]['outlet_gr_qty'] += $qty;
+                    $itemMap[$itemId]['outlet_gr_value'] += $value;
+                }
+            }
+        }
+
+        ksort($monthlyMap);
+        $monthly = array_values(array_map(function ($m) {
+            foreach ($m as $k => $v) {
+                if (is_float($v) || is_int($v)) {
+                    $m[$k] = round((float) $v, 2);
+                }
+            }
+            return $m;
+        }, $monthlyMap));
+
+        $items = array_values($itemMap);
+        usort($items, fn ($a, $b) => strcmp((string) $a['item_name'], (string) $b['item_name']));
+        $items = array_map(function ($item) {
+            foreach ($item as $k => $v) {
+                if (is_float($v) || (is_numeric($v) && $k !== 'item_id')) {
+                    if ($k !== 'item_id' && $k !== 'item_name' && $k !== 'unit_name') {
+                        $item[$k] = round((float) $v, 2);
+                    }
+                }
+            }
+            return $item;
+        }, $items);
+
+        foreach ($summary as $k => $v) {
+            $summary[$k] = round((float) $v, 2);
+        }
+
+        return [
+            'summary' => $summary,
+            'monthly' => $monthly,
+            'items' => $items,
+        ];
     }
 }

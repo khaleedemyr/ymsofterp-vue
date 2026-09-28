@@ -565,6 +565,12 @@ const menuGroups = [
                 code: 'report_sales_all_item_all_outlet',
             },
             {
+                name: () => t('sidebar.menus.track_penjualan_item_warehouse'),
+                icon: 'fa-solid fa-chart-line',
+                route: '/report-warehouse-item-sales',
+                code: 'report_warehouse_item_sales',
+            },
+            {
                 name: () => t('sidebar.menus.report_good_receive_outlet'),
                 icon: 'fa-solid fa-table-cells-large',
                 route: '/report-good-receive-outlet',

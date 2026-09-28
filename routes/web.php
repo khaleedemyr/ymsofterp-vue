@@ -1945,6 +1945,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/report-sales-per-tanggal', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPerTanggal'])->name('report.sales-per-tanggal');
     Route::get('/report-sales-all-item-all-outlet', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet');
     Route::get('/report-sales-all-item-all-outlet/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesAllItemAllOutlet'])->name('report.sales-all-item-all-outlet.export');
+    Route::get('/report-warehouse-item-sales', [\App\Http\Controllers\Report\WarehouseReportController::class, 'reportWarehouseItemSales'])->name('report.warehouse-item-sales');
+    Route::get('/report-warehouse-item-sales/export', [\App\Http\Controllers\Report\WarehouseReportController::class, 'exportWarehouseItemSales'])->name('report.warehouse-item-sales.export');
     Route::get('/report-sales-pivot-per-outlet-sub-category', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category');
 Route::get('/report-sales-pivot-per-outlet-sub-category/export', [\App\Http\Controllers\Report\SalesReportController::class, 'exportSalesPivotPerOutletSubCategory'])->name('report.sales-pivot-per-outlet-sub-category.export');
     Route::get('/report-sales-pivot-special', [\App\Http\Controllers\Report\SalesReportController::class, 'reportSalesPivotSpecial'])->name('report.sales-pivot-special');

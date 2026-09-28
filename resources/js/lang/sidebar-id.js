@@ -271,6 +271,7 @@ export default {
     "report_penjualan_per_category": "Laporan Penjualan per Kategori",
     "report_penjualan_per_tanggal": "Laporan Penjualan per Tanggal",
     "report_penjualan_all_item_ke_all_outlet": "Laporan Penjualan Semua Item ke Semua Outlet",
+    "track_penjualan_item_warehouse": "Track Penjualan Item Warehouse",
     "report_good_receive_outlet": "Laporan Penerimaan Barang Outlet",
     "report_retail_food_per_supplier": "Laporan Retail Food per Supplier",
     "stock_opname_adjustment_report": "Laporan Penyesuaian Stock Opname",

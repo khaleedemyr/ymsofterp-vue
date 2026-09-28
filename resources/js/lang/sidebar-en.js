@@ -271,6 +271,7 @@ export default {
     "report_penjualan_per_category": "Report Penjualan per Category",
     "report_penjualan_per_tanggal": "Report Penjualan per Tanggal",
     "report_penjualan_all_item_ke_all_outlet": "Report Penjualan All Item ke All Outlet",
+    "track_penjualan_item_warehouse": "Warehouse Item Sales Tracking",
     "report_good_receive_outlet": "Report Good Receive Outlet",
     "report_retail_food_per_supplier": "Report Retail Food per Supplier",
     "stock_opname_adjustment_report": "Stock Opname Adjustment Report",
