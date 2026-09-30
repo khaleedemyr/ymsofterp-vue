@@ -536,9 +536,9 @@ function reloadData() {
     }
   })
   
-  // Make request to server
+  // Make request to server (jangan preserveState supaya qty dari server selalu fresh)
   router.get('/outlet-inventory/stock-position', params, {
-    preserveState: true,
+    preserveState: false,
     preserveScroll: true,
     onSuccess: () => {
       loadingReload.value = false

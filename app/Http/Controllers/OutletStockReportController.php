@@ -560,8 +560,9 @@ class OutletStockReportController extends Controller
                 }
             }
             
-            // 10. Ambil semua current stock SEBELUM loop untuk menghindari N+1 query
+            // 10. Ambil semua current stock + saldo kartu terakhir SEBELUM loop (hindari N+1)
             $currentStocks = [];
+            $lastCardsByInv = [];
             if (!empty($inventoryItemIds)) {
                 $currentStocksData = DB::table('outlet_food_inventory_stocks')
                     ->where('id_outlet', $outletId)
@@ -571,6 +572,33 @@ class OutletStockReportController extends Controller
                     ->get()
                     ->keyBy('inventory_item_id');
                 $currentStocks = $currentStocksData->toArray();
+
+                $lastCardKeys = DB::table('outlet_food_inventory_cards')
+                    ->select(
+                        'inventory_item_id',
+                        DB::raw("MAX(CONCAT(DATE(`date`), ' ', LPAD(id, 20, '0'))) as max_key")
+                    )
+                    ->where('id_outlet', $outletId)
+                    ->where('warehouse_outlet_id', $warehouseOutletId)
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->groupBy('inventory_item_id')
+                    ->get();
+
+                if ($lastCardKeys->isNotEmpty()) {
+                    $lastCards = DB::table('outlet_food_inventory_cards as c')
+                        ->where('c.id_outlet', $outletId)
+                        ->where('c.warehouse_outlet_id', $warehouseOutletId)
+                        ->whereIn('c.inventory_item_id', $inventoryItemIds)
+                        ->whereRaw(
+                            "CONCAT(DATE(c.date), ' ', LPAD(c.id, 20, '0')) IN (" .
+                            $lastCardKeys->map(fn ($r) => '?')->implode(',') .
+                            ")",
+                            $lastCardKeys->pluck('max_key')->all()
+                        )
+                        ->get(['c.inventory_item_id', 'c.saldo_qty_small', 'c.saldo_qty_medium', 'c.saldo_qty_large', 'c.saldo_value'])
+                        ->keyBy('inventory_item_id');
+                    $lastCardsByInv = $lastCards->toArray();
+                }
             }
             
             foreach ($inventoryItems as $item) {
@@ -718,12 +746,25 @@ class OutletStockReportController extends Controller
                 $internalTransferInDisplay = $formatTypeData($itemInternalTransfer['internal_transfer_in']);
                 $internalTransferOutDisplay = $formatTypeData($itemInternalTransfer['internal_transfer_out']);
                 
-                // Ambil last stock (current stock) dari data yang sudah di-load sebelumnya
+                // Ambil last stock: utamakan saldo kartu terakhir (sinkron dengan kartu stok / laporan stok akhir)
                 $currentStock = $currentStocks[$item->inventory_item_id] ?? null;
-                
-                $lastQtySmall = $currentStock ? (float) ($currentStock->qty_small ?? 0) : 0;
-                $lastQtyMedium = $currentStock ? (float) ($currentStock->qty_medium ?? 0) : 0;
-                $lastQtyLarge = $currentStock ? (float) ($currentStock->qty_large ?? 0) : 0;
+                if (is_array($currentStock)) {
+                    $currentStock = (object) $currentStock;
+                }
+                $lastCard = $lastCardsByInv[$item->inventory_item_id] ?? null;
+                if (is_array($lastCard)) {
+                    $lastCard = (object) $lastCard;
+                }
+
+                $lastQtySmall = $lastCard
+                    ? (float) ($lastCard->saldo_qty_small ?? 0)
+                    : ($currentStock ? (float) ($currentStock->qty_small ?? 0) : 0);
+                $lastQtyMedium = $lastCard
+                    ? (float) ($lastCard->saldo_qty_medium ?? 0)
+                    : ($currentStock ? (float) ($currentStock->qty_medium ?? 0) : 0);
+                $lastQtyLarge = $lastCard
+                    ? (float) ($lastCard->saldo_qty_large ?? 0)
+                    : ($currentStock ? (float) ($currentStock->qty_large ?? 0) : 0);
                 
                 // Ambil MAC untuk last stock
                 $lastMacSmall = $currentStock ? (float) ($currentStock->last_cost_small ?? 0) : 0;

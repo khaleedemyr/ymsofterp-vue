@@ -25,6 +25,17 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
 
     public function collection()
     {
+        $latestCardKeys = DB::table('outlet_food_inventory_cards')
+            ->select(
+                'inventory_item_id',
+                'id_outlet',
+                'warehouse_outlet_id',
+                DB::raw("MAX(CONCAT(DATE(`date`), ' ', LPAD(id, 20, '0'))) as max_key")
+            )
+            ->when($this->outletId, fn ($q) => $q->where('id_outlet', $this->outletId))
+            ->when($this->warehouseOutletId, fn ($q) => $q->where('warehouse_outlet_id', $this->warehouseOutletId))
+            ->groupBy('inventory_item_id', 'id_outlet', 'warehouse_outlet_id');
+
         $query = DB::table('outlet_food_inventory_stocks as s')
             ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
             ->join('items as i', 'fi.item_id', '=', 'i.id')
@@ -34,16 +45,27 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
+            ->leftJoinSub($latestCardKeys, 'lck', function ($join) {
+                $join->on('lck.inventory_item_id', '=', 's.inventory_item_id')
+                    ->on('lck.id_outlet', '=', 's.id_outlet')
+                    ->on('lck.warehouse_outlet_id', '=', 's.warehouse_outlet_id');
+            })
+            ->leftJoin('outlet_food_inventory_cards as lc', function ($join) {
+                $join->on('lc.inventory_item_id', '=', 'lck.inventory_item_id')
+                    ->on('lc.id_outlet', '=', 'lck.id_outlet')
+                    ->on('lc.warehouse_outlet_id', '=', 'lck.warehouse_outlet_id')
+                    ->whereRaw("CONCAT(DATE(lc.date), ' ', LPAD(lc.id, 20, '0')) = lck.max_key");
+            })
             ->select(
                 'i.id as item_id',
                 'i.name as item_name',
                 'c.name as category_name',
                 'o.id_outlet as outlet_id',
                 'o.nama_outlet as outlet_name',
-                's.qty_small',
-                's.qty_medium',
-                's.qty_large',
-                's.value',
+                DB::raw('COALESCE(lc.saldo_qty_small, s.qty_small) as qty_small'),
+                DB::raw('COALESCE(lc.saldo_qty_medium, s.qty_medium) as qty_medium'),
+                DB::raw('COALESCE(lc.saldo_qty_large, s.qty_large) as qty_large'),
+                DB::raw('COALESCE(lc.saldo_value, s.value) as value'),
                 's.last_cost_small',
                 's.last_cost_medium',
                 's.last_cost_large',
@@ -59,7 +81,6 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
             ->orderBy('c.name')
             ->orderBy('i.name');
 
-        // Apply filters
         if ($this->outletId) {
             $query->where('s.id_outlet', $this->outletId);
         }
@@ -99,23 +120,22 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
     {
         return [
             $row->category_name ?? '-',
-            $row->item_name,
-            $row->outlet_name,
+            $row->item_name ?? '-',
+            $row->outlet_name ?? '-',
             $row->warehouse_outlet_name ?? '-',
-            $row->qty_small ? number_format($row->qty_small, 2, ',', '.') : '0,00',
-            $row->small_unit_name ?? '-',
-            $row->qty_medium ? number_format($row->qty_medium, 2, ',', '.') : '0,00',
-            $row->medium_unit_name ?? '-',
-            $row->qty_large ? number_format($row->qty_large, 2, ',', '.') : '0,00',
-            $row->large_unit_name ?? '-',
-            $row->updated_at ? \Carbon\Carbon::parse($row->updated_at)->format('d/m/Y H:i:s') : '-'
+            $row->qty_small !== null ? (float) $row->qty_small : 0,
+            $row->small_unit_name ?? '',
+            $row->qty_medium !== null ? (float) $row->qty_medium : 0,
+            $row->medium_unit_name ?? '',
+            $row->qty_large !== null ? (float) $row->qty_large : 0,
+            $row->large_unit_name ?? '',
+            $row->updated_at ? date('Y-m-d H:i:s', strtotime($row->updated_at)) : '-',
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
         return [
-            // Style the first row as bold text
             1 => ['font' => ['bold' => true]],
         ];
     }
@@ -123,18 +143,17 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
     public function columnWidths(): array
     {
         return [
-            'A' => 20, // Kategori
-            'B' => 30, // Nama Barang
-            'C' => 20, // Outlet
-            'D' => 20, // Warehouse Outlet
-            'E' => 15, // Qty Small
-            'F' => 15, // Unit Small
-            'G' => 15, // Qty Medium
-            'H' => 15, // Unit Medium
-            'I' => 15, // Qty Large
-            'J' => 15, // Unit Large
-            'K' => 20, // Tanggal Update
+            'A' => 20,
+            'B' => 40,
+            'C' => 20,
+            'D' => 20,
+            'E' => 12,
+            'F' => 12,
+            'G' => 12,
+            'H' => 12,
+            'I' => 12,
+            'J' => 12,
+            'K' => 20,
         ];
     }
 }
-
