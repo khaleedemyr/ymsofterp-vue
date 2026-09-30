@@ -53,10 +53,24 @@ class MemberController extends Controller
             }
         }
 
-        // Filter by point balance
+        // Filter by point balance (harus di SQL sebelum paginate)
         if ($request->filled('point_balance')) {
-            $pointFilter = $request->point_balance;
-            // We'll apply this filter after calculating point balance
+            switch ($request->point_balance) {
+                case 'positive':
+                    $query->where('just_points', '>', 0);
+                    break;
+                case 'negative':
+                    $query->where('just_points', '<', 0);
+                    break;
+                case 'zero':
+                    $query->where(function ($q) {
+                        $q->where('just_points', 0)->orWhereNull('just_points');
+                    });
+                    break;
+                case 'high':
+                    $query->where('just_points', '>=', 1000);
+                    break;
+            }
         }
 
         // Sort
@@ -72,11 +86,11 @@ class MemberController extends Controller
             'telepon' => 'mobile_phone',
             'status_aktif' => 'is_active',
             'tier' => 'member_level',
+            'point_balance' => 'just_points',
         ];
         
-        // Handle special sorting cases
-        if ($sort === 'point_balance' || $sort === 'spending_last_year' || $sort === 'total_spending' || $sort === 'last_spending') {
-            // For calculated fields, we'll sort after calculation
+        // Handle special sorting cases (spending dihitung setelah query)
+        if ($sort === 'spending_last_year' || $sort === 'total_spending' || $sort === 'last_spending') {
             $query->orderBy('created_at', $direction);
         } else {
             $sortField = $sortMap[$sort] ?? $sort;
@@ -189,12 +203,8 @@ class MemberController extends Controller
             return $member;
         });
 
-        // Sort by calculated fields if requested
-        if ($sort === 'point_balance') {
-            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
-                return $direction === 'desc' ? -$member->point_balance : $member->point_balance;
-            })->values());
-        } elseif ($sort === 'spending_last_year') {
+        // Sort by calculated fields if requested (point_balance sudah di-sort di SQL via just_points)
+        if ($sort === 'spending_last_year') {
             $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
                 return $direction === 'desc' ? -$member->spending_last_year : $member->spending_last_year;
             })->values());
@@ -212,37 +222,6 @@ class MemberController extends Controller
                 $tierValue = $tierOrder[strtolower($member->tier ?? 'silver')] ?? 1;
                 return $direction === 'desc' ? -$tierValue : $tierValue;
             })->values());
-        }
-
-        // Filter by point balance after calculation
-        if ($request->filled('point_balance')) {
-            $pointFilter = $request->point_balance;
-            $members->getCollection()->transform(function ($member) use ($pointFilter) {
-                $showMember = true;
-                
-                switch ($pointFilter) {
-                    case 'positive':
-                        $showMember = $member->point_balance > 0;
-                        break;
-                    case 'negative':
-                        $showMember = $member->point_balance < 0;
-                        break;
-                    case 'zero':
-                        $showMember = $member->point_balance == 0;
-                        break;
-                    case 'high':
-                        $showMember = $member->point_balance >= 1000;
-                        break;
-                }
-                
-                $member->show_in_filter = $showMember;
-                return $member;
-            });
-            
-            // Filter out members that don't match the criteria
-            $members->setCollection($members->getCollection()->filter(function ($member) {
-                return $member->show_in_filter;
-            }));
         }
 
         // Get statistics
@@ -1896,6 +1875,25 @@ class MemberController extends Controller
             $query->where('is_exclusive_member', true);
         }
 
+        if ($request->filled('point_balance')) {
+            switch ($request->point_balance) {
+                case 'positive':
+                    $query->where('just_points', '>', 0);
+                    break;
+                case 'negative':
+                    $query->where('just_points', '<', 0);
+                    break;
+                case 'zero':
+                    $query->where(function ($q) {
+                        $q->where('just_points', 0)->orWhereNull('just_points');
+                    });
+                    break;
+                case 'high':
+                    $query->where('just_points', '>=', 1000);
+                    break;
+            }
+        }
+
         $sort = $request->get('sort', 'created_at');
         $direction = $request->get('direction', 'desc');
         $sortMap = [
@@ -1906,9 +1904,10 @@ class MemberController extends Controller
             'telepon' => 'mobile_phone',
             'status_aktif' => 'is_active',
             'tier' => 'member_level',
+            'point_balance' => 'just_points',
         ];
 
-        if (in_array($sort, ['point_balance', 'spending_last_year', 'total_spending', 'last_spending'], true)) {
+        if (in_array($sort, ['spending_last_year', 'total_spending', 'last_spending'], true)) {
             $query->orderBy('created_at', $direction);
         } else {
             $sortField = $sortMap[$sort] ?? $sort;
@@ -2011,11 +2010,8 @@ class MemberController extends Controller
             return $member;
         });
 
-        if ($sort === 'point_balance') {
-            $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
-                return $direction === 'desc' ? -$member->point_balance : $member->point_balance;
-            })->values());
-        } elseif ($sort === 'spending_last_year') {
+        // point_balance sudah di-sort di SQL; filter point juga sudah di SQL
+        if ($sort === 'spending_last_year') {
             $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction) {
                 return $direction === 'desc' ? -$member->spending_last_year : $member->spending_last_year;
             })->values());
@@ -2032,32 +2028,6 @@ class MemberController extends Controller
             $members->setCollection($members->getCollection()->sortBy(function ($member) use ($direction, $tierOrder) {
                 $tierValue = $tierOrder[strtolower($member->tier ?? 'silver')] ?? 1;
                 return $direction === 'desc' ? -$tierValue : $tierValue;
-            })->values());
-        }
-
-        if ($request->filled('point_balance')) {
-            $pointFilter = $request->point_balance;
-            $members->getCollection()->transform(function ($member) use ($pointFilter) {
-                $showMember = true;
-                switch ($pointFilter) {
-                    case 'positive':
-                        $showMember = $member->point_balance > 0;
-                        break;
-                    case 'negative':
-                        $showMember = $member->point_balance < 0;
-                        break;
-                    case 'zero':
-                        $showMember = $member->point_balance == 0;
-                        break;
-                    case 'high':
-                        $showMember = $member->point_balance >= 1000;
-                        break;
-                }
-                $member->show_in_filter = $showMember;
-                return $member;
-            });
-            $members->setCollection($members->getCollection()->filter(function ($member) {
-                return $member->show_in_filter;
             })->values());
         }
 
