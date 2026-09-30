@@ -593,7 +593,7 @@ class OpexOutletDashboardService
                     - (float) ($inventoryMovement['purchased_excl_mcs_total'] ?? $inventoryMovement['purchased_total'] ?? 0),
                     2
                 ),
-                'cost_rnd' => $costRnd,
+                'cost_rnd' => round((float) ($cogsSummary['cost_rnd'] ?? 0), 2),
                 'outlet_transfer_net' => round((float) $outletTransferSummary['net_total'], 2),
                 'outlet_adjustment' => round((float) $adjustmentSummary['total'], 2),
                 'opname' => round((float) ($inventoryMovement['opname_total'] ?? 0), 2),
