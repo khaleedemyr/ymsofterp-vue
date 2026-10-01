@@ -14,7 +14,7 @@ const lightboxIndex = ref(0);
 const groupedItems = computed(() => {
   const map = new Map();
   for (const item of (props.audit?.items || []).filter((x) => {
-    if (x.result === 'NC') return true;
+    if (['NC', 'MN', 'MY'].includes(x.result)) return true;
     if (x.result !== 'C') return false;
     return String(x.comment || '').trim().length > 0;
   })) {
@@ -65,6 +65,8 @@ function resultBadgeClass(result) {
   if (result === 'C') return 'bg-emerald-100 text-emerald-700';
   if (result === 'NC') return 'bg-rose-100 text-rose-700';
   if (result === 'NA') return 'bg-slate-200 text-slate-700';
+  if (result === 'MN') return 'bg-amber-100 text-amber-800';
+  if (result === 'MY') return 'bg-rose-100 text-rose-700';
   return 'bg-amber-100 text-amber-700';
 }
 
@@ -155,28 +157,49 @@ function openPhotoLightbox(mediaList, media) {
               <thead class="bg-amber-900 text-white">
                 <tr>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase">Category</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Compliant</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Non-Compliant</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Non-Applicable</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Score</th>
+                  <template v-if="audit?.scoring_mode === 'c_mn_my'">
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">C</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">MN</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">MY</th>
+                  </template>
+                  <template v-else>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Compliant</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Non-Compliant</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Non-Applicable</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Score</th>
+                  </template>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 bg-white">
                 <tr v-for="row in audit?.summary_rows || []" :key="row.id">
                   <td class="px-3 py-2 text-sm font-semibold uppercase text-gray-900">{{ row.name }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_compliant }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ formatScore(row.score) }}</td>
+                  <template v-if="audit?.scoring_mode === 'c_mn_my'">
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.minor }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.major }}</td>
+                  </template>
+                  <template v-else>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ formatScore(row.score) }}</td>
+                  </template>
                 </tr>
               </tbody>
               <tfoot class="bg-amber-900 text-white">
                 <tr>
                   <td class="px-3 py-2 text-sm font-semibold">TOTAL</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_compliant || 0 }}</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_applicable || 0 }}</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(audit?.summary_total?.score || 0) }}</td>
+                  <template v-if="audit?.scoring_mode === 'c_mn_my'">
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.minor || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.major || 0 }}</td>
+                  </template>
+                  <template v-else>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_compliant || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_applicable || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(audit?.summary_total?.score || 0) }}</td>
+                  </template>
                 </tr>
               </tfoot>
             </table>
@@ -184,7 +207,7 @@ function openPhotoLightbox(mediaList, media) {
         </div>
       </div>
 
-      <div class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
+      <div v-if="audit?.scoring_mode !== 'c_mn_my'" class="mt-4 overflow-hidden rounded-lg border border-gray-200 bg-white">
         <div class="bg-gray-100 px-4 py-2 text-lg font-bold text-gray-900">AUDIT RESULT % :</div>
         <div class="divide-y divide-gray-200">
           <div class="grid grid-cols-12 items-center">
@@ -213,7 +236,7 @@ function openPhotoLightbox(mediaList, media) {
         </div>
       </div>
 
-      <div class="rounded-lg border border-gray-200 bg-white p-4">
+      <div v-if="audit?.scoring_mode !== 'c_mn_my'" class="rounded-lg border border-gray-200 bg-white p-4">
         <div class="text-sm font-semibold text-gray-500">Overall Audit Result</div>
         <div class="mt-2 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold" :class="overallAuditResult.className">
           <span>{{ overallAuditResult.label }}</span>

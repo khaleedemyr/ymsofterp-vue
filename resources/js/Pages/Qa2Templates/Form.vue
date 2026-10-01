@@ -17,6 +17,7 @@ const form = ref({
   audit_type: props.template?.audit_type || '',
   department: props.template?.department || '',
   version: props.template?.version || 1,
+  scoring_mode: props.template?.scoring_mode || 'legacy',
   status: props.template?.status || 'A',
   notes: props.template?.notes || '',
   parameter_ids: props.template?.parameter_ids || [],
@@ -353,6 +354,13 @@ function back() {
             <input v-model.number="form.version" type="number" min="1" class="w-full border rounded-xl px-3 py-2" />
           </div>
           <div>
+            <label class="block text-sm mb-1">Mode Penilaian</label>
+            <select v-model="form.scoring_mode" class="w-full border rounded-xl px-3 py-2">
+              <option value="legacy">C / NC / NA (Legacy)</option>
+              <option value="c_mn_my">C / MN / MY</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-sm mb-1">Status</label>
             <select v-model="form.status" class="w-full border rounded-xl px-3 py-2">
               <option value="A">Aktif</option>
@@ -451,7 +459,7 @@ function back() {
                     <div>
                       <p class="text-sm font-semibold text-gray-800">
                         {{ p.code }}
-                        <span class="text-blue-700 font-medium">(bobot {{ p.weight }})</span>
+                        <span v-if="form.scoring_mode === 'legacy'" class="text-blue-700 font-medium">(bobot {{ p.weight }})</span>
                       </p>
                       <p class="text-xs text-gray-600">{{ p.text }}</p>
                       <div class="mt-2 flex flex-wrap gap-1.5">

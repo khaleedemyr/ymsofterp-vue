@@ -31,6 +31,8 @@ const canFillCap = computed(() => !!props.permissions?.can_fill_cap);
 const canEditCap = computed(() => props.permissions?.can_edit_cap !== false && !!props.permissions?.can_fill_cap);
 const canSubmitCap = computed(() => !!props.permissions?.can_submit_cap);
 const capSubmissionStatus = computed(() => props.audit?.cap_submission_status || null);
+const scoringMode = computed(() => props.audit?.scoring_mode || 'legacy');
+const resultOptions = computed(() => scoringMode.value === 'c_mn_my' ? ['C', 'MN', 'MY'] : ['C', 'NC', 'NA']);
 
 const capApprovers = ref([]);
 const capApproverSearch = ref('');
@@ -45,7 +47,7 @@ const selectedAuditors = ref([]);
 const selectedAuditees = ref([]);
 const notes = ref('');
 const search = ref('');
-/** Filter hasil parameter di detail (draft): all | C | NC | NA | unset */
+/** Filter hasil parameter di detail (draft): all | selected result | unset */
 const resultFilter = ref('all');
 const saving = ref(false);
 const lastSavedAt = ref('');
@@ -116,7 +118,7 @@ const detailItems = computed(() => {
     list = items.value;
   } else {
     list = items.value.filter((item) => {
-      if (item.result === 'NC') return true;
+      if (['NC', 'MN', 'MY'].includes(item.result)) return true;
       if (item.result !== 'C') return false;
       return String(item.comment || '').trim().length > 0;
     });
@@ -141,13 +143,11 @@ const resultFilterCounts = computed(() => {
         return String(item.comment || '').trim().length > 0;
       });
 
-  return {
-    all: source.length,
-    C: source.filter((item) => item.result === 'C').length,
-    NC: source.filter((item) => item.result === 'NC').length,
-    NA: source.filter((item) => item.result === 'NA').length,
-    unset: source.filter((item) => !item.result).length,
-  };
+  return Object.fromEntries([
+    ['all', source.length],
+    ...resultOptions.value.map((result) => [result, source.filter((item) => item.result === result).length]),
+    ['unset', source.filter((item) => !item.result).length],
+  ]);
 });
 
 const groupedItems = computed(() => buildGroupedItems(detailItems.value));
@@ -216,6 +216,8 @@ const categorySummaryRows = computed(() => {
         compliant: 0,
         non_compliant: 0,
         non_applicable: 0,
+        minor: 0,
+        major: 0,
       });
     }
 
@@ -226,6 +228,10 @@ const categorySummaryRows = computed(() => {
       row.non_compliant += 1;
     } else if (item.result === 'NA') {
       row.non_applicable += 1;
+    } else if (item.result === 'MN') {
+      row.minor += 1;
+    } else if (item.result === 'MY') {
+      row.major += 1;
     }
   }
 
@@ -248,6 +254,8 @@ const summaryTotal = computed(() => {
       compliant: Number(props.audit.summary_total.compliant || 0),
       non_compliant: Number(props.audit.summary_total.non_compliant || 0),
       non_applicable: Number(props.audit.summary_total.non_applicable || 0),
+      minor: Number(props.audit.summary_total.minor || 0),
+      major: Number(props.audit.summary_total.major || 0),
       score: Number(props.audit.summary_total.score || 0),
     };
   }
@@ -256,12 +264,16 @@ const summaryTotal = computed(() => {
     compliant: 0,
     non_compliant: 0,
     non_applicable: 0,
+    minor: 0,
+    major: 0,
   };
 
   for (const row of categorySummaryRows.value) {
     total.compliant += row.compliant;
     total.non_compliant += row.non_compliant;
     total.non_applicable += row.non_applicable;
+    total.minor += row.minor;
+    total.major += row.major;
   }
 
   const denominator = total.compliant + total.non_compliant;
@@ -512,12 +524,18 @@ function parameterItemClass(item) {
   if (result === 'NA') {
     return 'border-slate-300 bg-slate-50 ring-1 ring-slate-200';
   }
+  if (result === 'MN') {
+    return 'border-amber-300 bg-amber-50 ring-1 ring-amber-200';
+  }
+  if (result === 'MY') {
+    return 'border-rose-300 bg-rose-50 ring-1 ring-rose-200';
+  }
   return 'border-amber-300 bg-amber-50/70 ring-1 ring-amber-200 border-dashed';
 }
 
 function parameterStatusLabel(item) {
   const result = item?.result;
-  if (result === 'C' || result === 'NC' || result === 'NA') {
+  if (resultOptions.value.includes(result)) {
     return result;
   }
   return 'Belum diisi';
@@ -533,6 +551,12 @@ function parameterStatusBadgeClass(item) {
   }
   if (result === 'NA') {
     return 'bg-slate-200 text-slate-700';
+  }
+  if (result === 'MN') {
+    return 'bg-amber-100 text-amber-800';
+  }
+  if (result === 'MY') {
+    return 'bg-rose-100 text-rose-700';
   }
   return 'bg-amber-100 text-amber-700';
 }
@@ -577,7 +601,7 @@ async function submitAudit() {
 
   const missing = items.value.filter((x) => !x.result).length;
   if (missing > 0) {
-    await Swal.fire('Validasi', `Masih ada ${missing} parameter belum diisi C/NC/NA.`, 'warning');
+    await Swal.fire('Validasi', `Masih ada ${missing} parameter belum diisi ${resultOptions.value.join('/')}.`, 'warning');
     return;
   }
 
@@ -1361,34 +1385,16 @@ function formatUserLabel(user) {
             Semua ({{ resultFilterCounts.all }})
           </button>
           <button
+            v-for="result in resultOptions"
+            :key="result"
             type="button"
             class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
-            :class="resultFilter === 'C'
-              ? 'bg-emerald-600 text-white'
-              : 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'"
-            @click="resultFilter = 'C'"
+            :class="resultFilter === result
+              ? parameterStatusBadgeClass({ result })
+              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'"
+            @click="resultFilter = result"
           >
-            C ({{ resultFilterCounts.C }})
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
-            :class="resultFilter === 'NC'
-              ? 'bg-rose-600 text-white'
-              : 'bg-rose-100 text-rose-700 hover:bg-rose-200'"
-            @click="resultFilter = 'NC'"
-          >
-            NC ({{ resultFilterCounts.NC }})
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center rounded-full px-2.5 py-1 font-semibold transition"
-            :class="resultFilter === 'NA'
-              ? 'bg-slate-700 text-white'
-              : 'bg-slate-200 text-slate-700 hover:bg-slate-300'"
-            @click="resultFilter = 'NA'"
-          >
-            NA ({{ resultFilterCounts.NA }})
+            {{ result }} ({{ resultFilterCounts[result] }})
           </button>
           <button
             type="button"
@@ -1456,17 +1462,9 @@ function formatUserLabel(user) {
                       <div>
                         <label class="mb-1 block text-xs font-semibold text-gray-500">Result</label>
                         <div class="flex flex-wrap gap-2">
-                          <label class="inline-flex items-center gap-2 rounded border px-2 py-1 text-sm">
-                            <input v-model="item.result" type="radio" value="C" :disabled="!canManage || audit.status !== 'draft'">
-                            C
-                          </label>
-                          <label class="inline-flex items-center gap-2 rounded border px-2 py-1 text-sm">
-                            <input v-model="item.result" type="radio" value="NC" :disabled="!canManage || audit.status !== 'draft'">
-                            NC
-                          </label>
-                          <label class="inline-flex items-center gap-2 rounded border px-2 py-1 text-sm">
-                            <input v-model="item.result" type="radio" value="NA" :disabled="!canManage || audit.status !== 'draft'">
-                            NA
+                          <label v-for="result in resultOptions" :key="result" class="inline-flex items-center gap-2 rounded border px-2 py-1 text-sm">
+                            <input v-model="item.result" type="radio" :value="result" :disabled="!canManage || audit.status !== 'draft'">
+                            {{ result }}
                           </label>
                         </div>
                       </div>
@@ -1660,24 +1658,38 @@ function formatUserLabel(user) {
                 <tr>
                   <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">No</th>
                   <th class="px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide">Category</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Compliant</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Non-Compliant</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Non-Applicable</th>
-                  <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Score</th>
+                  <template v-if="scoringMode === 'c_mn_my'">
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">C</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">MN</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">MY</th>
+                  </template>
+                  <template v-else>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Compliant</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Non-Compliant</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Non-Applicable</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Score</th>
+                  </template>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 bg-white">
                 <tr v-for="row in categorySummaryRows" :key="row.id">
                   <td class="px-3 py-2 text-center text-sm font-semibold text-gray-900">{{ row.no }}</td>
                   <td class="px-3 py-2 text-sm font-semibold uppercase text-gray-900">{{ row.name }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_compliant }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable }}</td>
-                  <td class="px-3 py-2 text-center text-sm text-gray-900">{{ formatScore(row.score) }}</td>
+                  <template v-if="scoringMode === 'c_mn_my'">
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.minor }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.major }}</td>
+                  </template>
+                  <template v-else>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ formatScore(row.score) }}</td>
+                  </template>
                 </tr>
 
                 <tr v-if="!categorySummaryRows.length">
-                  <td colspan="6" class="px-3 py-6 text-center text-sm text-gray-500">
+                  <td :colspan="scoringMode === 'c_mn_my' ? 5 : 6" class="px-3 py-6 text-center text-sm text-gray-500">
                     Belum ada data parameter untuk dirangkum.
                   </td>
                 </tr>
@@ -1685,17 +1697,24 @@ function formatUserLabel(user) {
               <tfoot class="bg-amber-900 text-white">
                 <tr>
                   <td class="px-3 py-2 text-center text-sm font-semibold" colspan="2">TOTAL</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.compliant }}</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_compliant }}</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_applicable }}</td>
-                  <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(summaryTotal.score) }}</td>
+                  <template v-if="scoringMode === 'c_mn_my'">
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.minor }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.major }}</td>
+                  </template>
+                  <template v-else>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_compliant }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_applicable }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ formatScore(summaryTotal.score) }}</td>
+                  </template>
                 </tr>
               </tfoot>
             </table>
           </div>
         </div>
 
-        <div class="mt-4 overflow-hidden rounded-lg border border-gray-200">
+        <div v-if="scoringMode !== 'c_mn_my'" class="mt-4 overflow-hidden rounded-lg border border-gray-200">
           <div class="bg-gray-100 px-4 py-2 text-lg font-bold text-gray-900">AUDIT RESULT % :</div>
           <div class="divide-y divide-gray-200">
             <div class="grid grid-cols-12 items-center">
@@ -1724,7 +1743,7 @@ function formatUserLabel(user) {
           </div>
         </div>
 
-        <div class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
+        <div v-if="scoringMode !== 'c_mn_my'" class="mt-4 rounded-lg border border-gray-200 bg-white p-4">
           <div class="text-sm font-semibold text-gray-500">Overall Audit Result</div>
           <div class="mt-2 inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold" :class="overallAuditResult.className">
             <span>{{ overallAuditResult.label }}</span>

@@ -44,6 +44,7 @@ class Qa2AuditController extends Controller
                 'a.audit_number',
                 'a.audit_datetime',
                 'a.status',
+                'a.scoring_mode',
                 'a.cap_submission_status',
                 'a.outlet_id',
                 'a.warehouse_division_id',
@@ -56,6 +57,8 @@ class Qa2AuditController extends Controller
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NA') as count_na")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'MN') as count_mn")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'MY') as count_my")
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC' and not exists (select 1 from qa2_audit_caps c where c.audit_item_id = i.id and c.action_plan is not null and c.action_plan <> '')) as count_nc_pending_cap")
             ->orderByDesc('a.id');
 
@@ -222,6 +225,10 @@ class Qa2AuditController extends Controller
         $exportRows = collect($rows)->map(fn ($row) => [
             'Outlet' => $row['outlet_name'],
             'Jumlah Audit' => $row['audit_count'],
+            'Mode Penilaian' => $row['scoring_mode'],
+            'C' => $row['count_c'],
+            'MN' => $row['count_mn'],
+            'MY' => $row['count_my'],
             'Rata-rata Audit Result (%)' => $row['avg_audit_result'],
         ]);
 
@@ -235,7 +242,7 @@ class Qa2AuditController extends Controller
             }
             public function headings(): array
             {
-                return ['Outlet', 'Jumlah Audit', 'Rata-rata Audit Result (%)'];
+                return ['Outlet', 'Jumlah Audit', 'Mode Penilaian', 'C', 'MN', 'MY', 'Rata-rata Audit Result (%)'];
             }
         }, $fileName);
     }
@@ -690,9 +697,12 @@ class Qa2AuditController extends Controller
                 'a.template_id',
                 't.name as template_name',
             ])
+            ->selectRaw("COALESCE(a.scoring_mode, 'legacy') as scoring_mode")
             ->selectRaw($this->formattedOutletNameSql() . ' as outlet_name')
             ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'C') as count_c")
-            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc");
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'NC') as count_nc")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'MN') as count_mn")
+            ->selectRaw("(select count(*) from qa2_audit_items i where i.audit_id = a.id and i.result = 'MY') as count_my");
 
         if (!$isHo) {
             $query->where('a.outlet_id', $userOutletId);
@@ -705,30 +715,36 @@ class Qa2AuditController extends Controller
                 return ((int) ($row->outlet_id ?? 0)) . ':' . $this->warehouseGroupKey($row);
             })
             ->map(function ($group) {
-                $avgScore = $group->avg(function ($r) {
+                $legacyRows = $group->where('scoring_mode', '!=', 'c_mn_my');
+                $avgScore = $legacyRows->isNotEmpty() ? $legacyRows->avg(function ($r) {
                     $c = (float) ($r->count_c ?? 0);
                     $nc = (float) ($r->count_nc ?? 0);
                     $den = $c + $nc;
                     return $den > 0 ? ($c / $den) * 100 : 0;
-                });
+                }) : null;
 
                 $first = $group->first();
                 $perTemplate = $group
-                    ->groupBy('template_id')
+                    ->groupBy(fn ($r) => $r->template_id . ':' . ($r->scoring_mode ?: 'legacy'))
                     ->map(function ($templateRows) {
-                        $avgTemplateScore = $templateRows->avg(function ($r) {
+                        $isNewMode = $templateRows->first()->scoring_mode === 'c_mn_my';
+                        $avgTemplateScore = !$isNewMode ? $templateRows->avg(function ($r) {
                             $c = (float) ($r->count_c ?? 0);
                             $nc = (float) ($r->count_nc ?? 0);
                             $den = $c + $nc;
                             return $den > 0 ? ($c / $den) * 100 : 0;
-                        });
+                        }) : null;
 
                         $templateFirst = $templateRows->first();
                         return [
                             'template_id' => (int) ($templateFirst->template_id ?? 0),
                             'template_name' => (string) ($templateFirst->template_name ?? '-'),
+                            'scoring_mode' => $isNewMode ? 'c_mn_my' : 'legacy',
                             'audit_count' => $templateRows->count(),
-                            'avg_audit_result' => round((float) ($avgTemplateScore ?? 0), 2),
+                            'count_c' => (int) $templateRows->sum('count_c'),
+                            'count_mn' => (int) $templateRows->sum('count_mn'),
+                            'count_my' => (int) $templateRows->sum('count_my'),
+                            'avg_audit_result' => $avgTemplateScore === null ? null : round((float) $avgTemplateScore, 2),
                         ];
                     })
                     ->sortBy('template_name')
@@ -739,7 +755,13 @@ class Qa2AuditController extends Controller
                     'outlet_id' => (int) ($first->outlet_id ?? 0),
                     'outlet_name' => (string) ($first->outlet_name ?? '-'),
                     'audit_count' => $group->count(),
-                    'avg_audit_result' => round((float) ($avgScore ?? 0), 2),
+                    'scoring_mode' => $legacyRows->isNotEmpty() && $group->contains(fn ($r) => $r->scoring_mode === 'c_mn_my')
+                        ? 'mixed'
+                        : ($legacyRows->isNotEmpty() ? 'legacy' : 'c_mn_my'),
+                    'count_c' => (int) $group->sum('count_c'),
+                    'count_mn' => (int) $group->sum('count_mn'),
+                    'count_my' => (int) $group->sum('count_my'),
+                    'avg_audit_result' => $avgScore === null ? null : round((float) $avgScore, 2),
                     'templates' => $perTemplate,
                 ];
             })
@@ -1106,6 +1128,9 @@ class Qa2AuditController extends Controller
             (int) $validated['outlet_id'],
             $validated['warehouse'] ?? null
         );
+        $scoringMode = DB::table('qa2_templates')
+            ->where('id', (int) $validated['template_id'])
+            ->value('scoring_mode') ?: 'legacy';
 
         // Tarik dulu data template dan pastikan ada item sebelum membuat draft audit.
         $templateRows = $this->getTemplateSeedRows((int) $validated['template_id']);
@@ -1115,7 +1140,7 @@ class Qa2AuditController extends Controller
             ]);
         }
 
-        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouse) {
+        $auditId = DB::transaction(function () use ($validated, $user, $templateRows, $warehouse, $scoringMode) {
             $auditId = DB::table('qa2_audits')->insertGetId([
                 'audit_number' => $this->generateAuditNumber(),
                 'audit_datetime' => now(),
@@ -1123,6 +1148,7 @@ class Qa2AuditController extends Controller
                 'warehouse' => $warehouse,
                 'warehouse_division_id' => null,
                 'template_id' => (int) $validated['template_id'],
+                'scoring_mode' => $scoringMode,
                 'created_by' => (int) $user->id,
                 'audit_time_start' => now(),
                 'status' => 'draft',
@@ -1260,7 +1286,7 @@ class Qa2AuditController extends Controller
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|integer|exists:qa2_audit_items,id',
-            'items.*.result' => 'nullable|in:C,NC,NA',
+            'items.*.result' => 'nullable|in:' . ($this->auditScoringMode($audit) === 'c_mn_my' ? 'C,MN,MY' : 'C,NC,NA'),
             'items.*.comment' => 'nullable|string',
             'items.*.due_date' => 'nullable|date',
         ]);
@@ -1327,13 +1353,22 @@ class Qa2AuditController extends Controller
         abort_if(!$audit, 404);
         abort_if($audit->status !== 'draft', 422, 'Audit sudah disubmit.');
 
+        $allowedResults = $this->auditScoringMode($audit) === 'c_mn_my' ? ['C', 'MN', 'MY'] : ['C', 'NC', 'NA'];
+        $invalid = DB::table('qa2_audit_items')
+            ->where('audit_id', $id)
+            ->whereNotNull('result')
+            ->whereNotIn('result', $allowedResults)
+            ->exists();
+        abort_if($invalid, 422, 'Terdapat hasil parameter yang tidak sesuai mode penilaian template.');
+
         $missing = DB::table('qa2_audit_items')
             ->where('audit_id', $id)
             ->whereNull('result')
             ->count();
 
         if ($missing > 0) {
-            return back()->withErrors(['submit' => 'Semua parameter harus diisi C/NC/NA sebelum submit.']);
+            $results = $this->auditScoringMode($audit) === 'c_mn_my' ? 'C/MN/MY' : 'C/NC/NA';
+            return back()->withErrors(['submit' => "Semua parameter harus diisi {$results} sebelum submit."]);
         }
 
         DB::table('qa2_audits')->where('id', $id)->update([
@@ -1966,6 +2001,7 @@ class Qa2AuditController extends Controller
                 'a.audit_time_start',
                 'a.audit_time_end',
                 'a.status',
+                'a.scoring_mode',
                 'a.cap_submission_status',
                 'a.cap_submitted_at',
                 'a.cap_submitted_by',
@@ -2022,6 +2058,8 @@ class Qa2AuditController extends Controller
             ->selectRaw("SUM(CASE WHEN i.result = 'C' THEN 1 ELSE 0 END) as compliant")
             ->selectRaw("SUM(CASE WHEN i.result = 'NC' THEN 1 ELSE 0 END) as non_compliant")
             ->selectRaw("SUM(CASE WHEN i.result = 'NA' THEN 1 ELSE 0 END) as non_applicable")
+            ->selectRaw("SUM(CASE WHEN i.result = 'MN' THEN 1 ELSE 0 END) as minor")
+            ->selectRaw("SUM(CASE WHEN i.result = 'MY' THEN 1 ELSE 0 END) as major")
             ->orderBy('name')
             ->get()
             ->map(function ($row, $index) {
@@ -2036,6 +2074,8 @@ class Qa2AuditController extends Controller
                     'compliant' => $compliant,
                     'non_compliant' => $nonCompliant,
                     'non_applicable' => (int) ($row->non_applicable ?? 0),
+                    'minor' => (int) ($row->minor ?? 0),
+                    'major' => (int) ($row->major ?? 0),
                     'score' => $score,
                     'no' => $index + 1,
                 ];
@@ -2047,6 +2087,8 @@ class Qa2AuditController extends Controller
             'compliant' => array_sum(array_column($summaryRows, 'compliant')),
             'non_compliant' => array_sum(array_column($summaryRows, 'non_compliant')),
             'non_applicable' => array_sum(array_column($summaryRows, 'non_applicable')),
+            'minor' => array_sum(array_column($summaryRows, 'minor')),
+            'major' => array_sum(array_column($summaryRows, 'major')),
         ];
         $summaryDenominator = $summaryTotal['compliant'] + $summaryTotal['non_compliant'];
         $summaryTotal['score'] = $summaryDenominator > 0
@@ -2139,6 +2181,7 @@ class Qa2AuditController extends Controller
             'audit_time_start' => $audit->audit_time_start,
             'audit_time_end' => $audit->audit_time_end,
             'status' => $audit->status,
+            'scoring_mode' => $this->auditScoringMode($audit),
             'cap_submission_status' => $audit->cap_submission_status ?? null,
             'cap_submitted_at' => $audit->cap_submitted_at ?? null,
             'cap_submitted_by' => $audit->cap_submitted_by ? (int) $audit->cap_submitted_by : null,
@@ -2158,6 +2201,11 @@ class Qa2AuditController extends Controller
             'summary_rows' => $summaryRows,
             'summary_total' => $summaryTotal,
         ];
+    }
+
+    private function auditScoringMode(object $audit): string
+    {
+        return ($audit->scoring_mode ?? null) === 'c_mn_my' ? 'c_mn_my' : 'legacy';
     }
 
     private function resolveUserAvatarUrl(?string $avatar): ?string

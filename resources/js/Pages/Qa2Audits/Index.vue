@@ -436,17 +436,29 @@ async function shareToWhatsApp(audit) {
                   <span v-else class="text-xs text-gray-400">-</span>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700">
+                  <template v-if="audit.scoring_mode === 'c_mn_my'">
+                    <span class="font-semibold text-emerald-600">{{ audit.count_c || 0 }}</span>
+                    /
+                    <span class="font-semibold text-amber-700">{{ audit.count_mn || 0 }}</span>
+                    /
+                    <span class="font-semibold text-rose-600">{{ audit.count_my || 0 }}</span>
+                  </template>
+                  <template v-else>
                   <span class="font-semibold text-emerald-600">{{ audit.count_c || 0 }}</span>
                   /
                   <span class="font-semibold text-rose-600">{{ audit.count_nc || 0 }}</span>
                   /
                   <span class="font-semibold text-slate-600">{{ audit.count_na || 0 }}</span>
+                  </template>
                 </td>
                 <td class="px-4 py-3 text-sm text-gray-700">
-                  <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="auditResult(audit).className">
-                    {{ auditResult(audit).label }}
-                  </span>
-                  <div class="mt-1 text-xs font-medium text-gray-500">{{ formatScore(auditResult(audit).score) }}</div>
+                  <template v-if="audit.scoring_mode === 'c_mn_my'">Count only</template>
+                  <template v-else>
+                    <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="auditResult(audit).className">
+                      {{ auditResult(audit).label }}
+                    </span>
+                    <div class="mt-1 text-xs font-medium text-gray-500">{{ formatScore(auditResult(audit).score) }}</div>
+                  </template>
                 </td>
                 <td class="px-4 py-3 text-sm">
                   <span

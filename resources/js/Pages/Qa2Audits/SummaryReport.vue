@@ -156,7 +156,8 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
               <tr>
                 <th class="px-4 py-3 text-left text-xs font-semibold uppercase text-gray-500">Outlet</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Jumlah Audit</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Rata-rata Audit Result</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">Mode / Audit Result</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold uppercase text-gray-500">C / MN / MY</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-100 bg-white">
@@ -168,21 +169,28 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
                   </td>
                   <td class="px-4 py-3 text-sm text-right text-gray-700">{{ row.audit_count }}</td>
                   <td class="px-4 py-3 text-sm text-right">
+                    <template v-if="row.avg_audit_result !== null">
                     <span class="mr-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resolveAuditResult(row.avg_audit_result).className">
                       {{ resolveAuditResult(row.avg_audit_result).label }}
                     </span>
                     <span class="font-semibold text-indigo-700">{{ formatScore(row.avg_audit_result) }}</span>
+                    </template>
+                    <span v-else class="text-gray-500">{{ row.scoring_mode === 'mixed' ? 'Legacy + C/MN/MY' : 'C/MN/MY' }}</span>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-right text-gray-700">
+                    {{ row.count_c }} / {{ row.count_mn }} / {{ row.count_my }}
                   </td>
                 </tr>
                 <tr v-if="isExpanded(row.outlet_id)">
-                  <td colspan="3" class="bg-gray-50 px-8 py-3">
+                  <td colspan="4" class="bg-gray-50 px-8 py-3">
                     <div class="rounded-lg border border-gray-200 bg-white">
                       <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-100">
                           <tr>
                             <th class="px-3 py-2 text-left text-[11px] font-semibold uppercase text-gray-500">Template</th>
                             <th class="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Jumlah Audit</th>
-                            <th class="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Rata-rata Audit Result</th>
+                            <th class="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">Mode / Audit Result</th>
+                            <th class="px-3 py-2 text-right text-[11px] font-semibold uppercase text-gray-500">C / MN / MY</th>
                           </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-100">
@@ -190,14 +198,20 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
                             <td class="px-3 py-2 text-sm text-gray-700">{{ t.template_name }}</td>
                             <td class="px-3 py-2 text-sm text-right text-gray-700">{{ t.audit_count }}</td>
                             <td class="px-3 py-2 text-sm text-right">
+                              <template v-if="t.avg_audit_result !== null">
                               <span class="mr-2 inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold" :class="resolveAuditResult(t.avg_audit_result).className">
                                 {{ resolveAuditResult(t.avg_audit_result).label }}
                               </span>
                               <span class="font-medium text-indigo-700">{{ formatScore(t.avg_audit_result) }}</span>
+                              </template>
+                              <span v-else class="text-gray-500">C/MN/MY</span>
+                            </td>
+                            <td class="px-3 py-2 text-sm text-right text-gray-700">
+                              {{ t.count_c }} / {{ t.count_mn }} / {{ t.count_my }}
                             </td>
                           </tr>
                           <tr v-if="!(row.templates || []).length">
-                            <td colspan="3" class="px-3 py-3 text-center text-xs text-gray-500">Tidak ada detail template.</td>
+                            <td colspan="4" class="px-3 py-3 text-center text-xs text-gray-500">Tidak ada detail template.</td>
                           </tr>
                         </tbody>
                       </table>
@@ -206,7 +220,7 @@ const exportUrl = computed(() => route('qa2-audits.report-summary.export', {
                 </tr>
               </template>
               <tr v-if="!(rows || []).length">
-                <td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data pada periode ini.</td>
+                <td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500">Belum ada data pada periode ini.</td>
               </tr>
             </tbody>
           </table>
