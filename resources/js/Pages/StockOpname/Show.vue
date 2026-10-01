@@ -130,11 +130,9 @@
               </p>
               <button
                 @click="voidStockOpname"
-                :disabled="voiding"
-                class="w-full px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-semibold disabled:opacity-50"
+                class="w-full px-4 py-2 bg-rose-600 text-white rounded-lg hover:bg-rose-700 font-semibold"
               >
-                <i v-if="voiding" class="fa fa-spinner fa-spin mr-2"></i>
-                <i v-else class="fa-solid fa-rotate-left mr-2"></i>
+                <i class="fa-solid fa-rotate-left mr-2"></i>
                 Void & Rollback Inventory
               </button>
             </div>
@@ -346,6 +344,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   stockOpname: Object,
@@ -365,7 +364,6 @@ const rejectComments = ref('');
 const submitting = ref(false);
 const approving = ref(false);
 const processing = ref(false);
-const voiding = ref(false);
 
 const showDifferences = computed(() => props.stockOpname?.status === 'APPROVED');
 
@@ -524,32 +522,59 @@ async function processStockOpname() {
 }
 
 async function voidStockOpname() {
-  const reason = window.prompt(
-    'Void & rollback inventory.\n\nSyarat: belum ada mutasi stok setelah process.\nMasukkan alasan void (wajib):'
-  );
-  if (reason === null) {
-    return;
-  }
-  if (!reason || reason.trim().length < 5) {
-    alert('Alasan void minimal 5 karakter.');
-    return;
-  }
-  if (!confirm('Yakin void stock opname ini? Stok, kartu, cost history, dan adjustment akan di-rollback.')) {
-    return;
-  }
+  const result = await Swal.fire({
+    title: 'Void & Rollback Inventory?',
+    html: `
+      <p class="text-sm text-left text-gray-600 mb-3">
+        Stok, kartu, cost history, dan adjustment akan dikembalikan.
+        Void <strong>ditolak</strong> jika sudah ada mutasi setelah process.
+      </p>
+      <label class="block text-left text-sm font-semibold text-gray-700 mb-1">Alasan void (wajib)</label>
+      <textarea id="swal-void-reason" class="swal2-textarea" placeholder="Minimal 5 karakter..." style="width:100%;min-height:90px;"></textarea>
+    `,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#e11d48',
+    cancelButtonColor: '#6b7280',
+    confirmButtonText: 'Ya, Void!',
+    cancelButtonText: 'Batal',
+    reverseButtons: true,
+    focusConfirm: false,
+    showLoaderOnConfirm: true,
+    preConfirm: async () => {
+      const reason = (document.getElementById('swal-void-reason')?.value || '').trim();
+      if (reason.length < 5) {
+        Swal.showValidationMessage('Alasan void minimal 5 karakter');
+        return false;
+      }
+      try {
+        const response = await axios.post(route('stock-opnames.void', props.stockOpname.id), {
+          reason,
+        });
+        return response.data;
+      } catch (error) {
+        const message =
+          error.response?.data?.message ||
+          error.response?.data?.error ||
+          error.message ||
+          'Gagal void stock opname';
+        Swal.showValidationMessage(message);
+        return false;
+      }
+    },
+    allowOutsideClick: () => !Swal.isLoading(),
+  });
 
-  voiding.value = true;
-  try {
-    const { data } = await axios.post(route('stock-opnames.void', props.stockOpname.id), {
-      reason: reason.trim(),
+  if (result.isConfirmed && result.value) {
+    await Swal.fire({
+      title: 'Berhasil!',
+      text: result.value.message || 'Stock opname berhasil di-void dan inventory di-rollback.',
+      icon: 'success',
+      confirmButtonColor: '#3085d6',
+      timer: 2500,
+      showConfirmButton: true,
     });
-    alert(data?.message || 'Stock opname berhasil di-void.');
     router.reload();
-  } catch (error) {
-    console.error('Error voiding:', error);
-    alert(error.response?.data?.message || 'Gagal void stock opname.');
-  } finally {
-    voiding.value = false;
   }
 }
 
