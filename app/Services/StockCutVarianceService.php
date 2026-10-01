@@ -303,6 +303,31 @@ class StockCutVarianceService
     }
 
     /**
+     * Buka kembali variance yang ditutup saat process stock opname outlet.
+     */
+    public function reopenClosedByStockOpname(int $opnameId): int
+    {
+        if (! $this->tableExists() || $opnameId <= 0) {
+            return 0;
+        }
+
+        return DB::table('stock_cut_variances')
+            ->where('status', 'closed')
+            ->where('closed_via', 'weekly_opname')
+            ->where('closed_reference_type', 'stock_opname')
+            ->where('closed_reference_id', $opnameId)
+            ->update([
+                'status' => 'open',
+                'closed_at' => null,
+                'closed_via' => null,
+                'closed_reference_type' => null,
+                'closed_reference_id' => null,
+                'closed_by' => null,
+                'updated_at' => now(),
+            ]);
+    }
+
+    /**
      * Hapus variance saat rollback stock cut dihapus.
      */
     public function deleteByStockCutLogId(int $stockCutLogId): void

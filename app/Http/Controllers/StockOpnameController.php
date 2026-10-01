@@ -518,6 +518,7 @@ class StockOpnameController extends Controller
         return Inertia::render('StockOpname/Show', [
             'stockOpname' => $stockOpname,
             'canApprove' => $canApprove,
+            'canDelete' => ($user->id_role === '5af56935b011a') || ($user->division_id == 11),
             'pendingFlow' => $pendingFlow,
             'users' => $users,
             'user_outlet_id' => $user->id_outlet ?? null,
@@ -1187,6 +1188,80 @@ class StockOpnameController extends Controller
         }
     }
 
+    /**
+     * Void COMPLETED stock opname and roll back inventory effects.
+     */
+    public function voidCompleted(Request $request, $id)
+    {
+        $user = auth()->user();
+        $canVoid = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        if (! $canVoid) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Anda tidak memiliki akses untuk void stock opname.',
+                ], 403);
+            }
+
+            return back()->withErrors(['error' => 'Anda tidak memiliki akses untuk void stock opname.']);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:5|max:1000',
+        ]);
+
+        $stockOpname = StockOpname::findOrFail($id);
+        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+            abort(403, 'Anda tidak memiliki akses untuk stock opname ini.');
+        }
+
+        $oldData = $stockOpname->toArray();
+
+        try {
+            $summary = app(\App\Services\OutletStockOpnameVoidService::class)->void(
+                $stockOpname,
+                (int) $user->id,
+                $validated['reason']
+            );
+
+            $fresh = $stockOpname->fresh();
+            $this->writeActivityLog(
+                $request,
+                'stock_opname',
+                'void',
+                'Void Stock Opname & rollback inventory: '.$stockOpname->opname_number
+                    .' (items='.$summary['reversed_items']
+                    .', cards='.$summary['card_count']
+                    .', cost_hist='.$summary['cost_hist_count']
+                    .')',
+                $oldData,
+                $fresh ? $fresh->toArray() : null
+            );
+
+            $message = 'Stock opname berhasil di-void dan inventory di-rollback.';
+
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => $message,
+                    'summary' => $summary,
+                ]);
+            }
+
+            return redirect()->route('stock-opnames.show', $stockOpname->id)
+                ->with('success', $message);
+        } catch (\Exception $e) {
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => $e->getMessage(),
+                ], 422);
+            }
+
+            return back()->withErrors(['error' => $e->getMessage()]);
+        }
+    }
+
     // ==================== API for Mobile App (approval-app) ====================
 
     public function apiIndex(Request $request)
@@ -1389,6 +1464,8 @@ class StockOpnameController extends Controller
             'success' => true,
             'stock_opname' => $stockOpname,
             'can_approve' => $canApprove,
+            'can_delete' => ($user->id_role === '5af56935b011a') || ($user->division_id == 11),
+            'can_void' => (($user->id_role === '5af56935b011a') || ($user->division_id == 11)) && $stockOpname->status === 'COMPLETED',
             'pending_flow' => $pendingFlow,
             'users' => $users,
             'approvers' => $approvers,
@@ -1745,6 +1822,43 @@ class StockOpnameController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             return response()->json(['success' => false, 'message' => $e->getMessage()], 500);
+        }
+    }
+
+    public function apiVoidCompleted(Request $request, $id)
+    {
+        $user = auth()->user();
+        $canVoid = ($user->id_role === '5af56935b011a') || ($user->division_id == 11);
+        if (! $canVoid) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk void stock opname.'], 403);
+        }
+
+        $validated = $request->validate([
+            'reason' => 'required|string|min:5|max:1000',
+        ]);
+
+        $stockOpname = StockOpname::find($id);
+        if (! $stockOpname) {
+            return response()->json(['success' => false, 'message' => 'Stock opname tidak ditemukan'], 404);
+        }
+        if ($user->id_outlet != 1 && $user->id_outlet != $stockOpname->outlet_id) {
+            return response()->json(['success' => false, 'message' => 'Anda tidak memiliki akses untuk stock opname ini.'], 403);
+        }
+
+        try {
+            $summary = app(\App\Services\OutletStockOpnameVoidService::class)->void(
+                $stockOpname,
+                (int) $user->id,
+                $validated['reason']
+            );
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Stock opname berhasil di-void dan inventory di-rollback.',
+                'summary' => $summary,
+            ]);
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
         }
     }
 

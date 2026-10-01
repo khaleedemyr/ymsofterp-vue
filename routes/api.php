@@ -481,6 +481,7 @@ Route::prefix('approval-app')->group(function () {
         Route::post('/stock-opnames/{id}/submit-approval', [\App\Http\Controllers\StockOpnameController::class, 'apiSubmitForApproval'])->where('id', '[0-9]+');
         Route::post('/stock-opnames/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'apiApprove'])->where('id', '[0-9]+');
         Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameController::class, 'apiProcess'])->where('id', '[0-9]+');
+        Route::post('/stock-opnames/{id}/void', [\App\Http\Controllers\StockOpnameController::class, 'apiVoidCompleted'])->where('id', '[0-9]+');
 
         // Warehouse Stock Opname (Approval App - Stock Opname Gudang)
         Route::get('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'apiIndex']);

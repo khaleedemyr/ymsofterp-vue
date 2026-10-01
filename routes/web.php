@@ -1715,6 +1715,7 @@ Route::delete('/stock-opnames/{id}', [\App\Http\Controllers\StockOpnameControlle
 Route::post('/stock-opnames/{id}/submit-approval', [\App\Http\Controllers\StockOpnameController::class, 'submitForApproval'])->name('stock-opnames.submit-approval');
 Route::post('/stock-opnames/{id}/approve', [\App\Http\Controllers\StockOpnameController::class, 'approve'])->name('stock-opnames.approve');
 Route::post('/stock-opnames/{id}/process', [\App\Http\Controllers\StockOpnameController::class, 'process'])->name('stock-opnames.process');
+Route::post('/stock-opnames/{id}/void', [\App\Http\Controllers\StockOpnameController::class, 'voidCompleted'])->name('stock-opnames.void');
 Route::get('/api/stock-opnames/get-items', [\App\Http\Controllers\StockOpnameController::class, 'getItems'])->name('stock-opnames.get-items');
 Route::get('/api/stock-opnames/approvers', [\App\Http\Controllers\StockOpnameController::class, 'getApprovers'])->name('stock-opnames.approvers');
 Route::get('/api/stock-opnames/pending-approvals', [\App\Http\Controllers\StockOpnameController::class, 'getPendingApprovals'])->name('stock-opnames.pending-approvals')->middleware('auth');

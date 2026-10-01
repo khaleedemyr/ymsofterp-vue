@@ -42,6 +42,7 @@
             <option value="APPROVED">Approved</option>
             <option value="REJECTED">Rejected</option>
             <option value="COMPLETED">Completed</option>
+            <option value="VOIDED">Voided</option>
           </select>
           <select
             v-model="filters.outlet_id"
@@ -268,6 +269,7 @@ function getStatusClass(status) {
     APPROVED: 'bg-green-100 text-green-700 border border-green-300',
     REJECTED: 'bg-red-100 text-red-700 border border-red-300',
     COMPLETED: 'bg-blue-100 text-blue-700 border border-blue-300',
+    VOIDED: 'bg-slate-200 text-slate-700 border border-slate-400',
   };
   return classes[status] || 'bg-gray-100 text-gray-700 border border-gray-300';
 }
@@ -279,6 +281,7 @@ function getStatusIcon(status) {
     APPROVED: 'fa-solid fa-check-circle',
     REJECTED: 'fa-solid fa-times-circle',
     COMPLETED: 'fa-solid fa-check-double',
+    VOIDED: 'fa-solid fa-ban',
   };
   return icons[status] || 'fa-solid fa-info-circle';
 }

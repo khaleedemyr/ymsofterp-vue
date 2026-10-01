@@ -20,10 +20,14 @@ class StockOpname extends Model
         'status',
         'notes',
         'created_by',
+        'voided_at',
+        'voided_by',
+        'void_reason',
     ];
 
     protected $casts = [
         'opname_date' => 'date',
+        'voided_at' => 'datetime',
     ];
 
     // Relationships
@@ -40,6 +44,11 @@ class StockOpname extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function voidedByUser()
+    {
+        return $this->belongsTo(User::class, 'voided_by');
     }
 
     public function items()
@@ -78,6 +87,11 @@ class StockOpname extends Model
         return $query->where('status', 'COMPLETED');
     }
 
+    public function scopeVoided($query)
+    {
+        return $query->where('status', 'VOIDED');
+    }
+
     // Methods
     public function isDraft()
     {
@@ -104,6 +118,11 @@ class StockOpname extends Model
         return $this->status === 'REJECTED';
     }
 
+    public function isVoided()
+    {
+        return $this->status === 'VOIDED';
+    }
+
     public function canBeEdited()
     {
         return $this->status === 'DRAFT';
@@ -117,6 +136,11 @@ class StockOpname extends Model
     public function canBeProcessed()
     {
         return $this->status === 'APPROVED';
+    }
+
+    public function canBeVoided()
+    {
+        return $this->status === 'COMPLETED';
     }
 }
 
