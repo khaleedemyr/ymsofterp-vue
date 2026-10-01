@@ -187,7 +187,7 @@
 
     @if(!empty($is_retail_food) && !empty($grouped_contra_bons))
     <div class="section-title">Ringkasan per Outlet</div>
-    <table class="items" style="margin-bottom: 16px;">
+    <table class="items">
         <thead>
             <tr>
                 <th style="width: 8%;" class="text-center">No</th>
@@ -207,45 +207,6 @@
             @endforeach
             <tr class="total-row">
                 <td colspan="3" class="text-right">TOTAL</td>
-                <td class="text-right">Rp {{ number_format($total, 0, ',', '.') }}</td>
-            </tr>
-        </tbody>
-    </table>
-
-    <div class="section-title">Daftar Contra Bon yang Dibayar (per Outlet)</div>
-    <table class="items">
-        <thead>
-            <tr>
-                <th style="width: 6%;" class="text-center">No</th>
-                <th style="width: 24%;">No. CB</th>
-                <th style="width: 24%;">No. Invoice</th>
-                <th style="width: 20%;">Tgl Invoice</th>
-                <th style="width: 26%;" class="text-right">Nominal</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach($grouped_contra_bons as $group)
-            <tr class="group-header-row">
-                <td colspan="5">
-                    OUTLET: {{ strtoupper($group['outlet_name']) }} ({{ count($group['items']) }} Contra Bon)
-                </td>
-            </tr>
-            @foreach($group['items'] as $i => $cb)
-            <tr>
-                <td class="text-center">{{ $i + 1 }}</td>
-                <td>{{ $cb['number'] }}</td>
-                <td>{{ $cb['supplier_invoice_number'] ?: '-' }}</td>
-                <td>{{ $cb['supplier_invoice_date'] ?: '-' }}</td>
-                <td class="text-right">Rp {{ number_format($cb['total_amount'], 0, ',', '.') }}</td>
-            </tr>
-            @endforeach
-            <tr class="subtotal-row">
-                <td colspan="4" class="text-right">Total {{ $group['outlet_name'] }}</td>
-                <td class="text-right">Rp {{ number_format($group['total_amount'], 0, ',', '.') }}</td>
-            </tr>
-            @endforeach
-            <tr class="total-row">
-                <td colspan="4" class="text-right">TOTAL KESELURUHAN</td>
                 <td class="text-right">Rp {{ number_format($total, 0, ',', '.') }}</td>
             </tr>
         </tbody>
