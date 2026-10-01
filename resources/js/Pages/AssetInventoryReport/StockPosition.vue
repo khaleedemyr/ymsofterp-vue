@@ -15,7 +15,7 @@
       </div>
 
       <div class="flex flex-col md:flex-row md:items-center gap-4 mb-4 flex-wrap">
-        <input v-model="search" type="text" placeholder="Cari nama barang atau warehouse..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
+        <input v-model="search" type="text" placeholder="Cari nama barang, kategori, atau warehouse..." class="px-4 py-2 border border-gray-300 rounded-lg w-full md:w-64 focus:ring-blue-500 focus:border-blue-500" />
 
         <div v-if="isHQ" class="flex items-center gap-2">
           <label class="text-sm">Pemilik</label>
@@ -63,6 +63,8 @@
             <thead class="bg-gray-50">
               <tr>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Nama Barang</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Category</th>
+                <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Sub Category</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Pemilik</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Lokasi</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Warehouse</th>
@@ -75,7 +77,7 @@
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <tr v-if="!filteredStocks.length">
-                <td colspan="9" class="text-center py-10 text-gray-400">Tidak ada data stok asset.</td>
+                <td colspan="11" class="text-center py-10 text-gray-400">Tidak ada data stok asset.</td>
               </tr>
               <template v-for="row in paginatedStocks" :key="getItemKey(row)">
                 <tr
@@ -89,6 +91,8 @@
                       <span>{{ row.item_name }}</span>
                     </div>
                   </td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.category_name || '-' }}</td>
+                  <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.sub_category_name || '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.owner_outlet_name || '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.location_outlet_name || '-' }}</td>
                   <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{{ row.warehouse_name }}</td>
@@ -110,7 +114,7 @@
 
                 <!-- Stock Card Detail Row -->
                 <tr v-if="expandedItems.includes(getItemKey(row))" class="bg-gray-50">
-                  <td colspan="9" class="px-6 py-4">
+                  <td colspan="11" class="px-6 py-4">
                     <div v-if="loadingItems[getItemKey(row)]" class="text-center py-4">
                       <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
                       <p class="mt-2 text-gray-600 text-sm">Memuat kartu stok...</p>
@@ -249,6 +253,8 @@ const filteredStocks = computed(() => {
     const s = search.value.toLowerCase();
     data = data.filter(row =>
       (row.item_name && row.item_name.toLowerCase().includes(s)) ||
+      (row.category_name && row.category_name.toLowerCase().includes(s)) ||
+      (row.sub_category_name && row.sub_category_name.toLowerCase().includes(s)) ||
       (row.warehouse_name && row.warehouse_name.toLowerCase().includes(s))
     );
   }

@@ -30,6 +30,8 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
         $query = DB::table('asset_inventory_stocks as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
@@ -38,6 +40,8 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
             ->select(
                 'i.name as item_name',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
                 DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
                 'o.nama_outlet as location_outlet_name',
                 'wo.name as warehouse_name',
@@ -71,6 +75,8 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
     {
         return [
             'Nama Barang',
+            'Category',
+            'Sub Category',
             'Outlet Pemilik',
             'Outlet Lokasi',
             'Warehouse',
@@ -86,6 +92,8 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
     {
         return [
             $row->item_name,
+            $row->category_name ?? '-',
+            $row->sub_category_name ?? '-',
             $row->owner_outlet_name ?? '-',
             $row->location_outlet_name ?? '-',
             $row->warehouse_name,
@@ -111,9 +119,11 @@ class AssetStockPositionExport implements FromCollection, WithHeadings, WithMapp
     {
         return [
             'A' => 30,
-            'B' => 22,
-            'C' => 22,
-            'D' => 20,
+            'B' => 20,
+            'C' => 20,
+            'D' => 22,
+            'E' => 22,
+            'F' => 20,
         ];
     }
 }

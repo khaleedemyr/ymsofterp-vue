@@ -21,6 +21,8 @@ class AssetInventoryReportController extends Controller
         $query = DB::table('asset_inventory_stocks as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
@@ -30,6 +32,8 @@ class AssetInventoryReportController extends Controller
             ->select(
                 'i.id as item_id',
                 'i.name as item_name',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
                 'ai.id as inventory_item_id',
                 's.owner_outlet_id',
                 DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
@@ -136,6 +140,8 @@ class AssetInventoryReportController extends Controller
         $query = DB::table('asset_inventory_stocks as s')
             ->join('asset_inventory_items as ai', 's.inventory_item_id', '=', 'ai.id')
             ->join('items as i', 'ai.item_id', '=', 'i.id')
+            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'i.sub_category_id', '=', 'sc.id')
             ->join('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
             ->leftJoin('tbl_data_outlet as oo', 's.owner_outlet_id', '=', 'oo.id_outlet')
             ->leftJoin('tbl_data_outlet as o', 's.outlet_id', '=', 'o.id_outlet')
@@ -145,6 +151,8 @@ class AssetInventoryReportController extends Controller
             ->select(
                 'i.id as item_id',
                 'i.name as item_name',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
                 'ai.id as inventory_item_id',
                 's.owner_outlet_id',
                 DB::raw(AssetOwnership::ownerNameSql('s.owner_outlet_id', 'oo.nama_outlet') . ' as owner_outlet_name'),
