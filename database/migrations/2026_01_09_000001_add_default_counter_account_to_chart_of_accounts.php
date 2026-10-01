@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('chart_of_accounts', function (Blueprint $table) {
             $table->unsignedBigInteger('default_counter_account_id')->nullable()->after('budget_limit');
             $table->foreign('default_counter_account_id')
-                  ->references('id')`
+                  ->references('id')
                   ->on('chart_of_accounts')
                   ->onDelete('set null');
         });

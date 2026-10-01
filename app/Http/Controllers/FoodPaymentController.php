@@ -501,6 +501,38 @@ class FoodPaymentController extends Controller
             ];
         })->values()->all();
 
+        $isRetailFood = $payment->contraBons->isNotEmpty() && $payment->contraBons->contains(function ($cb) {
+            return $cb->source_type === 'retail_food';
+        });
+
+        $groupedContraBons = [];
+        if ($isRetailFood) {
+            $grouped = $payment->contraBons->groupBy(function ($cb) {
+                if ($cb->source_type === 'retail_food') {
+                    return $cb->retailFood?->outlet?->nama_outlet ?: 'Tanpa Outlet';
+                }
+                return 'Lainnya';
+            })->sortKeys();
+
+            foreach ($grouped as $outletName => $cbs) {
+                $groupedContraBons[] = [
+                    'outlet_name' => $outletName,
+                    'total_amount' => (float) $cbs->sum('total_amount'),
+                    'items' => $cbs->map(function ($cb) {
+                        return [
+                            'number' => $cb->number,
+                            'supplier_invoice_number' => $cb->supplier_invoice_number,
+                            'supplier_invoice_date' => $cb->supplier_invoice_date
+                                ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
+                                : null,
+                            'total_amount' => (float) $cb->total_amount,
+                            'status' => $cb->status,
+                        ];
+                    })->values()->all(),
+                ];
+            }
+        }
+
         $logoBase64 = $this->prepareJustusLogoBase64();
 
         $tz = config('app.timezone', 'Asia/Jakarta');
@@ -527,6 +559,8 @@ class FoodPaymentController extends Controller
                 : null,
             'gm_finance_note' => $payment->gm_finance_note,
             'contra_bons' => $contraBons,
+            'is_retail_food' => $isRetailFood,
+            'grouped_contra_bons' => $groupedContraBons,
             'logo_base64' => $logoBase64,
             'generated_at' => now()->timezone($tz)->format('d/m/Y H:i'),
         ];

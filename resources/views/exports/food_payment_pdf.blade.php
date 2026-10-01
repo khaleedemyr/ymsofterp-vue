@@ -89,6 +89,23 @@
             font-weight: bold;
             background: #eff6ff !important;
         }
+        .group-header-row td {
+            background: #dbeafe !important;
+            color: #1e40af;
+            font-weight: bold;
+            padding: 5px 8px;
+            border: 1px solid #bfdbfe;
+            font-size: 8.5pt;
+        }
+        .subtotal-row td {
+            font-weight: bold;
+            background: #f1f5f9 !important;
+            color: #334155;
+            border-top: 1.5px solid #cbd5e1;
+        }
+        tr {
+            page-break-inside: avoid;
+        }
         .footer {
             margin-top: 22px;
             padding-top: 8px;
@@ -168,6 +185,72 @@
     </table>
     @endif
 
+    @if(!empty($is_retail_food) && !empty($grouped_contra_bons))
+    <div class="section-title">Ringkasan per Outlet</div>
+    <table class="items" style="margin-bottom: 16px;">
+        <thead>
+            <tr>
+                <th style="width: 8%;" class="text-center">No</th>
+                <th style="width: 44%;">Nama Outlet</th>
+                <th style="width: 22%;" class="text-center">Jumlah Contra Bon</th>
+                <th style="width: 26%;" class="text-right">Total Nominal</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($grouped_contra_bons as $idx => $group)
+            <tr>
+                <td class="text-center">{{ $idx + 1 }}</td>
+                <td><strong>{{ $group['outlet_name'] }}</strong></td>
+                <td class="text-center">{{ count($group['items']) }} CB</td>
+                <td class="text-right">Rp {{ number_format($group['total_amount'], 0, ',', '.') }}</td>
+            </tr>
+            @endforeach
+            <tr class="total-row">
+                <td colspan="3" class="text-right">TOTAL</td>
+                <td class="text-right">Rp {{ number_format($total, 0, ',', '.') }}</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <div class="section-title">Daftar Contra Bon yang Dibayar (per Outlet)</div>
+    <table class="items">
+        <thead>
+            <tr>
+                <th style="width: 6%;" class="text-center">No</th>
+                <th style="width: 24%;">No. CB</th>
+                <th style="width: 24%;">No. Invoice</th>
+                <th style="width: 20%;">Tgl Invoice</th>
+                <th style="width: 26%;" class="text-right">Nominal</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach($grouped_contra_bons as $group)
+            <tr class="group-header-row">
+                <td colspan="5">
+                    OUTLET: {{ strtoupper($group['outlet_name']) }} ({{ count($group['items']) }} Contra Bon)
+                </td>
+            </tr>
+            @foreach($group['items'] as $i => $cb)
+            <tr>
+                <td class="text-center">{{ $i + 1 }}</td>
+                <td>{{ $cb['number'] }}</td>
+                <td>{{ $cb['supplier_invoice_number'] ?: '-' }}</td>
+                <td>{{ $cb['supplier_invoice_date'] ?: '-' }}</td>
+                <td class="text-right">Rp {{ number_format($cb['total_amount'], 0, ',', '.') }}</td>
+            </tr>
+            @endforeach
+            <tr class="subtotal-row">
+                <td colspan="4" class="text-right">Total {{ $group['outlet_name'] }}</td>
+                <td class="text-right">Rp {{ number_format($group['total_amount'], 0, ',', '.') }}</td>
+            </tr>
+            @endforeach
+            <tr class="total-row">
+                <td colspan="4" class="text-right">TOTAL KESELURUHAN</td>
+                <td class="text-right">Rp {{ number_format($total, 0, ',', '.') }}</td>
+            </tr>
+        </tbody>
+    </table>
+    @else
     <div class="section-title">Daftar Contra Bon yang Dibayar</div>
     <table class="items">
         <thead>
@@ -201,6 +284,7 @@
             @endif
         </tbody>
     </table>
+    @endif
 
     <div class="footer">
         Dicetak: {{ $generated_at }} &middot; {{ $number }}
