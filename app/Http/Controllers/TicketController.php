@@ -37,12 +37,12 @@ class TicketController extends Controller
 
     public const TICKET_MANAGER_DIVISION_ID = 20;
 
-    public const TICKET_MANAGER_JABATAN_ID = 343;
+    public const TICKET_MANAGER_JABATAN_IDS = [343, 158, 264, 265, 400];
 
     public const TICKET_VENDOR_DIVISION_ID = 18;
 
     /**
-     * Superadmin, division 20, atau jabatan 343: edit penuh, assign tim, payment/PR, hapus.
+    * Superadmin, division 20, atau jabatan ticket manager: edit penuh, assign tim, payment/PR, hapus.
      * Membuat ticket (form, API store, import Excel, dari daily report) boleh semua user yang sudah login.
      */
     public static function userCanManageTickets($user): bool
@@ -56,7 +56,7 @@ class TicketController extends Controller
         if ((int) ($user->division_id ?? 0) === self::TICKET_MANAGER_DIVISION_ID) {
             return true;
         }
-        if ((int) ($user->id_jabatan ?? 0) === self::TICKET_MANAGER_JABATAN_ID) {
+        if (in_array((int) ($user->id_jabatan ?? 0), self::TICKET_MANAGER_JABATAN_IDS, true)) {
             return true;
         }
 
