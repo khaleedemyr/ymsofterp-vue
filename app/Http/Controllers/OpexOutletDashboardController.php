@@ -108,7 +108,8 @@ class OpexOutletDashboardController extends Controller
             return response()->json(['error' => 'Outlet and type required'], 400);
         }
 
-        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first(['qr_code']);
+        $outlet = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->first(['qr_code', 'nama_outlet']);
+        $hasBreakfast = stripos((string) $outlet?->nama_outlet, 'tempayan') !== false;
 
         // Budget Kitchen/Bar/Service selalu full calendar month (sama seperti RO Forecast cards).
         if (in_array($type, $purchaseBudgetTypes, true)) {
@@ -254,6 +255,9 @@ class OpexOutletDashboardController extends Controller
 
         $trend = $this->opexService->cardTrend($outletId, $outlet?->qr_code, $dateFrom, $dateTo, $type);
         $sheetMeta = null;
+        if ($type === 'revenue') {
+            $sheetMeta = ['has_breakfast' => $hasBreakfast];
+        }
         if ($type === 'total_spend') {
             $sheet = $this->opexService->buildReceivingSheetStyleDaily($outletId, $dateFrom, $dateTo);
             $transactions = collect($sheet['rows']);
@@ -307,7 +311,7 @@ class OpexOutletDashboardController extends Controller
                 'purchased_total' => round($transactions->sum(fn ($t) => (float) ($t->amount ?? 0)), 2),
             ];
         } else {
-            $transactions = $this->transactionsForType($type, $outletId, $outlet?->qr_code, $dateFrom, $dateTo);
+            $transactions = $this->transactionsForType($type, $outletId, $outlet?->qr_code, $dateFrom, $dateTo, $hasBreakfast);
         }
 
         if ($search !== '') {
@@ -423,10 +427,10 @@ class OpexOutletDashboardController extends Controller
         return response()->json([]);
     }
 
-    private function transactionsForType(string $type, int $outletId, ?string $qrCode, string $dateFrom, string $dateTo)
+    private function transactionsForType(string $type, int $outletId, ?string $qrCode, string $dateFrom, string $dateTo, bool $hasBreakfast = false)
     {
         return match ($type) {
-            'revenue' => $this->listRevenue($qrCode, $dateFrom, $dateTo),
+            'revenue' => $this->listRevenue($qrCode, $dateFrom, $dateTo, $hasBreakfast),
             'discount' => $this->listDiscount($qrCode, $dateFrom, $dateTo),
             'discount_compliment' => $this->listManualDiscountByType($qrCode, $dateFrom, $dateTo, 'compliment'),
             'discount_guest_satisfaction' => $this->listManualDiscountByType($qrCode, $dateFrom, $dateTo, 'guest_satisfaction'),
@@ -728,7 +732,7 @@ class OpexOutletDashboardController extends Controller
         });
     }
 
-    private function listRevenue(?string $qrCode, string $dateFrom, string $dateTo)
+    private function listRevenue(?string $qrCode, string $dateFrom, string $dateTo, bool $hasBreakfast = false)
     {
         $qrCode = trim((string) $qrCode);
         if ($qrCode === '') {
@@ -745,6 +749,10 @@ class OpexOutletDashboardController extends Controller
             6 => 'Sabtu',
         ];
 
+        $periodExpression = $hasBreakfast
+            ? "CASE WHEN TIME(created_at) >= '06:00:00' AND TIME(created_at) < '11:00:00' THEN 'breakfast' WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END"
+            : "CASE WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END";
+
         $rows = DB::table('orders')
             ->where('kode_outlet', $qrCode)
             ->whereDate('created_at', '>=', $dateFrom)
@@ -753,12 +761,12 @@ class OpexOutletDashboardController extends Controller
             ->where('grand_total', '>', 0)
             ->selectRaw("
                 DATE(created_at) as order_date,
-                CASE WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END as period,
+                {$periodExpression} as period,
                 SUM(COALESCE(pax, 0)) as cover,
                 SUM(COALESCE(grand_total, 0)) as revenue,
                 SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as disc
             ")
-            ->groupByRaw("DATE(created_at), CASE WHEN HOUR(created_at) <= 17 THEN 'lunch' ELSE 'dinner' END")
+            ->groupByRaw("DATE(created_at), {$periodExpression}")
             ->get();
 
         $byDate = [];
@@ -766,11 +774,12 @@ class OpexOutletDashboardController extends Controller
             $date = (string) $row->order_date;
             if (! isset($byDate[$date])) {
                 $byDate[$date] = [
+                    'breakfast' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
                     'lunch' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
                     'dinner' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
                 ];
             }
-            $period = $row->period === 'dinner' ? 'dinner' : 'lunch';
+            $period = in_array($row->period, ['breakfast', 'dinner'], true) ? $row->period : 'lunch';
             $byDate[$date][$period]['cover'] += (float) $row->cover;
             $byDate[$date][$period]['revenue'] += (float) $row->revenue;
             $byDate[$date][$period]['disc'] += (float) $row->disc;
@@ -779,19 +788,23 @@ class OpexOutletDashboardController extends Controller
         krsort($byDate);
 
         return collect($byDate)->map(function ($periods, $date) use ($dayNames) {
+            $breakfastCover = $periods['breakfast']['cover'];
+            $breakfastRevenue = $periods['breakfast']['revenue'];
+            $breakfastDisc = $periods['breakfast']['disc'];
             $lunchCover = $periods['lunch']['cover'];
             $lunchRevenue = $periods['lunch']['revenue'];
             $lunchDisc = $periods['lunch']['disc'];
             $dinnerCover = $periods['dinner']['cover'];
             $dinnerRevenue = $periods['dinner']['revenue'];
             $dinnerDisc = $periods['dinner']['disc'];
-            $totalCover = $lunchCover + $dinnerCover;
-            $totalRevenue = $lunchRevenue + $dinnerRevenue;
-            $totalDisc = $lunchDisc + $dinnerDisc;
+            $totalCover = $breakfastCover + $lunchCover + $dinnerCover;
+            $totalRevenue = $breakfastRevenue + $lunchRevenue + $dinnerRevenue;
+            $totalDisc = $breakfastDisc + $lunchDisc + $dinnerDisc;
 
             $carbon = Carbon::parse($date);
             $dow = (int) $carbon->dayOfWeek;
 
+            $breakfastPct = $totalRevenue > 0 ? round(($breakfastRevenue / $totalRevenue) * 100, 1) : null;
             $lunchPct = $totalRevenue > 0 ? round(($lunchRevenue / $totalRevenue) * 100, 1) : null;
             $dinnerPct = $totalRevenue > 0 ? round(($dinnerRevenue / $totalRevenue) * 100, 1) : null;
 
@@ -804,6 +817,11 @@ class OpexOutletDashboardController extends Controller
                 'day_name' => $dayNames[$dow] ?? $carbon->format('l'),
                 'is_weekend' => in_array($dow, [0, 6], true),
                 'amount' => round($totalRevenue, 2),
+                'breakfast_cover' => (int) round($breakfastCover),
+                'breakfast_revenue' => round($breakfastRevenue, 2),
+                'breakfast_pct' => $breakfastPct,
+                'breakfast_avg_check' => $breakfastCover > 0 ? (float) round($breakfastRevenue / $breakfastCover) : 0.0,
+                'breakfast_disc' => round($breakfastDisc, 2),
                 'lunch_cover' => (int) round($lunchCover),
                 'lunch_revenue' => round($lunchRevenue, 2),
                 'lunch_pct' => $lunchPct,

@@ -2005,6 +2005,7 @@
                     <tr class="bg-slate-900 text-white">
                       <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Tanggal</th>
                       <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Hari</th>
+                      <th v-if="revenueHasBreakfast" class="px-3 py-2 text-center border-r border-cyan-700 bg-cyan-800" colspan="5">Breakfast</th>
                       <th class="px-3 py-2 text-center border-r border-emerald-700 bg-emerald-800" colspan="5">Lunch</th>
                       <th class="px-3 py-2 text-center border-r border-amber-700 bg-amber-800" colspan="5">Dinner</th>
                       <th class="px-3 py-2 text-center bg-indigo-800" colspan="4">Total</th>
@@ -2022,6 +2023,11 @@
                     >
                       <td class="px-3 py-2.5 text-center font-semibold text-slate-800 border-r border-slate-100">{{ formatShortDate(row.date) }}</td>
                       <td class="px-3 py-2.5 text-center text-slate-700 border-r border-slate-100">{{ row.day_name }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.breakfast_cover) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_revenue) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-cyan-700">{{ formatPct(row.breakfast_pct) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_avg_check) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_disc) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.lunch_cover) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_revenue) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-emerald-700">{{ formatPct(row.lunch_pct) }}</td>
@@ -2039,6 +2045,11 @@
                     </tr>
                     <tr v-if="modalTxns.length" class="bg-slate-900 text-white font-semibold border-t border-slate-700">
                       <td class="px-3 py-2.5 text-center" colspan="2">TOTAL</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center bg-cyan-900/50">{{ formatNumber(revenueModalTotals.breakfast_cover) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right bg-cyan-900/50">{{ formatCurrency(revenueModalTotals.breakfast_revenue) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center bg-cyan-900/50">{{ formatPct(revenueModalTotals.breakfast_pct) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right bg-cyan-900/50">{{ formatCurrency(revenueModalTotals.breakfast_avg_check) }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right bg-cyan-900/50">{{ formatCurrency(revenueModalTotals.breakfast_disc) }}</td>
                       <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatNumber(revenueModalTotals.lunch_cover) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_revenue) }}</td>
                       <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatPct(revenueModalTotals.lunch_pct) }}</td>
@@ -2055,12 +2066,12 @@
                       <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_disc) }}</td>
                     </tr>
                     <tr v-if="!modalTxns.length">
-                      <td colspan="16" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
+                      <td :colspan="revenueHasBreakfast ? 21 : 16" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
-              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · Lunch = s/d jam 17, Dinner = setelah jam 17 · % = share revenue terhadap total hari</p>
+              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · <template v-if="revenueHasBreakfast">Breakfast = 06:00–11:00 · </template>Lunch = s/d jam 17, Dinner = setelah jam 17 · % = share revenue terhadap total hari</p>
             </template>
 
             <!-- Total Spend: daily ala Receiving Sheet (tanpa omzet) -->
@@ -3770,23 +3781,32 @@ const modalAmountLabel = computed(() => {
   return 'Amount'
 })
 
-const revenueSubHeaders = [
+const revenueHasBreakfast = computed(() => Boolean(modalSheetMeta.value?.has_breakfast))
+const revenueSubHeaders = computed(() => [
+  ...(revenueHasBreakfast.value ? ['COVER', 'REVENUE', '%', 'A/C', 'DISC'] : []),
   'COVER', 'REVENUE', '%', 'A/C', 'DISC',
   'COVER', 'REVENUE', '%', 'A/C', 'DISC',
   'COVER', 'REVENUE', 'A/C', 'DISC',
-]
+])
 
 const revenueModalTotals = computed(() => {
   const rows = modalTxns.value || []
   const sum = (key) => rows.reduce((acc, r) => acc + (Number(r[key]) || 0), 0)
+  const breakfastCover = sum('breakfast_cover')
+  const breakfastRevenue = sum('breakfast_revenue')
   const lunchCover = sum('lunch_cover')
   const lunchRevenue = sum('lunch_revenue')
   const dinnerCover = sum('dinner_cover')
   const dinnerRevenue = sum('dinner_revenue')
-  const totalCover = sum('total_cover')
-  const totalRevenue = sum('total_revenue')
+  const totalCover = breakfastCover + lunchCover + dinnerCover
+  const totalRevenue = breakfastRevenue + lunchRevenue + dinnerRevenue
 
   return {
+    breakfast_cover: breakfastCover,
+    breakfast_revenue: breakfastRevenue,
+    breakfast_pct: totalRevenue > 0 ? Math.round((breakfastRevenue / totalRevenue) * 1000) / 10 : null,
+    breakfast_avg_check: breakfastCover > 0 ? Math.round(breakfastRevenue / breakfastCover) : 0,
+    breakfast_disc: sum('breakfast_disc'),
     lunch_cover: lunchCover,
     lunch_revenue: lunchRevenue,
     lunch_pct: totalRevenue > 0 ? Math.round((lunchRevenue / totalRevenue) * 1000) / 10 : null,
