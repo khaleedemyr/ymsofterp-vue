@@ -417,6 +417,71 @@ class OpexOutletDashboardController extends Controller
         );
     }
 
+    public function getRevenueHourly(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = (int) $user->id_outlet;
+        $date = (string) $request->get('date', '');
+
+        $outletId = $userOutletId === 1
+            ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
+            : $userOutletId;
+
+        if (! $outletId || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+            return response()->json(['error' => 'Outlet and date required'], 400);
+        }
+
+        $qrCode = trim((string) DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('qr_code'));
+        if ($qrCode === '') {
+            return response()->json(['rows' => [], 'total' => null]);
+        }
+
+        $rows = DB::table('orders')
+            ->where('kode_outlet', $qrCode)
+            ->whereDate('created_at', $date)
+            ->where('status', '!=', 'cancelled')
+            ->where('grand_total', '>', 0)
+            ->selectRaw('
+                HOUR(created_at) as hour,
+                COUNT(*) as bills,
+                SUM(COALESCE(pax, 0)) as cover,
+                SUM(COALESCE(grand_total, 0)) as revenue,
+                SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as disc
+            ')
+            ->groupByRaw('HOUR(created_at)')
+            ->orderBy('hour')
+            ->get()
+            ->map(function ($r) {
+                $cover = (float) $r->cover;
+                $revenue = (float) $r->revenue;
+
+                return [
+                    'hour' => (int) $r->hour,
+                    'label' => sprintf('%02d:00 - %02d:59', $r->hour, $r->hour),
+                    'bills' => (int) $r->bills,
+                    'cover' => (int) round($cover),
+                    'revenue' => round($revenue, 2),
+                    'avg_check' => $cover > 0 ? (float) round($revenue / $cover) : 0.0,
+                    'disc' => round((float) $r->disc, 2),
+                ];
+            })
+            ->values();
+
+        $totalCover = $rows->sum('cover');
+        $totalRevenue = round($rows->sum('revenue'), 2);
+
+        return response()->json([
+            'rows' => $rows,
+            'total' => [
+                'bills' => $rows->sum('bills'),
+                'cover' => $totalCover,
+                'revenue' => $totalRevenue,
+                'avg_check' => $totalCover > 0 ? (float) round($totalRevenue / $totalCover) : 0.0,
+                'disc' => round($rows->sum('disc'), 2),
+            ],
+        ]);
+    }
+
     public function getFoodByCategory()
     {
         return response()->json([]);

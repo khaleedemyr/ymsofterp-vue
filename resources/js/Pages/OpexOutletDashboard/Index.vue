@@ -2021,7 +2021,15 @@
                       class="border-t border-slate-100"
                       :class="row.is_weekend ? 'bg-rose-50/40' : 'bg-white'"
                     >
-                      <td class="px-3 py-2.5 text-center font-semibold text-slate-800 border-r border-slate-100">{{ formatShortDate(row.date) }}</td>
+                      <td class="px-3 py-2.5 text-center font-semibold text-slate-800 border-r border-slate-100">
+                        <button
+                          type="button"
+                          class="text-sky-700 underline decoration-dotted underline-offset-2 hover:text-sky-900"
+                          @click="openRevenueHourly(row.date)"
+                        >
+                          {{ formatShortDate(row.date) }}
+                        </button>
+                      </td>
                       <td class="px-3 py-2.5 text-center text-slate-700 border-r border-slate-100">{{ row.day_name }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.breakfast_cover) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_revenue) }}</td>
@@ -2581,6 +2589,64 @@
             </div>
             </template>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Revenue per jam (nested) -->
+    <div
+      v-if="revHourlyOpen"
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4"
+      @click.self="revHourlyOpen = false"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Sales per Jam</h2>
+            <p class="text-sm text-slate-500 mt-1">{{ formatShortDate(revHourlyDate) }}</p>
+          </div>
+          <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="revHourlyOpen = false">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="revHourlyLoading" class="py-12 text-center text-slate-500">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data...
+          </div>
+          <div v-else-if="revHourlyError" class="py-8 text-center text-rose-600">{{ revHourlyError }}</div>
+          <div v-else-if="!revHourlyData?.rows?.length" class="py-8 text-center text-slate-500">Tidak ada transaksi.</div>
+          <div v-else class="overflow-x-auto rounded-2xl border border-slate-200">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-900 text-white text-xs uppercase">
+                <tr>
+                  <th class="px-3 py-2 text-left">Jam</th>
+                  <th class="px-3 py-2 text-right">Bill</th>
+                  <th class="px-3 py-2 text-right">Cover</th>
+                  <th class="px-3 py-2 text-right">Revenue</th>
+                  <th class="px-3 py-2 text-right">A/C</th>
+                  <th class="px-3 py-2 text-right">Disc</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="r in revHourlyData.rows" :key="r.hour" class="border-t border-slate-100">
+                  <td class="px-3 py-2 font-semibold text-slate-800">{{ r.label }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(r.bills) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(r.cover) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(r.revenue) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(r.avg_check) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(r.disc) }}</td>
+                </tr>
+                <tr v-if="revHourlyData.total" class="bg-slate-900 text-white font-semibold">
+                  <td class="px-3 py-2">TOTAL</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(revHourlyData.total.bills) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatNumber(revHourlyData.total.cover) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(revHourlyData.total.revenue) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(revHourlyData.total.avg_check) }}</td>
+                  <td class="px-3 py-2 text-right">{{ formatCurrency(revHourlyData.total.disc) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
@@ -4088,6 +4154,31 @@ const openStockCutCellDetail = async (typeKey, label, date, amount) => {
     spendDetailError.value = e?.response?.data?.error || e?.message || 'Gagal memuat detail'
   } finally {
     spendDetailLoading.value = false
+  }
+}
+
+const revHourlyOpen = ref(false)
+const revHourlyLoading = ref(false)
+const revHourlyError = ref('')
+const revHourlyData = ref(null)
+const revHourlyDate = ref('')
+
+const openRevenueHourly = async (date) => {
+  if (!filters.value.outlet_id) return
+  revHourlyOpen.value = true
+  revHourlyLoading.value = true
+  revHourlyError.value = ''
+  revHourlyData.value = null
+  revHourlyDate.value = date
+  try {
+    const { data } = await axios.get('/opex-outlet-dashboard/revenue-hourly', {
+      params: { outlet_id: filters.value.outlet_id, date },
+    })
+    revHourlyData.value = data
+  } catch (e) {
+    revHourlyError.value = e?.response?.data?.error || e?.message || 'Gagal memuat data'
+  } finally {
+    revHourlyLoading.value = false
   }
 }
 
