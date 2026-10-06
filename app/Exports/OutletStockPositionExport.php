@@ -15,9 +15,11 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
     protected $outletId;
     protected $warehouseOutletId;
     protected $search;
+    protected $smallUnitId;
 
-    public function __construct($outletId = null, $warehouseOutletId = null, $search = null)
+    public function __construct($outletId = null, $warehouseOutletId = null, $search = null, $smallUnitId = null)
     {
+        $this->smallUnitId = $smallUnitId;
         $this->outletId = $outletId;
         $this->warehouseOutletId = $warehouseOutletId;
         $this->search = $search;
@@ -86,6 +88,9 @@ class OutletStockPositionExport implements FromCollection, WithHeadings, WithMap
         }
         if ($this->warehouseOutletId) {
             $query->where('s.warehouse_outlet_id', $this->warehouseOutletId);
+        }
+        if ($this->smallUnitId) {
+            $query->where('i.small_unit_id', $this->smallUnitId);
         }
         if ($this->search) {
             $search = $this->search;

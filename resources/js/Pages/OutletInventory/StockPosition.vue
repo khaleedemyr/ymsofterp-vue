@@ -32,7 +32,7 @@
 
       <template #filters>
       <div>
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-6 gap-4">
           <div class="flex flex-col gap-2">
             <label class="text-xs font-semibold text-gray-600">Pencarian</label>
             <input v-model="search" type="text" placeholder="Cari nama barang atau outlet..." class="px-4 py-2 border border-gray-300 rounded-lg w-full focus:ring-blue-500 focus:border-blue-500" />
@@ -49,6 +49,13 @@
             <select v-model="selectedWarehouseOutlet" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
               <option value="">Semua Warehouse Outlet</option>
               <option v-for="w in filteredWarehouseOutlets" :key="w.id" :value="w.id">{{ w.name }}</option>
+            </select>
+          </div>
+          <div class="flex flex-col gap-2">
+            <label class="text-xs font-semibold text-gray-600">Unit Small</label>
+            <select v-model="selectedSmallUnit" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+              <option value="">Semua Unit</option>
+              <option v-for="u in smallUnits" :key="u.id" :value="u.id">{{ u.name }}</option>
             </select>
           </div>
           <div class="flex flex-col gap-2">
@@ -236,12 +243,15 @@ const props = defineProps({
   outlets: Array,
   user_outlet_id: [String, Number],
   warehouse_outlets: Array,
+  small_units: Array,
   error: String
 });
 const stocks = computed(() => (Array.isArray(props.stocks) ? props.stocks : []));
 const outlets = computed(() => (Array.isArray(props.outlets) ? props.outlets : []));
 const warehouseOutlets = computed(() => (Array.isArray(props.warehouse_outlets) ? props.warehouse_outlets : []));
 const search = ref('');
+const smallUnits = computed(() => (Array.isArray(props.small_units) ? props.small_units : []));
+const selectedSmallUnit = ref(new URLSearchParams(window.location.search).get('small_unit_id') || '');
 const perPage = ref(25);
 const page = ref(1);
 const selectedOutlet = ref('');
@@ -525,6 +535,7 @@ function reloadData() {
     outlet_id: selectedOutlet.value || '',
     warehouse_outlet_id: selectedWarehouseOutlet.value || '',
     search: search.value?.trim() || '',
+    small_unit_id: selectedSmallUnit.value || '',
     per_page: perPage.value,
     page: page.value
   }
@@ -570,6 +581,7 @@ function exportToExcel() {
   if (selectedOutlet.value) params.set('outlet_id', selectedOutlet.value);
   if (selectedWarehouseOutlet.value) params.set('warehouse_outlet_id', selectedWarehouseOutlet.value);
   if (search.value?.trim()) params.set('search', search.value.trim());
+  if (selectedSmallUnit.value) params.set('small_unit_id', selectedSmallUnit.value);
   
   // Create download link
   const url = `/outlet-inventory/stock-position/export?${params.toString()}`;

@@ -2005,10 +2005,10 @@
                     <tr class="bg-slate-900 text-white">
                       <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Tanggal</th>
                       <th class="px-3 py-2 text-center border-r border-slate-700" rowspan="2">Hari</th>
-                      <th v-if="revenueHasBreakfast" class="px-3 py-2 text-center border-r border-cyan-700 bg-cyan-800" colspan="5">Breakfast</th>
-                      <th class="px-3 py-2 text-center border-r border-emerald-700 bg-emerald-800" colspan="5">Lunch</th>
-                      <th class="px-3 py-2 text-center border-r border-amber-700 bg-amber-800" colspan="5">Dinner</th>
-                      <th class="px-3 py-2 text-center bg-indigo-800" colspan="4">Total</th>
+                      <th v-if="revenueHasBreakfast" class="px-3 py-2 text-center border-r border-cyan-700 bg-cyan-800" colspan="6">Breakfast</th>
+                      <th class="px-3 py-2 text-center border-r border-emerald-700 bg-emerald-800" colspan="6">Lunch</th>
+                      <th class="px-3 py-2 text-center border-r border-amber-700 bg-amber-800" colspan="6">Dinner</th>
+                      <th class="px-3 py-2 text-center bg-indigo-800" colspan="5">Total</th>
                     </tr>
                     <tr class="bg-slate-800 text-slate-200">
                       <th v-for="(h, idx) in revenueSubHeaders" :key="'rev-sub-' + idx" class="px-2 py-1.5 text-center border-r border-slate-700 font-medium">{{ h }}</th>
@@ -2031,21 +2031,25 @@
                         </button>
                       </td>
                       <td class="px-3 py-2.5 text-center text-slate-700 border-r border-slate-100">{{ row.day_name }}</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.breakfast_bills) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.breakfast_cover) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_revenue) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-cyan-700">{{ formatPct(row.breakfast_pct) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_avg_check) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.breakfast_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.lunch_bills) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.lunch_cover) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_revenue) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-emerald-700">{{ formatPct(row.lunch_pct) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.lunch_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.dinner_bills) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.dinner_cover) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_revenue) }}</td>
                       <td class="px-2 py-2.5 text-center border-r border-slate-100 font-semibold text-amber-700">{{ formatPct(row.dinner_pct) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right border-r border-slate-100">{{ formatCurrency(row.dinner_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center font-semibold border-r border-slate-100">{{ formatNumber(row.total_bills) }}</td>
                       <td class="px-2 py-2.5 text-center font-semibold border-r border-slate-100">{{ formatNumber(row.total_cover) }}</td>
                       <td class="px-2 py-2.5 text-right font-semibold border-r border-slate-100">{{ formatCurrency(row.total_revenue) }}</td>
                       <td class="px-2 py-2.5 text-right font-semibold border-r border-slate-100">{{ formatCurrency(row.total_avg_check) }}</td>
@@ -2053,28 +2057,32 @@
                     </tr>
                     <tr v-if="modalTxns.length" class="bg-slate-900 text-white font-semibold border-t border-slate-700">
                       <td class="px-3 py-2.5 text-center" colspan="2">TOTAL</td>
+                      <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center bg-cyan-900/50">{{ formatNumber(revenueModalTotals.breakfast_bills) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center bg-cyan-900/50">{{ formatNumber(revenueModalTotals.breakfast_cover) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right bg-cyan-900/50">{{ formatCurrency(revenueModalTotals.breakfast_revenue) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center bg-cyan-900/50">{{ formatPct(revenueModalTotals.breakfast_pct) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right bg-cyan-900/50">{{ formatCurrency(revenueModalTotals.breakfast_avg_check) }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-right bg-cyan-900/50">{{ formatCurrency(revenueModalTotals.breakfast_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatNumber(revenueModalTotals.lunch_bills) }}</td>
                       <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatNumber(revenueModalTotals.lunch_cover) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_revenue) }}</td>
                       <td class="px-2 py-2.5 text-center bg-emerald-900/50">{{ formatPct(revenueModalTotals.lunch_pct) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right bg-emerald-900/50">{{ formatCurrency(revenueModalTotals.lunch_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-amber-900/50">{{ formatNumber(revenueModalTotals.dinner_bills) }}</td>
                       <td class="px-2 py-2.5 text-center bg-amber-900/50">{{ formatNumber(revenueModalTotals.dinner_cover) }}</td>
                       <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_revenue) }}</td>
                       <td class="px-2 py-2.5 text-center bg-amber-900/50">{{ formatPct(revenueModalTotals.dinner_pct) }}</td>
                       <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right bg-amber-900/50">{{ formatCurrency(revenueModalTotals.dinner_disc) }}</td>
+                      <td class="px-2 py-2.5 text-center bg-indigo-900/50">{{ formatNumber(revenueModalTotals.total_bills) }}</td>
                       <td class="px-2 py-2.5 text-center bg-indigo-900/50">{{ formatNumber(revenueModalTotals.total_cover) }}</td>
                       <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_revenue) }}</td>
                       <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_avg_check) }}</td>
                       <td class="px-2 py-2.5 text-right bg-indigo-900/50">{{ formatCurrency(revenueModalTotals.total_disc) }}</td>
                     </tr>
                     <tr v-if="!modalTxns.length">
-                      <td :colspan="revenueHasBreakfast ? 21 : 16" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
+                      <td :colspan="revenueHasBreakfast ? 25 : 19" class="px-4 py-10 text-center text-slate-400">Tidak ada data revenue</td>
                     </tr>
                   </tbody>
                 </table>
@@ -3849,10 +3857,10 @@ const modalAmountLabel = computed(() => {
 
 const revenueHasBreakfast = computed(() => Boolean(modalSheetMeta.value?.has_breakfast))
 const revenueSubHeaders = computed(() => [
-  ...(revenueHasBreakfast.value ? ['COVER', 'REVENUE', '%', 'A/C', 'DISC'] : []),
-  'COVER', 'REVENUE', '%', 'A/C', 'DISC',
-  'COVER', 'REVENUE', '%', 'A/C', 'DISC',
-  'COVER', 'REVENUE', 'A/C', 'DISC',
+  ...(revenueHasBreakfast.value ? ['BILL', 'COVER', 'REVENUE', '%', 'A/C', 'DISC'] : []),
+  'BILL', 'COVER', 'REVENUE', '%', 'A/C', 'DISC',
+  'BILL', 'COVER', 'REVENUE', '%', 'A/C', 'DISC',
+  'BILL', 'COVER', 'REVENUE', 'A/C', 'DISC',
 ])
 
 const revenueModalTotals = computed(() => {
@@ -3868,6 +3876,10 @@ const revenueModalTotals = computed(() => {
   const totalRevenue = breakfastRevenue + lunchRevenue + dinnerRevenue
 
   return {
+    breakfast_bills: sum('breakfast_bills'),
+    lunch_bills: sum('lunch_bills'),
+    dinner_bills: sum('dinner_bills'),
+    total_bills: sum('total_bills'),
     breakfast_cover: breakfastCover,
     breakfast_revenue: breakfastRevenue,
     breakfast_pct: totalRevenue > 0 ? Math.round((breakfastRevenue / totalRevenue) * 1000) / 10 : null,

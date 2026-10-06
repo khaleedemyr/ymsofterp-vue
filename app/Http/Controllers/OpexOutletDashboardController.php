@@ -827,6 +827,7 @@ class OpexOutletDashboardController extends Controller
             ->selectRaw("
                 DATE(created_at) as order_date,
                 {$periodExpression} as period,
+                COUNT(*) as bills,
                 SUM(COALESCE(pax, 0)) as cover,
                 SUM(COALESCE(grand_total, 0)) as revenue,
                 SUM(COALESCE(discount, 0) + COALESCE(manual_discount_amount, 0)) as disc
@@ -839,12 +840,13 @@ class OpexOutletDashboardController extends Controller
             $date = (string) $row->order_date;
             if (! isset($byDate[$date])) {
                 $byDate[$date] = [
-                    'breakfast' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
-                    'lunch' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
-                    'dinner' => ['cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
+                    'breakfast' => ['bills' => 0, 'cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
+                    'lunch' => ['bills' => 0, 'cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
+                    'dinner' => ['bills' => 0, 'cover' => 0.0, 'revenue' => 0.0, 'disc' => 0.0],
                 ];
             }
             $period = in_array($row->period, ['breakfast', 'dinner'], true) ? $row->period : 'lunch';
+            $byDate[$date][$period]['bills'] += (int) $row->bills;
             $byDate[$date][$period]['cover'] += (float) $row->cover;
             $byDate[$date][$period]['revenue'] += (float) $row->revenue;
             $byDate[$date][$period]['disc'] += (float) $row->disc;
@@ -882,6 +884,10 @@ class OpexOutletDashboardController extends Controller
                 'day_name' => $dayNames[$dow] ?? $carbon->format('l'),
                 'is_weekend' => in_array($dow, [0, 6], true),
                 'amount' => round($totalRevenue, 2),
+                'breakfast_bills' => $periods['breakfast']['bills'],
+                'lunch_bills' => $periods['lunch']['bills'],
+                'dinner_bills' => $periods['dinner']['bills'],
+                'total_bills' => $periods['breakfast']['bills'] + $periods['lunch']['bills'] + $periods['dinner']['bills'],
                 'breakfast_cover' => (int) round($breakfastCover),
                 'breakfast_revenue' => round($breakfastRevenue, 2),
                 'breakfast_pct' => $breakfastPct,
