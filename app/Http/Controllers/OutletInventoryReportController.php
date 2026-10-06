@@ -81,8 +81,9 @@ class OutletInventoryReportController extends Controller
         // Jangan cache qty: laporan stok akhir harus sama dengan kartu stok (bukan snapshot basi)
         $perPage = $request->input('per_page', 50); // Default 50 items per page
 
-        $query = $this->buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $request->input('small_unit_id'));
+        $query = $this->buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $request->input('small_unit_id'), false);
         $data = $query->orderBy('c.name')->orderBy('i.name')->paginate($perPage);
+        $stockRows = $this->applyLatestCardBalances($data->items());
         
         // Get filter options
         $outletsCacheKey = 'outlet_stock_position_outlets_' . ($user->id_outlet ?? 'guest');
@@ -114,7 +115,7 @@ class OutletInventoryReportController extends Controller
         });
         
         return inertia('OutletInventory/StockPosition', [
-            'stocks' => $data->items(),
+            'stocks' => $stockRows,
             'outlets' => $outlets,
             'warehouse_outlets' => $warehouse_outlets,
             'small_units' => $this->outletStockSmallUnits(),
@@ -1102,7 +1103,64 @@ class OutletInventoryReportController extends Controller
         });
     }
 
-    private function buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $smallUnitId = null)
+    /**
+     * Timpa qty/value baris (hasil query tanpa kartu) dengan saldo kartu terakhir,
+     * hanya untuk baris di halaman yang sedang tampil agar tidak scan seluruh tabel kartu.
+     */
+    private function applyLatestCardBalances(array $rows): array
+    {
+        if (empty($rows)) {
+            return $rows;
+        }
+
+        $itemIds = collect($rows)->pluck('inventory_item_id')->unique()->values();
+        $outletIds = collect($rows)->pluck('outlet_id')->unique()->values();
+
+        $keys = DB::table('outlet_food_inventory_cards')
+            ->whereIn('inventory_item_id', $itemIds)
+            ->whereIn('id_outlet', $outletIds)
+            ->select(
+                'inventory_item_id',
+                'id_outlet',
+                'warehouse_outlet_id',
+                DB::raw("MAX(CONCAT(DATE(`date`), ' ', LPAD(id, 20, '0'))) as max_key")
+            )
+            ->groupBy('inventory_item_id', 'id_outlet', 'warehouse_outlet_id')
+            ->get();
+
+        $cards = DB::table('outlet_food_inventory_cards')
+            ->whereIn('inventory_item_id', $itemIds)
+            ->whereIn('id_outlet', $outletIds)
+            ->select('id', 'date', 'inventory_item_id', 'id_outlet', 'warehouse_outlet_id', 'saldo_qty_small', 'saldo_qty_medium', 'saldo_qty_large', 'saldo_value')
+            ->get()
+            ->groupBy(fn ($c) => $c->inventory_item_id . '|' . $c->id_outlet . '|' . $c->warehouse_outlet_id);
+
+        $latest = [];
+        foreach ($keys as $k) {
+            $key = $k->inventory_item_id . '|' . $k->id_outlet . '|' . $k->warehouse_outlet_id;
+            foreach ($cards[$key] ?? [] as $c) {
+                $ck = substr((string) $c->date, 0, 10) . ' ' . str_pad((string) $c->id, 20, '0', STR_PAD_LEFT);
+                if ($ck === $k->max_key) {
+                    $latest[$key] = $c;
+                    break;
+                }
+            }
+        }
+
+        foreach ($rows as $row) {
+            $c = $latest[$row->inventory_item_id . '|' . $row->outlet_id . '|' . $row->warehouse_outlet_id] ?? null;
+            if ($c) {
+                $row->qty_small = $c->saldo_qty_small ?? $row->qty_small;
+                $row->qty_medium = $c->saldo_qty_medium ?? $row->qty_medium;
+                $row->qty_large = $c->saldo_qty_large ?? $row->qty_large;
+                $row->value = $c->saldo_value ?? $row->value;
+            }
+        }
+
+        return $rows;
+    }
+
+    private function buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $smallUnitId = null, $withCards = true)
     {
         $latestCardKeys = DB::table('outlet_food_inventory_cards')
             ->select(
@@ -1115,7 +1173,7 @@ class OutletInventoryReportController extends Controller
             ->when($warehouseOutletId, fn ($q) => $q->where('warehouse_outlet_id', $warehouseOutletId))
             ->groupBy('inventory_item_id', 'id_outlet', 'warehouse_outlet_id');
 
-        return DB::table('outlet_food_inventory_stocks as s')
+        $query = DB::table('outlet_food_inventory_stocks as s')
             ->join('outlet_food_inventory_items as fi', 's.inventory_item_id', '=', 'fi.id')
             ->join('items as i', 'fi.item_id', '=', 'i.id')
             ->join('tbl_data_outlet as o', 's.id_outlet', '=', 'o.id_outlet')
@@ -1123,8 +1181,10 @@ class OutletInventoryReportController extends Controller
             ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
             ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
             ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
-            ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id')
-            ->leftJoinSub($latestCardKeys, 'lck', function ($join) {
+            ->leftJoin('warehouse_outlets as wo', 's.warehouse_outlet_id', '=', 'wo.id');
+
+        if ($withCards) {
+            $query->leftJoinSub($latestCardKeys, 'lck', function ($join) {
                 $join->on('lck.inventory_item_id', '=', 's.inventory_item_id')
                     ->on('lck.id_outlet', '=', 's.id_outlet')
                     ->on('lck.warehouse_outlet_id', '=', 's.warehouse_outlet_id');
@@ -1134,18 +1194,22 @@ class OutletInventoryReportController extends Controller
                     ->on('lc.id_outlet', '=', 'lck.id_outlet')
                     ->on('lc.warehouse_outlet_id', '=', 'lck.warehouse_outlet_id')
                     ->whereRaw("CONCAT(DATE(lc.date), ' ', LPAD(lc.id, 20, '0')) = lck.max_key");
-            })
+            });
+        }
+
+        return $query
             ->select(
+                's.inventory_item_id',
                 'i.id as item_id',
                 'i.name as item_name',
                 'c.id as category_id',
                 'c.name as category_name',
                 'o.id_outlet as outlet_id',
                 'o.nama_outlet as outlet_name',
-                DB::raw('COALESCE(lc.saldo_qty_small, s.qty_small) as qty_small'),
-                DB::raw('COALESCE(lc.saldo_qty_medium, s.qty_medium) as qty_medium'),
-                DB::raw('COALESCE(lc.saldo_qty_large, s.qty_large) as qty_large'),
-                DB::raw('COALESCE(lc.saldo_value, s.value) as value'),
+                DB::raw($withCards ? 'COALESCE(lc.saldo_qty_small, s.qty_small) as qty_small' : 's.qty_small as qty_small'),
+                DB::raw($withCards ? 'COALESCE(lc.saldo_qty_medium, s.qty_medium) as qty_medium' : 's.qty_medium as qty_medium'),
+                DB::raw($withCards ? 'COALESCE(lc.saldo_qty_large, s.qty_large) as qty_large' : 's.qty_large as qty_large'),
+                DB::raw($withCards ? 'COALESCE(lc.saldo_value, s.value) as value' : 's.value as value'),
                 's.last_cost_small',
                 's.last_cost_medium',
                 's.last_cost_large',

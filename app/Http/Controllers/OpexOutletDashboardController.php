@@ -482,6 +482,88 @@ class OpexOutletDashboardController extends Controller
         ]);
     }
 
+    /** Item engineering (qty & sales per item) dikelompokkan per category → sub category, untuk 1 hari atau 1 jam. */
+    public function getRevenueEngineering(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = (int) $user->id_outlet;
+        $date = (string) $request->get('date', '');
+        $hour = $request->filled('hour') ? (int) $request->get('hour') : null;
+
+        $outletId = $userOutletId === 1
+            ? ($request->filled('outlet_id') ? (int) $request->get('outlet_id') : null)
+            : $userOutletId;
+
+        if (! $outletId || ! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || ($hour !== null && ($hour < 0 || $hour > 23))) {
+            return response()->json(['error' => 'Outlet and date required'], 400);
+        }
+
+        $qrCode = trim((string) DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('qr_code'));
+        if ($qrCode === '') {
+            return response()->json(['categories' => [], 'total' => ['qty' => 0, 'subtotal' => 0]]);
+        }
+
+        $rows = DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->leftJoin('items', 'order_items.item_id', '=', 'items.id')
+            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+            ->leftJoin('sub_categories', 'items.sub_category_id', '=', 'sub_categories.id')
+            ->where('orders.kode_outlet', $qrCode)
+            ->whereDate('orders.created_at', $date)
+            ->when($hour !== null, fn ($q) => $q->whereRaw('HOUR(orders.created_at) = ?', [$hour]))
+            ->where('orders.status', '!=', 'cancelled')
+            ->where('orders.grand_total', '>', 0)
+            ->groupBy('order_items.item_name', 'categories.name', 'sub_categories.name')
+            ->selectRaw('
+                order_items.item_name,
+                categories.name as category_name,
+                sub_categories.name as sub_category_name,
+                SUM(order_items.qty) as qty,
+                MAX(order_items.price) as price,
+                SUM(order_items.qty * order_items.price) as subtotal
+            ')
+            ->get();
+
+        $categories = $rows->groupBy(fn ($r) => $r->category_name ?: 'Tanpa Category')
+            ->map(function ($catRows, $catName) {
+                $subs = $catRows->groupBy(fn ($r) => $r->sub_category_name ?: 'Tanpa Sub Category')
+                    ->map(function ($subRows, $subName) {
+                        $items = $subRows->sortByDesc('qty')->map(fn ($r) => [
+                            'item_name' => $r->item_name,
+                            'qty' => (float) $r->qty,
+                            'price' => (float) $r->price,
+                            'subtotal' => round((float) $r->subtotal, 2),
+                        ])->values();
+
+                        return [
+                            'name' => $subName,
+                            'qty' => $items->sum('qty'),
+                            'subtotal' => round($items->sum('subtotal'), 2),
+                            'items' => $items,
+                        ];
+                    })
+                    ->sortBy('name')
+                    ->values();
+
+                return [
+                    'name' => $catName,
+                    'qty' => $subs->sum('qty'),
+                    'subtotal' => round($subs->sum('subtotal'), 2),
+                    'sub_categories' => $subs,
+                ];
+            })
+            ->sortBy('name')
+            ->values();
+
+        return response()->json([
+            'categories' => $categories,
+            'total' => [
+                'qty' => $categories->sum('qty'),
+                'subtotal' => round($categories->sum('subtotal'), 2),
+            ],
+        ]);
+    }
+
     public function getFoodByCategory()
     {
         return response()->json([]);

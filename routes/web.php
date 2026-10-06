@@ -2147,6 +2147,7 @@ Route::get('/opex-outlet-dashboard/card-detail', [App\Http\Controllers\OpexOutle
 Route::get('/opex-outlet-dashboard/category-cost-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getCategoryCostCellDetail'])->name('opex-outlet-dashboard.category-cost-detail');
 Route::get('/opex-outlet-dashboard/stock-cut-detail', [App\Http\Controllers\OpexOutletDashboardController::class, 'getStockCutCellDetail'])->name('opex-outlet-dashboard.stock-cut-detail');
 Route::get('/opex-outlet-dashboard/revenue-hourly', [App\Http\Controllers\OpexOutletDashboardController::class, 'getRevenueHourly'])->name('opex-outlet-dashboard.revenue-hourly');
+Route::get('/opex-outlet-dashboard/revenue-engineering', [App\Http\Controllers\OpexOutletDashboardController::class, 'getRevenueEngineering'])->name('opex-outlet-dashboard.revenue-engineering');
 Route::get('/opex-outlet-dashboard/food-by-category', [App\Http\Controllers\OpexOutletDashboardController::class, 'getFoodByCategory'])->name('opex-outlet-dashboard.food-by-category');
 Route::get('/opex-outlet-dashboard/food-category-items', [App\Http\Controllers\OpexOutletDashboardController::class, 'getFoodCategoryItems'])->name('opex-outlet-dashboard.food-category-items');
 Route::get('/sales-outlet-dashboard/menu-region', [App\Http\Controllers\SalesOutletDashboardController::class, 'getMenuRegionData'])->name('sales-outlet-dashboard.menu-region');

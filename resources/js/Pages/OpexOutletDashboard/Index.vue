@@ -2029,6 +2029,13 @@
                         >
                           {{ formatShortDate(row.date) }}
                         </button>
+                        <button
+                          type="button"
+                          class="mt-1 block mx-auto px-2 py-0.5 rounded bg-slate-800 text-white text-[10px] font-medium hover:bg-slate-700"
+                          @click="openRevenueEngineering(row.date)"
+                        >
+                          <i class="fa-solid fa-chart-pie mr-1"></i>Engineering
+                        </button>
                       </td>
                       <td class="px-3 py-2.5 text-center text-slate-700 border-r border-slate-100">{{ row.day_name }}</td>
                       <td v-if="revenueHasBreakfast" class="px-2 py-2.5 text-center border-r border-slate-100">{{ formatNumber(row.breakfast_bills) }}</td>
@@ -2087,7 +2094,17 @@
                   </tbody>
                 </table>
               </div>
-              <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · <template v-if="revenueHasBreakfast">Breakfast = 06:00–11:00 · </template>Lunch = s/d jam 17, Dinner = setelah jam 17 · % = share revenue terhadap total hari</p>
+              <div class="flex items-center justify-between gap-3">
+                <p class="text-xs text-slate-500">{{ modalPagination.total }} hari · <template v-if="revenueHasBreakfast">Breakfast = 06:00–11:00 · </template>Lunch = s/d jam 17, Dinner = setelah jam 17 · % = share revenue terhadap total hari</p>
+                <button
+                  type="button"
+                  class="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+                  :disabled="!modalTxns.length"
+                  @click="exportRevenueModal"
+                >
+                  <i class="fa-solid fa-file-excel mr-1"></i>Export Excel
+                </button>
+              </div>
             </template>
 
             <!-- Total Spend: daily ala Receiving Sheet (tanpa omzet) -->
@@ -2613,9 +2630,19 @@
             <h2 class="text-lg font-bold text-slate-900">Sales per Jam</h2>
             <p class="text-sm text-slate-500 mt-1">{{ formatShortDate(revHourlyDate) }}</p>
           </div>
-          <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="revHourlyOpen = false">
-            <i class="fa-solid fa-xmark"></i>
-          </button>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              :disabled="!revHourlyData?.rows?.length"
+              @click="exportRevenueHourly"
+            >
+              <i class="fa-solid fa-file-excel mr-1"></i>Export Excel
+            </button>
+            <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="revHourlyOpen = false">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
         </div>
         <div class="px-6 py-4 overflow-y-auto flex-1">
           <div v-if="revHourlyLoading" class="py-12 text-center text-slate-500">
@@ -2633,6 +2660,7 @@
                   <th class="px-3 py-2 text-right">Revenue</th>
                   <th class="px-3 py-2 text-right">A/C</th>
                   <th class="px-3 py-2 text-right">Disc</th>
+                  <th class="px-3 py-2 text-center">Aksi</th>
                 </tr>
               </thead>
               <tbody>
@@ -2643,6 +2671,15 @@
                   <td class="px-3 py-2 text-right">{{ formatCurrency(r.revenue) }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(r.avg_check) }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(r.disc) }}</td>
+                  <td class="px-3 py-2 text-center">
+                    <button
+                      type="button"
+                      class="px-2 py-0.5 rounded bg-slate-800 text-white text-[11px] font-medium hover:bg-slate-700"
+                      @click="openRevenueEngineering(revHourlyDate, r.hour, r.label)"
+                    >
+                      <i class="fa-solid fa-chart-pie mr-1"></i>Engineering
+                    </button>
+                  </td>
                 </tr>
                 <tr v-if="revHourlyData.total" class="bg-slate-900 text-white font-semibold">
                   <td class="px-3 py-2">TOTAL</td>
@@ -2651,9 +2688,82 @@
                   <td class="px-3 py-2 text-right">{{ formatCurrency(revHourlyData.total.revenue) }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(revHourlyData.total.avg_check) }}</td>
                   <td class="px-3 py-2 text-right">{{ formatCurrency(revHourlyData.total.disc) }}</td>
+                  <td class="px-3 py-2"></td>
                 </tr>
               </tbody>
             </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Item Engineering per category / sub category (nested) -->
+    <div
+      v-if="revEngOpen"
+      class="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4"
+      @click.self="revEngOpen = false"
+    >
+      <div class="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[88vh] overflow-hidden flex flex-col">
+        <div class="px-6 py-4 border-b flex items-start justify-between gap-4">
+          <div>
+            <h2 class="text-lg font-bold text-slate-900">Item Engineering</h2>
+            <p class="text-sm text-slate-500 mt-1">{{ formatShortDate(revEngDate) }}<template v-if="revEngHourLabel"> · {{ revEngHourLabel }}</template></p>
+          </div>
+          <div class="flex items-center gap-3">
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 disabled:opacity-50"
+              :disabled="!revEngData?.categories?.length"
+              @click="exportRevenueEngineering"
+            >
+              <i class="fa-solid fa-file-excel mr-1"></i>Export Excel
+            </button>
+            <button type="button" class="text-slate-400 hover:text-slate-700 text-xl" @click="revEngOpen = false">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
+          </div>
+        </div>
+        <div class="px-6 py-4 overflow-y-auto flex-1">
+          <div v-if="revEngLoading" class="py-12 text-center text-slate-500">
+            <i class="fa-solid fa-spinner fa-spin mr-2"></i> Memuat data...
+          </div>
+          <div v-else-if="revEngError" class="py-8 text-center text-rose-600">{{ revEngError }}</div>
+          <div v-else-if="!revEngData?.categories?.length" class="py-8 text-center text-slate-500">Tidak ada item terjual.</div>
+          <div v-else class="space-y-5">
+            <div v-for="cat in revEngData.categories" :key="cat.name" class="rounded-2xl border border-slate-200 overflow-hidden">
+              <div class="px-4 py-2.5 bg-slate-900 text-white flex items-center justify-between text-sm font-bold">
+                <span>{{ cat.name }}</span>
+                <span class="text-xs font-semibold">Qty {{ formatNumber(cat.qty) }} · {{ formatCurrency(cat.subtotal) }}</span>
+              </div>
+              <div v-for="sub in cat.sub_categories" :key="cat.name + '|' + sub.name">
+                <div class="px-4 py-2 bg-slate-100 flex items-center justify-between text-xs font-semibold text-slate-700">
+                  <span>{{ sub.name }}</span>
+                  <span>Qty {{ formatNumber(sub.qty) }} · {{ formatCurrency(sub.subtotal) }}</span>
+                </div>
+                <table class="min-w-full text-xs">
+                  <thead class="text-slate-500">
+                    <tr>
+                      <th class="px-4 py-1.5 text-left font-medium">Item</th>
+                      <th class="px-4 py-1.5 text-right font-medium">Qty</th>
+                      <th class="px-4 py-1.5 text-right font-medium">Harga</th>
+                      <th class="px-4 py-1.5 text-right font-medium">Subtotal</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="it in sub.items" :key="it.item_name" class="border-t border-slate-100">
+                      <td class="px-4 py-1.5 text-slate-800">{{ it.item_name }}</td>
+                      <td class="px-4 py-1.5 text-right">{{ formatNumber(it.qty) }}</td>
+                      <td class="px-4 py-1.5 text-right">{{ formatCurrency(it.price) }}</td>
+                      <td class="px-4 py-1.5 text-right">{{ formatCurrency(it.subtotal) }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div class="px-4 py-2.5 rounded-2xl bg-slate-900 text-white flex items-center justify-between text-sm font-bold">
+              <span>TOTAL</span>
+              <span>Qty {{ formatNumber(revEngData.total.qty) }} · {{ formatCurrency(revEngData.total.subtotal) }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -4192,6 +4302,111 @@ const openRevenueHourly = async (date) => {
   } finally {
     revHourlyLoading.value = false
   }
+}
+
+const downloadXlsx = async (sheetName, aoa, fileName, colWidths = null) => {
+  const XLSX = await import('xlsx')
+  const ws = XLSX.utils.aoa_to_sheet(aoa)
+  if (colWidths) ws['!cols'] = colWidths.map((wch) => ({ wch }))
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31))
+  XLSX.writeFile(wb, fileName)
+}
+
+const exportRevenueModal = async () => {
+  const rows = modalTxns.value || []
+  if (!rows.length) return
+  const bf = revenueHasBreakfast.value
+  const t = revenueModalTotals.value
+  const periods = [...(bf ? ['breakfast'] : []), 'lunch', 'dinner']
+  const header = ['Tanggal', 'Hari']
+  const group = ['', '']
+  periods.forEach((p) => {
+    const label = p.charAt(0).toUpperCase() + p.slice(1)
+    ;['Bill', 'Cover', 'Revenue', '%', 'A/C', 'Disc'].forEach((h, i) => {
+      header.push(h)
+      group.push(i === 0 ? label : '')
+    })
+  })
+  ;['Bill', 'Cover', 'Revenue', 'A/C', 'Disc'].forEach((h, i) => {
+    header.push(h)
+    group.push(i === 0 ? 'Total' : '')
+  })
+  const line = (src, first, second) => {
+    const out = [first, second]
+    periods.forEach((p) => {
+      out.push(
+        Number(src[`${p}_bills`]) || 0, Number(src[`${p}_cover`]) || 0, Number(src[`${p}_revenue`]) || 0,
+        src[`${p}_pct`] ?? '', Number(src[`${p}_avg_check`]) || 0, Number(src[`${p}_disc`]) || 0,
+      )
+    })
+    out.push(
+      Number(src.total_bills) || 0, Number(src.total_cover) || 0, Number(src.total_revenue) || 0,
+      Number(src.total_avg_check) || 0, Number(src.total_disc) || 0,
+    )
+    return out
+  }
+  const aoa = [
+    group,
+    header,
+    ...rows.map((r) => line(r, r.date, r.day_name)),
+    line(t, 'TOTAL', ''),
+  ]
+  await downloadXlsx('Revenue', aoa, `daily-revenue_${filters.value.date_from || ''}_${filters.value.date_to || ''}.xlsx`)
+}
+
+const exportRevenueHourly = async () => {
+  const d = revHourlyData.value
+  if (!d?.rows?.length) return
+  const aoa = [
+    ['Jam', 'Bill', 'Cover', 'Revenue', 'A/C', 'Disc'],
+    ...d.rows.map((r) => [r.label, r.bills, r.cover, r.revenue, r.avg_check, r.disc]),
+  ]
+  if (d.total) aoa.push(['TOTAL', d.total.bills, d.total.cover, d.total.revenue, d.total.avg_check, d.total.disc])
+  await downloadXlsx('Sales per Jam', aoa, `sales-per-jam_${revHourlyDate.value}.xlsx`, [16, 8, 8, 16, 14, 14])
+}
+
+const revEngOpen = ref(false)
+const revEngLoading = ref(false)
+const revEngError = ref('')
+const revEngData = ref(null)
+const revEngDate = ref('')
+const revEngHour = ref(null)
+const revEngHourLabel = ref('')
+
+const openRevenueEngineering = async (date, hour = null, hourLabel = '') => {
+  if (!filters.value.outlet_id) return
+  revEngOpen.value = true
+  revEngLoading.value = true
+  revEngError.value = ''
+  revEngData.value = null
+  revEngDate.value = date
+  revEngHour.value = hour
+  revEngHourLabel.value = hourLabel
+  try {
+    const params = { outlet_id: filters.value.outlet_id, date }
+    if (hour !== null && hour !== undefined) params.hour = hour
+    const { data } = await axios.get('/opex-outlet-dashboard/revenue-engineering', { params })
+    revEngData.value = data
+  } catch (e) {
+    revEngError.value = e?.response?.data?.error || e?.message || 'Gagal memuat data'
+  } finally {
+    revEngLoading.value = false
+  }
+}
+
+const exportRevenueEngineering = async () => {
+  const d = revEngData.value
+  if (!d?.categories?.length) return
+  const aoa = [['Category', 'Sub Category', 'Item', 'Qty', 'Harga', 'Subtotal']]
+  d.categories.forEach((cat) => {
+    cat.sub_categories.forEach((sub) => {
+      sub.items.forEach((it) => aoa.push([cat.name, sub.name, it.item_name, it.qty, it.price, it.subtotal]))
+    })
+  })
+  aoa.push(['TOTAL', '', '', d.total.qty, '', d.total.subtotal])
+  const suffix = revEngHour.value !== null ? `_${String(revEngHour.value).padStart(2, '0')}` : ''
+  await downloadXlsx('Item Engineering', aoa, `item-engineering_${revEngDate.value}${suffix}.xlsx`, [24, 24, 40, 10, 14, 16])
 }
 
 const closeSpendCellDetail = () => {

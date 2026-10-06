@@ -249,13 +249,14 @@ const props = defineProps({
 const stocks = computed(() => (Array.isArray(props.stocks) ? props.stocks : []));
 const outlets = computed(() => (Array.isArray(props.outlets) ? props.outlets : []));
 const warehouseOutlets = computed(() => (Array.isArray(props.warehouse_outlets) ? props.warehouse_outlets : []));
-const search = ref('');
+const urlParams = new URLSearchParams(window.location.search);
+const search = ref(urlParams.get('search') || '');
 const smallUnits = computed(() => (Array.isArray(props.small_units) ? props.small_units : []));
-const selectedSmallUnit = ref(new URLSearchParams(window.location.search).get('small_unit_id') || '');
-const perPage = ref(25);
-const page = ref(1);
-const selectedOutlet = ref('');
-const selectedWarehouseOutlet = ref('');
+const selectedSmallUnit = ref(urlParams.get('small_unit_id') || '');
+const perPage = ref(Number(urlParams.get('per_page')) || 25);
+const page = ref(Number(urlParams.get('page')) || 1);
+const selectedOutlet = ref(urlParams.get('outlet_id') || '');
+const selectedWarehouseOutlet = ref(urlParams.get('warehouse_outlet_id') || '');
 const loadingReload = ref(false);
 const exporting = ref(false);
 
