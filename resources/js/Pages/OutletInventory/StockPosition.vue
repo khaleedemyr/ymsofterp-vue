@@ -3,7 +3,7 @@
     <InventoryReportPage
       eyebrow="Outlet Inventory"
       title="Laporan Stok Akhir Outlet"
-      subtitle="Ringkasan stok per outlet & warehouse. Klik barang untuk melihat kartu stok — transaksi serial bisa di-expand per kedatangan."
+      subtitle="Ringkasan stok per outlet & warehouse. Klik barang untuk melihat kartu stok â€” transaksi serial bisa di-expand per kedatangan."
       variant="outlet"
     >
       <template #badges>
@@ -26,7 +26,7 @@
         </div>
         <div class="rounded-xl border border-white/15 bg-white/10 px-4 py-3 backdrop-blur xl:col-span-2">
           <p class="text-[11px] uppercase tracking-wide text-sky-200/80">Tips</p>
-          <p class="mt-1 text-xs font-medium leading-snug">Expand kategori → klik barang → lihat mutasi & nomor seri</p>
+          <p class="mt-1 text-xs font-medium leading-snug">Expand kategori â†’ klik barang â†’ lihat mutasi & nomor seri</p>
         </div>
       </template>
 
@@ -52,10 +52,10 @@
             </select>
           </div>
           <div class="flex flex-col gap-2">
-            <label class="text-xs font-semibold text-gray-600">Unit Small</label>
-            <select v-model="selectedSmallUnit" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+            <label class="text-xs font-semibold text-gray-600">Unit Medium</label>
+            <select v-model="selectedMediumUnit" class="border border-gray-300 rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
               <option value="">Semua Unit</option>
-              <option v-for="u in smallUnits" :key="u.id" :value="u.id">{{ u.name }}</option>
+              <option v-for="u in mediumUnits" :key="u.id" :value="u.id">{{ u.name }}</option>
             </select>
           </div>
           <div class="flex flex-col gap-2">
@@ -243,7 +243,7 @@ const props = defineProps({
   outlets: Array,
   user_outlet_id: [String, Number],
   warehouse_outlets: Array,
-  small_units: Array,
+  medium_units: Array,
   error: String
 });
 const stocks = computed(() => (Array.isArray(props.stocks) ? props.stocks : []));
@@ -251,8 +251,8 @@ const outlets = computed(() => (Array.isArray(props.outlets) ? props.outlets : [
 const warehouseOutlets = computed(() => (Array.isArray(props.warehouse_outlets) ? props.warehouse_outlets : []));
 const urlParams = new URLSearchParams(window.location.search);
 const search = ref(urlParams.get('search') || '');
-const smallUnits = computed(() => (Array.isArray(props.small_units) ? props.small_units : []));
-const selectedSmallUnit = ref(urlParams.get('small_unit_id') || '');
+const mediumUnits = computed(() => (Array.isArray(props.medium_units) ? props.medium_units : []));
+const selectedMediumUnit = ref(urlParams.get('medium_unit_id') || '');
 const perPage = ref(Number(urlParams.get('per_page')) || 25);
 const page = ref(Number(urlParams.get('page')) || 1);
 const selectedOutlet = ref(urlParams.get('outlet_id') || '');
@@ -536,7 +536,7 @@ function reloadData() {
     outlet_id: selectedOutlet.value || '',
     warehouse_outlet_id: selectedWarehouseOutlet.value || '',
     search: search.value?.trim() || '',
-    small_unit_id: selectedSmallUnit.value || '',
+    medium_unit_id: selectedMediumUnit.value || '',
     per_page: perPage.value,
     page: page.value
   }
@@ -582,7 +582,7 @@ function exportToExcel() {
   if (selectedOutlet.value) params.set('outlet_id', selectedOutlet.value);
   if (selectedWarehouseOutlet.value) params.set('warehouse_outlet_id', selectedWarehouseOutlet.value);
   if (search.value?.trim()) params.set('search', search.value.trim());
-  if (selectedSmallUnit.value) params.set('small_unit_id', selectedSmallUnit.value);
+  if (selectedMediumUnit.value) params.set('medium_unit_id', selectedMediumUnit.value);
   
   // Create download link
   const url = `/outlet-inventory/stock-position/export?${params.toString()}`;

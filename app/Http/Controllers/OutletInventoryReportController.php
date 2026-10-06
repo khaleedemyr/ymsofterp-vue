@@ -57,7 +57,7 @@ class OutletInventoryReportController extends Controller
                 'stocks' => collect([]),
                 'outlets' => $outlets,
                 'warehouse_outlets' => $warehouse_outlets,
-                'small_units' => $this->outletStockSmallUnits(),
+                'medium_units' => $this->outletStockMediumUnits(),
                 'user_outlet_id' => $user->id_outlet ?? null,
                 'error' => null
             ]);
@@ -81,7 +81,7 @@ class OutletInventoryReportController extends Controller
         // Jangan cache qty: laporan stok akhir harus sama dengan kartu stok (bukan snapshot basi)
         $perPage = $request->input('per_page', 50); // Default 50 items per page
 
-        $query = $this->buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $request->input('small_unit_id'), false);
+        $query = $this->buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $request->input('medium_unit_id'), false);
         $data = $query->orderBy('c.name')->orderBy('i.name')->paginate($perPage);
         $stockRows = $this->applyLatestCardBalances($data->items());
         
@@ -118,7 +118,7 @@ class OutletInventoryReportController extends Controller
             'stocks' => $stockRows,
             'outlets' => $outlets,
             'warehouse_outlets' => $warehouse_outlets,
-            'small_units' => $this->outletStockSmallUnits(),
+            'medium_units' => $this->outletStockMediumUnits(),
             'user_outlet_id' => $user->id_outlet ?? null,
             'error' => null
         ]);
@@ -223,7 +223,7 @@ class OutletInventoryReportController extends Controller
         $filename = "laporan_stok_akhir_outlet_{$timestamp}.xlsx";
         
         return Excel::download(
-            new OutletStockPositionExport($outletId, $warehouseOutletId, $search, $request->input('small_unit_id')), 
+            new OutletStockPositionExport($outletId, $warehouseOutletId, $search, $request->input('medium_unit_id')), 
             $filename
         );
     }
@@ -1093,11 +1093,11 @@ class OutletInventoryReportController extends Controller
      * Qty laporan stok akhir mengikuti saldo kartu terakhir (sama dengan kartu stok).
      * Fallback ke outlet_food_inventory_stocks jika belum ada kartu.
      */
-    private function outletStockSmallUnits()
+    private function outletStockMediumUnits()
     {
-        return Cache::remember('outlet_stock_position_small_units', 300, function () {
+        return Cache::remember('outlet_stock_position_medium_units', 300, function () {
             return DB::table('units as u')
-                ->whereIn('u.id', DB::table('items')->whereNotNull('small_unit_id')->select('small_unit_id'))
+                ->whereIn('u.id', DB::table('items')->whereNotNull('medium_unit_id')->select('medium_unit_id'))
                 ->orderBy('u.name')
                 ->get(['u.id', 'u.name']);
         });
@@ -1160,7 +1160,7 @@ class OutletInventoryReportController extends Controller
         return $rows;
     }
 
-    private function buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $smallUnitId = null, $withCards = true)
+    private function buildOutletStockPositionQuery($outletId, $warehouseOutletId, $search, $mediumUnitId = null, $withCards = true)
     {
         $latestCardKeys = DB::table('outlet_food_inventory_cards')
             ->select(
@@ -1224,7 +1224,7 @@ class OutletInventoryReportController extends Controller
             )
             ->when($outletId, fn ($q) => $q->where('s.id_outlet', $outletId))
             ->when($warehouseOutletId, fn ($q) => $q->where('s.warehouse_outlet_id', $warehouseOutletId))
-            ->when($smallUnitId, fn ($q) => $q->where('i.small_unit_id', $smallUnitId))
+            ->when($mediumUnitId, fn ($q) => $q->where('i.medium_unit_id', $mediumUnitId))
             ->when($search, function ($q) use ($search) {
                 $q->where(function ($inner) use ($search) {
                     $inner->where('i.name', 'like', "%{$search}%")
