@@ -182,15 +182,31 @@ class MetaWhatsAppInboundService
             return;
         }
 
-        $updated = OmniMessage::query()
-            ->where('meta_message_id', $metaMessageId)
-            ->update([
-                'status' => (string) ($status['status'] ?? ''),
+        $newStatus = (string) ($status['status'] ?? '');
+        $message = OmniMessage::query()->where('meta_message_id', $metaMessageId)->first();
+
+        if (! $message) {
+            Log::debug('Meta WhatsApp status for unknown message', ['meta_message_id' => $metaMessageId]);
+
+            return;
+        }
+
+        $attributes = ['status' => $newStatus];
+
+        if ($newStatus === 'failed') {
+            $errors = is_array($status['errors'] ?? null) ? $status['errors'] : [];
+            Log::warning('Meta WhatsApp outbound message failed', [
+                'meta_message_id' => $metaMessageId,
+                'recipient_id' => $status['recipient_id'] ?? null,
+                'errors' => $errors,
             ]);
 
-        if ($updated === 0) {
-            Log::debug('Meta WhatsApp status for unknown message', ['meta_message_id' => $metaMessageId]);
+            $payload = is_array($message->payload) ? $message->payload : [];
+            $payload['delivery_errors'] = $errors;
+            $attributes['payload'] = $payload;
         }
+
+        $message->update($attributes);
     }
 
     private function resolveContactName(array $value, string $waId): ?string
