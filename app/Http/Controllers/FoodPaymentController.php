@@ -487,9 +487,11 @@ class FoodPaymentController extends Controller
             'contraBons.purchaseOrder',
             'contraBons.retailFood.outlet',
             'contraBons.warehouseRetailFood.warehouse',
+            'contraBons.warehouseRetailFood.warehouseDivision',
         ])->findOrFail($id);
 
-        $contraBons = $this->mapContraBonsForDisplay($payment->contraBons)->map(function ($cb) {
+        $displayContraBons = $this->mapContraBonsForDisplay($payment->contraBons);
+        $contraBons = $displayContraBons->map(function ($cb) {
             return [
                 'number' => $cb->number,
                 'supplier_invoice_number' => $cb->supplier_invoice_number,
@@ -501,37 +503,56 @@ class FoodPaymentController extends Controller
             ];
         })->values()->all();
 
-        $isRetailFood = $payment->contraBons->isNotEmpty() && $payment->contraBons->contains(function ($cb) {
-            return $cb->source_type === 'retail_food';
-        });
+        $isRetailFoodOnly = $displayContraBons->isNotEmpty()
+            && $displayContraBons->every(function ($cb) {
+                return $cb->source_type === 'retail_food';
+            });
 
         $groupedContraBons = [];
-        if ($isRetailFood) {
-            $grouped = $payment->contraBons->groupBy(function ($cb) {
-                if ($cb->source_type === 'retail_food') {
-                    return $cb->retailFood?->outlet?->nama_outlet ?: 'Tanpa Outlet';
-                }
-                return 'Lainnya';
-            })->sortKeys();
+        foreach ($displayContraBons as $cb) {
+            $sourceType = $cb->source_type_display ?: 'Unknown';
+            $location = null;
 
-            foreach ($grouped as $outletName => $cbs) {
-                $groupedContraBons[] = [
-                    'outlet_name' => $outletName,
-                    'total_amount' => (float) $cbs->sum('total_amount'),
-                    'items' => $cbs->map(function ($cb) {
-                        return [
-                            'number' => $cb->number,
-                            'supplier_invoice_number' => $cb->supplier_invoice_number,
-                            'supplier_invoice_date' => $cb->supplier_invoice_date
-                                ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
-                                : null,
-                            'total_amount' => (float) $cb->total_amount,
-                            'status' => $cb->status,
-                        ];
-                    })->values()->all(),
+            if ($cb->source_type === 'retail_food') {
+                $location = $cb->retailFood?->outlet?->nama_outlet ?: 'Tanpa Outlet';
+            } elseif ($cb->source_type === 'warehouse_retail_food') {
+                $warehouse = $cb->warehouseRetailFood?->warehouse?->name;
+                $division = $cb->warehouseRetailFood?->warehouseDivision?->name;
+                $location = $warehouse
+                    ? $warehouse.($division ? ' - '.$division : '')
+                    : 'Tanpa Warehouse';
+            } elseif (!empty($cb->outlet_names)) {
+                $location = implode(', ', $cb->outlet_names);
+            }
+
+            $groupLabel = $location
+                ? ($cb->source_type === 'retail_food' && $isRetailFoodOnly
+                    ? $location
+                    : $sourceType.' - '.$location)
+                : $sourceType;
+            $groupKey = $sourceType.'|'.($location ?: '-');
+
+            if (!isset($groupedContraBons[$groupKey])) {
+                $groupedContraBons[$groupKey] = [
+                    'outlet_name' => $groupLabel,
+                    'total_amount' => 0.0,
+                    'items' => [],
                 ];
             }
+
+            $groupedContraBons[$groupKey]['total_amount'] += (float) $cb->total_amount;
+            $groupedContraBons[$groupKey]['items'][] = [
+                'number' => $cb->number,
+                'supplier_invoice_number' => $cb->supplier_invoice_number,
+                'supplier_invoice_date' => $cb->supplier_invoice_date
+                    ? \Carbon\Carbon::parse($cb->supplier_invoice_date)->format('d/m/Y')
+                    : null,
+                'total_amount' => (float) $cb->total_amount,
+                'status' => $cb->status,
+            ];
         }
+        ksort($groupedContraBons);
+        $groupedContraBons = array_values($groupedContraBons);
 
         $logoBase64 = $this->prepareJustusLogoBase64();
 
@@ -559,7 +580,8 @@ class FoodPaymentController extends Controller
                 : null,
             'gm_finance_note' => $payment->gm_finance_note,
             'contra_bons' => $contraBons,
-            'is_retail_food' => $isRetailFood,
+            'show_grouped_contra_bons' => !empty($groupedContraBons),
+            'is_retail_food_only' => $isRetailFoodOnly,
             'grouped_contra_bons' => $groupedContraBons,
             'logo_base64' => $logoBase64,
             'generated_at' => now()->timezone($tz)->format('d/m/Y H:i'),

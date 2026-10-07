@@ -185,13 +185,13 @@
     </table>
     @endif
 
-    @if(!empty($is_retail_food) && !empty($grouped_contra_bons))
-    <div class="section-title">Ringkasan per Outlet</div>
+    @if(!empty($show_grouped_contra_bons) && !empty($grouped_contra_bons))
+    <div class="section-title">{{ !empty($is_retail_food_only) ? 'Ringkasan per Outlet' : 'Ringkasan per Sumber / Lokasi' }}</div>
     <table class="items">
         <thead>
             <tr>
                 <th style="width: 8%;" class="text-center">No</th>
-                <th style="width: 44%;">Nama Outlet</th>
+                <th style="width: 44%;">{{ !empty($is_retail_food_only) ? 'Nama Outlet' : 'Sumber / Lokasi' }}</th>
                 <th style="width: 22%;" class="text-center">Jumlah Contra Bon</th>
                 <th style="width: 26%;" class="text-right">Total Nominal</th>
             </tr>
@@ -212,7 +212,7 @@
         </tbody>
     </table>
 
-    <div class="section-title">Daftar Contra Bon yang Dibayar (per Outlet)</div>
+    <div class="section-title">Daftar Contra Bon yang Dibayar {{ !empty($is_retail_food_only) ? '(per Outlet)' : '(per Sumber / Lokasi)' }}</div>
     <table class="items">
         <thead>
             <tr>
