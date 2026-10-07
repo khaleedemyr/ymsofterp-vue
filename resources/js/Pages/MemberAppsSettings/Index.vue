@@ -208,7 +208,7 @@
                   <img :src="getImageUrl(news.image)" :alt="news.title" class="w-full h-full object-cover">
                 </div>
                 <h4 class="font-semibold text-gray-800 mb-2">{{ news.title }}</h4>
-                <p class="text-sm text-gray-600 mb-3 line-clamp-3" v-html="news.content"></p>
+                <p class="text-sm text-gray-600 mb-3 line-clamp-3" v-html="news.content_html"></p>
                 <div class="flex justify-between items-center mb-3">
                   <div class="flex gap-2">
                     <span :class="['px-2 py-1 rounded-full text-xs font-medium', news.is_active ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800']">
@@ -2429,7 +2429,12 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Content</label>
-              <textarea v-model="whatsOnForm.content" rows="8" required class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"></textarea>
+              <RichTextEditor
+                v-model="whatsOnForm.content"
+                min-height="220px"
+                placeholder="Tulis konten berita..."
+              />
+              <p class="mt-1 text-xs text-gray-500">Format teks, alignment, dan daftar akan tampil di website. Aplikasi tetap menerima teks biasa.</p>
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-2">Image</label>
@@ -3276,6 +3281,7 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { router } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
+import RichTextEditor from '@/Components/RichTextEditor.vue'
 import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
@@ -4126,7 +4132,7 @@ const editWhatsOn = (news) => {
   editingWhatsOn.value = news
   whatsOnForm.value = {
     title: news.title,
-    content: news.content,
+    content: news.content_html || news.content,
     image: null,
     published_at: news.published_at ? new Date(news.published_at).toISOString().slice(0, 16) : '',
     is_active: news.is_active,

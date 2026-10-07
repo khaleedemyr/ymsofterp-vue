@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Mobile\Member;
 use App\Http\Controllers\Controller;
 use App\Models\MemberAppsWhatsOn;
 use App\Models\MemberAppsWhatsOnCategory;
+use App\Support\WhatsOnContentFormatter;
 use Illuminate\Http\Request;
 
 class WhatsOnController extends Controller
@@ -66,6 +67,7 @@ class WhatsOnController extends Controller
                             'id' => $item->id,
                             'title' => $item->title,
                             'content' => $item->content,
+                            'content_html' => WhatsOnContentFormatter::toHtml($item->content_html ?: $item->content),
                             'image' => $imageUrl,
                             'is_featured' => $item->is_featured,
                             'published_at' => $item->published_at ? $item->published_at->format('Y-m-d H:i:s') : null,
@@ -88,4 +90,3 @@ class WhatsOnController extends Controller
         }
     }
 }
-

@@ -11,6 +11,7 @@ class MemberAppsWhatsOn extends Model
     protected $fillable = [
         'title',
         'content',
+        'content_html',
         'image',
         'is_active',
         'is_featured',

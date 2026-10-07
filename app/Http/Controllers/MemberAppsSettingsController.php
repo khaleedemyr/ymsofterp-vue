@@ -28,6 +28,7 @@ use App\Models\MemberAppsPushNotificationRecipient;
 use App\Models\MemberAppsFeedback;
 use App\Services\FCMService;
 use App\Models\Item;
+use App\Support\WhatsOnContentFormatter;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
@@ -46,7 +47,15 @@ class MemberAppsSettingsController extends Controller
                 'banners' => MemberAppsBanner::orderBy('sort_order')->get(),
                 'rewards' => MemberAppsReward::with(['item', 'outlets'])->get(),
                 'challenges' => MemberAppsChallenge::orderBy('created_at', 'desc')->get(),
-                'whatsOn' => MemberAppsWhatsOn::with('category')->orderBy('published_at', 'desc')->get(),
+                'whatsOn' => MemberAppsWhatsOn::with('category')
+                    ->orderBy('published_at', 'desc')
+                    ->get()
+                    ->each(function (MemberAppsWhatsOn $item) {
+                        $item->setAttribute(
+                            'content_html',
+                            WhatsOnContentFormatter::toHtml($item->content_html ?: $item->content)
+                        );
+                    }),
                 'whatsOnCategories' => MemberAppsWhatsOnCategory::where('is_active', true)->orderBy('name')->get(),
                 'brands' => MemberAppsBrand::with(['outlet', 'galleries'])->orderBy('sort_order')->get(),
                 'brandsTable' => DB::table('brands')->orderBy('brand', 'asc')->get(),
@@ -710,9 +719,16 @@ class MemberAppsSettingsController extends Controller
                 return redirect()->back()->withErrors($validator)->withInput();
             }
 
+            $contentHtml = WhatsOnContentFormatter::sanitizeHtml($request->input('content'));
+            $contentText = WhatsOnContentFormatter::toPlainText($contentHtml);
+            if ($contentText === '') {
+                return redirect()->back()->withErrors(['content' => 'Konten wajib diisi.'])->withInput();
+            }
+
             $data = [
                 'title' => $request->title,
-                'content' => $request->content,
+                'content' => $contentText,
+                'content_html' => $contentHtml,
                 'is_featured' => $request->boolean('is_featured'),
                 'published_at' => $request->filled('published_at') ? $request->published_at : now(),
                 'is_active' => $request->boolean('is_active', true),
@@ -760,9 +776,16 @@ class MemberAppsSettingsController extends Controller
             return redirect()->back()->withErrors($validator)->withInput();
         }
 
+        $contentHtml = WhatsOnContentFormatter::sanitizeHtml($request->input('content'));
+        $contentText = WhatsOnContentFormatter::toPlainText($contentHtml);
+        if ($contentText === '') {
+            return redirect()->back()->withErrors(['content' => 'Konten wajib diisi.'])->withInput();
+        }
+
         $data = [
             'title' => $request->title,
-            'content' => $request->content,
+            'content' => $contentText,
+            'content_html' => $contentHtml,
             'is_featured' => $request->boolean('is_featured'),
             'published_at' => $request->published_at,
             'is_active' => $request->boolean('is_active'),
