@@ -135,6 +135,18 @@
                   <option value="inactive">Inactive</option>
                 </select>
               </div>
+
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Item Pcs?</label>
+                <select
+                  v-model="form.is_pcs"
+                  class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                  required
+                >
+                  <option :value="0">No</option>
+                  <option :value="1">Yes</option>
+                </select>
+              </div>
             </div>
 
             <!-- Unit Information -->
@@ -299,6 +311,7 @@ const form = useForm({
   small_conversion_qty: props.item.small_conversion_qty,
   min_stock: props.item.min_stock,
   status: props.item.status,
+  is_pcs: Number(props.item.is_pcs) === 1 ? 1 : 0,
   images: [],
   deleted_images: []
 });

@@ -377,6 +377,7 @@ class ItemController extends Controller
                 'bom.*.unit_id' => 'required|exists:units,id',
                 'bom.*.stock_cut' => 'nullable|boolean',
                 'exp' => 'nullable|integer|min:0',
+                'is_pcs' => 'nullable|boolean',
             ]);
 
             DB::beginTransaction();
@@ -385,6 +386,7 @@ class ItemController extends Controller
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
                 'exp' => $request->exp ?? 0,
+                'is_pcs' => $request->boolean('is_pcs') ? 1 : 0,
             ]));
 
             // Generate barcode default jika kategori show_pos = '0' dan item belum punya barcode
@@ -462,6 +464,7 @@ class ItemController extends Controller
             ]);
 
             DB::commit();
+            cache()->forget('pcs_items_butcher');
             return redirect()->back()->with('success', 'Item berhasil ditambahkan!');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -664,6 +667,7 @@ class ItemController extends Controller
             'bom.*.unit_id' => 'required|exists:units,id',
             'bom.*.stock_cut' => 'nullable|boolean',
             'exp' => 'nullable|integer|min:0',
+            'is_pcs' => 'nullable|boolean',
         ]);
 
         try {
@@ -674,6 +678,7 @@ class ItemController extends Controller
                 'modifier_enabled' => $request->modifier_enabled ? 1 : 0,
                 'composition_type' => $request->composition_type,
                 'exp' => $request->exp ?? 0,
+                'is_pcs' => $request->boolean('is_pcs') ? 1 : 0,
             ]));
 
             // Handle image uploads
@@ -769,6 +774,7 @@ class ItemController extends Controller
             ]);
 
             DB::commit();
+            cache()->forget('pcs_items_butcher');
             return redirect()->route('items.index')->with('success', 'Item updated successfully.');
         } catch (\Exception $e) {
             \Log::error('ITEM UPDATE DEBUG - ERROR', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
@@ -1936,6 +1942,7 @@ class ItemController extends Controller
                 ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
                 ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
                 ->where('items.status', 'active')
+                ->where('items.is_pcs', 1)
                 ->where('categories.show_pos', '0')
                 ->where(function($query) use ($q) {
                     $query->where('items.name', 'like', "%$q%")

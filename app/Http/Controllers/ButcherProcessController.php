@@ -167,9 +167,10 @@ class ButcherProcessController extends Controller
                 $q->where('show_pos', '0');
             })
                 ->where('items.status', 'active')
+                ->where('items.is_pcs', 1)
                 ->with(['smallUnit:id,name', 'mediumUnit:id,name', 'largeUnit:id,name', 'category:id,code'])
                 ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 
-                        'items.large_unit_id', 'items.category_id', 'items.status')
+                        'items.large_unit_id', 'items.category_id', 'items.status', 'items.is_pcs')
                 ->orderBy('items.name', 'asc')
                 ->get();
 

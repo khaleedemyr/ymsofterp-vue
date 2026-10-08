@@ -30,6 +30,7 @@ class Item extends Model
         'modifier_enabled',
         'status',
         'exp',
+        'is_pcs',
     ];
 
     protected $casts = [
@@ -37,6 +38,7 @@ class Item extends Model
         'small_conversion_qty' => 'decimal:2',
         'min_stock' => 'integer',
         'modifier_enabled' => 'integer',
+        'is_pcs' => 'integer',
     ];
 
     // Relasi dengan Category

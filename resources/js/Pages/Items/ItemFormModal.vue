@@ -86,6 +86,13 @@
                 <label class="block text-sm font-medium text-gray-700">Expiry Days</label>
                 <input type="number" v-model="form.exp" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" placeholder="Enter expiry days" />
               </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Item Pcs?</label>
+                <select v-model="form.is_pcs" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" required>
+                  <option :value="0">No</option>
+                  <option :value="1">Yes</option>
+                </select>
+              </div>
             </div>
           </div>
           <div v-if="selectedCategory && selectedCategory.show_pos == 1" class="mt-4">
@@ -378,6 +385,12 @@
                   {{ form.status }}
                 </span>
               </div>
+              <div>
+                <p class="text-sm text-gray-500">Item Pcs?</p>
+                <span :class="Number(form.is_pcs) === 1 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'" class="px-2 py-1 rounded text-xs font-bold">
+                  {{ Number(form.is_pcs) === 1 ? 'Yes' : 'No' }}
+                </span>
+              </div>
             </div>
           </div>
           <!-- UoM Information -->
@@ -628,6 +641,7 @@ const form = useForm({
   small_conversion_qty: '',
   min_stock: 0,
   exp: 0,
+  is_pcs: 0,
   status: 'active',
   images: [],
   deleted_images: [],
@@ -791,6 +805,7 @@ watch(() => props.show, (val) => {
     form.modifier_enabled = false;
     form.composition_type = 'single';
     form.status = 'active';
+    form.is_pcs = 0;
     currentStep.value = 'info';
   } else if (val && props.mode === 'edit' && props.item) {
     Object.assign(form, {
@@ -809,6 +824,7 @@ watch(() => props.show, (val) => {
       small_conversion_qty: props.item.small_conversion_qty,
       min_stock: props.item.min_stock,
       exp: props.item.exp,
+      is_pcs: Number(props.item.is_pcs) === 1 ? 1 : 0,
       status: props.item.status,
       images: [],
       deleted_images: [],

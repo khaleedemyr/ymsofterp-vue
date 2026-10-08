@@ -42,6 +42,10 @@
               <p class="mt-1 text-gray-900">{{ item.exp || '-' }} hari</p>
             </div>
             <div>
+              <label class="block text-sm font-medium text-gray-700">Item Pcs?</label>
+              <p class="mt-1 text-gray-900">{{ Number(item.is_pcs) === 1 ? 'Yes' : 'No' }}</p>
+            </div>
+            <div>
               <label class="block text-sm font-medium text-gray-700">Small Unit</label>
               <p class="mt-1 text-gray-900">{{ item.smallUnit?.name || '-' }}</p>
             </div>
