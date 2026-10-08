@@ -1286,7 +1286,7 @@ class Qa2AuditController extends Controller
             'notes' => 'nullable|string',
             'items' => 'required|array|min:1',
             'items.*.id' => 'required|integer|exists:qa2_audit_items,id',
-            'items.*.result' => 'nullable|in:' . ($this->auditScoringMode($audit) === 'c_mn_my' ? 'C,MN,MY' : 'C,NC,NA'),
+            'items.*.result' => 'nullable|in:' . ($this->auditScoringMode($audit) === 'c_mn_my' ? 'C,MN,MY,A,NA' : 'C,NC,NA'),
             'items.*.comment' => 'nullable|string',
             'items.*.due_date' => 'nullable|date',
         ]);
@@ -1353,7 +1353,7 @@ class Qa2AuditController extends Controller
         abort_if(!$audit, 404);
         abort_if($audit->status !== 'draft', 422, 'Audit sudah disubmit.');
 
-        $allowedResults = $this->auditScoringMode($audit) === 'c_mn_my' ? ['C', 'MN', 'MY'] : ['C', 'NC', 'NA'];
+        $allowedResults = $this->auditScoringMode($audit) === 'c_mn_my' ? ['C', 'MN', 'MY', 'A', 'NA'] : ['C', 'NC', 'NA'];
         $invalid = DB::table('qa2_audit_items')
             ->where('audit_id', $id)
             ->whereNotNull('result')
@@ -1367,7 +1367,7 @@ class Qa2AuditController extends Controller
             ->count();
 
         if ($missing > 0) {
-            $results = $this->auditScoringMode($audit) === 'c_mn_my' ? 'C/MN/MY' : 'C/NC/NA';
+            $results = $this->auditScoringMode($audit) === 'c_mn_my' ? 'C/MN/MY/A/NA' : 'C/NC/NA';
             return back()->withErrors(['submit' => "Semua parameter harus diisi {$results} sebelum submit."]);
         }
 
@@ -2060,6 +2060,7 @@ class Qa2AuditController extends Controller
             ->selectRaw("SUM(CASE WHEN i.result = 'NA' THEN 1 ELSE 0 END) as non_applicable")
             ->selectRaw("SUM(CASE WHEN i.result = 'MN' THEN 1 ELSE 0 END) as minor")
             ->selectRaw("SUM(CASE WHEN i.result = 'MY' THEN 1 ELSE 0 END) as major")
+            ->selectRaw("SUM(CASE WHEN i.result = 'A' THEN 1 ELSE 0 END) as applicable")
             ->orderBy('name')
             ->get()
             ->map(function ($row, $index) {
@@ -2076,6 +2077,7 @@ class Qa2AuditController extends Controller
                     'non_applicable' => (int) ($row->non_applicable ?? 0),
                     'minor' => (int) ($row->minor ?? 0),
                     'major' => (int) ($row->major ?? 0),
+                    'applicable' => (int) ($row->applicable ?? 0),
                     'score' => $score,
                     'no' => $index + 1,
                 ];
@@ -2089,6 +2091,7 @@ class Qa2AuditController extends Controller
             'non_applicable' => array_sum(array_column($summaryRows, 'non_applicable')),
             'minor' => array_sum(array_column($summaryRows, 'minor')),
             'major' => array_sum(array_column($summaryRows, 'major')),
+            'applicable' => array_sum(array_column($summaryRows, 'applicable')),
         ];
         $summaryDenominator = $summaryTotal['compliant'] + $summaryTotal['non_compliant'];
         $summaryTotal['score'] = $summaryDenominator > 0

@@ -67,6 +67,7 @@ function resultBadgeClass(result) {
   if (result === 'NA') return 'bg-slate-200 text-slate-700';
   if (result === 'MN') return 'bg-amber-100 text-amber-800';
   if (result === 'MY') return 'bg-rose-100 text-rose-700';
+  if (result === 'A') return 'bg-sky-100 text-sky-700';
   return 'bg-amber-100 text-amber-700';
 }
 
@@ -161,6 +162,8 @@ function openPhotoLightbox(mediaList, media) {
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase">C</th>
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase">MN</th>
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase">MY</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">A</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase">NA</th>
                   </template>
                   <template v-else>
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase">Compliant</th>
@@ -177,6 +180,8 @@ function openPhotoLightbox(mediaList, media) {
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.minor }}</td>
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.major }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.applicable || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable || 0 }}</td>
                   </template>
                   <template v-else>
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
@@ -193,6 +198,8 @@ function openPhotoLightbox(mediaList, media) {
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.minor || 0 }}</td>
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.major || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.applicable || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.non_applicable || 0 }}</td>
                   </template>
                   <template v-else>
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ audit?.summary_total?.compliant || 0 }}</td>

@@ -32,7 +32,7 @@ const canEditCap = computed(() => props.permissions?.can_edit_cap !== false && !
 const canSubmitCap = computed(() => !!props.permissions?.can_submit_cap);
 const capSubmissionStatus = computed(() => props.audit?.cap_submission_status || null);
 const scoringMode = computed(() => props.audit?.scoring_mode || 'legacy');
-const resultOptions = computed(() => scoringMode.value === 'c_mn_my' ? ['C', 'MN', 'MY'] : ['C', 'NC', 'NA']);
+const resultOptions = computed(() => scoringMode.value === 'c_mn_my' ? ['C', 'MN', 'MY', 'A', 'NA'] : ['C', 'NC', 'NA']);
 
 const capApprovers = ref([]);
 const capApproverSearch = ref('');
@@ -218,6 +218,7 @@ const categorySummaryRows = computed(() => {
         non_applicable: 0,
         minor: 0,
         major: 0,
+        applicable: 0,
       });
     }
 
@@ -232,6 +233,8 @@ const categorySummaryRows = computed(() => {
       row.minor += 1;
     } else if (item.result === 'MY') {
       row.major += 1;
+    } else if (item.result === 'A') {
+      row.applicable += 1;
     }
   }
 
@@ -256,6 +259,7 @@ const summaryTotal = computed(() => {
       non_applicable: Number(props.audit.summary_total.non_applicable || 0),
       minor: Number(props.audit.summary_total.minor || 0),
       major: Number(props.audit.summary_total.major || 0),
+      applicable: Number(props.audit.summary_total.applicable || 0),
       score: Number(props.audit.summary_total.score || 0),
     };
   }
@@ -266,6 +270,7 @@ const summaryTotal = computed(() => {
     non_applicable: 0,
     minor: 0,
     major: 0,
+    applicable: 0,
   };
 
   for (const row of categorySummaryRows.value) {
@@ -274,6 +279,7 @@ const summaryTotal = computed(() => {
     total.non_applicable += row.non_applicable;
     total.minor += row.minor;
     total.major += row.major;
+    total.applicable += row.applicable || 0;
   }
 
   const denominator = total.compliant + total.non_compliant;
@@ -530,6 +536,9 @@ function parameterItemClass(item) {
   if (result === 'MY') {
     return 'border-rose-300 bg-rose-50 ring-1 ring-rose-200';
   }
+  if (result === 'A') {
+    return 'border-sky-300 bg-sky-50 ring-1 ring-sky-200';
+  }
   return 'border-amber-300 bg-amber-50/70 ring-1 ring-amber-200 border-dashed';
 }
 
@@ -557,6 +566,9 @@ function parameterStatusBadgeClass(item) {
   }
   if (result === 'MY') {
     return 'bg-rose-100 text-rose-700';
+  }
+  if (result === 'A') {
+    return 'bg-sky-100 text-sky-700';
   }
   return 'bg-amber-100 text-amber-700';
 }
@@ -1662,6 +1674,8 @@ function formatUserLabel(user) {
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">C</th>
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">MN</th>
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">MY</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">A</th>
+                    <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">NA</th>
                   </template>
                   <template v-else>
                     <th class="px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide">Compliant</th>
@@ -1679,6 +1693,8 @@ function formatUserLabel(user) {
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.minor }}</td>
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.major }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.applicable || 0 }}</td>
+                    <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.non_applicable || 0 }}</td>
                   </template>
                   <template v-else>
                     <td class="px-3 py-2 text-center text-sm text-gray-900">{{ row.compliant }}</td>
@@ -1689,7 +1705,7 @@ function formatUserLabel(user) {
                 </tr>
 
                 <tr v-if="!categorySummaryRows.length">
-                  <td :colspan="scoringMode === 'c_mn_my' ? 5 : 6" class="px-3 py-6 text-center text-sm text-gray-500">
+                  <td :colspan="scoringMode === 'c_mn_my' ? 7 : 6" class="px-3 py-6 text-center text-sm text-gray-500">
                     Belum ada data parameter untuk dirangkum.
                   </td>
                 </tr>
@@ -1701,6 +1717,8 @@ function formatUserLabel(user) {
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.compliant }}</td>
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.minor }}</td>
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.major }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.applicable }}</td>
+                    <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.non_applicable }}</td>
                   </template>
                   <template v-else>
                     <td class="px-3 py-2 text-center text-sm font-semibold">{{ summaryTotal.compliant }}</td>
