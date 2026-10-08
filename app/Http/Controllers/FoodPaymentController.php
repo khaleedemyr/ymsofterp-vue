@@ -486,6 +486,7 @@ class FoodPaymentController extends Controller
             'gmFinance',
             'contraBons.purchaseOrder',
             'contraBons.retailFood.outlet',
+            'contraBons.retailNonFood.outlet',
             'contraBons.warehouseRetailFood.warehouse',
             'contraBons.warehouseRetailFood.warehouseDivision',
         ])->findOrFail($id);
@@ -843,6 +844,10 @@ class FoodPaymentController extends Controller
             } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->warehouseRetailFood) {
                 $sourceTypeDisplay = 'Warehouse Retail Food';
                 $outletNames = [];
+            } elseif ($contraBon->source_type === 'retail_non_food') {
+                $sourceTypeDisplay = 'Retail Non Food';
+                $outletName = $contraBon->retailNonFood?->outlet?->nama_outlet;
+                $outletNames = $outletName ? [$outletName] : [];
             }
 
             $contraBon->source_type_display = $sourceTypeDisplay;
