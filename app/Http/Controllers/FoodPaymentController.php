@@ -1918,17 +1918,29 @@ class FoodPaymentController extends Controller
             $validated = $request->validate([
                 'date' => 'required|date',
                 'payment_type' => 'required|string|in:Transfer,Giro,Cash',
-                'bank_id' => 'nullable|required_if:payment_type,Transfer,Giro|exists:bank_accounts,id',
+                'bank_id' => 'nullable|exists:bank_accounts,id',
                 'supplier_id' => 'required|exists:suppliers,id',
                 'contra_bon_ids' => 'required|array|min:1',
                 'contra_bon_ids.*' => 'exists:food_contra_bons,id',
                 'notes' => 'nullable|string',
                 'bukti_transfer' => 'nullable|file|mimes:jpg,jpeg,png,pdf|max:4096',
+                'outlet_payments' => 'nullable|array',
+                'outlet_payments.*.outlet_id' => 'nullable|exists:tbl_data_outlet,id_outlet',
+                'outlet_payments.*.warehouse_id' => 'nullable|exists:warehouses,id',
+                'outlet_payments.*.amount' => 'required|numeric|min:0',
+                'outlet_payments.*.bank_id' => 'nullable|exists:bank_accounts,id',
+                'outlet_payments.*.coa_id' => 'nullable|exists:chart_of_accounts,id',
+                'outlet_payments.*.location_key' => 'nullable|string',
             ]);
 
             DB::beginTransaction();
 
             $payment = FoodPayment::findOrFail($id);
+
+            if ($payment->status === 'paid') {
+                DB::rollBack();
+                return response()->json(['success' => false, 'message' => 'Food Payment yang sudah dibayar tidak bisa diubah.'], 422);
+            }
             
             // Hitung total dari contra bon yang dipilih
             $contraBons = ContraBon::whereIn('id', $validated['contra_bon_ids'])->get();
@@ -1974,8 +1986,34 @@ class FoodPaymentController extends Controller
                 // Status contra bon tetap 'approved', tidak diubah menjadi 'paid' sampai payment di-mark as paid
             }
 
+            \App\Models\FoodPaymentOutlet::where('food_payment_id', $payment->id)->delete();
+            foreach ($request->input('outlet_payments', []) as $outletPayment) {
+                if (empty($outletPayment['amount']) || $outletPayment['amount'] <= 0) {
+                    continue;
+                }
+                if (in_array($validated['payment_type'], ['Transfer', 'Giro']) && empty($outletPayment['bank_id'])) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Bank harus dipilih untuk setiap outlet dengan metode pembayaran ' . $validated['payment_type'] . '.',
+                    ], 422);
+                }
+                \App\Models\FoodPaymentOutlet::create([
+                    'food_payment_id' => $payment->id,
+                    'outlet_id' => $outletPayment['outlet_id'] ?? null,
+                    'warehouse_id' => $outletPayment['warehouse_id'] ?? null,
+                    'amount' => $outletPayment['amount'],
+                    'bank_id' => in_array($validated['payment_type'], ['Transfer', 'Giro']) ? $outletPayment['bank_id'] : null,
+                    'coa_id' => $outletPayment['coa_id'] ?? null,
+                    'location_key' => $outletPayment['location_key'] ?? null,
+                ]);
+            }
+
             DB::commit();
             return response()->json(['success' => true]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('FoodPaymentController@update - Exception', [

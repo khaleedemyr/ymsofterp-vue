@@ -1255,9 +1255,10 @@ async function confirmSubmit() {
     const url = isEditMode.value 
       ? `/food-payments/${props.payment.id}`
       : '/food-payments';
-    const method = isEditMode.value ? 'put' : 'post';
-
-    const response = await axios[method](url, formData, {
+    if (isEditMode.value) {
+      formData.append('_method', 'PUT');
+    }
+    const response = await axios.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
 
