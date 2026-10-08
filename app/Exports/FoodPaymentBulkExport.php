@@ -17,6 +17,8 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
     /** @var array<int, int> */
     protected array $groupHeaderRows = [];
 
+    protected ?int $grandTotalRow = null;
+
     public function __construct(array $groups)
     {
         $this->groups = $groups;
@@ -37,6 +39,7 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
         ];
 
         $rowIndex = 2;
+        $grandTotal = 0.0;
         foreach ($this->groups as $group) {
             $this->groupHeaderRows[] = $rowIndex;
             $rows[] = [
@@ -62,9 +65,13 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
                     $item['bank_name'],
                     $item['bank_account_name'],
                 ];
+                $grandTotal += (float) $item['nominal'];
                 $rowIndex++;
             }
         }
+
+        $this->grandTotalRow = $rowIndex;
+        $rows[] = ['GRAND TOTAL', '', $grandTotal, '', '', '', '', ''];
 
         return $rows;
     }
@@ -87,6 +94,17 @@ class FoodPaymentBulkExport implements FromArray, WithStyles, WithColumnWidths
                 'fill' => [
                     'fillType' => Fill::FILL_SOLID,
                     'startColor' => ['rgb' => 'DBEAFE'],
+                ],
+            ]);
+        }
+
+        if ($this->grandTotalRow) {
+            $row = $this->grandTotalRow;
+            $sheet->getStyle("A{$row}:H{$row}")->applyFromArray([
+                'font' => ['bold' => true],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'FEF3C7'],
                 ],
             ]);
         }

@@ -80,5 +80,13 @@
             </tbody>
         </table>
     @endforeach
+    @php $grandTotal = collect($groups)->sum(fn ($g) => collect($g['items'])->sum('nominal')); @endphp
+    <table class="items" style="margin-top: 8px;">
+        <tr>
+            <th style="width: 34%;">GRAND TOTAL ({{ collect($groups)->sum(fn ($g) => count($g['items'])) }} transaksi)</th>
+            <th style="width: 12%;" class="text-right">Rp {{ number_format($grandTotal, 0, ',', '.') }}</th>
+            <th style="width: 54%;"></th>
+        </tr>
+    </table>
 </body>
 </html>
