@@ -30,7 +30,7 @@
 
       <!-- Search and Filter -->
       <div class="bg-white rounded-xl shadow-lg p-4 mb-6">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <input
@@ -64,6 +64,18 @@
               <option value="">All Status</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Pcs?</label>
+            <select
+              v-model="pcsFilter"
+              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+              @change="applyFilters"
+            >
+              <option value="">All</option>
+              <option value="1">Yes</option>
+              <option value="0">No</option>
             </select>
           </div>
           <div>
@@ -154,6 +166,9 @@
                 Type
               </th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Pcs?
+              </th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Status
               </th>
               <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -163,7 +178,7 @@
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <tr v-if="items.data.length === 0">
-              <td colspan="6" class="text-center py-10 text-gray-400">Tidak ada data item.</td>
+              <td colspan="7" class="text-center py-10 text-gray-400">Tidak ada data item.</td>
             </tr>
             <tr v-for="item in items.data" :key="item.id" class="hover:bg-gray-50">
               <td class="px-6 py-4 whitespace-nowrap">
@@ -204,6 +219,16 @@
                   ]"
                 >
                   {{ item.type }}
+                </span>
+              </td>
+              <td class="px-6 py-4 whitespace-nowrap">
+                <span
+                  :class="[
+                    Number(item.is_pcs) === 1 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700',
+                    'px-2 inline-flex text-xs leading-5 font-semibold rounded-full'
+                  ]"
+                >
+                  {{ Number(item.is_pcs) === 1 ? 'Yes' : 'No' }}
                 </span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
@@ -535,6 +560,7 @@ const props = defineProps({
 const search = ref(props.filters?.search || '');
 const categoryFilter = ref(props.filters?.category || '');
 const statusFilter = ref(props.filters?.status || '');
+const pcsFilter = ref(props.filters?.is_pcs ?? '');
 const perPage = ref(Number(props.filters?.per_page || 10));
 const showFormModal = ref(false);
 const showBarcodeModal = ref(false);
@@ -575,6 +601,9 @@ function filterParams() {
     search: search.value || undefined,
     category: categoryFilter.value || undefined,
     status: statusFilter.value || undefined,
+    is_pcs: pcsFilter.value === '' || pcsFilter.value === null || pcsFilter.value === undefined
+      ? undefined
+      : pcsFilter.value,
     per_page: perPage.value,
   };
 }
@@ -602,6 +631,11 @@ function goToPage(url) {
   urlObj.searchParams.set('search', search.value || '');
   urlObj.searchParams.set('category', categoryFilter.value || '');
   urlObj.searchParams.set('status', statusFilter.value || '');
+  if (pcsFilter.value === '' || pcsFilter.value === null || pcsFilter.value === undefined) {
+    urlObj.searchParams.delete('is_pcs');
+  } else {
+    urlObj.searchParams.set('is_pcs', String(pcsFilter.value));
+  }
   urlObj.searchParams.set('per_page', String(perPage.value || 10));
 
   router.visit(urlObj.toString(), {

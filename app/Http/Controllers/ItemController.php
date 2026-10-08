@@ -187,6 +187,11 @@ class ItemController extends Controller
             $query->where('status', $request->status);
         }
 
+        // Filter Item Pcs? (Yes/No)
+        if ($request->has('is_pcs') && $request->input('is_pcs') !== '' && $request->input('is_pcs') !== null) {
+            $query->where('is_pcs', (int) $request->input('is_pcs') === 1 ? 1 : 0);
+        }
+
         $perPage = (int) $request->get('per_page', 10);
         if (! in_array($perPage, [10, 15, 25, 50, 100], true)) {
             $perPage = 10;
@@ -202,6 +207,9 @@ class ItemController extends Controller
             'search' => $request->get('search', ''),
             'category' => $request->get('category', ''),
             'status' => $request->get('status', ''),
+            'is_pcs' => $request->has('is_pcs') && $request->input('is_pcs') !== '' && $request->input('is_pcs') !== null
+                ? (string) ((int) $request->input('is_pcs') === 1 ? 1 : 0)
+                : '',
             'per_page' => $perPage,
         ];
 
