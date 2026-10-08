@@ -222,14 +222,23 @@
                 </span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <span
-                  :class="[
-                    Number(item.is_pcs) === 1 ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-700',
-                    'px-2 inline-flex text-xs leading-5 font-semibold rounded-full'
-                  ]"
-                >
-                  {{ Number(item.is_pcs) === 1 ? 'Yes' : 'No' }}
-                </span>
+                <label class="inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    :checked="Number(item.is_pcs) === 1"
+                    @change="toggleIsPcs(item)"
+                    class="sr-only peer"
+                  />
+                  <div
+                    class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-500 rounded-full peer peer-checked:bg-green-500 transition"
+                  ></div>
+                  <span
+                    class="ml-2 text-xs font-bold"
+                    :class="Number(item.is_pcs) === 1 ? 'text-green-700' : 'text-gray-500'"
+                  >
+                    {{ Number(item.is_pcs) === 1 ? 'Yes' : 'No' }}
+                  </span>
+                </label>
               </td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <label class="inline-flex items-center cursor-pointer">
@@ -718,6 +727,18 @@ const toggleStatus = async (item) => {
   if (!result.isConfirmed) return;
   await window.axios.post(route('items.toggleStatus', item.id), { status: newStatus });
   reload();
+};
+
+const toggleIsPcs = async (item) => {
+  const newIsPcs = Number(item.is_pcs) === 1 ? 0 : 1;
+  const prevIsPcs = Number(item.is_pcs) === 1 ? 1 : 0;
+  item.is_pcs = newIsPcs;
+  try {
+    await window.axios.post(route('items.toggleIsPcs', item.id), { is_pcs: newIsPcs });
+  } catch (error) {
+    item.is_pcs = prevIsPcs;
+    Swal.fire('Error', error?.response?.data?.message || 'Gagal mengubah Item Pcs.', 'error');
+  }
 };
 
 function openLightbox(item) {

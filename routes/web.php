@@ -1071,6 +1071,7 @@ Route::get('/api/items/autocomplete-pcs', [ItemController::class, 'autocompleteP
 Route::get('/api/items/by-supplier', [ItemController::class, 'bySupplier']);
 Route::get('/api/items/search-for-pr', [ItemController::class, 'searchForPr']);
 Route::post('/items/{id}/toggle-status', [ItemController::class, 'toggleStatus'])->name('items.toggleStatus');
+Route::post('/items/{id}/toggle-is-pcs', [ItemController::class, 'toggleIsPcs'])->name('items.toggleIsPcs');
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/api/items/non-pos-pricing', [ItemController::class, 'nonPosBulkPricesData'])->name('items.non-pos-pricing.data');

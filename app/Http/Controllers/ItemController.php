@@ -1056,6 +1056,33 @@ class ItemController extends Controller
         return response()->json(['success' => true, 'status' => $item->status]);
     }
 
+    public function toggleIsPcs($id, Request $request)
+    {
+        $validated = $request->validate([
+            'is_pcs' => 'required|boolean',
+        ]);
+
+        $item = Item::findOrFail($id);
+        $oldIsPcs = (int) $item->is_pcs;
+        $item->is_pcs = $request->boolean('is_pcs') ? 1 : 0;
+        $item->save();
+
+        cache()->forget('pcs_items_butcher');
+
+        ActivityLog::create([
+            'user_id' => Auth::id(),
+            'activity_type' => 'update',
+            'module' => 'items',
+            'description' => 'Mengubah Item Pcs?: ' . $item->name . ' menjadi ' . ($item->is_pcs ? 'Yes' : 'No'),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'old_data' => ['is_pcs' => $oldIsPcs],
+            'new_data' => ['is_pcs' => (int) $item->is_pcs],
+        ]);
+
+        return response()->json(['success' => true, 'is_pcs' => (int) $item->is_pcs]);
+    }
+
     public function exportExcel()
     {
         return Excel::download(new ItemsExport, 'items.xlsx');
