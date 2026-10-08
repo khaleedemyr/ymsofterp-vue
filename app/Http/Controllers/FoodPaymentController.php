@@ -508,12 +508,42 @@ class FoodPaymentController extends Controller
                 return $cb->source_type === 'retail_food';
             });
 
+        $prFoodsPoIds = $displayContraBons
+            ->filter(fn ($cb) => $cb->source_type === 'purchase_order'
+                && $cb->purchaseOrder
+                && $cb->purchaseOrder->source_type === 'pr_foods')
+            ->pluck('purchaseOrder.id')
+            ->unique()
+            ->values()
+            ->all();
+
+        $prWarehouseNamesByPo = [];
+        if (!empty($prFoodsPoIds)) {
+            DB::table('purchase_order_food_items as poi')
+                ->join('pr_food_items as pri', 'poi.pr_food_item_id', '=', 'pri.id')
+                ->join('pr_foods as pr', 'pri.pr_food_id', '=', 'pr.id')
+                ->join('warehouses as w', 'pr.warehouse_id', '=', 'w.id')
+                ->whereIn('poi.purchase_order_food_id', $prFoodsPoIds)
+                ->select('poi.purchase_order_food_id as po_id', 'w.name as warehouse_name')
+                ->distinct()
+                ->get()
+                ->each(function ($row) use (&$prWarehouseNamesByPo) {
+                    $prWarehouseNamesByPo[(int) $row->po_id][] = $row->warehouse_name;
+                });
+        }
+
         $groupedContraBons = [];
         foreach ($displayContraBons as $cb) {
             $sourceType = $cb->source_type_display ?: 'Unknown';
             $location = null;
 
-            if ($cb->source_type === 'retail_food') {
+            if ($cb->source_type === 'purchase_order'
+                && $cb->purchaseOrder
+                && $cb->purchaseOrder->source_type === 'pr_foods') {
+                $names = array_unique($prWarehouseNamesByPo[(int) $cb->purchaseOrder->id] ?? []);
+                sort($names);
+                $location = !empty($names) ? implode(', ', $names) : 'Tanpa Warehouse';
+            } elseif ($cb->source_type === 'retail_food') {
                 $location = $cb->retailFood?->outlet?->nama_outlet ?: 'Tanpa Outlet';
             } elseif ($cb->source_type === 'warehouse_retail_food') {
                 $warehouse = $cb->warehouseRetailFood?->warehouse?->name;

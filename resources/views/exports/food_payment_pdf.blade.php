@@ -227,7 +227,7 @@
             @foreach($grouped_contra_bons as $group)
             <tr class="group-header-row">
                 <td colspan="5">
-                    OUTLET: {{ strtoupper($group['outlet_name']) }} ({{ count($group['items']) }} Contra Bon)
+                    {{ !empty($is_retail_food_only) ? 'OUTLET: ' : '' }}{{ strtoupper($group['outlet_name']) }} ({{ count($group['items']) }} Contra Bon)
                 </td>
             </tr>
             @foreach($group['items'] as $i => $cb)
