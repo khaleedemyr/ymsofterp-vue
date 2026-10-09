@@ -473,6 +473,7 @@ class ItemController extends Controller
 
             DB::commit();
             cache()->forget('pcs_items_butcher');
+            cache()->forget('pcs_items_butcher_v2');
             return redirect()->back()->with('success', 'Item berhasil ditambahkan!');
         } catch (\Exception $e) {
             DB::rollBack();
@@ -783,6 +784,7 @@ class ItemController extends Controller
 
             DB::commit();
             cache()->forget('pcs_items_butcher');
+            cache()->forget('pcs_items_butcher_v2');
             return redirect()->route('items.index')->with('success', 'Item updated successfully.');
         } catch (\Exception $e) {
             \Log::error('ITEM UPDATE DEBUG - ERROR', ['message' => $e->getMessage(), 'trace' => $e->getTraceAsString()]);
@@ -1068,6 +1070,7 @@ class ItemController extends Controller
         $item->save();
 
         cache()->forget('pcs_items_butcher');
+        cache()->forget('pcs_items_butcher_v2');
 
         ActivityLog::create([
             'user_id' => Auth::id(),

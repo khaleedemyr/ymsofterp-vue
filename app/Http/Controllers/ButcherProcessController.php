@@ -162,15 +162,14 @@ class ButcherProcessController extends Controller
         });
         
         // Get PCS items with optimized query
-        $pcsItems = cache()->remember('pcs_items_butcher', 300, function() {
+        $pcsItems = cache()->remember('pcs_items_butcher_v2', 300, function() {
             $items = Item::whereHas('category', function($q) {
                 $q->where('show_pos', '0');
             })
                 ->where('items.status', 'active')
-                ->where('items.is_pcs', 1)
                 ->with(['smallUnit:id,name', 'mediumUnit:id,name', 'largeUnit:id,name', 'category:id,code'])
                 ->select('items.id', 'items.name', 'items.small_unit_id', 'items.medium_unit_id', 
-                        'items.large_unit_id', 'items.category_id', 'items.status', 'items.is_pcs')
+                        'items.large_unit_id', 'items.category_id', 'items.status')
                 ->orderBy('items.name', 'asc')
                 ->get();
 
