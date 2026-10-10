@@ -696,7 +696,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue';
+import { ref, computed, onMounted, watch, nextTick } from 'vue';
 import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
@@ -870,13 +870,15 @@ watch(selectedContraBonsByOutlet, (newVal) => {
 
 // Function untuk initialize outlet payments
 function initializeOutletPayments() {
+  const previous = { ...outletPayments.value };
   outletPayments.value = {};
   if (selectedContraBonsByOutlet.value && Object.keys(selectedContraBonsByOutlet.value).length > 0) {
     Object.keys(selectedContraBonsByOutlet.value).forEach(outletKey => {
       const outletData = selectedContraBonsByOutlet.value[outletKey];
+      const prev = previous[outletKey] || {};
       // Jika warehouse, outlet_id = 1, jika outlet gunakan id asli
-      let outletId = outletData.outlet_id || null;
-      let warehouseId = null;
+      let outletId = outletData.outlet_id || prev.outlet_id || null;
+      let warehouseId = prev.warehouse_id || null;
       
       if (outletData.location_type === 'warehouse') {
         outletId = 1;
@@ -893,14 +895,51 @@ function initializeOutletPayments() {
       outletPayments.value[outletKey] = {
         outlet_id: outletId,
         warehouse_id: warehouseId,
-        amount: outletData.total_amount || 0,
-        bank_id: null,
-        selectedBank: null,
-        coa_id: null,
-        selectedCoa: null
+        amount: prev.amount != null ? prev.amount : (outletData.total_amount || 0),
+        bank_id: prev.bank_id ?? null,
+        selectedBank: prev.selectedBank ?? null,
+        coa_id: prev.coa_id ?? null,
+        selectedCoa: prev.selectedCoa ?? null
       };
     });
   }
+}
+
+function restoreOutletPaymentsFromExisting() {
+  if (!isEditMode.value || !props.payment) return;
+
+  const existing = props.payment.payment_outlets || props.payment.paymentOutlets || [];
+  if (!existing.length) return;
+
+  const coaList = props.coas || [];
+  const bankList = banks.value || [];
+
+  existing.forEach((row) => {
+    const key = row.location_key;
+    if (!key || !outletPayments.value[key]) return;
+
+    if (row.amount != null) {
+      outletPayments.value[key].amount = parseFloat(row.amount) || 0;
+    }
+
+    if (row.bank_id) {
+      const bank = bankList.find((b) => b.id == row.bank_id);
+      outletPayments.value[key].bank_id = row.bank_id;
+      outletPayments.value[key].selectedBank = bank || null;
+    }
+
+    if (row.coa_id) {
+      const coaFromList = coaList.find((c) => c.id == row.coa_id);
+      const coaRel = row.coa || null;
+      outletPayments.value[key].coa_id = row.coa_id;
+      outletPayments.value[key].selectedCoa = coaFromList || (coaRel ? {
+        id: coaRel.id,
+        code: coaRel.code,
+        name: coaRel.name,
+        display_name: `${coaRel.code} - ${coaRel.name}`,
+      } : null);
+    }
+  });
 }
 
 // Function untuk update total amount dari outlet payments
@@ -1314,6 +1353,9 @@ onMounted(async () => {
         if (props.payment.contra_bons && props.payment.contra_bons.length > 0) {
           form.value.selected_contra_bon_ids = props.payment.contra_bons.map(cb => cb.id);
           await onSupplierChange(supplier);
+          await nextTick();
+          // Restore bank/COA/amount per location yang sudah tersimpan
+          restoreOutletPaymentsFromExisting();
         }
       }
     }

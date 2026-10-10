@@ -1846,7 +1846,17 @@ class FoodPaymentController extends Controller
 
     public function edit($id)
     {
-        $payment = FoodPayment::with(['supplier', 'creator', 'financeManager', 'gmFinance', 'contraBons.purchaseOrder', 'contraBons.retailFood.outlet', 'contraBons.warehouseRetailFood.warehouse'])->findOrFail($id);
+        $payment = FoodPayment::with([
+            'supplier',
+            'creator',
+            'financeManager',
+            'gmFinance',
+            'contraBons.purchaseOrder',
+            'contraBons.retailFood.outlet',
+            'contraBons.warehouseRetailFood.warehouse',
+            'paymentOutlets.coa',
+            'paymentOutlets.bank',
+        ])->findOrFail($id);
         
         // Transform contra bons to include source type and outlet information (same as show)
         $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
@@ -1911,9 +1921,24 @@ class FoodPaymentController extends Controller
             ];
         });
         
+        // Get COA list for payment (sama seperti create, agar COA bisa diedit di draft)
+        $coas = \DB::table('chart_of_accounts')
+            ->where('is_active', 1)
+            ->orderBy('code')
+            ->get()
+            ->map(function ($coa) {
+                return [
+                    'id' => $coa->id,
+                    'code' => $coa->code,
+                    'name' => $coa->name,
+                    'display_name' => $coa->code . ' - ' . $coa->name,
+                ];
+            });
+
         return inertia('FoodPayment/Form', [
             'payment' => $payment,
             'banks' => $banks,
+            'coas' => $coas,
         ]);
     }
 

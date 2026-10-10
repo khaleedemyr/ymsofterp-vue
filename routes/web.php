@@ -44,6 +44,7 @@ use App\Http\Controllers\ItemBarcodeController;
 use App\Http\Controllers\FoodGoodReceiveController;
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\ContraBonController;
+use App\Http\Controllers\ContraBonPoVarianceReportController;
 use App\Http\Controllers\FoodPaymentController;
 use App\Http\Controllers\WarehouseTransferController;
 use Illuminate\Support\Facades\Auth;
@@ -1332,6 +1333,8 @@ Route::get('/internal-use-waste-report/summary/export', [\App\Http\Controllers\I
 
 // Contra Bon routes
 Route::middleware(['auth'])->group(function () {
+    Route::get('/contra-bon-po-variance-report', [ContraBonPoVarianceReportController::class, 'index'])
+        ->name('contra-bon-po-variance-report.index');
     Route::get('/contra-bons', [ContraBonController::class, 'index'])->name('contra-bons.index');
     Route::get('/contra-bons/create', [ContraBonController::class, 'create'])->name('contra-bons.create');
     Route::post('/contra-bons', [ContraBonController::class, 'store'])->name('contra-bons.store');
