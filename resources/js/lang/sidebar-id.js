@@ -207,6 +207,7 @@ export default {
     "neraca_saldo": "Neraca Saldo",
     "laporan_arus_kas": "Laporan Arus Kas",
     "contra_bon": "Contra Bon",
+    "contra_bon_po_variance_report": "Report Selisih PO vs CB",
     "food_payment": "Pembayaran Food",
     "non_food_payment": "Pembayaran Non Food",
     "retail_non_food_payment": "Pembayaran Retail Non Food",

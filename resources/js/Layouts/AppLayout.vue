@@ -353,6 +353,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.neraca_saldo'), icon: 'fa-solid fa-balance-scale', route: '/report-jurnal-neraca-saldo', code: 'jurnal_neraca_saldo' },
             { name: () => t('sidebar.menus.laporan_arus_kas'), icon: 'fa-solid fa-water', route: '/report-arus-kas', code: 'jurnal_arus_kas' },
             { name: () => t('sidebar.menus.contra_bon'), icon: 'fa-solid fa-file-circle-xmark', route: '/contra-bons', code: 'contra_bon' },
+            { name: () => t('sidebar.menus.contra_bon_po_variance_report'), icon: 'fa-solid fa-scale-unbalanced', route: '/contra-bon-po-variance-report', code: 'contra_bon_po_variance_report' },
             { name: () => t('sidebar.menus.food_payment'), icon: 'fa-solid fa-money-bill-transfer', route: '/food-payments', code: 'food_payment' },
             { name: () => t('sidebar.menus.non_food_payment'), icon: 'fa-solid fa-credit-card', route: '/non-food-payments', code: 'non_food_payment' },
             { name: () => t('sidebar.menus.retail_non_food_payment'), icon: 'fa-solid fa-money-bill-wave', route: route('retail-non-food-payment.index'), code: 'retail_non_food_payment' },
