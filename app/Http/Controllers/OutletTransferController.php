@@ -263,7 +263,7 @@ class OutletTransferController extends Controller
                     'outlet_transfer_id' => $transfer->id,
                     'item_id' => $item['item_id'],
                     'quantity' => $item['qty'],
-                    'unit_id' => $inventoryItem->small_unit_id, // asumsikan unit small
+                    'unit_id' => $this->resolveOutletTransferUnitId($itemMaster, $unit, $item['unit_id'] ?? null),
                     'qty_small' => $qty_small,
                     'qty_medium' => $qty_medium,
                     'qty_large' => $qty_large,
@@ -1695,7 +1695,7 @@ class OutletTransferController extends Controller
                     'outlet_transfer_id' => $transfer->id,
                     'item_id' => $item['item_id'],
                     'quantity' => $item['qty'],
-                    'unit_id' => $inventoryItem->small_unit_id,
+                    'unit_id' => $this->resolveOutletTransferUnitId($itemMaster, $unit, $item['unit_id'] ?? null),
                     'qty_small' => $qty_small,
                     'qty_medium' => $qty_medium,
                     'qty_large' => $qty_large,
@@ -2413,7 +2413,7 @@ class OutletTransferController extends Controller
                     'outlet_transfer_id' => $transfer->id,
                     'item_id' => $item['item_id'],
                     'quantity' => $item['qty'],
-                    'unit_id' => $inventoryItem->small_unit_id,
+                    'unit_id' => $this->resolveOutletTransferUnitId($itemMaster, $unit, $item['unit_id'] ?? null),
                     'qty_small' => $qty_small,
                     'qty_medium' => $qty_medium,
                     'qty_large' => $qty_large,
@@ -2594,5 +2594,59 @@ class OutletTransferController extends Controller
         if ($fromId !== $uid && $toId !== $uid) {
             abort(403, 'Anda tidak memiliki akses ke transaksi ini.');
         }
+    }
+
+    /**
+     * Simpan unit_id sesuai unit yang diinput user (bukan fallback inventory small_unit).
+     *
+     * @param  \App\Models\Item|object|null  $itemMaster
+     */
+    private function resolveOutletTransferUnitId($itemMaster, ?string $unitName, $explicitUnitId = null): ?int
+    {
+        if ($explicitUnitId) {
+            return (int) $explicitUnitId;
+        }
+
+        if (!$itemMaster) {
+            return null;
+        }
+
+        $smallId = (int) ($itemMaster->small_unit_id ?? 0) ?: null;
+        $mediumId = (int) ($itemMaster->medium_unit_id ?? 0) ?: null;
+        $largeId = (int) ($itemMaster->large_unit_id ?? 0) ?: null;
+
+        $unitSmall = is_object($itemMaster) && method_exists($itemMaster, 'smallUnit')
+            ? optional($itemMaster->smallUnit)->name
+            : DB::table('units')->where('id', $smallId)->value('name');
+        $unitMedium = is_object($itemMaster) && method_exists($itemMaster, 'mediumUnit')
+            ? optional($itemMaster->mediumUnit)->name
+            : DB::table('units')->where('id', $mediumId)->value('name');
+        $unitLarge = is_object($itemMaster) && method_exists($itemMaster, 'largeUnit')
+            ? optional($itemMaster->largeUnit)->name
+            : DB::table('units')->where('id', $largeId)->value('name');
+
+        $unitName = trim((string) $unitName);
+        if ($unitName !== '') {
+            if ($unitSmall && strcasecmp($unitName, (string) $unitSmall) === 0) {
+                return $smallId;
+            }
+            if ($unitMedium && strcasecmp($unitName, (string) $unitMedium) === 0) {
+                return $mediumId;
+            }
+            if ($unitLarge && strcasecmp($unitName, (string) $unitLarge) === 0) {
+                return $largeId;
+            }
+
+            $matched = DB::table('units')
+                ->where('name', $unitName)
+                ->orWhere('name', 'like', $unitName)
+                ->value('id');
+            if ($matched) {
+                return (int) $matched;
+            }
+        }
+
+        // Fallback terakhir: unit kecil dari master item (bukan outlet_food_inventory_items)
+        return $smallId;
     }
 } 
