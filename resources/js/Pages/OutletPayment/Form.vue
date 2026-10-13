@@ -553,7 +553,7 @@ const props = defineProps({
 // State for refresh functionality
 const refreshingGR = ref(false);
 const refreshingRetailSales = ref(false);
-const localGRList = ref(props.grList);
+const localGRList = ref(Array.isArray(props.grList) ? props.grList : []);
 const localRetailSalesList = ref([]);
 
 // State for Load Data button

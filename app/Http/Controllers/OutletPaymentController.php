@@ -830,105 +830,12 @@ class OutletPaymentController extends Controller
 
     public function create(Request $request)
     {
-        // ULTRA FAST: Get outlets with minimal query
+        // Halaman create: GR/GSR di-load via AJAX setelah user pilih outlet + tanggal (Load Data).
         $outlets = DB::table('tbl_data_outlet')
             ->where('status', 'A')
             ->select('id_outlet as id', 'nama_outlet as name')
             ->orderBy('nama_outlet')
             ->get();
-
-        // Get filter parameters
-        $outletId = $request->input('outlet_id');
-        $dateFrom = $request->input('date_from');
-        $dateTo = $request->input('date_to');
-
-        // ULTRA OPTIMIZED: Super minimal GR list - only essential data
-        $grQuery = DB::table('outlet_food_good_receives as gr')
-            ->leftJoin('outlet_payments as op', function($join) {
-                $join->on('gr.id', '=', 'op.gr_id')
-                     ->where('op.status', '!=', 'cancelled');
-            })
-            ->leftJoin('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->leftJoin('warehouse_outlets as wo', 'gr.warehouse_outlet_id', '=', 'wo.id')
-            ->leftJoin('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-            ->leftJoin('food_packing_lists as pl', 'do.packing_list_id', '=', 'pl.id')
-            ->leftJoin('warehouse_division as wd_pl', 'pl.warehouse_division_id', '=', 'wd_pl.id')
-            ->leftJoin('warehouses as w_pl', 'wd_pl.warehouse_id', '=', 'w_pl.id')
-            ->leftJoin('food_floor_orders as ffo', 'do.floor_order_id', '=', 'ffo.id')
-            ->whereNull('op.id')
-            ->whereNull('gr.deleted_at')
-            ->select(
-                'gr.id',
-                'gr.number',
-                'gr.receive_date',
-                'gr.outlet_id',
-                'gr.delivery_order_id',
-                'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_outlet_name',
-                DB::raw('COALESCE(
-                    w_pl.id,
-                    (SELECT w.id 
-                     FROM food_floor_order_items ffoi
-                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
-                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
-                     WHERE ffoi.floor_order_id = ffo.id
-                     LIMIT 1)
-                ) as warehouse_id'),
-                DB::raw('COALESCE(
-                    w_pl.name,
-                    (SELECT w.name 
-                     FROM food_floor_order_items ffoi
-                     INNER JOIN warehouse_division wd ON ffoi.warehouse_division_id = wd.id
-                     INNER JOIN warehouses w ON wd.warehouse_id = w.id
-                     WHERE ffoi.floor_order_id = ffo.id
-                     LIMIT 1)
-                ) as warehouse_name')
-            );
-
-        // Apply filters if provided
-        if ($outletId) {
-            $grQuery->where('gr.outlet_id', $outletId);
-        }
-        if ($dateFrom) {
-            $grQuery->whereDate('gr.receive_date', '>=', $dateFrom);
-        }
-        if ($dateTo) {
-            $grQuery->whereDate('gr.receive_date', '<=', $dateTo);
-        }
-
-        $grList = $grQuery->orderBy('gr.receive_date', 'desc')
-            ->get();
-
-        // Format data with total_amount calculation (only GR, no GR Supplier, same as Rekap FJ)
-        $groupedGrList = $grList->map(function($gr) {
-            // Calculate total_amount for each GR (from outlet_food_good_receives only)
-            $grTotalAmount = DB::table('outlet_food_good_receive_items as gri')
-                ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as foi', function($join) {
-                    $join->on('gri.item_id', '=', 'foi.item_id')
-                         ->on('do.floor_order_id', '=', 'foi.floor_order_id');
-                })
-                ->where('gri.outlet_food_good_receive_id', $gr->id)
-                ->whereNull('gr.deleted_at')
-                ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
-
-            
-            return (object) [
-                'id' => $gr->id,
-                'number' => $gr->number,
-                'gr_number' => $gr->number,
-                'receive_date' => $gr->receive_date,
-                'outlet_id' => $gr->outlet_id,
-                'outlet_name' => $gr->outlet_name,
-                'warehouse_outlet_name' => $gr->warehouse_outlet_name,
-                'warehouse_id' => $gr->warehouse_id,
-                'warehouse_name' => $gr->warehouse_name,
-                'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
-                'items' => [],
-                'type' => 'gr',
-            ];
-        });
 
         // Get banks for payment method selection
         $banks = \App\Models\BankAccount::where('is_active', 1)
@@ -965,15 +872,10 @@ class OutletPaymentController extends Controller
                 ];
             });
 
-        $groupedGrList = $groupedGrList
-            ->concat($this->fetchUnpaidGsrRowsForPayment($outletId, $dateFrom, $dateTo))
-            ->sortByDesc('receive_date')
-            ->values();
-
         return Inertia::render('OutletPayment/Form', [
             'mode' => 'create',
             'outlets' => $outlets,
-            'grList' => $groupedGrList,
+            'grList' => [],
             'banks' => $banks,
             'coas' => $coas,
         ]);
@@ -987,6 +889,13 @@ class OutletPaymentController extends Controller
         $outletId = $request->input('outlet_id');
         $dateFrom = $request->input('date_from');
         $dateTo = $request->input('date_to');
+
+        if (!$outletId || !$dateFrom || !$dateTo) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Pilih outlet dan rentang tanggal terlebih dahulu.',
+            ], 422);
+        }
 
         // Build query for GR list
         $grQuery = DB::table('outlet_food_good_receives as gr')
@@ -1045,35 +954,7 @@ class OutletPaymentController extends Controller
         $grList = $grQuery->orderBy('gr.receive_date', 'desc')
             ->get();
 
-        // Format data with total_amount calculation (only GR, no GR Supplier, same as Rekap FJ)
-        $groupedGrList = $grList->map(function($gr) {
-            // Calculate total_amount for each GR (from outlet_food_good_receives only)
-            $grTotalAmount = DB::table('outlet_food_good_receive_items as gri')
-                ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
-                ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
-                ->leftJoin('food_floor_order_items as foi', function($join) {
-                    $join->on('gri.item_id', '=', 'foi.item_id')
-                         ->on('do.floor_order_id', '=', 'foi.floor_order_id');
-                })
-                ->where('gri.outlet_food_good_receive_id', $gr->id)
-                ->whereNull('gr.deleted_at')
-                ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
-
-            return (object) [
-                'id' => $gr->id,
-                'number' => $gr->number,
-                'gr_number' => $gr->number,
-                'receive_date' => $gr->receive_date,
-                'outlet_id' => $gr->outlet_id,
-                'outlet_name' => $gr->outlet_name,
-                'warehouse_outlet_name' => $gr->warehouse_outlet_name,
-                'warehouse_id' => $gr->warehouse_id,
-                'warehouse_name' => $gr->warehouse_name,
-                'total_amount' => (float) ($grTotalAmount ?: 0), // Only GR amount (same as Rekap FJ)
-                'items' => [], // Will be loaded via API when needed
-                'type' => 'gr',
-            ];
-        });
+        $groupedGrList = $this->formatGrRowsForPayment($grList);
 
         $groupedGrList = $groupedGrList
             ->concat($this->fetchUnpaidGsrRowsForPayment($outletId, $dateFrom, $dateTo))
@@ -2476,6 +2357,63 @@ class OutletPaymentController extends Controller
     {
         return $this->rekapFjHasSerialGrTables()
             && Schema::hasColumn('outlet_payments', 'gsr_id');
+    }
+
+    /**
+     * Hitung total GR sekaligus (hindari N+1 query per baris).
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $grList
+     */
+    protected function formatGrRowsForPayment($grList)
+    {
+        $grIds = $grList->pluck('id')->filter()->values()->all();
+        $totals = $this->sumGrTotalAmountsByIds($grIds);
+
+        return $grList->map(function ($gr) use ($totals) {
+            return (object) [
+                'id' => $gr->id,
+                'number' => $gr->number,
+                'gr_number' => $gr->number,
+                'receive_date' => $gr->receive_date,
+                'outlet_id' => $gr->outlet_id,
+                'outlet_name' => $gr->outlet_name,
+                'warehouse_outlet_name' => $gr->warehouse_outlet_name,
+                'warehouse_id' => $gr->warehouse_id,
+                'warehouse_name' => $gr->warehouse_name,
+                'total_amount' => (float) ($totals[$gr->id] ?? 0),
+                'items' => [],
+                'type' => 'gr',
+            ];
+        });
+    }
+
+    /**
+     * @param  array<int>  $grIds
+     * @return array<int, float>
+     */
+    protected function sumGrTotalAmountsByIds(array $grIds): array
+    {
+        if ($grIds === []) {
+            return [];
+        }
+
+        return DB::table('outlet_food_good_receive_items as gri')
+            ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
+            ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
+            ->leftJoin('food_floor_order_items as foi', function ($join) {
+                $join->on('gri.item_id', '=', 'foi.item_id')
+                    ->on('do.floor_order_id', '=', 'foi.floor_order_id');
+            })
+            ->whereIn('gri.outlet_food_good_receive_id', $grIds)
+            ->whereNull('gr.deleted_at')
+            ->groupBy('gri.outlet_food_good_receive_id')
+            ->select(
+                'gri.outlet_food_good_receive_id as gr_id',
+                DB::raw('SUM(COALESCE(gri.received_qty * foi.price, 0)) as total_amount')
+            )
+            ->get()
+            ->mapWithKeys(fn ($row) => [(int) $row->gr_id => (float) $row->total_amount])
+            ->all();
     }
 
     protected function fetchUnpaidGsrRowsForPayment($outletId, $dateFrom, $dateTo)

@@ -75,6 +75,15 @@
           <i v-else class="fa fa-spinner fa-spin"></i>
           {{ isLoading ? 'Memuat...' : 'Load Data' }}
         </button>
+        <button
+          @click="exportExcel"
+          :disabled="isExporting"
+          class="bg-gradient-to-r from-green-500 to-green-700 text-white px-6 py-2 rounded-xl shadow-lg hover:shadow-2xl transition-all font-semibold flex items-center gap-2 disabled:opacity-50"
+        >
+          <i v-if="!isExporting" class="fa fa-file-excel"></i>
+          <i v-else class="fa fa-spinner fa-spin"></i>
+          {{ isExporting ? 'Exporting...' : 'Export Excel' }}
+        </button>
       </div>
 
       <template v-if="isLoading && !isDataLoaded">
@@ -245,6 +254,7 @@ const filters = ref({
 
 const isDataLoaded = ref(!!props.dataLoaded);
 const isLoading = ref(false);
+const isExporting = ref(false);
 
 watch(
   () => props.dataLoaded,
@@ -285,6 +295,18 @@ function loadData() {
     replace: true,
     onFinish: () => { isLoading.value = false; },
   });
+}
+
+function exportExcel() {
+  isExporting.value = true;
+  const params = new URLSearchParams();
+  const q = queryParams();
+  Object.entries(q).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') return;
+    params.set(key, String(value));
+  });
+  window.location.href = `${route('contra-bon-po-variance-report.export')}?${params.toString()}`;
+  setTimeout(() => { isExporting.value = false; }, 1500);
 }
 
 function goPage(url) {

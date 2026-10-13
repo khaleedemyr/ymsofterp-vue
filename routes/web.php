@@ -1335,6 +1335,8 @@ Route::get('/internal-use-waste-report/summary/export', [\App\Http\Controllers\I
 Route::middleware(['auth'])->group(function () {
     Route::get('/contra-bon-po-variance-report', [ContraBonPoVarianceReportController::class, 'index'])
         ->name('contra-bon-po-variance-report.index');
+    Route::get('/contra-bon-po-variance-report/export', [ContraBonPoVarianceReportController::class, 'export'])
+        ->name('contra-bon-po-variance-report.export');
     Route::get('/contra-bons', [ContraBonController::class, 'index'])->name('contra-bons.index');
     Route::get('/contra-bons/create', [ContraBonController::class, 'create'])->name('contra-bons.create');
     Route::post('/contra-bons', [ContraBonController::class, 'store'])->name('contra-bons.store');

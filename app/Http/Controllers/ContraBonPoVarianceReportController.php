@@ -2,24 +2,18 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ContraBonPoVarianceReportExport;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ContraBonPoVarianceReportController extends Controller
 {
     public function index(Request $request)
     {
-        $filters = [
-            'search' => $request->input('search', ''),
-            'status' => $request->input('status', ''),
-            'supplier_id' => $request->input('supplier_id', ''),
-            'date_from' => $request->input('date_from', ''),
-            'date_to' => $request->input('date_to', ''),
-            'diff_type' => $request->input('diff_type', 'any'), // any|price|discount
-            'only_diff' => $request->boolean('only_diff', true),
-            'per_page' => (int) $request->input('per_page', 25),
-        ];
+        $filters = $this->normalizeFilters($request);
 
         $suppliers = DB::table('suppliers')
             ->where('status', 'active')
@@ -36,6 +30,75 @@ class ContraBonPoVarianceReportController extends Controller
             ]);
         }
 
+        $query = $this->baseQuery($filters);
+        $this->applyDiffFilter($query, $filters);
+
+        $perPage = max(10, min(200, $filters['per_page'] ?: 25));
+        $paginator = $query
+            ->orderByDesc('cb.date')
+            ->orderByDesc('cb.id')
+            ->orderBy('i.name')
+            ->paginate($perPage)
+            ->withQueryString();
+
+        $rows = $this->mapRows(collect($paginator->items()));
+        $paginator->setCollection($rows);
+
+        return Inertia::render('ContraBonPoVarianceReport/Index', [
+            'rows' => $paginator,
+            'summary' => $this->buildSummary($filters),
+            'suppliers' => $suppliers,
+            'filters' => $filters,
+            'dataLoaded' => true,
+        ]);
+    }
+
+    public function export(Request $request)
+    {
+        $filters = $this->normalizeFilters($request);
+
+        $query = $this->baseQuery($filters);
+        $this->applyDiffFilter($query, $filters);
+
+        $rawRows = $query
+            ->orderByDesc('cb.date')
+            ->orderByDesc('cb.id')
+            ->orderBy('i.name')
+            ->limit(20000)
+            ->get();
+
+        $rows = $this->mapRows($rawRows);
+        $summary = $this->buildSummary($filters);
+
+        $filename = sprintf(
+            'Selisih_PO_vs_CB_%s_%s_%s.xlsx',
+            $filters['date_from'] ?: 'all',
+            $filters['date_to'] ?: 'all',
+            now()->format('Ymd_His')
+        );
+
+        return Excel::download(
+            new ContraBonPoVarianceReportExport($rows, $summary, $filters),
+            $filename
+        );
+    }
+
+    protected function normalizeFilters(Request $request): array
+    {
+        return [
+            'search' => $request->input('search', ''),
+            'status' => $request->input('status', ''),
+            'supplier_id' => $request->input('supplier_id', ''),
+            'date_from' => $request->input('date_from', ''),
+            'date_to' => $request->input('date_to', ''),
+            'diff_type' => $request->input('diff_type', 'any'),
+            'only_diff' => $request->boolean('only_diff', true),
+            'per_page' => (int) $request->input('per_page', 25),
+        ];
+    }
+
+    protected function baseQuery(array $filters)
+    {
         $query = DB::table('food_contra_bon_items as cbi')
             ->join('food_contra_bons as cb', 'cb.id', '=', 'cbi.contra_bon_id')
             ->join('purchase_order_food_items as poi', 'poi.id', '=', 'cbi.po_item_id')
@@ -80,6 +143,13 @@ class ContraBonPoVarianceReportController extends Controller
                 'poi.total as po_line_total',
             ]);
 
+        $this->applyCommonFilters($query, $filters);
+
+        return $query;
+    }
+
+    protected function applyCommonFilters($query, array $filters): void
+    {
         if ($filters['date_from']) {
             $query->whereDate('cb.date', '>=', $filters['date_from']);
         }
@@ -102,34 +172,38 @@ class ContraBonPoVarianceReportController extends Controller
                     ->orWhere('i.sku', 'like', "%{$search}%");
             });
         }
+    }
 
-        $epsilon = 0.0001;
-        if ($filters['only_diff']) {
-            if ($filters['diff_type'] === 'price') {
-                $query->whereRaw('ABS(COALESCE(cbi.price, 0) - COALESCE(poi.price, 0)) > ?', [$epsilon]);
-            } elseif ($filters['diff_type'] === 'discount') {
-                $query->where(function ($q) use ($epsilon) {
-                    $q->whereRaw('ABS(COALESCE(cbi.discount_percent, 0) - COALESCE(poi.discount_percent, 0)) > ?', [$epsilon])
-                        ->orWhereRaw('ABS(COALESCE(cbi.discount_amount, 0) - COALESCE(poi.discount_amount, 0)) > ?', [$epsilon]);
-                });
-            } else {
-                $query->where(function ($q) use ($epsilon) {
-                    $q->whereRaw('ABS(COALESCE(cbi.price, 0) - COALESCE(poi.price, 0)) > ?', [$epsilon])
-                        ->orWhereRaw('ABS(COALESCE(cbi.discount_percent, 0) - COALESCE(poi.discount_percent, 0)) > ?', [$epsilon])
-                        ->orWhereRaw('ABS(COALESCE(cbi.discount_amount, 0) - COALESCE(poi.discount_amount, 0)) > ?', [$epsilon]);
-                });
-            }
+    protected function applyDiffFilter($query, array $filters): void
+    {
+        if (!$filters['only_diff']) {
+            return;
         }
 
-        $perPage = max(10, min(200, $filters['per_page'] ?: 25));
-        $paginator = $query
-            ->orderByDesc('cb.date')
-            ->orderByDesc('cb.id')
-            ->orderBy('i.name')
-            ->paginate($perPage)
-            ->withQueryString();
+        $epsilon = 0.0001;
+        if ($filters['diff_type'] === 'price') {
+            $query->whereRaw('ABS(COALESCE(cbi.price, 0) - COALESCE(poi.price, 0)) > ?', [$epsilon]);
+            return;
+        }
 
-        $rows = collect($paginator->items())->map(function ($row) {
+        if ($filters['diff_type'] === 'discount') {
+            $query->where(function ($q) use ($epsilon) {
+                $q->whereRaw('ABS(COALESCE(cbi.discount_percent, 0) - COALESCE(poi.discount_percent, 0)) > ?', [$epsilon])
+                    ->orWhereRaw('ABS(COALESCE(cbi.discount_amount, 0) - COALESCE(poi.discount_amount, 0)) > ?', [$epsilon]);
+            });
+            return;
+        }
+
+        $query->where(function ($q) use ($epsilon) {
+            $q->whereRaw('ABS(COALESCE(cbi.price, 0) - COALESCE(poi.price, 0)) > ?', [$epsilon])
+                ->orWhereRaw('ABS(COALESCE(cbi.discount_percent, 0) - COALESCE(poi.discount_percent, 0)) > ?', [$epsilon])
+                ->orWhereRaw('ABS(COALESCE(cbi.discount_amount, 0) - COALESCE(poi.discount_amount, 0)) > ?', [$epsilon]);
+        });
+    }
+
+    protected function mapRows(Collection $rows): Collection
+    {
+        return $rows->map(function ($row) {
             $cbQty = (float) ($row->cb_qty ?? 0);
             $poQty = (float) ($row->po_qty ?? 0);
             $poPrice = (float) ($row->po_price ?? 0);
@@ -140,7 +214,6 @@ class ContraBonPoVarianceReportController extends Controller
             $cbDiscAmt = (float) ($row->cb_discount_amount ?? 0);
             $cbLineTotal = (float) ($row->cb_line_total ?? 0);
 
-            // Expected line from PO rules, applied to CB qty
             $expectedSubtotal = $cbQty * $poPrice;
             if ($poDiscPct > 0) {
                 $expectedDiscount = $expectedSubtotal * ($poDiscPct / 100);
@@ -197,8 +270,11 @@ class ContraBonPoVarianceReportController extends Controller
                 'cb_discount_total_percent' => (float) ($row->cb_discount_total_percent ?? 0),
                 'cb_discount_total_amount' => (float) ($row->cb_discount_total_amount ?? 0),
             ];
-        });
+        })->values();
+    }
 
+    protected function buildSummary(array $filters): array
+    {
         $summaryBase = DB::table('food_contra_bon_items as cbi')
             ->join('food_contra_bons as cb', 'cb.id', '=', 'cbi.contra_bon_id')
             ->join('purchase_order_food_items as poi', 'poi.id', '=', 'cbi.po_item_id')
@@ -209,30 +285,9 @@ class ContraBonPoVarianceReportController extends Controller
             ->leftJoin('items as i', 'i.id', '=', 'cbi.item_id')
             ->whereNotNull('cbi.po_item_id');
 
-        if ($filters['date_from']) {
-            $summaryBase->whereDate('cb.date', '>=', $filters['date_from']);
-        }
-        if ($filters['date_to']) {
-            $summaryBase->whereDate('cb.date', '<=', $filters['date_to']);
-        }
-        if ($filters['status']) {
-            $summaryBase->where('cb.status', $filters['status']);
-        }
-        if ($filters['supplier_id']) {
-            $summaryBase->where('cb.supplier_id', $filters['supplier_id']);
-        }
-        if ($filters['search']) {
-            $search = $filters['search'];
-            $summaryBase->where(function ($q) use ($search) {
-                $q->where('cb.number', 'like', "%{$search}%")
-                    ->orWhere('po.number', 'like', "%{$search}%")
-                    ->orWhere('s.name', 'like', "%{$search}%")
-                    ->orWhere('i.name', 'like', "%{$search}%")
-                    ->orWhere('i.sku', 'like', "%{$search}%");
-            });
-        }
+        $this->applyCommonFilters($summaryBase, $filters);
 
-        $summary = (clone $summaryBase)->selectRaw('
+        $summary = $summaryBase->selectRaw('
             COUNT(*) as total_compared_lines,
             SUM(CASE WHEN ABS(COALESCE(cbi.price, 0) - COALESCE(poi.price, 0)) > 0.0001 THEN 1 ELSE 0 END) as price_diff_count,
             SUM(CASE WHEN ABS(COALESCE(cbi.discount_percent, 0) - COALESCE(poi.discount_percent, 0)) > 0.0001
@@ -242,19 +297,11 @@ class ContraBonPoVarianceReportController extends Controller
                       OR ABS(COALESCE(cbi.discount_amount, 0) - COALESCE(poi.discount_amount, 0)) > 0.0001 THEN 1 ELSE 0 END) as any_diff_count
         ')->first();
 
-        $paginator->setCollection($rows);
-
-        return Inertia::render('ContraBonPoVarianceReport/Index', [
-            'rows' => $paginator,
-            'summary' => [
-                'total_compared_lines' => (int) ($summary->total_compared_lines ?? 0),
-                'price_diff_count' => (int) ($summary->price_diff_count ?? 0),
-                'discount_diff_count' => (int) ($summary->discount_diff_count ?? 0),
-                'any_diff_count' => (int) ($summary->any_diff_count ?? 0),
-            ],
-            'suppliers' => $suppliers,
-            'filters' => $filters,
-            'dataLoaded' => true,
-        ]);
+        return [
+            'total_compared_lines' => (int) ($summary->total_compared_lines ?? 0),
+            'price_diff_count' => (int) ($summary->price_diff_count ?? 0),
+            'discount_diff_count' => (int) ($summary->discount_diff_count ?? 0),
+            'any_diff_count' => (int) ($summary->any_diff_count ?? 0),
+        ];
     }
 }
