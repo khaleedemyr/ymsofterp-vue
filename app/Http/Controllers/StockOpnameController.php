@@ -2222,9 +2222,22 @@ class StockOpnameController extends Controller
             $no = $row['no'] ?? $row['No'] ?? ($idx + 1);
             $kategori = trim((string) ($row['kategori'] ?? $row['Kategori'] ?? ''));
             $namaItem = trim((string) ($row['nama_item'] ?? $row['Nama Item'] ?? ''));
-            $qtyTerkecil = $row['qty_terkecil'] ?? $row['Qty Terkecil'] ?? '';
+            // qty fisik (baru) / qty_terkecil (template lama)
+            $qtyTerkecil = $row['qty_fisik']
+                ?? $row['Qty Fisik']
+                ?? $row['qty fisik']
+                ?? $row['qty_terkecil']
+                ?? $row['Qty Terkecil']
+                ?? '';
             $unitTerkecil = trim((string) ($row['unit_terkecil'] ?? $row['Unit Terkecil'] ?? ''));
-            $alasan = trim((string) ($row['alasan'] ?? $row['Alasan'] ?? ''));
+            // reason (baru) / alasan (template lama)
+            $alasan = trim((string) (
+                $row['reason']
+                ?? $row['Reason']
+                ?? $row['alasan']
+                ?? $row['Alasan']
+                ?? ''
+            ));
             if ($namaItem === '' && $qtyTerkecil === '' && $kategori === '') {
                 continue;
             }
@@ -2252,7 +2265,7 @@ class StockOpnameController extends Controller
                     'excel_row' => $excelRow,
                     'no' => $no, 'kategori' => $kategori, 'nama_item' => $namaItem,
                     'qty_terkecil' => $qtyTerkecil, 'unit_terkecil' => $unitTerkecil, 'alasan' => $alasan,
-                    'error' => 'Qty Terkecil harus angka >= 0 (kosong dianggap 0).',
+                    'error' => 'qty fisik harus angka >= 0 (kosong dianggap 0).',
                 ] + array_fill_keys(['inventory_item_id','qty_system_small','qty_system_medium','qty_system_large','mac','qty_physical_small','qty_physical_medium','qty_physical_large','small_conversion_qty','medium_conversion_qty'], null);
                 continue;
             }

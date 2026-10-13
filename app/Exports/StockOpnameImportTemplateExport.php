@@ -72,7 +72,7 @@ class StockOpnameInfoSheet implements FromArray, WithHeadings, WithTitle, WithSt
         ];
 
         if ($this->outlet && $this->wh) {
-            array_unshift($rows, ['Petunjuk', 'Outlet & Warehouse sudah terisi. Di sheet Items: isi hanya Qty Terkecil (dan Alasan bila ada selisih).']);
+            array_unshift($rows, ['Petunjuk', 'Outlet & Warehouse sudah terisi. Di sheet Items: qty system sudah terisi otomatis. Isi qty fisik (dan reason bila ada selisih). Kolom selisih boleh dikosongkan.']);
         } else {
             array_unshift($rows, ['Petunjuk', 'Pilih Outlet dan Warehouse Outlet di halaman Create, lalu download ulang template.']);
         }
@@ -129,18 +129,21 @@ class StockOpnameItemsSheet implements FromArray, WithHeadings, WithTitle, WithS
         $rows = [];
         $n = 1;
         foreach ($this->items as $it) {
+            $qtySystem = $it->qty_system_small ?? $it->qty_small ?? 0;
             $rows[] = [
                 $n++,
                 $it->category_name ?? '',
                 $it->item_name ?? '',
-                '', // Qty Terkecil — user isi
                 $it->small_unit_name ?? '',
-                '', // Alasan — user isi bila ada selisih
+                is_numeric($qtySystem) ? (float) $qtySystem : 0, // qty system — stok sistem
+                '', // qty fisik — user isi
+                '', // selisih — kosong (opsional, user/Excel formula)
+                '', // reason — user isi bila ada selisih
             ];
         }
 
         if (empty($rows)) {
-            $rows[] = [1, 'Contoh: Bahan Baku', 'Contoh: Tepung Terigu', '', 'kg', ''];
+            $rows[] = [1, 'Contoh: Bahan Baku', 'Contoh: Tepung Terigu', 'kg', 0, '', '', ''];
         }
 
         return $rows;
@@ -152,9 +155,11 @@ class StockOpnameItemsSheet implements FromArray, WithHeadings, WithTitle, WithS
             'No',
             'Kategori',
             'Nama Item',
-            'Qty Terkecil',
             'Unit Terkecil',
-            'Alasan',
+            'qty system',
+            'qty fisik',
+            'selisih',
+            'reason',
         ];
     }
 
@@ -167,14 +172,14 @@ class StockOpnameItemsSheet implements FromArray, WithHeadings, WithTitle, WithS
     {
         $rowCount = count($this->items) ?: 1;
         $lastRow = $rowCount + 1;
-        $sheet->getStyle('A1:F1')->applyFromArray([
+        $sheet->getStyle('A1:H1')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => [
                 'fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID,
                 'startColor' => ['rgb' => '0070C0'],
             ],
         ]);
-        $sheet->getStyle('A1:F' . $lastRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
+        $sheet->getStyle('A1:H' . $lastRow)->getBorders()->getAllBorders()->setBorderStyle(\PhpOffice\PhpSpreadsheet\Style\Border::BORDER_THIN);
         return [];
     }
 

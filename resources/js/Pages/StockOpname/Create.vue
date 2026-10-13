@@ -379,7 +379,7 @@
       <Modal :show="showImportModal" @close="closeImportModal" max-width="2xl">
         <div class="p-6">
           <h2 class="text-lg font-medium text-gray-900 mb-4">Import Stock Opname</h2>
-          <p class="text-sm text-gray-600 mb-4">Pilih file Excel (dari Download Template). Data akan langsung terisi ke list item di bawah. Isi hanya <b>Qty Terkecil</b> di Excel (dan Alasan bila ada selisih).</p>
+          <p class="text-sm text-gray-600 mb-4">Pilih file Excel (dari Download Template). Data akan langsung terisi ke list item di bawah. Di Excel: <b>qty system</b> sudah terisi otomatis; isi <b>qty fisik</b> (dan <b>reason</b> bila ada selisih). Kolom <b>selisih</b> boleh dikosongkan.</p>
 
           <div class="mb-4">
             <label class="block text-sm font-medium text-gray-700 mb-1">Pilih File</label>
