@@ -50,26 +50,34 @@ class WarehouseReportController extends Controller
      */
     public function reportGoodReceiveOutlet(Request $request)
     {
-        // Wajib pilih tanggal
-        if (!$request->filled('tanggal')) {
+        $dateFrom = $request->input('date_from') ?: $request->input('tanggal');
+        $dateTo = $request->input('date_to') ?: $request->input('tanggal');
+
+        // Wajib pilih rentang tanggal
+        if (!$dateFrom || !$dateTo) {
             return Inertia::render('Report/ReportGoodReceiveOutlet', [
                 'outlets' => [],
                 'items' => [],
                 'filters' => [
-                    'tanggal' => $request->tanggal,
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
                 ],
             ]);
         }
 
-        $tanggal = $request->tanggal;
+        if ($dateFrom > $dateTo) {
+            [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+        }
+
         $outlets = $this->getCachedActiveOutlets();
-        $items = $this->buildGoodReceiveOutletPivotItems($tanggal);
+        $items = $this->buildGoodReceiveOutletPivotItems($dateFrom, $dateTo);
 
         return Inertia::render('Report/ReportGoodReceiveOutlet', [
             'outlets' => $outlets,
             'items' => $items,
             'filters' => [
-                'tanggal' => $tanggal,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
             ],
         ]);
     }
@@ -84,13 +92,25 @@ class WarehouseReportController extends Controller
      */
     public function exportGoodReceiveOutlet(Request $request)
     {
-        $request->validate([
-            'tanggal' => 'required|date',
+        $dateFrom = $request->input('date_from') ?: $request->input('tanggal');
+        $dateTo = $request->input('date_to') ?: $request->input('tanggal');
+
+        if ($dateFrom && $dateTo && $dateFrom > $dateTo) {
+            [$dateFrom, $dateTo] = [$dateTo, $dateFrom];
+        }
+
+        $request->merge([
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
         ]);
 
-        $tanggal = $request->tanggal;
+        $request->validate([
+            'date_from' => 'required|date',
+            'date_to' => 'required|date|after_or_equal:date_from',
+        ]);
+
         $outlets = $this->getCachedActiveOutlets();
-        $items = $this->buildGoodReceiveOutletPivotItems($tanggal);
+        $items = $this->buildGoodReceiveOutletPivotItems($dateFrom, $dateTo);
 
         // Prepare data for export
         $exportData = [];
@@ -107,7 +127,11 @@ class WarehouseReportController extends Controller
             $exportData[] = $row;
         }
 
-        $filename = 'Report_Good_Receive_Outlet_' . date('Y-m-d', strtotime($tanggal)) . '.xlsx';
+        $filename = sprintf(
+            'Report_Good_Receive_Outlet_%s_%s.xlsx',
+            date('Y-m-d', strtotime($dateFrom)),
+            date('Y-m-d', strtotime($dateTo))
+        );
 
         return \Maatwebsite\Excel\Facades\Excel::download(
             new \App\Exports\GoodReceiveOutletExport($exportData, $outlets),
@@ -116,11 +140,11 @@ class WarehouseReportController extends Controller
     }
 
     /**
-     * Pivot GR outlet per tanggal: Food + Supplier + Nomor Seri.
+     * Pivot GR outlet per rentang tanggal: Food + Supplier + Nomor Seri.
      */
-    private function buildGoodReceiveOutletPivotItems(string $tanggal): array
+    private function buildGoodReceiveOutletPivotItems(string $dateFrom, string $dateTo): array
     {
-        $data = $this->fetchGoodReceiveOutletRawRows($tanggal);
+        $data = $this->fetchGoodReceiveOutletRawRows($dateFrom, $dateTo);
 
         $pivot = [];
         foreach ($data as $row) {
@@ -144,14 +168,15 @@ class WarehouseReportController extends Controller
     /**
      * Baris agregat GR per item, unit, outlet (sumber: food, supplier, serial).
      */
-    private function fetchGoodReceiveOutletRawRows(string $tanggal)
+    private function fetchGoodReceiveOutletRawRows(string $dateFrom, string $dateTo)
     {
         $data1 = DB::table('outlet_food_good_receives as gr')
             ->join('outlet_food_good_receive_items as i', 'gr.id', '=', 'i.outlet_food_good_receive_id')
             ->join('items as it', 'i.item_id', '=', 'it.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->whereDate('gr.receive_date', $tanggal)
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
             ->whereNull('gr.deleted_at')
             ->select(
                 'it.id as item_id',
@@ -169,7 +194,8 @@ class WarehouseReportController extends Controller
             ->join('items as it', 'i.item_id', '=', 'it.id')
             ->join('units as u', 'i.unit_id', '=', 'u.id')
             ->join('tbl_data_outlet as o', 'gr.outlet_id', '=', 'o.id_outlet')
-            ->whereDate('gr.receive_date', $tanggal)
+            ->whereDate('gr.receive_date', '>=', $dateFrom)
+            ->whereDate('gr.receive_date', '<=', $dateTo)
             ->select(
                 'it.id as item_id',
                 'it.name as item_name',
@@ -189,7 +215,8 @@ class WarehouseReportController extends Controller
                 ->join('items as it', 'si.item_id', '=', 'it.id')
                 ->join('units as u', 'si.unit_id', '=', 'u.id')
                 ->join('tbl_data_outlet as o', 'h.outlet_id', '=', 'o.id_outlet')
-                ->whereDate('h.receive_date', $tanggal)
+                ->whereDate('h.receive_date', '>=', $dateFrom)
+                ->whereDate('h.receive_date', '<=', $dateTo)
                 ->whereNull('h.deleted_at')
                 ->select(
                     'it.id as item_id',
