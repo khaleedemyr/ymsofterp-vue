@@ -16,6 +16,7 @@ use App\Models\Reservation;
 use App\Models\Outlet;
 use App\Models\User;
 use App\Models\PaymentType;
+use App\Models\WebProfileSetting;
 
 class ReservationController extends Controller
 {
@@ -26,6 +27,9 @@ class ReservationController extends Controller
 
     /** Bump when public availability / date rules change (check response header on GET availability-layout). */
     private const PUBLIC_RESERVATION_AVAILABILITY_VERSION = 'v2-allow-today';
+
+    /** WebProfileSetting key: when off, public website skips guest table pick + availability layout. */
+    private const GUEST_TABLE_SELECTION_SETTING_KEY = 'reservation_guest_table_selection_enabled';
 
     public function index(Request $request)
     {
@@ -287,12 +291,51 @@ class ReservationController extends Controller
             'reservations' => $reservations,
             'outlets' => $outlets,
             'can_choose_outlet' => $isAdminOutlet,
+            'guest_table_selection_enabled' => $this->isGuestTableSelectionEnabled(),
+            'can_manage_guest_table_selection' => $isAdminOutlet,
             'search' => $request->search,
             'outlet_id' => $effectiveOutletId,
             'status' => $request->status,
             'dateFrom' => $request->dateFrom,
             'dateTo' => $request->dateTo,
             'per_page' => $perPage,
+        ]);
+    }
+
+    public function updateGuestTableSelectionSetting(Request $request)
+    {
+        $user = auth()->user();
+        $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
+        $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
+        if (!$isAdminOutlet) {
+            abort(403, 'Hanya admin yang dapat mengubah pengaturan pemilihan meja.');
+        }
+
+        $validated = $request->validate([
+            'guest_table_selection_enabled' => 'required|boolean',
+        ]);
+
+        WebProfileSetting::setValue(
+            self::GUEST_TABLE_SELECTION_SETTING_KEY,
+            !empty($validated['guest_table_selection_enabled']) ? '1' : '0',
+            'boolean'
+        );
+
+        return back()->with(
+            'success',
+            !empty($validated['guest_table_selection_enabled'])
+                ? 'Pemilihan meja di website diaktifkan.'
+                : 'Pemilihan meja di website dinonaktifkan. Tamu akan melewati cek ketersediaan meja.'
+        );
+    }
+
+    /**
+     * Public website settings for reservation arrange flow.
+     */
+    public function apiPublicSettings()
+    {
+        return response()->json([
+            'guest_table_selection_enabled' => $this->isGuestTableSelectionEnabled(),
         ]);
     }
 
@@ -1488,7 +1531,7 @@ class ReservationController extends Controller
                 'reservation_date' => 'required|date_format:Y-m-d',
                 'reservation_time' => 'required',
                 'number_of_guests' => 'required|integer|min:1',
-                'selected_table_ids' => 'nullable|array|min:1',
+                'selected_table_ids' => 'nullable|array',
                 'selected_table_ids.*' => 'integer|min:1',
                 'smoking_preference' => 'nullable|in:smoking,non_smoking',
                 'special_requests' => 'nullable|string',
@@ -1525,6 +1568,24 @@ class ReservationController extends Controller
             } else {
                 unset($validated['menu_file']);
             }
+            $tableIds = array_values(array_filter(
+                array_map('intval', (array) ($validated['selected_table_ids'] ?? [])),
+                fn ($id) => $id > 0
+            ));
+            if ($this->isGuestTableSelectionEnabled()) {
+                if (count($tableIds) < 1) {
+                    return response()->json([
+                        'message' => 'Validasi gagal',
+                        'errors' => [
+                            'selected_table_ids' => ['Pilih minimal satu meja untuk reservasi website.'],
+                        ],
+                    ], 422);
+                }
+                $validated['selected_table_ids'] = $tableIds;
+            } else {
+                $validated['selected_table_ids'] = null;
+            }
+
             $this->ensureReservationDateNotInPast((string) $validated['reservation_date']);
             if ($reject = $this->rejectIfSameDayReservationTooSoon(
                 (string) $validated['reservation_date'],
@@ -2045,5 +2106,15 @@ class ReservationController extends Controller
         // Unique suffix untuk transfer DP: random 1..100 sesuai kebutuhan bisnis.
         $uniqueCode = random_int(1, 100);
         return (float) ($base + $uniqueCode);
+    }
+
+    private function isGuestTableSelectionEnabled(): bool
+    {
+        $raw = WebProfileSetting::getValue(self::GUEST_TABLE_SELECTION_SETTING_KEY, '1');
+        if ($raw === null || $raw === '') {
+            return true;
+        }
+
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
     }
 } 

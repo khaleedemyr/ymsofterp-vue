@@ -2036,6 +2036,7 @@ Route::post('/reservations/mark-dp-used', [\App\Http\Controllers\ReservationCont
 Route::get('/reservations/status-by-number', [\App\Http\Controllers\ReservationController::class, 'apiStatusByNumber']);
 Route::patch('/reservations/{id}/status', [\App\Http\Controllers\ReservationController::class, 'apiUpdateStatus']);
 Route::get('/reservations/availability-layout', [\App\Http\Controllers\ReservationController::class, 'apiAvailabilityLayout']);
+Route::get('/reservations/public-settings', [\App\Http\Controllers\ReservationController::class, 'apiPublicSettings']);
 // Website reservation submit (same controller as approval-app; public, no auth)
 Route::post('/reservations', [\App\Http\Controllers\ReservationController::class, 'apiStore']);
 Route::get('/self-order/menu', [\App\Http\Controllers\MenuBookController::class, 'apiSelfOrderMenuByOutlet']);
