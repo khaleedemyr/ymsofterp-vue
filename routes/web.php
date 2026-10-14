@@ -2988,10 +2988,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'show'])->name('manual-point.show');
     Route::delete('manual-point/{id}', [\App\Http\Controllers\ManualPointController::class, 'destroy'])->name('manual-point.destroy');
     
-    // Web Profile Routes
-    Route::resource('web-profile', \App\Http\Controllers\WebProfileController::class)->except(['show']);
+    // Web Profile Routes — specific paths BEFORE resource to avoid {web_profile} conflicts
+    Route::prefix('web-profile/reservation-settings')->name('web-profile.reservation-settings.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'reservationSettingsIndex'])->name('index');
+        Route::patch('/', [\App\Http\Controllers\WebProfileController::class, 'reservationSettingsUpdate'])->name('update');
+    });
     Route::get('web-profile/security-monitoring', [\App\Http\Controllers\WebProfileController::class, 'securityMonitoringIndex'])
         ->name('web-profile.security-monitoring.index');
+
+    Route::resource('web-profile', \App\Http\Controllers\WebProfileController::class)->except(['show']);
     
     // Web Profile Pages Routes
     Route::prefix('web-profile/pages')->name('web-profile.pages.')->group(function () {
@@ -3075,11 +3080,6 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('web-profile/careers-page')->name('web-profile.careers-page.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'careersPageIndex'])->name('index');
         Route::post('/settings', [\App\Http\Controllers\WebProfileController::class, 'careersPageStore'])->name('settings');
-    });
-
-    Route::prefix('web-profile/reservation-settings')->name('web-profile.reservation-settings.')->group(function () {
-        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'reservationSettingsIndex'])->name('index');
-        Route::patch('/', [\App\Http\Controllers\WebProfileController::class, 'reservationSettingsUpdate'])->name('update');
     });
 
     Route::prefix('web-profile/payment-settings')->name('web-profile.payment-settings.')->group(function () {

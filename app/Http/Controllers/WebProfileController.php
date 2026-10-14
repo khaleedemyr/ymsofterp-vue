@@ -88,23 +88,31 @@ class WebProfileController extends Controller
 
     private function isReservationMaintenanceEnabled(): bool
     {
-        // Default ON agar selaras dengan website yang masih under maintenance.
-        $raw = WebProfileSetting::getValue(self::RESERVATION_MAINTENANCE_SETTING_KEY, '1');
-        if ($raw === null || $raw === '') {
+        try {
+            // Default ON agar selaras dengan website yang masih under maintenance.
+            $raw = WebProfileSetting::getValue(self::RESERVATION_MAINTENANCE_SETTING_KEY, '1');
+            if ($raw === null || $raw === '') {
+                return true;
+            }
+
+            return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+        } catch (\Throwable) {
             return true;
         }
-
-        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
     }
 
     private function isGuestTableSelectionEnabled(): bool
     {
-        $raw = WebProfileSetting::getValue(self::GUEST_TABLE_SELECTION_SETTING_KEY, '1');
-        if ($raw === null || $raw === '') {
+        try {
+            $raw = WebProfileSetting::getValue(self::GUEST_TABLE_SELECTION_SETTING_KEY, '1');
+            if ($raw === null || $raw === '') {
+                return true;
+            }
+
+            return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+        } catch (\Throwable) {
             return true;
         }
-
-        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
     }
 
     /**
