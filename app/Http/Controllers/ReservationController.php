@@ -31,6 +31,9 @@ class ReservationController extends Controller
     /** WebProfileSetting key: when off, public website skips guest table pick + availability layout. */
     private const GUEST_TABLE_SELECTION_SETTING_KEY = 'reservation_guest_table_selection_enabled';
 
+    /** WebProfileSetting key: when on, Justus Kunest shows reservation under-maintenance page. */
+    private const RESERVATION_MAINTENANCE_SETTING_KEY = 'reservation_maintenance_enabled';
+
     public function index(Request $request)
     {
         $selfOrderTable = Schema::hasTable('web_self_orders') ? 'web_self_orders' : 'self_orders';
@@ -291,8 +294,6 @@ class ReservationController extends Controller
             'reservations' => $reservations,
             'outlets' => $outlets,
             'can_choose_outlet' => $isAdminOutlet,
-            'guest_table_selection_enabled' => $this->isGuestTableSelectionEnabled(),
-            'can_manage_guest_table_selection' => $isAdminOutlet,
             'search' => $request->search,
             'outlet_id' => $effectiveOutletId,
             'status' => $request->status,
@@ -302,40 +303,14 @@ class ReservationController extends Controller
         ]);
     }
 
-    public function updateGuestTableSelectionSetting(Request $request)
-    {
-        $user = auth()->user();
-        $userOutletId = $user->id_outlet ? (int) $user->id_outlet : null;
-        $isAdminOutlet = ($userOutletId === 1 || $userOutletId === null);
-        if (!$isAdminOutlet) {
-            abort(403, 'Hanya admin yang dapat mengubah pengaturan pemilihan meja.');
-        }
-
-        $validated = $request->validate([
-            'guest_table_selection_enabled' => 'required|boolean',
-        ]);
-
-        WebProfileSetting::setValue(
-            self::GUEST_TABLE_SELECTION_SETTING_KEY,
-            !empty($validated['guest_table_selection_enabled']) ? '1' : '0',
-            'boolean'
-        );
-
-        return back()->with(
-            'success',
-            !empty($validated['guest_table_selection_enabled'])
-                ? 'Pemilihan meja di website diaktifkan.'
-                : 'Pemilihan meja di website dinonaktifkan. Tamu akan melewati cek ketersediaan meja.'
-        );
-    }
-
     /**
-     * Public website settings for reservation arrange flow.
+     * Public website settings for reservation arrange / maintenance flow.
      */
     public function apiPublicSettings()
     {
         return response()->json([
             'guest_table_selection_enabled' => $this->isGuestTableSelectionEnabled(),
+            'reservation_maintenance_enabled' => $this->isReservationMaintenanceEnabled(),
         ]);
     }
 
@@ -2111,6 +2086,17 @@ class ReservationController extends Controller
     private function isGuestTableSelectionEnabled(): bool
     {
         $raw = WebProfileSetting::getValue(self::GUEST_TABLE_SELECTION_SETTING_KEY, '1');
+        if ($raw === null || $raw === '') {
+            return true;
+        }
+
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function isReservationMaintenanceEnabled(): bool
+    {
+        // Default ON agar selaras dengan website yang masih under maintenance.
+        $raw = WebProfileSetting::getValue(self::RESERVATION_MAINTENANCE_SETTING_KEY, '1');
         if ($raw === null || $raw === '') {
             return true;
         }

@@ -30,12 +30,81 @@ use Illuminate\Pagination\LengthAwarePaginator;
 class WebProfileController extends Controller
 {
     private const QRIS_APPROVER_ROLE_ID = '5af56935b011a';
+
+    private const RESERVATION_MAINTENANCE_SETTING_KEY = 'reservation_maintenance_enabled';
+
+    private const GUEST_TABLE_SELECTION_SETTING_KEY = 'reservation_guest_table_selection_enabled';
+
     /**
      * Display admin dashboard
      */
     public function index()
     {
         return Inertia::render('WebProfile/Index');
+    }
+
+    /**
+     * Justus Kunest reservation website settings (maintenance + guest table pick).
+     */
+    public function reservationSettingsIndex()
+    {
+        return Inertia::render('WebProfile/ReservationSettings/Index', [
+            'reservation_maintenance_enabled' => $this->isReservationMaintenanceEnabled(),
+            'guest_table_selection_enabled' => $this->isGuestTableSelectionEnabled(),
+        ]);
+    }
+
+    public function reservationSettingsUpdate(Request $request)
+    {
+        $validated = $request->validate([
+            'reservation_maintenance_enabled' => 'sometimes|boolean',
+            'guest_table_selection_enabled' => 'sometimes|boolean',
+        ]);
+
+        if (!array_key_exists('reservation_maintenance_enabled', $validated)
+            && !array_key_exists('guest_table_selection_enabled', $validated)
+        ) {
+            return back()->with('error', 'Tidak ada pengaturan yang diubah.');
+        }
+
+        if (array_key_exists('reservation_maintenance_enabled', $validated)) {
+            WebProfileSetting::setValue(
+                self::RESERVATION_MAINTENANCE_SETTING_KEY,
+                !empty($validated['reservation_maintenance_enabled']) ? '1' : '0',
+                'boolean'
+            );
+        }
+
+        if (array_key_exists('guest_table_selection_enabled', $validated)) {
+            WebProfileSetting::setValue(
+                self::GUEST_TABLE_SELECTION_SETTING_KEY,
+                !empty($validated['guest_table_selection_enabled']) ? '1' : '0',
+                'boolean'
+            );
+        }
+
+        return back()->with('success', 'Pengaturan reservasi website berhasil disimpan.');
+    }
+
+    private function isReservationMaintenanceEnabled(): bool
+    {
+        // Default ON agar selaras dengan website yang masih under maintenance.
+        $raw = WebProfileSetting::getValue(self::RESERVATION_MAINTENANCE_SETTING_KEY, '1');
+        if ($raw === null || $raw === '') {
+            return true;
+        }
+
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
+    }
+
+    private function isGuestTableSelectionEnabled(): bool
+    {
+        $raw = WebProfileSetting::getValue(self::GUEST_TABLE_SELECTION_SETTING_KEY, '1');
+        if ($raw === null || $raw === '') {
+            return true;
+        }
+
+        return filter_var($raw, FILTER_VALIDATE_BOOLEAN);
     }
 
     /**

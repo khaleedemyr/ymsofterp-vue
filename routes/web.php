@@ -2116,8 +2116,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/reservations/export', [ReservationController::class, 'export'])->name('reservations.export');
     Route::get('/reservations/create', [ReservationController::class, 'create'])->name('reservations.create');
     Route::post('/reservations', [ReservationController::class, 'store'])->name('reservations.store');
-    Route::patch('/reservations/settings/guest-table-selection', [ReservationController::class, 'updateGuestTableSelectionSetting'])
-        ->name('reservations.settings.guest-table-selection');
     Route::get('/reservations/{reservation}/menu-file', [ReservationController::class, 'downloadMenuFile'])->name('reservations.menu-file');
     Route::get('/reservations/{reservation}', [ReservationController::class, 'show'])->name('reservations.show');
     Route::get('/reservations/{reservation}/edit', [ReservationController::class, 'edit'])->name('reservations.edit');
@@ -3077,6 +3075,11 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('web-profile/careers-page')->name('web-profile.careers-page.')->group(function () {
         Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'careersPageIndex'])->name('index');
         Route::post('/settings', [\App\Http\Controllers\WebProfileController::class, 'careersPageStore'])->name('settings');
+    });
+
+    Route::prefix('web-profile/reservation-settings')->name('web-profile.reservation-settings.')->group(function () {
+        Route::get('/', [\App\Http\Controllers\WebProfileController::class, 'reservationSettingsIndex'])->name('index');
+        Route::patch('/', [\App\Http\Controllers\WebProfileController::class, 'reservationSettingsUpdate'])->name('update');
     });
 
     Route::prefix('web-profile/payment-settings')->name('web-profile.payment-settings.')->group(function () {

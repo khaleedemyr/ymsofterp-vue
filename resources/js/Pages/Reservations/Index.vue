@@ -31,44 +31,6 @@
           </div>
         </div>
 
-        <!-- Website table-selection toggle (admin) -->
-        <div
-          v-if="canManageGuestTableSelection"
-          class="bg-white/80 backdrop-blur rounded-2xl border border-slate-200/60 shadow-sm p-5 mb-6"
-        >
-          <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <div class="flex items-center gap-2 mb-1">
-                <i class="fa-solid fa-chair text-rose-500"></i>
-                <span class="font-semibold text-slate-700">Pemilihan meja di website</span>
-              </div>
-              <p class="text-sm text-slate-500 max-w-2xl">
-                Jika dimatikan, tamu melewati cek ketersediaan &amp; pilih meja. Reservasi tetap masuk; meja bisa di-assign manual di ERP.
-              </p>
-            </div>
-            <button
-              type="button"
-              class="inline-flex items-center gap-3 self-start sm:self-center rounded-xl border px-4 py-2.5 text-sm font-semibold transition disabled:opacity-60"
-              :class="guestTableSelectionEnabled
-                ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
-                : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100'"
-              :disabled="savingGuestTableSelection"
-              @click="toggleGuestTableSelection"
-            >
-              <span
-                class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition"
-                :class="guestTableSelectionEnabled ? 'bg-emerald-500' : 'bg-slate-300'"
-              >
-                <span
-                  class="inline-block h-5 w-5 rounded-full bg-white shadow transition"
-                  :class="guestTableSelectionEnabled ? 'translate-x-5' : 'translate-x-0.5'"
-                />
-              </span>
-              {{ guestTableSelectionEnabled ? 'Aktif (tamu pilih meja)' : 'Nonaktif (skip pilih meja)' }}
-            </button>
-          </div>
-        </div>
-
         <!-- Filter Card -->
         <div class="bg-white/80 backdrop-blur rounded-2xl border border-slate-200/60 shadow-sm p-5 mb-6">
           <div class="flex items-center gap-2 mb-4">
@@ -360,8 +322,6 @@ const props = defineProps({
   },
   outlets: { type: Array, default: () => [] },
   can_choose_outlet: { type: Boolean, default: true },
-  guest_table_selection_enabled: { type: Boolean, default: true },
-  can_manage_guest_table_selection: { type: Boolean, default: false },
   search: String,
   outlet_id: [String, Number],
   status: String,
@@ -371,8 +331,6 @@ const props = defineProps({
 });
 
 const canChooseOutlet = computed(() => props.can_choose_outlet !== false);
-const canManageGuestTableSelection = computed(() => props.can_manage_guest_table_selection === true);
-const guestTableSelectionEnabled = computed(() => props.guest_table_selection_enabled !== false);
 
 const search = ref(props.search || '');
 const outletId = ref(props.outlet_id ?? '');
@@ -383,38 +341,9 @@ const perPage = ref(props.per_page || props.reservations?.per_page || 10);
 const outlets = ref(props.outlets || []);
 const loadingDeleteId = ref(null);
 const loadingStatusId = ref(null);
-const savingGuestTableSelection = ref(false);
 const statusDrafts = ref({});
 const reservationRows = computed(() => props.reservations?.data || []);
 const paginationLinks = computed(() => props.reservations?.links || []);
-
-function toggleGuestTableSelection() {
-  if (!canManageGuestTableSelection.value || savingGuestTableSelection.value) return;
-  const next = !guestTableSelectionEnabled.value;
-  savingGuestTableSelection.value = true;
-  router.patch('/reservations/settings/guest-table-selection', {
-    guest_table_selection_enabled: next,
-  }, {
-    preserveScroll: true,
-    onFinish: () => {
-      savingGuestTableSelection.value = false;
-    },
-    onSuccess: () => {
-      Swal.fire({
-        title: 'Berhasil',
-        text: next
-          ? 'Pemilihan meja di website diaktifkan.'
-          : 'Pemilihan meja dinonaktifkan. Tamu skip cek meja.',
-        icon: 'success',
-        timer: 2200,
-        showConfirmButton: false,
-      });
-    },
-    onError: () => {
-      Swal.fire({ title: 'Error', text: 'Gagal menyimpan pengaturan.', icon: 'error' });
-    },
-  });
-}
 
 function rowNumber(idx) {
   const currentPage = Number(props.reservations?.current_page || 1);
