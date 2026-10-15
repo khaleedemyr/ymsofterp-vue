@@ -102,9 +102,12 @@ class CostReportDataService
             $row['official_cost'] = round($officialCostByOutlet[$row['outlet_id']] ?? 0, 2);
             $row['cost_rnd'] = round($costRndByOutlet[$row['outlet_id']] ?? 0, 2);
             $row['outlet_transfer'] = round($outletTransferByOutlet[$row['outlet_id']] ?? 0, 2);
-            $row['sales_before_discount'] = round($salesBeforeDiscountByOutlet[$row['outlet_id']] ?? 0, 2);
+            // Σ(qty×price) / orders.total sudah net of item & sudah dipakai sebagai sales;
+            // jangan dikurangi discount header lagi (double subtract).
+            $salesTotal = round($salesBeforeDiscountByOutlet[$row['outlet_id']] ?? 0, 2);
             $row['discount'] = round($discountByOutlet[$row['outlet_id']] ?? 0, 2);
-            $row['sales_after_discount'] = round(($row['sales_before_discount'] ?? 0) - ($row['discount'] ?? 0), 2);
+            $row['sales_after_discount'] = $salesTotal;
+            $row['sales_before_discount'] = round($salesTotal + (float) $row['discount'], 2);
 
             $salesBefore = (float) ($row['sales_before_discount'] ?? 0);
             $row['pct_discount'] = $salesBefore > 0
@@ -1179,10 +1182,10 @@ class CostReportDataService
     }
 
     /**
-     * Sales Before Discount per outlet: sumber sama seperti menu Engineering (Item Engineering).
-     * orders + order_items, SUM(qty * price) per outlet, filter tanggal created_at dalam bulan laporan.
+     * Sales total per outlet (Σ qty×price) — dipakai sebagai Sales After Discount.
+     * Sales Before = nilai ini + discount header. Sumber sama Item Engineering.
      * Mapping outlet via orders.kode_outlet = tbl_data_outlet.qr_code.
-     * Return array [ outlet_id => total_sales_before_discount ].
+     * Return array [ outlet_id => total_sales ].
      */
     public function computeSalesBeforeDiscountByOutlet(string $tanggalAwal, string $tanggalAkhir): array
     {

@@ -51,6 +51,19 @@ class AttendanceWorkTimelineService
         $outScans = collect($dayScans)->where('inoutmode', self::MODE_OUT);
         $kembaliScans = collect($dayScans)->where('inoutmode', self::MODE_KEMBALI);
 
+        // Hanya OUT setelah jam masuk (atau OUT cross-day yang dipakai sebagai jam_keluar).
+        // OUT dini hari sebelum IN = sisa/koreksi salah, jangan bikin "2 OUT + TIDAK CHECKOUT".
+        $jamMasukTs = ! empty($metrics['jam_masuk']) ? strtotime($metrics['jam_masuk']) : false;
+        $effectiveOutCount = 0;
+        if ($jamMasukTs !== false) {
+            $effectiveOutCount = $outScans
+                ->filter(fn (array $scan) => strtotime($scan['scan_date']) > $jamMasukTs)
+                ->count();
+        }
+        if (! empty($metrics['jam_keluar']) && $effectiveOutCount === 0) {
+            $effectiveOutCount = 1;
+        }
+
         $isCrossDay = $metrics['jam_keluar']
             && date('Y-m-d', strtotime($metrics['jam_keluar'])) !== $tanggal;
 
@@ -59,7 +72,8 @@ class AttendanceWorkTimelineService
             'user_id' => $userId,
             'nama_lengkap' => $data['nama_lengkap'] ?? null,
             'total_masuk' => $inScans->count(),
-            'total_keluar' => $outScans->count(),
+            'total_keluar' => $effectiveOutCount,
+            'total_keluar_raw' => $outScans->count(),
             'total_kembali' => $kembaliScans->count(),
             'is_cross_day' => $isCrossDay,
         ]);

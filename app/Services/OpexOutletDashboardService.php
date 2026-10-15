@@ -253,12 +253,14 @@ class OpexOutletDashboardService
             2
         );
         $cogsAktual = round($availableGoods - (float) $endingStock['total'], 2);
-        // Denominator sama Cost Report: before = Σ(qty×price); after = before − discount.
+        // Denominator sama Cost Report: after = Σ(qty×price); before = after + discount header.
         $salesBefore = $this->sumSalesBeforeDiscountForCogs($qrCode, $dateFrom, $dateTo);
         if ($salesBefore <= 0) {
             $salesBefore = $grossBeforeDiscountFallback;
         }
-        $salesAfter = max(0.0, round($salesBefore - $discount, 2));
+        // Σ(qty×price) = sales after (sudah kandungan discount item); jangan kurangi discount header lagi.
+        $salesAfter = max(0.0, round($salesBefore, 2));
+        $salesBefore = round($salesAfter + $discount, 2);
         $pctOrNull = static function (float $num, float $den): ?float {
             return $den > 0 ? round(($num / $den) * 100, 2) : null;
         };

@@ -648,10 +648,12 @@ class AttendanceReportController extends Controller
         $jamIn = $inScans->first()['scan_date'] ?? null;
         $jamKembali = $kembaliScans->first()['scan_date'] ?? null;
         $jamOut = null;
-        $totalOut = $outScans->count();
+        // OUT sebelum jam masuk (sisa shift kemarin / koreksi jam salah) tidak dihitung sebagai checkout hari ini.
+        $effectiveOutCount = 0;
 
         if ($workStart) {
             $sameDayOuts = $outScans->where('scan_date', '>', $workStart);
+            $effectiveOutCount = $sameDayOuts->count();
 
             $nextDayKey = $data['id_outlet'] . '_' . $nextDay;
             $nextDayOuts = collect();
@@ -668,7 +670,7 @@ class AttendanceReportController extends Controller
 
                 if ($sameDayDuration < 18000 || ($outHour >= 0 && $outHour <= 6)) {
                     $jamOut = $firstNextDayOut;
-                    $totalOut = max(1, $totalOut);
+                    $effectiveOutCount = max(1, $effectiveOutCount);
                 } else {
                     $jamOut = $lastSameDayOut;
                 }
@@ -680,7 +682,7 @@ class AttendanceReportController extends Controller
 
                 if ($outHour >= 0 && $outHour <= 12) {
                     $jamOut = $firstNextDayOut;
-                    $totalOut = max(1, $totalOut);
+                    $effectiveOutCount = max(1, $effectiveOutCount);
                 }
             }
         }
@@ -697,7 +699,8 @@ class AttendanceReportController extends Controller
             'jam_mulai_type' => $jamIn ? 'in' : ($jamKembali ? 'kembali' : null),
             'total_in' => $inScans->count(),
             'total_kembali' => $kembaliScans->count(),
-            'total_out' => $totalOut,
+            'total_out' => $effectiveOutCount,
+            'total_out_raw' => $outScans->count(),
             'has_no_checkout' => $hasNoCheckout,
         ];
     }
