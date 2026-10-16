@@ -85,17 +85,11 @@ class DeliveryOrderController extends Controller
 
     public function create(Request $request)
     {
-        // Ambil daftar packing list yang belum/do belum dibuat (exclude 0 = RO Supplier GR placeholder)
-        $usedPackingListIds = DB::table('delivery_orders')
-            ->whereNotNull('packing_list_id')
-            ->where('packing_list_id', '>', 0)
-            ->pluck('packing_list_id')
-            ->toArray();
-        
         // Filter tanggal: hanya 1 minggu ke belakang dari hari ini
         $today = date('Y-m-d');
         $oneWeekAgo = date('Y-m-d', strtotime('-7 days'));
         
+        // Packing list yang belum dibuat DO (subquery, hindari whereNotIn array besar / error 1390)
         $packingLists = DB::table('food_packing_lists as pl')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
@@ -103,12 +97,13 @@ class DeliveryOrderController extends Controller
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
-            ->whereBetween('pl.created_at', [$oneWeekAgo . ' 00:00:00', $today . ' 23:59:59']);
-        
-        // Hanya apply whereNotIn jika ada data yang sudah digunakan
-        if (!empty($usedPackingListIds)) {
-            $packingLists = $packingLists->whereNotIn('pl.id', $usedPackingListIds);
-        }
+            ->whereBetween('pl.created_at', [$oneWeekAgo . ' 00:00:00', $today . ' 23:59:59'])
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('delivery_orders as do')
+                    ->whereColumn('do.packing_list_id', 'pl.id')
+                    ->where('do.packing_list_id', '>', 0);
+            });
         
                 $packingLists = $packingLists->select(
             'pl.id',
@@ -2909,15 +2904,10 @@ class DeliveryOrderController extends Controller
      */
     public function apiCreateData()
     {
-        $usedPackingListIds = DB::table('delivery_orders')
-            ->whereNotNull('packing_list_id')
-            ->where('packing_list_id', '>', 0)
-            ->pluck('packing_list_id')
-            ->toArray();
-
         $today = date('Y-m-d');
         $oneWeekAgo = date('Y-m-d', strtotime('-7 days'));
 
+        // Packing list yang belum dibuat DO (subquery, hindari whereNotIn array besar / error 1390)
         $packingListsQuery = DB::table('food_packing_lists as pl')
             ->leftJoin('food_floor_orders as fo', 'pl.food_floor_order_id', '=', 'fo.id')
             ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
@@ -2925,11 +2915,13 @@ class DeliveryOrderController extends Controller
             ->leftJoin('warehouse_division as wd', 'pl.warehouse_division_id', '=', 'wd.id')
             ->leftJoin('warehouses as w', 'wd.warehouse_id', '=', 'w.id')
             ->leftJoin('warehouse_outlets as wo', 'fo.warehouse_outlet_id', '=', 'wo.id')
-            ->whereBetween('pl.created_at', [$oneWeekAgo . ' 00:00:00', $today . ' 23:59:59']);
-
-        if (!empty($usedPackingListIds)) {
-            $packingListsQuery->whereNotIn('pl.id', $usedPackingListIds);
-        }
+            ->whereBetween('pl.created_at', [$oneWeekAgo . ' 00:00:00', $today . ' 23:59:59'])
+            ->whereNotExists(function ($query) {
+                $query->select(DB::raw(1))
+                    ->from('delivery_orders as do')
+                    ->whereColumn('do.packing_list_id', 'pl.id')
+                    ->where('do.packing_list_id', '>', 0);
+            });
 
         $packingLists = $packingListsQuery->select(
             'pl.id',

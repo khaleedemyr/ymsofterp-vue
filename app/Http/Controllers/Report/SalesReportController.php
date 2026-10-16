@@ -1507,7 +1507,8 @@ class SalesReportController extends Controller
         ]);
 
         // Calculate summary from orders
-        $totalSales = $orders->sum('total') ?? 0;
+        // Total Sales = before discount. Fallback jika orders.total=0 tapi DPP/items terisi (bug POS/sync).
+        $totalSales = $orders->sum(fn ($order) => $this->resolveOrderSalesBeforeDiscount($order));
         $totalDiscount = $orders->sum(function($order) {
             $discount = floatval($order->discount ?? 0);
             $manualDiscount = floatval($order->manual_discount_amount ?? 0);
@@ -1570,7 +1571,7 @@ class SalesReportController extends Controller
             $perDay[$date]['total_pb1'] += floatval($order->pb1 ?? 0);
             $perDay[$date]['total_commfee'] += floatval($order->commfee ?? 0);
             $perDay[$date]['total_rounding'] += floatval($order->rounding ?? 0);
-            $perDay[$date]['total_sales'] += floatval($order->total ?? 0);
+            $perDay[$date]['total_sales'] += $this->resolveOrderSalesBeforeDiscount($order);
             $perDay[$date]['grand_total'] += floatval($order->grand_total ?? 0);
         }
 
@@ -1604,6 +1605,33 @@ class SalesReportController extends Controller
             'per_day' => $perDay, // Object with date as key
             'orders' => $ordersArray, // Orders with payments attached
         ]);
+    }
+
+    /**
+     * Sales before discount. Jika orders.total=0 tapi DPP terisi (bug POS/sync),
+     * reconstruct dari DPP + discount agar selaras Item Engineering (Σ qty×price).
+     */
+    private function resolveOrderSalesBeforeDiscount(object $order): float
+    {
+        $total = floatval($order->total ?? 0);
+        if ($total > 0) {
+            return $total;
+        }
+
+        $dpp = floatval($order->dpp ?? 0);
+        if ($dpp <= 0) {
+            return 0.0;
+        }
+
+        $discount = floatval($order->discount ?? 0);
+        $manualDiscount = floatval($order->manual_discount_amount ?? 0);
+        if ($discount > 0 && $manualDiscount > 0) {
+            $discountAmount = max($discount, $manualDiscount);
+        } else {
+            $discountAmount = $discount + $manualDiscount;
+        }
+
+        return $dpp + $discountAmount;
     }
 
     private function parseOrderItemModifiers($rawModifiers, array $modifierOptionNames = [], array $modifierNames = []): array
