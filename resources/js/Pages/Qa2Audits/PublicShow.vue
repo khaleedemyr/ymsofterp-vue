@@ -321,7 +321,7 @@ function openPhotoLightbox(mediaList, media) {
         </div>
 
         <div v-if="!groupedItems.length" class="rounded-lg border border-dashed border-gray-300 bg-white p-8 text-center text-sm text-gray-500">
-          Tidak ada parameter NC pada audit ini.
+          Tidak ada parameter temuan pada audit ini.
         </div>
       </div>
     </main>

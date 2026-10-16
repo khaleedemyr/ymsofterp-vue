@@ -134,11 +134,15 @@ const detailItems = computed(() => {
   return list.filter((item) => item.result === resultFilter.value);
 });
 
+const problemResults = computed(() => (
+  scoringMode.value === 'c_mn_my' ? ['MN', 'MY'] : ['NC']
+));
+
 const resultFilterCounts = computed(() => {
   const source = isDraftManage.value
     ? items.value
     : items.value.filter((item) => {
-        if (item.result === 'NC') return true;
+        if (['NC', 'MN', 'MY'].includes(item.result)) return true;
         if (item.result !== 'C') return false;
         return String(item.comment || '').trim().length > 0;
       });
@@ -151,7 +155,9 @@ const resultFilterCounts = computed(() => {
 });
 
 const groupedItems = computed(() => buildGroupedItems(detailItems.value));
-const groupedCapItems = computed(() => buildGroupedItems(items.value.filter((item) => item.result === 'NC')));
+const groupedCapItems = computed(() => buildGroupedItems(
+  items.value.filter((item) => problemResults.value.includes(item.result) || item.result === 'NC')
+));
 
 function buildGroupedItems(sourceItems) {
   const keyword = (search.value || '').toLowerCase().trim();
@@ -1380,7 +1386,7 @@ function formatUserLabel(user) {
             v-model="search"
             type="text"
             class="w-full rounded-lg border-gray-300 text-sm md:w-96"
-            :placeholder="isDraftManage ? 'Cari parameter, kategori, subcategory...' : 'Cari parameter NC, kategori, subcategory...'"
+            :placeholder="isDraftManage ? 'Cari parameter, kategori, subcategory...' : 'Cari parameter temuan, kategori, subcategory...'"
           >
         </div>
 
@@ -1567,7 +1573,7 @@ function formatUserLabel(user) {
                       <textarea v-model="item.comment" rows="2" class="w-full rounded-lg border-gray-300 text-sm" :disabled="!canManage || audit.status !== 'draft'" />
                     </div>
 
-                    <div v-if="item.result === 'NC' && !canFillCap" class="mt-3 space-y-3">
+                    <div v-if="['NC', 'MN', 'MY'].includes(item.result) && !canFillCap" class="mt-3 space-y-3">
                       <div class="rounded-lg border border-slate-200 bg-white p-3">
                         <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Temuan Auditor</p>
                         <div class="space-y-3">
@@ -1654,7 +1660,9 @@ function formatUserLabel(user) {
                 ? 'Tidak ada parameter yang cocok dengan filter/pencarian.'
                 : (isDraftManage
                     ? 'Belum ada parameter audit dari template.'
-                    : 'Tidak ada parameter NC pada audit ini.')
+                    : (scoringMode === 'c_mn_my'
+                        ? 'Tidak ada parameter temuan (MN/MY) pada audit ini.'
+                        : 'Tidak ada parameter NC pada audit ini.'))
             }}
           </div>
         </div>

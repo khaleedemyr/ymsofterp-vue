@@ -2118,8 +2118,9 @@ class Qa2AuditController extends Controller
             ]);
 
         if ($onlyNc) {
+            // Legacy: NC (+ C berkomentar). Mode c_mn_my: MN/MY adalah temuan (bukan NC).
             $itemsQuery->where(function ($q) {
-                $q->where('i.result', 'NC')
+                $q->whereIn('i.result', ['NC', 'MN', 'MY'])
                     ->orWhere(function ($sub) {
                         $sub->where('i.result', 'C')
                             ->whereNotNull('i.comment')
