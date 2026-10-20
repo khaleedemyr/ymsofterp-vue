@@ -295,12 +295,18 @@ const submit = async () => {
     window.location.reload();
   } catch (e) {
     loading.value = false;
+    const msg = e.response?.data?.message || 'Gagal simpan Good Receive';
     await Swal.fire({
       icon: 'error',
       title: 'Gagal',
-      text: e.response?.data?.message || 'Gagal simpan Good Receive',
+      text: msg,
     });
-    error.value = e.response?.data?.message || 'Gagal simpan Good Receive';
+    error.value = msg;
+    // PO sudah diterima orang lain / form lama masih terbuka → tutup form
+    if (e.response?.status === 422 && /sudah pernah diterima/i.test(msg)) {
+      handleClose();
+      window.location.reload();
+    }
   }
 };
 

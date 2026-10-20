@@ -191,6 +191,41 @@ class FoodGoodReceiveController extends Controller
         ]);
         DB::beginTransaction();
         try {
+            // Kunci baris PO agar 2 user tidak bisa simpan GR untuk PO yang sama bersamaan /
+            // dari form yang masih terbuka setelah PO sudah diterima orang lain.
+            $po = DB::table('purchase_order_foods')
+                ->where('id', $request->po_id)
+                ->lockForUpdate()
+                ->first();
+
+            if (! $po) {
+                DB::rollBack();
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'PO tidak ditemukan',
+                ], 404);
+            }
+
+            $existingGr = DB::table('food_good_receives')
+                ->where('po_id', $po->id)
+                ->orderBy('id')
+                ->first();
+
+            if ($existingGr || $po->status === 'received') {
+                DB::rollBack();
+                $grLabel = $existingGr->gr_number ?? null;
+                $message = $grLabel
+                    ? "PO sudah pernah diterima (GR: {$grLabel}). Tidak bisa dibuat Good Receive lagi."
+                    : 'PO sudah pernah diterima. Tidak bisa dibuat Good Receive lagi.';
+
+                return response()->json([
+                    'success' => false,
+                    'message' => $message,
+                    'existing_gr_number' => $grLabel,
+                ], 422);
+            }
+
             $goodReceiveId = DB::table('food_good_receives')->insertGetId([
                 'po_id' => $request->po_id,
                 'receive_date' => $request->receive_date,
@@ -207,9 +242,7 @@ class FoodGoodReceiveController extends Controller
                 ->count();
             $grNumber = 'GR-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
             DB::table('food_good_receives')->where('id', $goodReceiveId)->update(['gr_number' => $grNumber]);
-            // Ambil informasi PO untuk mengecek source_type
-            $po = DB::table('purchase_order_foods')->where('id', $request->po_id)->first();
-            
+
             foreach ($request->items as $item) {
                 $qtyRejected = array_key_exists('qty_rejected', $item) && $item['qty_rejected'] !== null && $item['qty_rejected'] !== ''
                     ? (float) $item['qty_rejected']

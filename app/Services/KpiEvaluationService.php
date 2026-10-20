@@ -36,6 +36,7 @@ class KpiEvaluationService
 
         if ($evaluation->isEditable()) {
             $this->syncEvaluationDataPeriod($evaluation);
+            $this->pruneStaleEvaluationRowsFromTemplate($evaluation);
             $this->syncParameterValuesFromTemplate($evaluation);
             $this->syncItemFormulasFromTemplate($evaluation);
             $evaluation->load(['parameterValues', 'items']);
@@ -686,8 +687,8 @@ class KpiEvaluationService
             'just_academy_competency_assessment_score' => 'Sumber ERP: Just Academy — % plan method Competency Assessment yang dibuat user/bawahan Regional (aktif) dan sudah di-conduct (status completed).',
             'regional_visit_report' => 'Sumber ERP: absensi kunjungan semua outlet (termasuk backup di luar area target).',
             'regional_target_outlet_visits' => 'Sumber ERP: target kunjungan Regional Management.',
-            'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant.',
-            'ticket_improvement_total' => 'Sumber ERP: total ticket improvement.',
+            'ticket_improvement_closed' => 'Sumber ERP: ticket improvement compliant — hanya ticket yang dibuat user di divisi regional yang sama (bukan semua ticket outlet).',
+            'ticket_improvement_total' => 'Sumber ERP: total ticket improvement — hanya ticket yang dibuat user di divisi regional yang sama (bukan semua ticket outlet).',
         ];
 
         return $labels[$resolverKey] ?? ('Sumber ERP: ' . str_replace('_', ' ', $resolverKey) . '.');
@@ -937,6 +938,7 @@ class KpiEvaluationService
 
         $evaluation = $this->syncEvaluationDataPeriod($evaluation);
 
+        $this->pruneStaleEvaluationRowsFromTemplate($evaluation);
         $this->syncParameterValuesFromTemplate($evaluation);
         $this->syncItemFormulasFromTemplate($evaluation);
         $evaluation->load('parameterValues');
@@ -1615,6 +1617,74 @@ class KpiEvaluationService
      * @param  list<string>  $codes
      */
     /**
+     * Hapus item/parameter evaluasi yang sudah tidak ada di template
+     * (mis. JNG/KPI13 dihapus dari template tapi masih tersimpan di evaluasi draft).
+     */
+    protected function pruneStaleEvaluationRowsFromTemplate(KpiEvaluation $evaluation): void
+    {
+        $evaluation->loadMissing([
+            'template.strategies.items.itemParameters.parameter',
+        ]);
+
+        $template = $evaluation->template;
+        if (! $template) {
+            return;
+        }
+
+        $templateItems = $template->strategies
+            ->flatMap(fn ($strategy) => $strategy->items)
+            ->keyBy('id');
+
+        $requiredCodes = $this->collectDataParameterCodes($template);
+
+        $removedItems = false;
+        foreach ($evaluation->items()->get() as $item) {
+            $templateItemId = $item->kpi_template_item_id;
+            $stillInTemplate = $templateItemId && $templateItems->has($templateItemId);
+
+            $isJngOrRemovedParam = false;
+            $itemName = strtolower((string) $item->item_name);
+            if (str_contains($itemName, 'jng')) {
+                $isJngOrRemovedParam = true;
+            } elseif ($item->kpi_parameter_id) {
+                $param = KpiParameter::query()->find($item->kpi_parameter_id);
+                if ($param && (
+                    $param->code === 'KPI13'
+                    || str_contains(strtolower((string) $param->name), 'jng')
+                )) {
+                    $isJngOrRemovedParam = true;
+                }
+            }
+
+            if (! $stillInTemplate || $isJngOrRemovedParam) {
+                $item->delete();
+                $removedItems = true;
+            }
+        }
+
+        $removedParams = 0;
+        if ($requiredCodes !== []) {
+            $removedParams = $evaluation->parameterValues()
+                ->whereNotIn('parameter_code', $requiredCodes)
+                ->delete();
+        }
+
+        // Parameter JNG/KPI13 — pastikan hilang dari evaluasi editable.
+        $removedParams += $evaluation->parameterValues()
+            ->where(function ($q) {
+                $q->where('parameter_code', 'KPI13')
+                    ->orWhere('parameter_name', 'like', '%JNG%');
+            })
+            ->delete();
+
+        if ($removedItems || $removedParams > 0) {
+            $evaluation->unsetRelation('items');
+            $evaluation->unsetRelation('parameterValues');
+            $this->recalculate($evaluation->fresh(['parameterValues.parameter', 'items']));
+        }
+    }
+
+    /**
      * Tambah baris parameter evaluasi yang belum ada vs template aktif.
      */
     protected function syncParameterValuesFromTemplate(KpiEvaluation $evaluation): void
@@ -1642,7 +1712,7 @@ class KpiEvaluationService
     }
 
     /**
-     * Samakan formula item evaluasi dengan parameter/template terbaru (mis. KPI12 → D019).
+     * Samakan formula/target/weight item evaluasi dengan parameter/template terbaru.
      */
     protected function syncItemFormulasFromTemplate(KpiEvaluation $evaluation): void
     {
@@ -1669,6 +1739,15 @@ class KpiEvaluationService
             $expectedFormula = trim((string) ($param?->formula ?? $templateItem->formula ?? ''));
             $expectedTarget = $this->resolveTemplateItemTarget($templateItem, $param);
             $expectedFrequency = $this->resolveTemplateItemFrequency($templateItem, $param);
+            $expectedWeight = (float) $templateItem->weight_percent;
+            $expectedStrategyWeight = (float) ($templateItem->strategy?->weight_percent
+                ?? $item->strategy_weight_percent
+                ?? 0);
+            // strategy relation may not be loaded on template item — get from parent strategies
+            $strategy = $template->strategies->firstWhere('id', $templateItem->kpi_template_strategy_id);
+            if ($strategy) {
+                $expectedStrategyWeight = (float) $strategy->weight_percent;
+            }
 
             $updates = [];
             if ($expectedFormula !== '' && $item->formula !== $expectedFormula) {
@@ -1679,6 +1758,16 @@ class KpiEvaluationService
             }
             if ($item->frequency !== $expectedFrequency) {
                 $updates['frequency'] = $expectedFrequency;
+            }
+            if ((float) $item->weight_percent !== $expectedWeight) {
+                $updates['weight_percent'] = $expectedWeight;
+            }
+            if ((float) $item->strategy_weight_percent !== $expectedStrategyWeight) {
+                $updates['strategy_weight_percent'] = $expectedStrategyWeight;
+            }
+            $expectedName = $param?->name ?? $templateItem->name;
+            if ($expectedName && $item->item_name !== $expectedName) {
+                $updates['item_name'] = $expectedName;
             }
 
             if ($updates !== []) {
@@ -2725,7 +2814,13 @@ class KpiEvaluationService
         $startDate = (string) ($baseContext['period_start'] ?? '');
         $endDate = (string) ($baseContext['period_end'] ?? '');
         $outletIds = $outletRows->pluck('id_outlet')->map(fn ($id) => (int) $id)->all();
-        $stats = $this->resolver->getImprovementTicketStatsByOutlet($outletIds, $startDate, $endDate);
+        $kpiUserId = (int) ($baseContext['user_id'] ?? $evaluation->user_id ?? 0);
+        $stats = $this->resolver->getImprovementTicketStatsByOutlet(
+            $outletIds,
+            $startDate,
+            $endDate,
+            $kpiUserId,
+        );
 
         $rules = $evaluation->scoring_rules ?? $this->templateService->defaultScoringRules();
         $rows = [];
@@ -2786,7 +2881,7 @@ class KpiEvaluationService
             'target_direction' => $item->target_direction,
             'aggregate_achievement' => $item->achievement_percent !== null ? (float) $item->achievement_percent : null,
             'parameter_columns' => [],
-            'portfolio_note' => 'Compliant = total ticket − overdue. Overdue = belum closed & due date lewat akhir periode data.',
+            'portfolio_note' => 'Hanya ticket yang dibuat oleh user di divisi regional yang sama dengan karyawan dinilai. Compliant = total − overdue. Overdue = belum closed & due date lewat akhir periode data.',
             'rows' => $rows,
             'summary' => [
                 'total_tickets' => $sumTotal,

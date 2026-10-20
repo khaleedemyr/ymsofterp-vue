@@ -163,10 +163,22 @@ class KpiParameterResolverService
 
         $period = $this->outletAnalyzer->calendarPeriod($periodMonth);
         if (isset($resolverKeys['ticket_complaint_count'])) {
-            $this->getTicketCountsByOutlet($outletIds, $period['start_date'], $period['end_date'], 'complaint', null);
+            $this->getTicketCountsByOutlet(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+                'complaint',
+                null,
+                (int) ($context['user_id'] ?? 0),
+            );
         }
         if (isset($resolverKeys['ticket_improvement_closed']) || isset($resolverKeys['ticket_improvement_total'])) {
-            $this->getImprovementTicketStatsByOutlet($outletIds, $period['start_date'], $period['end_date']);
+            $this->getImprovementTicketStatsByOutlet(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+                (int) ($context['user_id'] ?? 0),
+            );
         }
 
         if (isset($resolverKeys['retail_petty_cash_usage'])) {
@@ -640,9 +652,30 @@ class KpiParameterResolverService
                 $period['start_date'],
                 $period['end_date'],
             ),
-            'ticket_complaint_count' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'complaint'),
-            'ticket_improvement_closed' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', true),
-            'ticket_improvement_total' => $this->resolveTicketCount($outletIds, $period['start_date'], $period['end_date'], 'improvement', false),
+            'ticket_complaint_count' => $this->resolveTicketCount(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+                'complaint',
+                null,
+                (int) ($context['user_id'] ?? 0),
+            ),
+            'ticket_improvement_closed' => $this->resolveTicketCount(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+                'improvement',
+                true,
+                (int) ($context['user_id'] ?? 0),
+            ),
+            'ticket_improvement_total' => $this->resolveTicketCount(
+                $outletIds,
+                $period['start_date'],
+                $period['end_date'],
+                'improvement',
+                false,
+                (int) ($context['user_id'] ?? 0),
+            ),
             'regional_target_outlet_visits' => $this->resolveRegionalTargetOutletVisits((int) ($context['user_id'] ?? 0)),
             'regional_visit_report' => $this->resolveRegionalUserVisitCount(
                 $outletIds,
@@ -1082,6 +1115,7 @@ class KpiParameterResolverService
         $this->revenueCache = [];
         $this->budgetCache = [];
         $this->ticketCountCache = [];
+        $this->improvementTicketStatsCache = [];
         $this->pettyCashBudgetByOutletCache = [];
     }
 
@@ -1974,13 +2008,19 @@ class KpiParameterResolverService
     /**
      * @param  list<int>  $outletIds
      */
-    private function resolveTicketCount(array $outletIds, string $start, string $end, string $kind, ?bool $closedOnly = null): ?float
-    {
+    private function resolveTicketCount(
+        array $outletIds,
+        string $start,
+        string $end,
+        string $kind,
+        ?bool $closedOnly = null,
+        int $kpiUserId = 0,
+    ): ?float {
         if (empty($outletIds)) {
             return null;
         }
 
-        $counts = $this->getTicketCountsByOutlet($outletIds, $start, $end, $kind, $closedOnly);
+        $counts = $this->getTicketCountsByOutlet($outletIds, $start, $end, $kind, $closedOnly, $kpiUserId);
 
         return array_sum($counts);
     }
@@ -1989,12 +2029,20 @@ class KpiParameterResolverService
      * @param  list<int>  $outletIds
      * @return array<int, float>
      */
-    private function getTicketCountsByOutlet(array $outletIds, string $start, string $end, string $kind, ?bool $closedOnly): array
-    {
+    private function getTicketCountsByOutlet(
+        array $outletIds,
+        string $start,
+        string $end,
+        string $kind,
+        ?bool $closedOnly,
+        int $kpiUserId = 0,
+    ): array {
         $ids = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
         sort($ids);
 
-        $cacheKey = implode(',', $ids) . ":{$start}:{$end}:{$kind}:" . ($closedOnly === true ? 'closed' : ($closedOnly === false ? 'all' : 'any'));
+        $cacheKey = implode(',', $ids) . ":{$start}:{$end}:{$kind}:"
+            . ($closedOnly === true ? 'closed' : ($closedOnly === false ? 'all' : 'any'))
+            . ':u' . max(0, $kpiUserId);
         if (isset($this->ticketCountCache[$cacheKey])) {
             return $this->ticketCountCache[$cacheKey];
         }
@@ -2005,7 +2053,7 @@ class KpiParameterResolverService
         }
 
         if ($kind === 'improvement') {
-            $stats = $this->getImprovementTicketStatsByOutlet($ids, $start, $end);
+            $stats = $this->getImprovementTicketStatsByOutlet($ids, $start, $end, $kpiUserId);
             $counts = [];
             foreach ($ids as $id) {
                 $row = $stats[$id] ?? ['total' => 0.0, 'compliant' => 0.0];
@@ -2061,11 +2109,18 @@ class KpiParameterResolverService
      * Statistik ticket improvement per outlet (KPI D023/D024).
      * D023 = compliant (total − overdue), D024 = total. Overdue = belum closed & due_date lewat akhir periode.
      *
+     * Jika $kpiUserId diisi: hanya ticket yang dibuat oleh user divisi regional yang sama
+     * (creator.division_id = divisi karyawan dinilai), bukan semua ticket outlet.
+     *
      * @param  list<int>  $outletIds
      * @return array<int, array{total: float, closed: float, overdue: float, compliant: float}>
      */
-    public function getImprovementTicketStatsByOutlet(array $outletIds, string $startDate, string $endDate): array
-    {
+    public function getImprovementTicketStatsByOutlet(
+        array $outletIds,
+        string $startDate,
+        string $endDate,
+        int $kpiUserId = 0,
+    ): array {
         $ids = array_values(array_unique(array_filter(array_map('intval', $outletIds))));
         sort($ids);
 
@@ -2085,12 +2140,22 @@ class KpiParameterResolverService
             return $result;
         }
 
-        $cacheKey = implode(',', $ids) . ":{$startDate}:{$endDate}:improvement_stats";
+        $creatorUserIds = $this->resolveImprovementTicketCreatorUserIds($kpiUserId);
+        $creatorScopeKey = $creatorUserIds === null
+            ? 'all'
+            : ('div:' . implode(',', $creatorUserIds));
+
+        $cacheKey = implode(',', $ids) . ":{$startDate}:{$endDate}:improvement_stats:{$creatorScopeKey}";
         if (isset($this->improvementTicketStatsCache[$cacheKey])) {
             return $this->improvementTicketStatsCache[$cacheKey];
         }
 
         if (! $this->hasTicketsTable()) {
+            return $this->improvementTicketStatsCache[$cacheKey] = $result;
+        }
+
+        // Ada user KPI tapi tidak ada creator di scope divisi → 0 (jangan fallback ke semua ticket outlet).
+        if ($kpiUserId > 0 && $creatorUserIds !== null && $creatorUserIds === []) {
             return $this->improvementTicketStatsCache[$cacheKey] = $result;
         }
 
@@ -2100,6 +2165,10 @@ class KpiParameterResolverService
             ->whereIn('t.outlet_id', $ids)
             ->whereDate('t.created_at', '>=', $startDate)
             ->whereDate('t.created_at', '<=', $endDate);
+
+        if ($creatorUserIds !== null) {
+            $query->whereIn('t.created_by', $creatorUserIds);
+        }
 
         if ($this->hasTicketStatusesTable()) {
             $query->join('ticket_statuses as ts', 't.status_id', '=', 'ts.id')
@@ -2138,6 +2207,40 @@ class KpiParameterResolverService
         }
 
         return $this->improvementTicketStatsCache[$cacheKey] = $result;
+    }
+
+    /**
+     * Creator ticket yang dihitung untuk Follow-up Improvement Action.
+     * Scope = semua user aktif di divisi yang sama dengan karyawan dinilai
+     * (supaya Service vs Culinary tidak saling campur di outlet yang sama).
+     *
+     * @return list<int>|null null = tanpa filter creator (perilaku lama / tanpa user context)
+     */
+    private function resolveImprovementTicketCreatorUserIds(int $kpiUserId): ?array
+    {
+        if ($kpiUserId <= 0) {
+            return null;
+        }
+
+        $user = DB::table('users')->where('id', $kpiUserId)->first(['id', 'division_id']);
+        if (! $user) {
+            return [];
+        }
+
+        $divisionId = (int) ($user->division_id ?? 0);
+        if ($divisionId <= 0) {
+            // Tanpa divisi: batasi ke user + bawahan regional (sama seperti training scope).
+            return $this->resolveTrainingScopeUserIds($kpiUserId);
+        }
+
+        return DB::table('users')
+            ->where('division_id', $divisionId)
+            ->where('status', 'A')
+            ->pluck('id')
+            ->map(fn ($id) => (int) $id)
+            ->filter(fn ($id) => $id > 0)
+            ->values()
+            ->all();
     }
 
     private function hasTicketsTable(): bool
