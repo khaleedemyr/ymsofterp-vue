@@ -2371,7 +2371,8 @@ class TicketController extends Controller
     {
         return [
             'search' => (string) $request->get('search', ''),
-            'status' => (string) $request->get('status', 'all'),
+            // string 'all' | single slug | list of slugs (multi-select Report Per Outlet)
+            'status' => $this->normalizeTicketReportStatusFilter($request->input('status', 'all')),
             'priority' => (string) $request->get('priority', 'all'),
             'category' => (string) $request->get('category', 'all'),
             'division' => (string) $request->get('division', 'all'),
@@ -2380,6 +2381,38 @@ class TicketController extends Controller
             'date_from' => (string) $request->get('date_from', ''),
             'date_to' => (string) $request->get('date_to', ''),
         ];
+    }
+
+    /**
+     * Normalisasi filter status report: 'all', satu slug, atau array slug.
+     *
+     * @return string|list<string>
+     */
+    private function normalizeTicketReportStatusFilter(mixed $status): string|array
+    {
+        if (is_array($status)) {
+            $slugs = collect($status)
+                ->flatten()
+                ->map(fn ($s) => trim((string) $s))
+                ->filter(fn ($s) => $s !== '' && $s !== 'all')
+                ->unique()
+                ->values()
+                ->all();
+
+            return $slugs === [] ? 'all' : $slugs;
+        }
+
+        $status = trim((string) $status);
+        if ($status === '' || $status === 'all') {
+            return 'all';
+        }
+
+        // Comma-separated fallback (export / bookmark URL)
+        if (str_contains($status, ',')) {
+            return $this->normalizeTicketReportStatusFilter(explode(',', $status));
+        }
+
+        return $status;
     }
 
     /**
@@ -2426,7 +2459,7 @@ class TicketController extends Controller
             });
         }
         if (($filters['status'] ?? 'all') !== 'all') {
-            $this->applyTicketStatusFilter($query, (string) $filters['status']);
+            $this->applyTicketStatusFilter($query, $filters['status']);
         }
         if (($filters['priority'] ?? 'all') !== 'all') {
             $query->where('priority_id', $filters['priority']);
@@ -3088,26 +3121,35 @@ class TicketController extends Controller
         return TicketStatus::active()->selectable()->ordered()->get();
     }
 
-    private function applyTicketStatusFilter($query, string $status): void
+    /**
+     * @param  string|list<string>  $status
+     */
+    private function applyTicketStatusFilter($query, string|array $status): void
     {
-        if ($status === 'all') {
+        $slugs = is_array($status) ? $status : [$status];
+        $slugs = collect($slugs)
+            ->map(fn ($s) => trim((string) $s))
+            ->filter(fn ($s) => $s !== '' && $s !== 'all')
+            ->values()
+            ->all();
+
+        if ($slugs === []) {
             return;
         }
 
-        if ($status === 'resolved') {
-            $status = 'closed';
+        $expanded = [];
+        foreach ($slugs as $slug) {
+            if ($slug === 'resolved' || $slug === 'closed') {
+                $expanded[] = 'closed';
+                $expanded[] = 'resolved';
+            } else {
+                $expanded[] = $slug;
+            }
         }
+        $expanded = array_values(array_unique($expanded));
 
-        if ($status === 'closed') {
-            $query->whereHas('status', function ($q) {
-                $q->whereIn('slug', ['closed', 'resolved']);
-            });
-
-            return;
-        }
-
-        $query->whereHas('status', function ($q) use ($status) {
-            $q->where('slug', $status);
+        $query->whereHas('status', function ($q) use ($expanded) {
+            $q->whereIn('slug', $expanded);
         });
     }
 

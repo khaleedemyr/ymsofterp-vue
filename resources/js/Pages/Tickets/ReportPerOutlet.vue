@@ -49,10 +49,18 @@
             <option value="all">Semua Prioritas</option>
             <option v-for="p in filterOptions.priorities" :key="p.id" :value="String(p.id)">{{ p.name }}</option>
           </select>
-          <select v-model="localFilters.status" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
-            <option value="all">Semua Status</option>
-            <option v-for="s in filterOptions.statuses" :key="s.id" :value="s.slug">{{ s.name }}</option>
-          </select>
+          <Multiselect
+            v-model="selectedStatuses"
+            :options="statusOptions"
+            :multiple="true"
+            :close-on-select="false"
+            :clear-on-select="false"
+            :searchable="true"
+            label="name"
+            track-by="slug"
+            placeholder="Semua Status"
+            class="text-sm"
+          />
           <select v-model="localFilters.division" class="rounded-lg border border-gray-300 px-3 py-2 text-sm">
             <option value="all">Semua Divisi</option>
             <option v-for="d in filterOptions.divisions" :key="d.id" :value="String(d.id)">{{ d.nama_divisi }}</option>
@@ -196,7 +204,9 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import VueEasyLightbox from 'vue-easy-lightbox';
-import { reactive, ref } from 'vue';
+import Multiselect from 'vue-multiselect';
+import 'vue-multiselect/dist/vue-multiselect.min.css';
+import { computed, reactive, ref } from 'vue';
 import { router } from '@inertiajs/vue3';
 
 const props = defineProps({
@@ -220,13 +230,31 @@ const props = defineProps({
   },
 });
 
+function normalizeStatusFilter(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((s) => String(s)).filter((s) => s && s !== 'all');
+  }
+  if (raw == null || raw === '' || raw === 'all') {
+    return [];
+  }
+  return String(raw)
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s && s !== 'all');
+}
+
 const loading = ref(false);
 const visibleRef = ref(false);
 const indexRef = ref(0);
 const imgsRef = ref([]);
+const statusOptions = computed(() => props.filterOptions.statuses || []);
+const selectedStatuses = ref(
+  normalizeStatusFilter(props.filters.status)
+    .map((slug) => statusOptions.value.find((s) => s.slug === slug))
+    .filter(Boolean),
+);
 const localFilters = reactive({
   search: props.filters.search || '',
-  status: props.filters.status || 'all',
   priority: props.filters.priority || 'all',
   category: props.filters.category || 'all',
   division: props.filters.division || 'all',
@@ -235,6 +263,14 @@ const localFilters = reactive({
   date_from: props.filters.date_from || '',
   date_to: props.filters.date_to || '',
 });
+
+function buildQueryParams() {
+  const statusSlugs = (selectedStatuses.value || []).map((s) => s.slug).filter(Boolean);
+  return {
+    ...localFilters,
+    status: statusSlugs.length ? statusSlugs : 'all',
+  };
+}
 
 function rowImages(row) {
   const docs = (row.documentation_images || []).map((img) => img.url).filter(Boolean);
@@ -251,7 +287,7 @@ function priorityBadgeClass(level) {
 
 function reloadData() {
   loading.value = true;
-  router.get('/tickets/report-per-outlet', { ...localFilters }, {
+  router.get('/tickets/report-per-outlet', buildQueryParams(), {
     preserveState: true,
     preserveScroll: true,
     onFinish: () => {
@@ -261,7 +297,17 @@ function reloadData() {
 }
 
 function exportExcel() {
-  const params = new URLSearchParams({ ...localFilters });
+  const query = buildQueryParams();
+  const params = new URLSearchParams();
+  Object.entries(query).forEach(([key, value]) => {
+    if (Array.isArray(value)) {
+      value.forEach((v) => params.append(`${key}[]`, v));
+      return;
+    }
+    if (value != null && value !== '') {
+      params.append(key, value);
+    }
+  });
   window.open(`/tickets/report-per-outlet/export?${params.toString()}`, '_blank');
 }
 
