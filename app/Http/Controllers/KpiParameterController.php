@@ -246,11 +246,11 @@ class KpiParameterController extends Controller
                 ['value' => 'competitor_benchmark_execution_count', 'label' => 'Competitor Benchmark Report — jumlah item di report yang dibuat user (bukan PIC bersama)'],
                 ['value' => 'fb_product_calibration_completion_percent', 'label' => 'F&B Product Calibration — % schedule selesai (conductor user + bawahan)'],
                 ['value' => 'cvcc_avg_resolution_hours', 'label' => 'CVCC — Avg Complaint Resolution (hours)'],
-                ['value' => 'cvcc_beverage_complaint_count', 'label' => 'CVCC — Beverage / Bar negative + CAPA filled'],
-                ['value' => 'cvcc_food_complaint_count', 'label' => 'CVCC — Food / Kitchen negative + CAPA filled'],
-                ['value' => 'cvcc_service_complaint_count', 'label' => 'CVCC — Service negative + CAPA filled'],
-                ['value' => 'cvcc_service_negative_complaint_count', 'label' => 'CVCC — Negative + CAPA Service filled'],
-                ['value' => 'cvcc_total_review_count', 'label' => 'CVCC — Total Complaint Count (all negative)'],
+                ['value' => 'cvcc_beverage_complaint_count', 'label' => 'CVCC — Beverage / Bar complaints assigned to regional'],
+                ['value' => 'cvcc_food_complaint_count', 'label' => 'CVCC — Food / Kitchen complaints assigned to regional'],
+                ['value' => 'cvcc_service_complaint_count', 'label' => 'CVCC — Service complaints assigned to regional'],
+                ['value' => 'cvcc_service_negative_complaint_count', 'label' => 'CVCC — Service complaints assigned to regional'],
+                ['value' => 'cvcc_total_review_count', 'label' => 'CVCC — Total all negative complaints in period (no regional filter)'],
             ],
         ];
     }

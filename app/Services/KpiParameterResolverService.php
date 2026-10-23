@@ -533,7 +533,7 @@ class KpiParameterResolverService
                 $userId = (int) ($context['user_id'] ?? 0);
                 $cvccScope = $userId > 0 ? $this->resolveCvccRegionalScope($userId) : null;
                 if ($cvccScope === null) {
-                    $hints[] = 'Karyawan belum terdaftar di Regional Management — parameter CVCC complaint (D040/D041/D042, D053/D054/D055) tidak bisa dihitung.';
+                    $hints[] = 'Karyawan belum terdaftar di Regional Management — pembilang CVCC complaint (D040/D041/D042, D053/D054) tidak bisa dihitung (D055 total tetap dihitung tanpa regional).';
                 }
             }
 
@@ -2109,8 +2109,8 @@ class KpiParameterResolverService
      * Statistik ticket improvement per outlet (KPI D023/D024).
      * D023 = compliant (total − overdue), D024 = total. Overdue = belum closed & due_date lewat akhir periode.
      *
-     * Jika $kpiUserId diisi: hanya ticket yang dibuat oleh user divisi regional yang sama
-     * (creator.division_id = divisi karyawan dinilai), bukan semua ticket outlet.
+     * Jika $kpiUserId diisi: hanya ticket yang dibuat oleh user KPI tersebut
+     * (created_by = karyawan dinilai), bukan semua ticket outlet / divisi regional.
      *
      * @param  list<int>  $outletIds
      * @return array<int, array{total: float, closed: float, overdue: float, compliant: float}>
@@ -2143,7 +2143,7 @@ class KpiParameterResolverService
         $creatorUserIds = $this->resolveImprovementTicketCreatorUserIds($kpiUserId);
         $creatorScopeKey = $creatorUserIds === null
             ? 'all'
-            : ('div:' . implode(',', $creatorUserIds));
+            : ('user:' . implode(',', $creatorUserIds));
 
         $cacheKey = implode(',', $ids) . ":{$startDate}:{$endDate}:improvement_stats:{$creatorScopeKey}";
         if (isset($this->improvementTicketStatsCache[$cacheKey])) {
@@ -2154,7 +2154,7 @@ class KpiParameterResolverService
             return $this->improvementTicketStatsCache[$cacheKey] = $result;
         }
 
-        // Ada user KPI tapi tidak ada creator di scope divisi → 0 (jangan fallback ke semua ticket outlet).
+        // Ada user KPI tapi creator scope kosong → 0 (jangan fallback ke semua ticket outlet).
         if ($kpiUserId > 0 && $creatorUserIds !== null && $creatorUserIds === []) {
             return $this->improvementTicketStatsCache[$cacheKey] = $result;
         }
@@ -2211,10 +2211,9 @@ class KpiParameterResolverService
 
     /**
      * Creator ticket yang dihitung untuk Follow-up Improvement Action.
-     * Scope = semua user aktif di divisi yang sama dengan karyawan dinilai
-     * (supaya Service vs Culinary tidak saling campur di outlet yang sama).
+     * Scope = hanya user KPI yang dinilai (ticket yang dia buat sendiri).
      *
-     * @return list<int>|null null = tanpa filter creator (perilaku lama / tanpa user context)
+     * @return list<int>|null null = tanpa filter creator (tanpa user context)
      */
     private function resolveImprovementTicketCreatorUserIds(int $kpiUserId): ?array
     {
@@ -2222,25 +2221,9 @@ class KpiParameterResolverService
             return null;
         }
 
-        $user = DB::table('users')->where('id', $kpiUserId)->first(['id', 'division_id']);
-        if (! $user) {
-            return [];
-        }
+        $exists = DB::table('users')->where('id', $kpiUserId)->exists();
 
-        $divisionId = (int) ($user->division_id ?? 0);
-        if ($divisionId <= 0) {
-            // Tanpa divisi: batasi ke user + bawahan regional (sama seperti training scope).
-            return $this->resolveTrainingScopeUserIds($kpiUserId);
-        }
-
-        return DB::table('users')
-            ->where('division_id', $divisionId)
-            ->where('status', 'A')
-            ->pluck('id')
-            ->map(fn ($id) => (int) $id)
-            ->filter(fn ($id) => $id > 0)
-            ->values()
-            ->all();
+        return $exists ? [$kpiUserId] : [];
     }
 
     private function hasTicketsTable(): bool
@@ -2902,7 +2885,8 @@ class KpiParameterResolverService
     }
 
     /**
-     * Negative comment CVCC dengan CAPA division (bar / kitchen / service) yang sudah diisi.
+     * Komplain CVCC negative yang masuk regional karyawan (bar / kitchen / service).
+     * Pembilang complaint ratio: dihitung dari assign regional, bukan wajib CAPA terisi.
      * Tidak ada komplain = 0 (memenuhi target lower-is-better).
      *
      * @param  list<int>  $outletIds
@@ -2921,10 +2905,19 @@ class KpiParameterResolverService
         }
 
         $division = strtolower(trim($division));
-        if (! in_array($division, ['bar', 'kitchen', 'service'], true)) {
+        $divisionArea = match ($division) {
+            'bar' => 'Bar',
+            'kitchen' => 'Kitchen',
+            'service' => 'Service',
+            default => null,
+        };
+        if ($divisionArea === null) {
             return null;
         }
 
+        // Scope area = divisi parameter (Service/Bar/Kitchen), bukan semua area karyawan.
+        $scope['areas'] = [$divisionArea];
+        $scope['area'] = $divisionArea;
         $scope['capa_divisions'] = [$division];
         $scope['capa_division'] = $division;
 
@@ -2939,7 +2932,9 @@ class KpiParameterResolverService
                 continue;
             }
 
-            if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope, requireCapaInput: true)) {
+            // "Masuk regional" = case di-assign ke regional user scope + area divisi.
+            // Tidak wajib CAPA sudah diisi.
+            if (! $this->caseMatchesCvccRegionalScope($row->meta, $scope, requireCapaInput: false)) {
                 continue;
             }
 
@@ -2950,9 +2945,8 @@ class KpiParameterResolverService
     }
 
     /**
-     * Total komplain CVCC yang masuk (severity negative) di outlet scope.
-     * Denominator untuk Service / Bar / Kitchen Complaint Ratio.
-     * Tidak filter CAPA / divisi — semua komplain masuk dihitung.
+     * Total semua komplain CVCC negative pada periode (outlet scope).
+     * Denominator complaint ratio — tanpa melihat assign regional / CAPA / divisi.
      *
      * @param  list<int>  $outletIds
      */
@@ -2963,11 +2957,8 @@ class KpiParameterResolverService
         ?int $outletId = null,
         array $outletIds = [],
     ): ?float {
-        // Tetap wajib Regional Management agar KPI complaint ratio punya konteks employee.
-        $scope = $this->resolveCvccRegionalScope($userId);
-        if ($scope === null) {
-            return null;
-        }
+        // userId hanya untuk signature resolver; total tidak bergantung regional karyawan.
+        unset($userId);
 
         $count = 0;
         foreach ($this->fetchCvccCasesForPeriod(

@@ -69,7 +69,7 @@ const strukText = computed(() => {
     const price = Number(item.unit_price || 0);
     const subtotal = Number(item.subtotal != null ? item.subtotal : qty * price);
     const fmt = (n) => new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n || 0);
-    lines.push(`${qtyStr} ${unit} ${fmt(price)} = ${fmt(subtotal)}`);
+    lines.push(`${qtyStr} ${unit} x ${fmt(price)} = ${fmt(subtotal)}`);
   }
   lines.push('--------------------------------');
   return lines.join('\n');

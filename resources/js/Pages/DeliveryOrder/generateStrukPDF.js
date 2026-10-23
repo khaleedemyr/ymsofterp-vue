@@ -98,7 +98,7 @@ export async function generateStrukPDF({ orderNumber, date, outlet, items, kasir
       const unit = i.unit_code || i.unit || '';
       const price = formatNumber(i.unit_price ?? 0);
       const subtotal = formatNumber(i.subtotal ?? ((Number(i.qty_scan) || 0) * (Number(i.unit_price) || 0)));
-      const priceLine = `${qty} ${unit} ${price} = ${subtotal}`;
+      const priceLine = `${qty} ${unit} x ${price} = ${subtotal}`;
       const priceLines = pdf.splitTextToSize(priceLine, 76);
       priceLines.forEach(line => {
         pdf.text(line, 2, y);
