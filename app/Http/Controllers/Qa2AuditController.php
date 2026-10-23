@@ -1180,10 +1180,7 @@ class Qa2AuditController extends Controller
 
         $this->ensureAuditItems((int) $id, (int) $audit->template_id);
 
-        $canFillCap = DB::table('qa2_audit_auditees')
-            ->where('audit_id', $id)
-            ->where('user_id', (int) $user->id)
-            ->exists();
+        $canFillCap = $this->userCanFillCap($user, $id);
 
         $canManage = $isHo && $audit->status === 'draft';
         $canEditAuditee = $isHo && $audit->status === 'submitted';
@@ -1450,12 +1447,7 @@ class Qa2AuditController extends Controller
         abort_if($audit->status !== 'submitted', 422, 'CAP hanya untuk audit submitted.');
 
         $user = auth()->user();
-        $isAuditee = DB::table('qa2_audit_auditees')
-            ->where('audit_id', $id)
-            ->where('user_id', (int) $user->id)
-            ->exists();
-
-        abort_if(!$isAuditee, 403);
+        abort_if(!$this->userCanFillCap($user, $id), 403);
         abort_if(!$this->capSubmissionEditable($audit), 422, 'CAP tidak dapat diubah saat proses approval.');
 
         $validated = $request->validate([
@@ -1520,12 +1512,7 @@ class Qa2AuditController extends Controller
         abort_if(!$audit, 404);
 
         $user = auth()->user();
-        $isAuditee = DB::table('qa2_audit_auditees')
-            ->where('audit_id', $id)
-            ->where('user_id', (int) $user->id)
-            ->exists();
-
-        abort_if(!$isAuditee, 403);
+        abort_if(!$this->userCanFillCap($user, $id), 403);
         abort_if(!$this->capSubmissionEditable($audit), 422, 'CAP tidak dapat diubah saat proses approval.');
 
         $cap = DB::table('qa2_audit_caps as c')
@@ -1761,6 +1748,32 @@ class Qa2AuditController extends Controller
         return $code;
     }
 
+    private function isSuperadmin($user = null): bool
+    {
+        $user = $user ?? auth()->user();
+
+        return $user && (string) ($user->id_role ?? '') === '5af56935b011a';
+    }
+
+    /**
+     * Auditee atau superadmin boleh isi/lihat CAP.
+     */
+    private function userCanFillCap($user, int $auditId): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        if ($this->isSuperadmin($user)) {
+            return true;
+        }
+
+        return DB::table('qa2_audit_auditees')
+            ->where('audit_id', $auditId)
+            ->where('user_id', (int) $user->id)
+            ->exists();
+    }
+
     /**
      * Privilege untuk aksi Edit/Hapus di index QA2 Audits
      * (division QA = 32 atau superadmin).
@@ -1772,7 +1785,7 @@ class Qa2AuditController extends Controller
             return false;
         }
 
-        if ((string) ($user->id_role ?? '') === '5af56935b011a') {
+        if ($this->isSuperadmin($user)) {
             return true;
         }
 
@@ -2539,10 +2552,7 @@ class Qa2AuditController extends Controller
 
         $this->ensureAuditItems((int) $id, (int) $audit->template_id);
 
-        $canFillCap = DB::table('qa2_audit_auditees')
-            ->where('audit_id', $id)
-            ->where('user_id', (int) $user->id)
-            ->exists();
+        $canFillCap = $this->userCanFillCap($user, $id);
         $canManage = $isHo && $audit->status === 'draft';
         $canEditAuditee = $isHo && $audit->status === 'submitted';
 
@@ -2667,11 +2677,7 @@ class Qa2AuditController extends Controller
         abort_if($audit->status !== 'submitted', 422, 'CAP hanya untuk audit submitted.');
 
         $user = auth()->user();
-        $isAuditee = DB::table('qa2_audit_auditees')
-            ->where('audit_id', $id)
-            ->where('user_id', (int) $user->id)
-            ->exists();
-        abort_if(!$isAuditee, 403);
+        abort_if(!$this->userCanFillCap($user, $id), 403);
         abort_if(!$this->capSubmissionEditable($audit), 422, 'CAP sudah dalam proses approval atau telah disetujui.');
 
         $validated = $request->validate([
