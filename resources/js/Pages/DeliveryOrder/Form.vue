@@ -200,10 +200,8 @@ import { ref, reactive, onMounted, nextTick, computed, h, createApp } from 'vue'
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
-import QRCode from 'qrcode';
 import Swal from 'sweetalert2';
+import { generateStrukPDF } from './generateStrukPDF';
 
 const props = defineProps({
   packingLists: Array,
@@ -860,90 +858,10 @@ async function getBase64FromUrl(url) {
   }
 }
 
-async function generateStrukPDF({ orderNumber, date, outlet, items, kasirName, divisionName, warehouseName, roNumber, roDate, roCreatorName }) {
-  const pdf = new jsPDF({ unit: 'mm', format: [80, 297] });
-  let y = 10;
-  // Judul rata tengah, font besar, bold
-  pdf.setFontSize(13);
-  pdf.setFont(undefined, 'bold');
-  pdf.text('DELIVERY ORDER', 40, y, { align: 'center' });
-  y += 7;
-  // JUSTUS GROUP di bawah judul
-  pdf.setFontSize(10);
-  pdf.text('JUSTUS GROUP', 40, y, { align: 'center' });
-  y += 6;
-  // Warehouse division/warehouse rata tengah, bold
-  pdf.setFont(undefined, 'bold');
-  if (divisionName || warehouseName) {
-    pdf.text(`${divisionName || ''}${divisionName && warehouseName ? ' - ' : ''}${warehouseName || ''}`, 40, y, { align: 'center' });
-    y += 6;
-  }
-  pdf.setFont(undefined, 'normal'); // Kembalikan ke normal untuk info lain
-  // Info lain, font kecil
-  pdf.setFontSize(9);
-  pdf.text(`No: ${orderNumber}`, 2, y); y += 4.5;
-  pdf.text(`Tanggal: ${date}`, 2, y); y += 4.5;
-  pdf.text(`Outlet: ${outlet}`, 2, y); y += 4.5;
-  if (roNumber) { pdf.text(`RO: ${roNumber}`, 2, y); y += 4.5; }
-  if (roDate) { pdf.text(`Tgl RO: ${roDate}`, 2, y); y += 4.5; }
-  if (roCreatorName) { pdf.text(`Pembuat RO: ${roCreatorName}`, 2, y); y += 4.5; }
-  // Garis full width, spasi sebelum dan sesudah
-  y += 2;
-  pdf.setLineWidth(0.5);
-  pdf.line(2, y, 78, y);
-  y += 3;
-  // ITEM LIST
-  if (items && items.length) {
-    items.forEach(i => {
-      const itemLines = pdf.splitTextToSize(i.name, 60);
-      itemLines.forEach(line => {
-        pdf.text(line, 2, y);
-        y += 3.8;
-      });
-      pdf.text(`${i.qty_scan} ${i.unit_code || i.unit}`, 2, y);
-      y += 5;
-    });
-  } else {
-    pdf.text('TIDAK ADA ITEM', 2, y); y += 4.5;
-  }
-  // Garis full width sebelum kasir
-  y += 2;
-  pdf.setLineWidth(0.5);
-  pdf.line(2, y, 78, y);
-  y += 3;
-  if (kasirName) { pdf.text(`Kasir: ${kasirName}`, 2, y); y += 4.5; }
-  pdf.text('Terima kasih', 2, y);
-  y += 8;
-
-  // Kolom tanda tangan vertikal
-  pdf.setFontSize(9);
-  const signatureRoles = ['Checker', 'Driver', 'Outlet'];
-  signatureRoles.forEach((role) => {
-    pdf.setFont(undefined, 'bold');
-    pdf.text(role, 2, y);
-    y += 12;
-    pdf.setDrawColor(0);
-    pdf.setLineWidth(0.3);
-    pdf.line(2, y, 50, y);
-    y += 4;
-    pdf.setFont(undefined, 'normal');
-    pdf.setFontSize(7);
-    pdf.text('(tanda tangan / nama)', 2, y);
-    y += 8;
-    pdf.setFontSize(9);
-  });
-
-  pdf.output('dataurlnewwindow');
-}
-
 async function submitDO() {
   error.value = '';
   loadingSubmit.value = true;
   try {
-    // Generate nomor DO
-    const date = new Date().toISOString().slice(2,10).replace(/-/g,'');
-    const random = Math.random().toString(36).substring(2,6).toUpperCase();
-    doNumber.value = `DO${date}${random}`;
     // Build scanned_serials payload for serial mode
     const scannedSerialsPayload = Object.entries(scannedSerials)
       .filter(([, serials]) => serials && serials.length > 0)
@@ -967,19 +885,29 @@ async function submitDO() {
     });
     showConfirmModal.value = false;
     if (doRes.data.success) {
-      await generateStrukPDF({
-        orderNumber: doNumber.value,
-        date: new Date().toLocaleDateString('id-ID'),
-        outlet: selectedPackingList.value?.nama_outlet || '-',
-        warehouseOutlet: selectedPackingList.value?.warehouse_outlet_name || '-',
-        items: packingListItems,
-        kasirName: doRes.data.kasir_name || '-',
-        divisionName: doRes.data.division_name || '',
-        warehouseName: doRes.data.warehouse_name || '',
-        roNumber: doRes.data.ro_number || '',
-        roDate: doRes.data.ro_date ? new Date(doRes.data.ro_date).toLocaleDateString('id-ID') : '',
-        roCreatorName: doRes.data.ro_creator_name || ''
-      });
+      doNumber.value = doRes.data.number || doNumber.value;
+      // Ambil data struk (termasuk harga) dari API supaya format sama dengan reprint
+      try {
+        if (doRes.data.id) {
+          const { data: struk } = await axios.get(`/api/delivery-order/${doRes.data.id}/struk`);
+          await generateStrukPDF(struk);
+        } else {
+          await generateStrukPDF({
+            orderNumber: doRes.data.number || doNumber.value,
+            date: new Date().toLocaleDateString('id-ID'),
+            outlet: selectedPackingList.value?.nama_outlet || '-',
+            items: packingListItems,
+            kasirName: doRes.data.kasir_name || '-',
+            divisionName: doRes.data.division_name || '',
+            warehouseName: doRes.data.warehouse_name || '',
+            roNumber: doRes.data.ro_number || '',
+            roDate: doRes.data.ro_date ? new Date(doRes.data.ro_date).toLocaleDateString('id-ID') : '',
+            roCreatorName: doRes.data.ro_creator_name || ''
+          });
+        }
+      } catch (pdfErr) {
+        console.error('Gagal generate PDF struk:', pdfErr);
+      }
       await Swal.fire({
         icon: 'success',
         title: 'Sukses',

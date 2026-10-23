@@ -58,9 +58,18 @@ const strukText = computed(() => {
   lines.push('Tanggal: ' + props.date);
   lines.push('Outlet: ' + props.outlet);
   lines.push('--------------------------------');
-  // Format: Qty Unit Code Nama Item (sejajar) - menggunakan unit_code
+  // Format:
+  // Nama Item
+  // QTY Unit Harga = Subtotal
   for (const item of props.items) {
-    lines.push(`${item.qty_scan} ${item.unit_code || item.unit} ${item.name}`);
+    lines.push(item.name);
+    const qty = Number(item.qty_scan);
+    const qtyStr = Number.isNaN(qty) ? String(item.qty_scan ?? '') : qty.toFixed(2);
+    const unit = item.unit_code || item.unit || '';
+    const price = Number(item.unit_price || 0);
+    const subtotal = Number(item.subtotal != null ? item.subtotal : qty * price);
+    const fmt = (n) => new Intl.NumberFormat('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(n || 0);
+    lines.push(`${qtyStr} ${unit} ${fmt(price)} = ${fmt(subtotal)}`);
   }
   lines.push('--------------------------------');
   return lines.join('\n');

@@ -472,6 +472,8 @@ class DeliveryOrderController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'Delivery Order berhasil disimpan!',
+                    'id' => $doId,
+                    'number' => $doNumber,
                     'kasir_name' => $kasirName,
                     'division_name' => $roSupplierData->division_name ?? null,
                     'warehouse_name' => $roSupplierData->warehouse_name ?? null,
@@ -498,6 +500,8 @@ class DeliveryOrderController extends Controller
                 return response()->json([
                     'success' => true,
                     'message' => 'Delivery Order berhasil disimpan!',
+                    'id' => $doId,
+                    'number' => $doNumber,
                     'kasir_name' => $kasirName,
                     'division_name' => $packingListFull->division_name ?? null,
                     'warehouse_name' => $packingListFull->warehouse_name ?? null,
@@ -1659,25 +1663,108 @@ class DeliveryOrderController extends Controller
                 'kasir.nama_lengkap as kasirName',
                 'wd.name as divisionName',
                 'w.name as warehouseName',
+                'w.id as warehouseId',
                 'fo.order_number as roNumber',
                 'fo.tanggal as roDate',
-                'ufo.nama_lengkap as roCreatorName'
+                'ufo.nama_lengkap as roCreatorName',
+                'do.source_type',
+                'do.ro_supplier_gr_id'
             )
             ->where('do.id', $id)
             ->first();
         if (!$order) return response()->json(['message' => 'Data tidak ditemukan'], 404);
+
+        // RO Supplier GR uses warehouse 1
+        $warehouseId = $order->warehouseId;
+        if (!$warehouseId && ($order->source_type === 'ro_supplier_gr' || $order->ro_supplier_gr_id)) {
+            $warehouseId = 1;
+        }
+
         $items = DB::table('delivery_order_items as doi')
             ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'doi.unit', '=', 'u.name')
+            ->leftJoin('units as us', 'i.small_unit_id', '=', 'us.id')
+            ->leftJoin('units as um', 'i.medium_unit_id', '=', 'um.id')
+            ->leftJoin('units as ul', 'i.large_unit_id', '=', 'ul.id')
+            ->leftJoin('food_inventory_items as fii', 'fii.item_id', '=', 'doi.item_id')
             ->select(
                 'doi.id',
+                'doi.item_id',
                 'i.name',
                 'doi.qty_scan',
                 'doi.unit',
-                'u.code as unit_code'
+                'u.code as unit_code',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name',
+                'fii.id as inventory_item_id'
             )
             ->where('doi.delivery_order_id', $id)
             ->get();
+
+        // Historical cost from inventory cards of this DO (preferred)
+        $cardCosts = collect();
+        if ($items->isNotEmpty()) {
+            $inventoryItemIds = $items->pluck('inventory_item_id')->filter()->unique()->values()->all();
+            if (!empty($inventoryItemIds)) {
+                $cardCosts = DB::table('food_inventory_cards')
+                    ->where('reference_type', 'delivery_order')
+                    ->where('reference_id', $id)
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->get()
+                    ->keyBy('inventory_item_id');
+            }
+        }
+
+        // Fallback: current stock last_cost
+        $stockCosts = collect();
+        if ($warehouseId && $items->isNotEmpty()) {
+            $inventoryItemIds = $items->pluck('inventory_item_id')->filter()->unique()->values()->all();
+            if (!empty($inventoryItemIds)) {
+                $stockCosts = DB::table('food_inventory_stocks')
+                    ->where('warehouse_id', $warehouseId)
+                    ->whereIn('inventory_item_id', $inventoryItemIds)
+                    ->get()
+                    ->keyBy('inventory_item_id');
+            }
+        }
+
+        $items = $items->map(function ($item) use ($cardCosts, $stockCosts) {
+            $card = $item->inventory_item_id ? ($cardCosts[$item->inventory_item_id] ?? null) : null;
+            $stock = $item->inventory_item_id ? ($stockCosts[$item->inventory_item_id] ?? null) : null;
+
+            $costSmall = (float) ($card->cost_per_small ?? $stock->last_cost_small ?? 0);
+            $costMedium = (float) ($card->cost_per_medium ?? $stock->last_cost_medium ?? 0);
+            $costLarge = (float) ($card->cost_per_large ?? $stock->last_cost_large ?? 0);
+
+            $unit = $item->unit;
+            $unitPrice = 0;
+            if ($unit && $unit === $item->small_unit_name) {
+                $unitPrice = $costSmall;
+            } elseif ($unit && $unit === $item->medium_unit_name) {
+                $unitPrice = $costMedium;
+            } elseif ($unit && $unit === $item->large_unit_name) {
+                $unitPrice = $costLarge;
+            } else {
+                // Fallback: prefer non-zero cost (small → medium → large)
+                $unitPrice = $costSmall ?: ($costMedium ?: $costLarge);
+            }
+
+            $qty = (float) ($item->qty_scan ?? 0);
+            $item->unit_price = round($unitPrice, 2);
+            $item->subtotal = round($qty * $unitPrice, 2);
+
+            unset(
+                $item->item_id,
+                $item->small_unit_name,
+                $item->medium_unit_name,
+                $item->large_unit_name,
+                $item->inventory_item_id
+            );
+
+            return $item;
+        });
+
         return response()->json([
             'orderNumber' => $order->orderNumber,
             'date' => $order->date ? date('d/m/Y', strtotime($order->date)) : '',
