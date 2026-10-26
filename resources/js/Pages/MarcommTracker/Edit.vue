@@ -22,7 +22,7 @@
           :pic-users="picUsers"
         />
 
-        <div class="mt-5 flex justify-end gap-2.5 sticky bottom-0 py-3 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
+        <div class="mt-5 flex justify-end gap-2.5 sticky bottom-0 z-10 py-3 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
           <Link
             :href="route('marcomm-trackers.show', record.id)"
             class="px-4 py-2.5 rounded-lg text-sm border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"

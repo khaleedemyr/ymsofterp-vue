@@ -122,15 +122,15 @@
     </div>
 
     <!-- Approval Flow -->
-    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-      <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible">
+      <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80 rounded-t-xl">
         <h2 class="text-sm font-semibold text-gray-800">Approval Flow</h2>
         <p class="text-xs text-gray-500 mt-0.5">
           Level terendah → tertinggi. Ada approver = Submitted; semua approve = Approved.
         </p>
       </div>
-      <div class="p-5">
-        <div class="relative mb-4">
+      <div class="p-5 overflow-visible">
+        <div class="relative mb-4 z-30">
           <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
           <input
             v-model="approverSearch"
@@ -141,7 +141,7 @@
           />
           <div
             v-if="approverResults.length > 0"
-            class="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto"
+            class="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-60 overflow-y-auto"
           >
             <button
               v-for="user in approverResults"
