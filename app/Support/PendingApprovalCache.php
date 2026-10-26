@@ -6,7 +6,7 @@ use Illuminate\Support\Facades\Cache;
 
 class PendingApprovalCache
 {
-    public const CACHE_KEY_PREFIX = 'all_pending_approvals_v10_';
+    public const CACHE_KEY_PREFIX = 'all_pending_approvals_v11_';
 
     public static function cacheKey(int|string $userId): string
     {

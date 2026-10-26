@@ -77,6 +77,7 @@ class PendingApprovalController extends Controller
                 'employee_onboardings' => [],
                 'wfh_requests' => [],
                 'marcomm_trackers' => [],
+                'content_plans' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -557,6 +558,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Marcomm Tracker approvals: ' . $e->getMessage());
+            }
+
+            // 30. Content Plan
+            try {
+                $cpController = app(\App\Http\Controllers\ContentPlanController::class);
+                $cpResponse = $cpController->getPendingApprovals();
+                if ($cpResponse->getStatusCode() === 200) {
+                    $cpData = json_decode($cpResponse->getContent(), true);
+                    $data['content_plans'] = $cpData['plans'] ?? [];
+                    if ($limit > 0 && count($data['content_plans']) > $limit) {
+                        $data['content_plans'] = array_slice($data['content_plans'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Content Plan approvals: ' . $e->getMessage());
             }
 
                 return $data;

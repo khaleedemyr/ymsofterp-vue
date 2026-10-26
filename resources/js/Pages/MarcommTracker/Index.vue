@@ -99,14 +99,12 @@
                 <Link :href="route('marcomm-trackers.show', row.id)" class="text-pink-600 hover:text-pink-800 mr-3" title="Detail">
                   <i class="fa-solid fa-eye"></i>
                 </Link>
-                <Link
-                  v-if="row.workflow_status !== 'approved'"
-                  :href="route('marcomm-trackers.edit', row.id)"
-                  class="text-indigo-600 hover:text-indigo-800"
-                  title="Edit"
-                >
+                <Link :href="route('marcomm-trackers.edit', row.id)" class="text-indigo-600 hover:text-indigo-800 mr-3" title="Edit">
                   <i class="fa-solid fa-pen"></i>
                 </Link>
+                <button type="button" class="text-red-600 hover:text-red-800" title="Hapus" @click="confirmDelete(row)">
+                  <i class="fa-solid fa-trash"></i>
+                </button>
               </td>
             </tr>
           </tbody>
@@ -131,6 +129,7 @@
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
 import { reactive } from 'vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   records: { type: Object, required: true },
@@ -171,5 +170,19 @@ const flowStatusClass = (s) => {
   if (s === 'APPROVED') return 'text-green-600';
   if (s === 'REJECTED') return 'text-red-600';
   return 'text-amber-600';
+};
+
+const confirmDelete = async (row) => {
+  const result = await Swal.fire({
+    title: 'Hapus Marcomm Tracker?',
+    text: row.number,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  });
+  if (!result.isConfirmed) return;
+  router.delete(route('marcomm-trackers.destroy', row.id));
 };
 </script>

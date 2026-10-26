@@ -360,16 +360,14 @@ class MarcommTrackerController extends Controller
     {
         $record = $this->findVisible($id);
         $user = auth()->user();
-        if (! $this->isSuperadmin($user) && (int) $record->created_by !== (int) $user->id) {
+        if (! $this->canDelete($record, $user)) {
             abort(403);
-        }
-        if ($record->workflow_status === 'approved') {
-            return back()->withErrors(['delete' => 'Tracker yang sudah Approved tidak dapat dihapus.']);
         }
 
         $approverIds = $record->approvalFlows()->pluck('approver_id')->all();
+        $createdBy = $record->created_by;
         $record->delete();
-        $this->clearCaches(null, $approverIds, [$user->id, $record->created_by ?? null]);
+        $this->clearCaches(null, $approverIds, [$user->id, $createdBy]);
 
         return redirect()->route('marcomm-trackers.index')->with('success', 'Marcomm Tracker dihapus.');
     }
@@ -722,11 +720,21 @@ class MarcommTrackerController extends Controller
         if ($this->isSuperadmin($user)) {
             return true;
         }
-        if ((int) $record->created_by !== (int) $user->id && (int) $record->pic_user_id !== (int) $user->id) {
+
+        return (int) $record->created_by === (int) $user->id
+            || (int) $record->pic_user_id === (int) $user->id;
+    }
+
+    private function canDelete(MarcommTracker $record, $user): bool
+    {
+        if (! $user) {
             return false;
         }
+        if ($this->isSuperadmin($user)) {
+            return true;
+        }
 
-        return in_array($record->workflow_status, ['draft', 'submitted', 'rejected'], true);
+        return (int) $record->created_by === (int) $user->id;
     }
 
     private function resolveCurrentApprovalFlow(MarcommTracker $tracker, $user): ?MarcommTrackerApprovalFlow

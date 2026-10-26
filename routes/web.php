@@ -1137,6 +1137,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/marcomm-trackers/{id}/approve', [\App\Http\Controllers\MarcommTrackerController::class, 'approve'])->name('marcomm-trackers.approve');
     Route::post('/marcomm-trackers/{id}/reject', [\App\Http\Controllers\MarcommTrackerController::class, 'reject'])->name('marcomm-trackers.reject');
 
+    Route::get('/content-plans/approvers', [\App\Http\Controllers\ContentPlanController::class, 'getApprovers'])->name('content-plans.approvers');
+    Route::resource('content-plans', \App\Http\Controllers\ContentPlanController::class);
+    Route::post('/content-plans/{id}/approve', [\App\Http\Controllers\ContentPlanController::class, 'approve'])->name('content-plans.approve');
+    Route::post('/content-plans/{id}/reject', [\App\Http\Controllers\ContentPlanController::class, 'reject'])->name('content-plans.reject');
+
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
     Route::resource('one-plus-one-submissions', \App\Http\Controllers\OnePlusOneSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
 
@@ -2940,6 +2945,11 @@ Route::get('/api/marcomm-trackers/pending-approvals', [\App\Http\Controllers\Mar
 Route::get('/api/marcomm-trackers/{id}/approval-details', [\App\Http\Controllers\MarcommTrackerController::class, 'getApprovalDetails'])->name('marcomm-trackers.approval-details')->middleware('auth');
 Route::post('/api/marcomm-trackers/{id}/approve', [\App\Http\Controllers\MarcommTrackerController::class, 'approve'])->name('api.marcomm-trackers.approve')->middleware('auth');
 Route::post('/api/marcomm-trackers/{id}/reject', [\App\Http\Controllers\MarcommTrackerController::class, 'reject'])->name('api.marcomm-trackers.reject')->middleware('auth');
+
+Route::get('/api/content-plans/pending-approvals', [\App\Http\Controllers\ContentPlanController::class, 'getPendingApprovals'])->name('content-plans.pending-approvals')->middleware('auth');
+Route::get('/api/content-plans/{id}/approval-details', [\App\Http\Controllers\ContentPlanController::class, 'getApprovalDetails'])->name('content-plans.approval-details')->middleware('auth');
+Route::post('/api/content-plans/{id}/approve', [\App\Http\Controllers\ContentPlanController::class, 'approve'])->name('api.content-plans.approve')->middleware('auth');
+Route::post('/api/content-plans/{id}/reject', [\App\Http\Controllers\ContentPlanController::class, 'reject'])->name('api.content-plans.reject')->middleware('auth');
 Route::get('/api/sop-development-completion/pending-approvals', [SopDevelopmentCompletionController::class, 'getPendingApprovals'])->name('sop-development-completion.pending-approvals')->middleware('auth');
 Route::get('/api/sop-development-completion/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'show'])->name('sop-development-completion.show')->middleware('auth');
 Route::post('/api/sop-development-completion/{sopDevelopmentCompletion}/approve', [SopDevelopmentCompletionController::class, 'approve'])->name('sop-development-completion.approve')->middleware('auth');

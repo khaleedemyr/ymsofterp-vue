@@ -91,6 +91,11 @@ const loadingMarcommApprovals = ref(false);
 const showMarcommApprovalModal = ref(false);
 const selectedMarcommApproval = ref(null);
 const showAllMarcommModal = ref(false);
+const pendingContentPlanApprovals = ref([]);
+const loadingContentPlanApprovals = ref(false);
+const showContentPlanApprovalModal = ref(false);
+const selectedContentPlanApproval = ref(null);
+const showAllContentPlanModal = ref(false);
 const isSelectingWfhApprovals = ref(false);
 const showAllWfhModal = ref(false);
 
@@ -888,6 +893,7 @@ const prApprovalCount = computed(() => {
 });
 
 const marcommApprovalCount = computed(() => pendingMarcommApprovals.value.length);
+const contentPlanApprovalCount = computed(() => pendingContentPlanApprovals.value.length);
 
 const wfhApprovalCount = computed(() => {
     const count = pendingWfhApprovals.value.length;
@@ -1201,6 +1207,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingCorrectionApprovals.value = true;
     loadingWfhApprovals.value = true;
     loadingMarcommApprovals.value = true;
+    loadingContentPlanApprovals.value = true;
     
     try {
         const response = await axios.get('/api/pending-approvals/all', {
@@ -1214,6 +1221,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingPrApprovals.value = data.purchase_requisitions || [];
             pendingWfhApprovals.value = data.wfh_requests || [];
             pendingMarcommApprovals.value = data.marcomm_trackers || [];
+            pendingContentPlanApprovals.value = data.content_plans || [];
             pendingPoOpsApprovals.value = (data.purchase_order_ops || []).filter(po => isPoOpsVisibleToCurrentUser(po));
             pendingContraBonApprovals.value = [];
             pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
@@ -1241,6 +1249,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingPrApprovals.value = false;
             loadingWfhApprovals.value = false;
             loadingMarcommApprovals.value = false;
+            loadingContentPlanApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1268,6 +1277,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingPrApprovals.value = false;
             loadingWfhApprovals.value = false;
             loadingMarcommApprovals.value = false;
+            loadingContentPlanApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1293,6 +1303,7 @@ async function loadAllPendingApprovalsOptimized() {
         loadingPrApprovals.value = false;
         loadingWfhApprovals.value = false;
         loadingMarcommApprovals.value = false;
+        loadingContentPlanApprovals.value = false;
         loadingPoOpsApprovals.value = false;
         loadingContraBonApprovals.value = false;
         loadingCategoryCostApprovals.value = false;
@@ -6692,6 +6703,78 @@ function openAllMarcommModal() {
     showAllMarcommModal.value = true;
 }
 
+async function showContentPlanApprovalDetails(planId) {
+    try {
+        if (showAllContentPlanModal.value) {
+            showAllContentPlanModal.value = false;
+        }
+        const response = await axios.get(`/api/content-plans/${planId}/approval-details`);
+        if (response.data.success) {
+            selectedContentPlanApproval.value = response.data.plan;
+            showContentPlanApprovalModal.value = true;
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal memuat detail Content Plan', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading Content Plan approval details:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal memuat detail Content Plan', 'error');
+    }
+}
+
+async function approveContentPlan(planId) {
+    try {
+        const response = await axios.post(`/api/content-plans/${planId}/approve`, { notes: '' });
+        if (response.data?.success) {
+            Swal.fire('Success', response.data.message || 'Content Plan berhasil disetujui', 'success');
+            showContentPlanApprovalModal.value = false;
+            await loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire('Error', response.data?.message || 'Gagal menyetujui Content Plan', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving Content Plan:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Content Plan', 'error');
+    }
+}
+
+function showRejectContentPlanModal(planId) {
+    Swal.fire({
+        title: 'Tolak Content Plan',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) return 'Alasan penolakan harus diisi!';
+        },
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+        try {
+            const response = await axios.post(`/api/content-plans/${planId}/reject`, {
+                rejection_reason: result.value,
+            });
+            if (response.data?.success) {
+                Swal.fire('Success', response.data.message || 'Content Plan berhasil ditolak', 'success');
+                showContentPlanApprovalModal.value = false;
+                await loadAllPendingApprovalsOptimized();
+            } else {
+                Swal.fire('Error', response.data?.message || 'Gagal menolak Content Plan', 'error');
+            }
+        } catch (error) {
+            console.error('Error rejecting Content Plan:', error);
+            Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Content Plan', 'error');
+        }
+    });
+}
+
+function openAllContentPlanModal() {
+    showAllContentPlanModal.value = true;
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -7647,6 +7730,65 @@ watch(locale, () => {
                             <div v-if="pendingWfhApprovals.length > 3" class="text-center pt-2">
                                 <button @click="openAllWfhModal" class="text-sm text-teal-500 hover:text-teal-700 font-medium">
                                     Lihat {{ pendingWfhApprovals.length - 3 }} WFH lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Content Plan Approval Section -->
+                <div v-if="contentPlanApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-violet-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa-solid fa-calendar-days mr-2 text-violet-500"></i>
+                                    Content Plan Approval
+                                </h3>
+                            </div>
+                            <div class="bg-violet-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ contentPlanApprovalCount }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingContentPlanApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-violet-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="cp in pendingContentPlanApprovals.slice(0, 3)"
+                                :key="'content-plan-approval-' + cp.id"
+                                @click="showContentPlanApprovalDetails(cp.id)"
+                                class="p-3 rounded-lg transition-all duration-200 cursor-pointer hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-violet-50 hover:bg-violet-100'"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ cp.number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ cp.platform }} · {{ cp.pillar || '-' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-calendar mr-1 text-violet-500"></i>
+                                            {{ formatDate(cp.date_post) }}
+                                            · {{ cp.job_status_label || cp.job_status }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-violet-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ cp.approver_name || 'Content Plan Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="pendingContentPlanApprovals.length > 3" class="text-center pt-2">
+                                <button @click="openAllContentPlanModal" class="text-sm text-violet-500 hover:text-violet-700 font-medium">
+                                    Lihat {{ pendingContentPlanApprovals.length - 3 }} plan lainnya...
                                 </button>
                             </div>
                         </div>
@@ -10117,6 +10259,126 @@ watch(locale, () => {
                         <div class="font-semibold text-sm">{{ mt.number }}</div>
                         <div class="text-xs text-gray-500">
                             {{ mt.job_category }} · {{ mt.pic?.nama_lengkap || '-' }} · {{ mt.approver_name || `Level ${mt.approval_level || 1}` }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Content Plan Approval Detail Modal -->
+        <div v-if="showContentPlanApprovalModal && selectedContentPlanApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showContentPlanApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa-solid fa-calendar-days mr-2 text-violet-500"></i>
+                        Detail Content Plan
+                    </h3>
+                    <button @click="showContentPlanApprovalModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="bg-violet-50 dark:bg-violet-900/20 p-4 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <div class="text-xs text-gray-500">Nomor</div>
+                            <div class="font-semibold">{{ selectedContentPlanApproval.number }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Platform</div>
+                            <div class="font-semibold">{{ selectedContentPlanApproval.platform }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Date Post</div>
+                            <div class="font-semibold">{{ formatDate(selectedContentPlanApproval.date_post) }} · {{ selectedContentPlanApproval.day_name || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Pillar / Format</div>
+                            <div class="font-semibold">{{ selectedContentPlanApproval.pillar || '-' }} · {{ selectedContentPlanApproval.format || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Status</div>
+                            <div class="font-semibold">{{ selectedContentPlanApproval.job_status_label || selectedContentPlanApproval.job_status }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Creator</div>
+                            <div class="font-semibold">{{ selectedContentPlanApproval.creator?.nama_lengkap || '-' }}</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-2">Caption</h4>
+                        <div class="text-sm whitespace-pre-wrap">{{ selectedContentPlanApproval.caption || '-' }}</div>
+                    </div>
+
+                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
+                        <div class="space-y-2">
+                            <div
+                                v-for="flow in (selectedContentPlanApproval.approval_flows || []).slice().sort((a, b) => a.approval_level - b.approval_level)"
+                                :key="flow.id"
+                                class="flex items-center justify-between p-3 rounded-lg"
+                                :class="flow.status === 'APPROVED' ? 'bg-green-100' : flow.status === 'REJECTED' ? 'bg-red-100' : 'bg-gray-100'"
+                            >
+                                <div>
+                                    <div class="text-xs font-semibold text-violet-600">Level {{ flow.approval_level }}</div>
+                                    <div class="font-medium text-gray-900">{{ flow.approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <span
+                                    class="px-2 py-1 rounded text-xs font-medium text-white"
+                                    :class="flow.status === 'APPROVED' ? 'bg-green-500' : flow.status === 'REJECTED' ? 'bg-red-500' : 'bg-amber-500'"
+                                >
+                                    {{ flow.status }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button
+                        @click="showContentPlanApprovalModal = false"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        Tutup
+                    </button>
+                    <button
+                        v-if="selectedContentPlanApproval.can_approve"
+                        @click="approveContentPlan(selectedContentPlanApproval.id)"
+                        class="px-4 py-2 bg-violet-600 text-white rounded-md hover:bg-violet-700 transition-colors"
+                    >
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button
+                        v-if="selectedContentPlanApproval.can_approve"
+                        @click="showRejectContentPlanModal(selectedContentPlanApproval.id)"
+                        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                    >
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Content Plan Modal -->
+        <div v-if="showAllContentPlanModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllContentPlanModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Semua Content Plan Pending</h3>
+                    <button @click="showAllContentPlanModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    <div
+                        v-for="cp in pendingContentPlanApprovals"
+                        :key="'all-content-plan-' + cp.id"
+                        @click="showContentPlanApprovalDetails(cp.id)"
+                        class="p-3 rounded-lg cursor-pointer border hover:border-violet-400 bg-gray-50 hover:bg-violet-50"
+                    >
+                        <div class="font-semibold text-sm">{{ cp.number }}</div>
+                        <div class="text-xs text-gray-500">
+                            {{ cp.platform }} · {{ cp.pillar || '-' }} · {{ cp.approver_name || `Level ${cp.approval_level || 1}` }}
                         </div>
                     </div>
                 </div>
