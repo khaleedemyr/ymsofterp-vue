@@ -9,13 +9,22 @@
           </h1>
           <p class="text-sm text-gray-500 mt-1">Tracking job Marcomm — list & detail lengkap.</p>
         </div>
-        <Link
-          :href="route('marcomm-trackers.create')"
-          class="inline-flex items-center gap-2 bg-pink-600 text-white px-4 py-2 rounded-lg shadow hover:bg-pink-700 transition"
-        >
-          <i class="fa-solid fa-plus"></i>
-          Buat Tracker
-        </Link>
+        <div class="flex flex-wrap gap-2">
+          <Link
+            :href="route('marcomm-trackers.dashboard')"
+            class="inline-flex items-center gap-2 bg-white border border-rose-200 text-rose-700 px-4 py-2 rounded-lg shadow-sm hover:bg-rose-50 transition"
+          >
+            <i class="fa-solid fa-chart-pie"></i>
+            Dashboard
+          </Link>
+          <Link
+            :href="route('marcomm-trackers.create')"
+            class="inline-flex items-center gap-2 bg-pink-600 text-white px-4 py-2 rounded-lg shadow hover:bg-pink-700 transition"
+          >
+            <i class="fa-solid fa-plus"></i>
+            Buat Tracker
+          </Link>
+        </div>
       </div>
 
       <div class="bg-white rounded-xl shadow p-4 mb-6">

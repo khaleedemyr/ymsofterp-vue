@@ -1130,6 +1130,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/wfh-requests/{id}/approve', [\App\Http\Controllers\WfhRequestController::class, 'approve'])->name('wfh-requests.approve');
     Route::post('/wfh-requests/{id}/reject', [\App\Http\Controllers\WfhRequestController::class, 'reject'])->name('wfh-requests.reject');
 
+    Route::get('/marcomm-trackers/dashboard', [\App\Http\Controllers\MarcommTrackerController::class, 'dashboard'])->name('marcomm-trackers.dashboard');
     Route::get('/marcomm-trackers/approvers', [\App\Http\Controllers\MarcommTrackerController::class, 'getApprovers'])->name('marcomm-trackers.approvers');
     Route::get('/marcomm-trackers/pic-users', [\App\Http\Controllers\MarcommTrackerController::class, 'getPicUsers'])->name('marcomm-trackers.pic-users');
     Route::resource('marcomm-trackers', \App\Http\Controllers\MarcommTrackerController::class);

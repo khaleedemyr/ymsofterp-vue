@@ -19,22 +19,12 @@ class MarcommTrackerController extends Controller
         $jobCategory = trim((string) $request->get('job_category', ''));
         $jobStatus = trim((string) $request->get('job_status', ''));
         $workflowStatus = trim((string) $request->get('workflow_status', ''));
-        $user = auth()->user();
-        $isSuperadmin = $this->isSuperadmin($user);
-
-        $records = MarcommTracker::query()
+        $records = $this->visibleQuery()
             ->with([
                 'pic:id,nama_lengkap,division_id',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap',
             ])
-            ->when(! $isSuperadmin, function ($q) use ($user) {
-                $q->where(function ($inner) use ($user) {
-                    $inner->where('created_by', $user->id)
-                        ->orWhere('pic_user_id', $user->id)
-                        ->orWhereHas('approvalFlows', fn ($f) => $f->where('approver_id', $user->id));
-                });
-            })
             ->when($search !== '', function ($q) use ($search) {
                 $q->where(function ($inner) use ($search) {
                     $inner->where('number', 'like', "%{$search}%")
@@ -61,6 +51,157 @@ class MarcommTrackerController extends Controller
             'jobCategories' => MarcommTracker::JOB_CATEGORIES,
             'jobStatuses' => MarcommTracker::JOB_STATUSES,
             'workflowStatuses' => MarcommTracker::WORKFLOW_STATUSES,
+        ]);
+    }
+
+    public function dashboard(Request $request): Response
+    {
+        $dateFrom = $request->get('date_from', now()->startOfMonth()->toDateString());
+        $dateTo = $request->get('date_to', now()->toDateString());
+        $jobCategory = trim((string) $request->get('job_category', ''));
+        $picUserId = $request->get('pic_user_id');
+
+        $base = $this->visibleQuery()
+            ->when($dateFrom, fn ($q) => $q->whereDate('created_at', '>=', $dateFrom))
+            ->when($dateTo, fn ($q) => $q->whereDate('created_at', '<=', $dateTo))
+            ->when($jobCategory !== '', fn ($q) => $q->where('job_category', $jobCategory))
+            ->when($picUserId, fn ($q) => $q->where('pic_user_id', (int) $picUserId));
+
+        $total = (clone $base)->count();
+        $byWorkflow = (clone $base)
+            ->select('workflow_status', DB::raw('COUNT(*) as total'))
+            ->groupBy('workflow_status')
+            ->pluck('total', 'workflow_status')
+            ->all();
+
+        $byJobStatus = (clone $base)
+            ->select('job_status', DB::raw('COUNT(*) as total'))
+            ->groupBy('job_status')
+            ->pluck('total', 'job_status')
+            ->all();
+
+        $byCategory = (clone $base)
+            ->select('job_category', DB::raw('COUNT(*) as total'))
+            ->groupBy('job_category')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => [
+                'category' => $r->job_category,
+                'total' => (int) $r->total,
+            ])
+            ->values()
+            ->all();
+
+        $picRows = (clone $base)
+            ->select('pic_user_id', DB::raw('COUNT(*) as total'))
+            ->groupBy('pic_user_id')
+            ->orderByDesc('total')
+            ->get();
+
+        $picNames = User::query()
+            ->whereIn('id', $picRows->pluck('pic_user_id')->filter()->all())
+            ->pluck('nama_lengkap', 'id');
+
+        $byPic = $picRows->map(function ($r) use ($base, $picNames) {
+            $picBase = (clone $base)->where('pic_user_id', $r->pic_user_id);
+            $approved = (clone $picBase)->where('workflow_status', 'approved')->count();
+            $submitted = (clone $picBase)->where('workflow_status', 'submitted')->count();
+            $overdue = (clone $picBase)
+                ->whereNotNull('due_date')
+                ->whereDate('due_date', '<', now()->toDateString())
+                ->where('workflow_status', '!=', 'approved')
+                ->count();
+
+            return [
+                'pic_user_id' => $r->pic_user_id,
+                'pic_name' => $picNames[$r->pic_user_id] ?? 'Unknown',
+                'total' => (int) $r->total,
+                'approved' => $approved,
+                'submitted' => $submitted,
+                'overdue' => $overdue,
+                'progress_pct' => $r->total > 0 ? round(($approved / $r->total) * 100, 1) : 0,
+            ];
+        })->values()->all();
+
+        $overdueCount = (clone $base)
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '<', now()->toDateString())
+            ->where('workflow_status', '!=', 'approved')
+            ->count();
+
+        $dueSoonCount = (clone $base)
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '>=', now()->toDateString())
+            ->whereDate('due_date', '<=', now()->addDays(7)->toDateString())
+            ->where('workflow_status', '!=', 'approved')
+            ->count();
+
+        $approved = (int) ($byWorkflow['approved'] ?? 0);
+        $submitted = (int) ($byWorkflow['submitted'] ?? 0);
+        $draft = (int) ($byWorkflow['draft'] ?? 0);
+        $rejected = (int) ($byWorkflow['rejected'] ?? 0);
+        $completionRate = $total > 0 ? round(($approved / $total) * 100, 1) : 0;
+
+        $trend = (clone $base)
+            ->select(DB::raw('DATE(created_at) as day'), DB::raw('COUNT(*) as total'))
+            ->groupBy(DB::raw('DATE(created_at)'))
+            ->orderBy('day')
+            ->get()
+            ->map(fn ($r) => [
+                'day' => $r->day,
+                'total' => (int) $r->total,
+            ])
+            ->values()
+            ->all();
+
+        $recentTasks = (clone $base)
+            ->with(['pic:id,nama_lengkap'])
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get(['id', 'number', 'job_category', 'pic_user_id', 'due_date', 'job_status', 'workflow_status', 'created_at']);
+
+        $overdueTasks = (clone $base)
+            ->with(['pic:id,nama_lengkap'])
+            ->whereNotNull('due_date')
+            ->whereDate('due_date', '<', now()->toDateString())
+            ->where('workflow_status', '!=', 'approved')
+            ->orderBy('due_date')
+            ->limit(15)
+            ->get(['id', 'number', 'job_category', 'pic_user_id', 'due_date', 'job_status', 'workflow_status']);
+
+        $jobStatusBreakdown = collect(MarcommTracker::JOB_STATUSES)->map(fn ($label, $key) => [
+            'key' => $key,
+            'label' => $label,
+            'total' => (int) ($byJobStatus[$key] ?? 0),
+        ])->values()->all();
+
+        return Inertia::render('MarcommTracker/Dashboard', [
+            'filters' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'job_category' => $jobCategory,
+                'pic_user_id' => $picUserId ? (int) $picUserId : '',
+            ],
+            'jobCategories' => MarcommTracker::JOB_CATEGORIES,
+            'jobStatuses' => MarcommTracker::JOB_STATUSES,
+            'workflowStatuses' => MarcommTracker::WORKFLOW_STATUSES,
+            'picUsers' => $this->picUsers(),
+            'summary' => [
+                'total' => $total,
+                'draft' => $draft,
+                'submitted' => $submitted,
+                'approved' => $approved,
+                'rejected' => $rejected,
+                'overdue' => $overdueCount,
+                'due_soon' => $dueSoonCount,
+                'completion_rate' => $completionRate,
+            ],
+            'byCategory' => $byCategory,
+            'byJobStatus' => $jobStatusBreakdown,
+            'byPic' => $byPic,
+            'trend' => $trend,
+            'recentTasks' => $recentTasks,
+            'overdueTasks' => $overdueTasks,
         ]);
     }
 
@@ -546,28 +687,31 @@ class MarcommTrackerController extends Controller
         return $prefix.str_pad((string) $seq, 4, '0', STR_PAD_LEFT);
     }
 
-    private function findVisible($id): MarcommTracker
+    private function visibleQuery()
     {
         $user = auth()->user();
         $isSuperadmin = $this->isSuperadmin($user);
 
-        $query = MarcommTracker::query()
+        return MarcommTracker::query()
+            ->when(! $isSuperadmin, function ($q) use ($user) {
+                $q->where(function ($inner) use ($user) {
+                    $inner->where('created_by', $user->id)
+                        ->orWhere('pic_user_id', $user->id)
+                        ->orWhereHas('approvalFlows', fn ($f) => $f->where('approver_id', $user->id));
+                });
+            });
+    }
+
+    private function findVisible($id): MarcommTracker
+    {
+        return $this->visibleQuery()
             ->with([
                 'pic:id,nama_lengkap,division_id,email',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap,email',
             ])
-            ->where('id', $id);
-
-        if (! $isSuperadmin) {
-            $query->where(function ($inner) use ($user) {
-                $inner->where('created_by', $user->id)
-                    ->orWhere('pic_user_id', $user->id)
-                    ->orWhereHas('approvalFlows', fn ($f) => $f->where('approver_id', $user->id));
-            });
-        }
-
-        return $query->firstOrFail();
+            ->where('id', $id)
+            ->firstOrFail();
     }
 
     private function canEdit(MarcommTracker $record, $user): bool
