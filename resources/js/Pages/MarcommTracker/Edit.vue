@@ -1,16 +1,16 @@
 <template>
   <AppLayout>
-    <div class="w-full max-w-4xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
-      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+    <div class="w-full max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
         <div>
-          <h1 class="text-2xl font-bold text-gray-800">Edit Marcomm Tracker</h1>
-          <p class="text-sm text-gray-500 mt-1">{{ record.number }} · Workflow: {{ record.workflow_status }}</p>
+          <h1 class="text-xl font-bold text-gray-900">Edit Marcomm Tracker</h1>
+          <p class="text-sm text-gray-500 mt-0.5">{{ record.number }} · {{ record.workflow_status }}</p>
         </div>
         <Link
           :href="route('marcomm-trackers.show', record.id)"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700"
+          class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-50"
         >
-          <i class="fa-solid fa-arrow-left"></i> Kembali
+          <i class="fa-solid fa-arrow-left text-xs"></i> Kembali
         </Link>
       </div>
 
@@ -22,19 +22,19 @@
           :pic-users="picUsers"
         />
 
-        <div class="mt-6 flex justify-end gap-3">
+        <div class="mt-5 flex justify-end gap-2.5 sticky bottom-0 py-3 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
           <Link
             :href="route('marcomm-trackers.show', record.id)"
-            class="px-4 py-2 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+            class="px-4 py-2.5 rounded-lg text-sm border border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
           >
             Batal
           </Link>
           <button
             type="submit"
-            class="px-5 py-2 rounded-lg bg-pink-600 text-white hover:bg-pink-700 disabled:opacity-50"
+            class="px-5 py-2.5 rounded-lg text-sm font-medium bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50 shadow-sm"
             :disabled="form.processing"
           >
-            <i class="fa-solid fa-save mr-1"></i>
+            <i class="fa-solid fa-save mr-1.5"></i>
             {{ form.processing ? 'Menyimpan...' : 'Update' }}
           </button>
         </div>

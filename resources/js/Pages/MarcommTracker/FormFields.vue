@@ -1,147 +1,189 @@
 <template>
-  <div class="space-y-6">
-    <div class="bg-white rounded-xl shadow p-6">
-      <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-500 mb-4">Job Info</h2>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">Job Category *</label>
-          <select v-model="form.job_category" required class="w-full rounded-lg border-gray-300">
-            <option value="" disabled>Pilih category</option>
-            <option v-for="c in jobCategories" :key="c" :value="c">{{ c }}</option>
-          </select>
-          <p v-if="form.errors?.job_category" class="text-sm text-red-600 mt-1">{{ form.errors.job_category }}</p>
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">PIC *</label>
-          <select v-model="form.pic_user_id" required class="w-full rounded-lg border-gray-300">
-            <option value="" disabled>Pilih PIC (divisi 7 & 17)</option>
-            <option v-for="u in picUsers" :key="u.id" :value="u.id">
-              {{ u.nama_lengkap }} (div {{ u.division_id }})
-            </option>
-          </select>
-          <p v-if="form.errors?.pic_user_id" class="text-sm text-red-600 mt-1">{{ form.errors.pic_user_id }}</p>
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">Due Date</label>
-          <input v-model="form.due_date" type="date" class="w-full rounded-lg border-gray-300" />
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-gray-600 mb-1">Status *</label>
-          <select v-model="form.job_status" required class="w-full rounded-lg border-gray-300">
-            <option v-for="(label, key) in jobStatuses" :key="key" :value="key">{{ label }}</option>
-          </select>
-          <p class="text-xs text-gray-500 mt-1">Submitted / Approved otomatis dari approval flow.</p>
-        </div>
+  <div class="space-y-5">
+    <!-- Job Info -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
+        <h2 class="text-sm font-semibold text-gray-800">Job Info</h2>
       </div>
+      <div class="p-5 space-y-5">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Job Category <span class="text-red-500">*</span></label>
+            <select v-model="form.job_category" required :class="inputClass">
+              <option value="" disabled>Pilih category</option>
+              <option v-for="c in jobCategories" :key="c" :value="c">{{ c }}</option>
+            </select>
+            <p v-if="form.errors?.job_category" class="text-sm text-red-600 mt-1">{{ form.errors.job_category }}</p>
+          </div>
 
-      <div class="mt-4">
-        <label class="block text-xs font-semibold text-gray-600 mb-1">
-          Remark Status — {{ jobStatuses[form.job_status] || form.job_status }}
-        </label>
-        <textarea
-          v-model="form.status_remarks[form.job_status]"
-          rows="3"
-          class="w-full rounded-lg border-gray-300"
-          :placeholder="`Remark untuk ${jobStatuses[form.job_status] || form.job_status}`"
-        ></textarea>
-        <div class="mt-2 flex flex-wrap gap-2 text-xs text-gray-500">
-          <span
-            v-for="(label, key) in jobStatuses"
-            :key="key"
-            class="px-2 py-0.5 rounded-full border"
-            :class="key === form.job_status ? 'border-pink-400 bg-pink-50 text-pink-700' : 'border-gray-200'"
-          >
-            {{ label }}: {{ form.status_remarks[key] ? 'ada remark' : 'kosong' }}
-          </span>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">PIC <span class="text-red-500">*</span></label>
+            <select v-model="form.pic_user_id" required :class="inputClass">
+              <option value="" disabled>Pilih PIC</option>
+              <option v-for="u in picUsers" :key="u.id" :value="u.id">{{ u.nama_lengkap }}</option>
+            </select>
+            <p v-if="form.errors?.pic_user_id" class="text-sm text-red-600 mt-1">{{ form.errors.pic_user_id }}</p>
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Due Date</label>
+            <input v-model="form.due_date" type="date" :class="inputClass" />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Status <span class="text-red-500">*</span></label>
+            <select v-model="form.job_status" required :class="inputClass">
+              <option v-for="(label, key) in jobStatuses" :key="key" :value="key">{{ label }}</option>
+            </select>
+          </div>
         </div>
-      </div>
 
-      <div class="mt-4">
-        <label class="block text-xs font-semibold text-gray-600 mb-1">Task</label>
-        <RichTextEditor v-model="form.task" min-height="160px" placeholder="Deskripsi task..." />
-      </div>
-
-      <div class="mt-4">
-        <div class="flex items-center justify-between mb-2">
-          <label class="block text-xs font-semibold text-gray-600">Output Link</label>
-          <button
-            type="button"
-            class="text-xs px-2 py-1 rounded bg-pink-100 text-pink-700 hover:bg-pink-200"
-            @click="addLink"
-          >
-            <i class="fa-solid fa-plus mr-1"></i>Tambah Link
-          </button>
+        <!-- Remark per status -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-2">Remark Status</label>
+          <div class="flex flex-wrap gap-1.5 mb-3">
+            <button
+              v-for="(label, key) in jobStatuses"
+              :key="key"
+              type="button"
+              class="px-3 py-1.5 rounded-md text-sm font-medium transition"
+              :class="remarkTab === key
+                ? 'bg-rose-600 text-white shadow-sm'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+              @click="remarkTab = key"
+            >
+              {{ label }}
+              <span
+                v-if="form.status_remarks[key]"
+                class="ml-1 inline-block w-1.5 h-1.5 rounded-full align-middle"
+                :class="remarkTab === key ? 'bg-white' : 'bg-rose-500'"
+              ></span>
+            </button>
+          </div>
+          <textarea
+            v-model="form.status_remarks[remarkTab]"
+            rows="3"
+            :class="inputClass"
+            :placeholder="`Remark untuk ${jobStatuses[remarkTab] || remarkTab}`"
+          ></textarea>
+          <p class="text-xs text-gray-500 mt-1.5">
+            Status aktif job: <span class="font-medium text-gray-700">{{ jobStatuses[form.job_status] }}</span>.
+            Remark tiap status tersimpan terpisah.
+          </p>
         </div>
-        <div v-if="!form.output_links.length" class="text-sm text-gray-400">Belum ada link. Klik Tambah Link.</div>
-        <div v-for="(link, idx) in form.output_links" :key="idx" class="flex gap-2 mb-2">
-          <input
-            v-model="form.output_links[idx]"
-            type="url"
-            placeholder="https://..."
-            class="flex-1 rounded-lg border-gray-300"
-          />
-          <button type="button" class="px-3 py-2 rounded-lg bg-red-100 text-red-700" @click="removeLink(idx)">
-            <i class="fa-solid fa-trash"></i>
-          </button>
-        </div>
-      </div>
 
-      <div class="mt-4">
-        <label class="block text-xs font-semibold text-gray-600 mb-1">Remarks</label>
-        <textarea v-model="form.remarks" rows="3" class="w-full rounded-lg border-gray-300" placeholder="Catatan umum..."></textarea>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Task</label>
+          <RichTextEditor v-model="form.task" min-height="140px" placeholder="Deskripsi task..." />
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-sm font-medium text-gray-700">Output Link</label>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 text-sm font-medium text-rose-600 hover:text-rose-700"
+              @click="addLink"
+            >
+              <i class="fa-solid fa-plus text-xs"></i> Tambah
+            </button>
+          </div>
+          <div v-if="!form.output_links.length" class="text-sm text-gray-400 py-2">Belum ada link.</div>
+          <div class="space-y-2">
+            <div v-for="(link, idx) in form.output_links" :key="idx" class="flex gap-2 items-center">
+              <input
+                v-model="form.output_links[idx]"
+                type="url"
+                placeholder="https://..."
+                :class="inputClass"
+              />
+              <button
+                type="button"
+                class="shrink-0 w-10 h-10 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition"
+                title="Hapus"
+                @click="removeLink(idx)"
+              >
+                <i class="fa-solid fa-trash text-sm"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Remarks</label>
+          <textarea
+            v-model="form.remarks"
+            rows="3"
+            :class="inputClass"
+            placeholder="Catatan umum..."
+          ></textarea>
+        </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-xl shadow p-6">
-      <h2 class="text-lg font-semibold text-gray-800 mb-1">Approval Flow</h2>
-      <p class="text-sm text-gray-500 mb-4">
-        Tambahkan approver dari level terendah ke tertinggi. Setelah ada approver, status workflow otomatis
-        <strong>Submitted</strong>. Setelah semua approve → <strong>Approved</strong>.
-      </p>
-
-      <input
-        v-model="approverSearch"
-        type="text"
-        placeholder="Cari nama / jabatan approver..."
-        class="w-full rounded-lg border-gray-300 mb-4"
-        @input="searchApprovers"
-      />
-
-      <div v-if="approverResults.length > 0" class="border rounded-lg mb-4 max-h-48 overflow-y-auto divide-y">
-        <button
-          v-for="user in approverResults"
-          :key="user.id"
-          type="button"
-          class="w-full text-left px-4 py-2 hover:bg-pink-50 text-sm"
-          @click="addApprover(user)"
-        >
-          <div class="font-medium text-gray-800">{{ user.nama_lengkap }}</div>
-          <div class="text-xs text-gray-500">{{ user.jabatan || '-' }} · {{ user.email }}</div>
-        </button>
+    <!-- Approval Flow -->
+    <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
+        <h2 class="text-sm font-semibold text-gray-800">Approval Flow</h2>
+        <p class="text-xs text-gray-500 mt-0.5">
+          Level terendah → tertinggi. Ada approver = Submitted; semua approve = Approved.
+        </p>
       </div>
-
-      <div
-        v-if="form.approvers.length === 0"
-        class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 mb-3"
-      >
-        Belum ada approver — tracker akan tersimpan sebagai Draft.
-      </div>
-
-      <div v-else class="space-y-2">
-        <div
-          v-for="(approver, index) in form.approvers"
-          :key="approver.id"
-          class="flex items-center justify-between rounded-lg border px-4 py-2 bg-gray-50"
-        >
-          <div>
-            <div class="text-sm font-medium text-gray-800">
-              Level {{ index + 1 }} · {{ approver.nama_lengkap || approver.name }}
-            </div>
-            <div class="text-xs text-gray-500">{{ approver.jabatan || '-' }} · {{ approver.email }}</div>
+      <div class="p-5">
+        <div class="relative mb-4">
+          <i class="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+          <input
+            v-model="approverSearch"
+            type="text"
+            placeholder="Cari nama / jabatan approver..."
+            class="w-full pl-9 pr-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+            @input="searchApprovers"
+          />
+          <div
+            v-if="approverResults.length > 0"
+            class="absolute z-20 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-52 overflow-y-auto"
+          >
+            <button
+              v-for="user in approverResults"
+              :key="user.id"
+              type="button"
+              class="w-full text-left px-4 py-2.5 hover:bg-rose-50 text-sm border-b border-gray-100 last:border-0"
+              @click="addApprover(user)"
+            >
+              <div class="font-medium text-gray-800">{{ user.nama_lengkap }}</div>
+              <div class="text-xs text-gray-500">{{ user.jabatan || '-' }} · {{ user.email }}</div>
+            </button>
           </div>
-          <button type="button" class="text-red-600 hover:text-red-800" @click="removeApprover(index)">
-            <i class="fa-solid fa-times"></i>
-          </button>
+        </div>
+
+        <div
+          v-if="form.approvers.length === 0"
+          class="rounded-lg border border-dashed border-amber-300 bg-amber-50/60 px-4 py-3 text-sm text-amber-800"
+        >
+          Belum ada approver — akan tersimpan sebagai Draft.
+        </div>
+
+        <div v-else class="space-y-2">
+          <div
+            v-for="(approver, index) in form.approvers"
+            :key="approver.id"
+            class="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2.5 bg-white"
+          >
+            <span class="shrink-0 w-7 h-7 rounded-full bg-rose-100 text-rose-700 text-xs font-bold flex items-center justify-center">
+              {{ index + 1 }}
+            </span>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium text-gray-800 truncate">{{ approver.nama_lengkap || approver.name }}</div>
+              <div class="text-xs text-gray-500 truncate">{{ approver.jabatan || '-' }} · {{ approver.email }}</div>
+            </div>
+            <button
+              type="button"
+              class="shrink-0 w-8 h-8 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition"
+              @click="removeApprover(index)"
+            >
+              <i class="fa-solid fa-times"></i>
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -151,7 +193,7 @@
 <script setup>
 import RichTextEditor from '@/Components/RichTextEditor.vue';
 import axios from 'axios';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 
 const props = defineProps({
   form: { type: Object, required: true },
@@ -160,9 +202,20 @@ const props = defineProps({
   picUsers: { type: Array, default: () => [] },
 });
 
+const inputClass =
+  'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500';
+
+const remarkTab = ref(props.form.job_status || 'on_progress');
 const approverSearch = ref('');
 const approverResults = ref([]);
 let searchTimer = null;
+
+watch(
+  () => props.form.job_status,
+  (val) => {
+    if (val) remarkTab.value = val;
+  }
+);
 
 const addLink = () => {
   props.form.output_links.push('');
