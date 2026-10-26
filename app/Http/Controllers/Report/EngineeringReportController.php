@@ -677,4 +677,233 @@ class EngineeringReportController extends Controller
             'retail_non_food' => $retailNonFoods,
         ]);
     }
+
+    /**
+     * Item Engineering Breakdown — penjualan menu + detail bahan cut (BOM).
+     * Qty/unit/cost bahan dari item_bom × qty terjual, cost = last_cost_small outlet warehouse.
+     */
+    public function reportItemEngineeringBreakdown(Request $request)
+    {
+        $outlet = $request->input('outlet');
+        $region = $request->input('region');
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        $outletCandidates = $this->resolveOutletCandidates($outlet);
+
+        if (empty($outletCandidates) && !$region) {
+            return response()->json([
+                'message' => 'Pilih outlet terlebih dahulu (cost bahan per outlet).',
+                'items' => [],
+                'items_by_category' => (object) [],
+                'grand_total_sales' => 0,
+                'grand_total_cost' => 0,
+            ], 422);
+        }
+
+        // Untuk cost akurat, pakai 1 outlet (qr → id_outlet). Region tanpa outlet = tolak.
+        if (empty($outletCandidates)) {
+            return response()->json([
+                'message' => 'Pilih outlet spesifik untuk breakdown cost bahan.',
+                'items' => [],
+                'items_by_category' => (object) [],
+                'grand_total_sales' => 0,
+                'grand_total_cost' => 0,
+            ], 422);
+        }
+
+        $numericCandidates = array_values(array_filter(array_map('intval', $outletCandidates)));
+        $outletRow = DB::table('tbl_data_outlet')
+            ->where(function ($q) use ($outletCandidates, $numericCandidates) {
+                $q->whereIn('qr_code', $outletCandidates);
+                if (!empty($numericCandidates)) {
+                    $q->orWhereIn('id_outlet', $numericCandidates);
+                }
+            })
+            ->select('id_outlet', 'qr_code', 'nama_outlet')
+            ->first();
+
+        if (!$outletRow) {
+            return response()->json([
+                'message' => 'Outlet tidak ditemukan.',
+                'items' => [],
+                'items_by_category' => (object) [],
+                'grand_total_sales' => 0,
+                'grand_total_cost' => 0,
+            ], 404);
+        }
+
+        $outletId = (int) $outletRow->id_outlet;
+        $qrCode = (string) $outletRow->qr_code;
+
+        $query = DB::table('order_items')
+            ->join('orders', 'order_items.order_id', '=', 'orders.id')
+            ->leftJoin('items', 'order_items.item_id', '=', 'items.id')
+            ->leftJoin('categories', 'items.category_id', '=', 'categories.id')
+            ->where('orders.kode_outlet', $qrCode)
+            ->whereNotNull('order_items.item_id')
+            ->select([
+                'items.id as item_id',
+                'items.name as item_name',
+                'items.type as item_type',
+                'categories.name as category_name',
+                DB::raw('SUM(order_items.qty) as qty_terjual'),
+                DB::raw('MAX(order_items.price) as harga_jual'),
+                DB::raw('SUM(order_items.qty * order_items.price) as subtotal'),
+            ]);
+
+        if ($dateFrom) {
+            $query->whereDate('orders.created_at', '>=', $dateFrom);
+        }
+        if ($dateTo) {
+            $query->whereDate('orders.created_at', '<=', $dateTo);
+        }
+
+        $sales = $query
+            ->groupBy('items.id', 'items.name', 'items.type', 'categories.name')
+            ->orderBy('categories.name')
+            ->orderByDesc('qty_terjual')
+            ->get();
+
+        if ($sales->isEmpty()) {
+            return response()->json([
+                'outlet_name' => $outletRow->nama_outlet,
+                'items' => [],
+                'items_by_category' => (object) [],
+                'grand_total_sales' => 0,
+                'grand_total_cost' => 0,
+            ]);
+        }
+
+        $menuIds = $sales->pluck('item_id')->filter()->unique()->values()->all();
+
+        $bomRows = DB::table('item_bom as bom')
+            ->join('items as mat', 'bom.material_item_id', '=', 'mat.id')
+            ->leftJoin('categories as mat_cat', 'mat.category_id', '=', 'mat_cat.id')
+            ->leftJoin('units as u', 'bom.unit_id', '=', 'u.id')
+            ->whereIn('bom.item_id', $menuIds)
+            ->where(function ($q) {
+                $q->where('bom.stock_cut', 0)->orWhereNull('bom.stock_cut');
+            })
+            ->where(function ($q) {
+                $q->whereNull('mat_cat.is_asset')->orWhere('mat_cat.is_asset', '0')->orWhere('mat_cat.is_asset', 0);
+            })
+            ->select([
+                'bom.item_id as menu_item_id',
+                'bom.material_item_id',
+                'bom.qty as bom_qty',
+                'bom.unit_id',
+                'mat.name as material_name',
+                'u.name as unit_name',
+            ])
+            ->get()
+            ->groupBy('menu_item_id');
+
+        $materialIds = $bomRows->flatten(1)->pluck('material_item_id')->unique()->filter()->values()->all();
+
+        $kitchenWhId = (int) (DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('name', 'Kitchen')
+            ->where('status', 'active')
+            ->value('id') ?? 0);
+        $barWhId = (int) (DB::table('warehouse_outlets')
+            ->where('outlet_id', $outletId)
+            ->where('name', 'Bar')
+            ->where('status', 'active')
+            ->value('id') ?? 0);
+
+        $inventoryByItem = collect();
+        $costByMaterialWarehouse = [];
+        if (!empty($materialIds)) {
+            $inventoryByItem = DB::table('outlet_food_inventory_items')
+                ->whereIn('item_id', $materialIds)
+                ->get(['id', 'item_id'])
+                ->keyBy('item_id');
+
+            $inventoryIds = $inventoryByItem->pluck('id')->all();
+            $whIds = array_values(array_filter([$kitchenWhId, $barWhId]));
+            if (!empty($inventoryIds) && !empty($whIds)) {
+                $stocks = DB::table('outlet_food_inventory_stocks')
+                    ->where('id_outlet', $outletId)
+                    ->whereIn('inventory_item_id', $inventoryIds)
+                    ->whereIn('warehouse_outlet_id', $whIds)
+                    ->get(['inventory_item_id', 'warehouse_outlet_id', 'last_cost_small']);
+
+                $invItemToMaterial = $inventoryByItem->mapWithKeys(fn ($row) => [(int) $row->id => (int) $row->item_id]);
+                foreach ($stocks as $stock) {
+                    $matId = $invItemToMaterial[(int) $stock->inventory_item_id] ?? null;
+                    if (!$matId) {
+                        continue;
+                    }
+                    $costByMaterialWarehouse[$matId . '-' . (int) $stock->warehouse_outlet_id] = (float) ($stock->last_cost_small ?? 0);
+                }
+            }
+        }
+
+        $items = [];
+        $grandSales = 0.0;
+        $grandCost = 0.0;
+
+        foreach ($sales as $row) {
+            $qtySold = (float) $row->qty_terjual;
+            $salesTotal = (float) $row->subtotal;
+            $grandSales += $salesTotal;
+
+            $type = (string) ($row->item_type ?? '');
+            $warehouseId = in_array($type, ['Food Asian', 'Food Western', 'Food'], true)
+                ? $kitchenWhId
+                : ($type === 'Beverages' ? $barWhId : ($kitchenWhId ?: $barWhId));
+
+            $cuts = [];
+            $menuCost = 0.0;
+            foreach ($bomRows->get($row->item_id, collect()) as $bom) {
+                $qtyNeeded = (float) $bom->bom_qty * $qtySold;
+                $unitCost = $costByMaterialWarehouse[$bom->material_item_id . '-' . $warehouseId] ?? 0.0;
+                $lineCost = $qtyNeeded * $unitCost;
+                $menuCost += $lineCost;
+                $cuts[] = [
+                    'material_item_id' => (int) $bom->material_item_id,
+                    'material_name' => $bom->material_name,
+                    'bom_qty' => round((float) $bom->bom_qty, 4),
+                    'qty' => round($qtyNeeded, 4),
+                    'unit' => $bom->unit_name ?: '-',
+                    'unit_cost' => round($unitCost, 2),
+                    'cost' => round($lineCost, 2),
+                ];
+            }
+
+            usort($cuts, fn ($a, $b) => strcmp($a['material_name'], $b['material_name']));
+            $grandCost += $menuCost;
+
+            $items[] = [
+                'item_id' => (int) $row->item_id,
+                'item_name' => $row->item_name,
+                'category_name' => $row->category_name ?: 'Uncategorized',
+                'item_type' => $type,
+                'qty_terjual' => $qtySold,
+                'harga_jual' => (float) $row->harga_jual,
+                'subtotal' => round($salesTotal, 2),
+                'total_cost' => round($menuCost, 2),
+                'cost_per_portion' => $qtySold > 0 ? round($menuCost / $qtySold, 2) : 0,
+                'cut_items' => $cuts,
+                'cut_count' => count($cuts),
+            ];
+        }
+
+        $itemsByCategory = collect($items)->groupBy('category_name')->map(function ($categoryItems) {
+            return [
+                'items' => $categoryItems->values(),
+                'total_qty' => $categoryItems->sum('qty_terjual'),
+                'total_subtotal' => $categoryItems->sum('subtotal'),
+                'total_cost' => $categoryItems->sum('total_cost'),
+            ];
+        });
+
+        return response()->json([
+            'outlet_name' => $outletRow->nama_outlet,
+            'items' => $items,
+            'items_by_category' => $itemsByCategory,
+            'grand_total_sales' => round($grandSales, 2),
+            'grand_total_cost' => round($grandCost, 2),
+        ]);
+    }
 }

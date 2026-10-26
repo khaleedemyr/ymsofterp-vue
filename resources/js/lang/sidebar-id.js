@@ -201,6 +201,7 @@ export default {
     "receiving_sheet": "Lembar Penerimaan",
     "petty_cash_report": "Laporan Petty Cash",
     "item_engineering": "Item Engineering",
+    "item_engineering_breakdown": "Item Engineering Breakdown",
     "product_sales_pivot": "Product Sales by Outlet",
     "jurnal": "Jurnal",
     "buku_besar": "Buku Besar",

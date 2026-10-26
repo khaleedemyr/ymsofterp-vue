@@ -530,6 +530,12 @@ const menuGroups = [
                 code: 'modal_x_engineering',
             },
             {
+                name: () => t('sidebar.menus.item_engineering_breakdown'),
+                icon: 'fa-solid fa-layer-group',
+                route: '/item-engineering-breakdown',
+                code: 'item_engineering_breakdown',
+            },
+            {
                 name: () => t('sidebar.menus.outlet_revenue_recap'),
                 icon: 'fa-solid fa-chart-column',
                 route: '/report/outlet-revenue-recap',

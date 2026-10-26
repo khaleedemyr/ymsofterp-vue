@@ -2620,6 +2620,7 @@ Route::get('/api/my-outlet-qr', [\App\Http\Controllers\Report\ReportHelperContro
 
 // API untuk item engineering
 Route::get('/api/report/item-engineering', [\App\Http\Controllers\Report\EngineeringReportController::class, 'reportItemEngineering']);
+Route::get('/api/report/item-engineering-breakdown', [\App\Http\Controllers\Report\EngineeringReportController::class, 'reportItemEngineeringBreakdown']);
 Route::get('/api/report/outlet-revenue-recap', [\App\Http\Controllers\Report\OutletRevenueRecapController::class, 'report']);
 Route::get('/api/report/fb-product-calibration', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'report']);
 Route::get('/report/fb-product-calibration/export', [\App\Http\Controllers\Report\FbProductCalibrationReportController::class, 'export'])
@@ -2654,6 +2655,9 @@ Route::get('/report/outlet-revenue-recap', [\App\Http\Controllers\Report\OutletR
 // Web route untuk halaman
 Route::get('/item-engineering', function () {
     return Inertia::render('Report/ItemEngineering');
+})->middleware(['auth']);
+Route::get('/item-engineering-breakdown', function () {
+    return Inertia::render('Report/ItemEngineeringBreakdown');
 })->middleware(['auth']);
 
 Route::get('/report/product-sales-pivot', [\App\Http\Controllers\Report\ProductSalesPivotReportController::class, 'index'])
