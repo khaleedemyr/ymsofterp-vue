@@ -666,6 +666,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.scrapper_google_review'), icon: 'fa-brands fa-google', route: '/scrapper-google-review', code: 'scrapper_google_review' },
             { name: () => t('sidebar.menus.promo'), icon: 'fa-solid fa-tag', route: '/promos', code: 'promos' },
             { name: () => t('sidebar.menus.marketing_visit_checklist'), icon: 'fa-solid fa-clipboard-check', route: '/marketing-visit-checklist', code: 'marketing_visit_checklist_view' },
+            { name: () => t('sidebar.menus.marcomm_tracker'), icon: 'fa-solid fa-bullhorn', route: '/marcomm-trackers', code: 'marcomm_tracker' },
             { name: () => t('sidebar.menus.reservasi'), icon: 'fa-solid fa-calendar-check', route: '/reservations', code: 'reservations' },
             { name: () => t('sidebar.menus.data_roulette'), icon: 'fa-solid fa-dice', route: '/roulette', code: 'data_roulette' },
             { name: () => t('sidebar.menus.menu_book'), icon: 'fa-solid fa-book-open', route: '/menu-book', code: 'menu_book' },

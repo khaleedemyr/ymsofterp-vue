@@ -76,6 +76,7 @@ class PendingApprovalController extends Controller
                 'npd_plan_reports' => [],
                 'employee_onboardings' => [],
                 'wfh_requests' => [],
+                'marcomm_trackers' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -541,6 +542,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading WFH Request approvals: ' . $e->getMessage());
+            }
+
+            // 29. Marcomm Tracker
+            try {
+                $mtController = app(\App\Http\Controllers\MarcommTrackerController::class);
+                $mtResponse = $mtController->getPendingApprovals();
+                if ($mtResponse->getStatusCode() === 200) {
+                    $mtData = json_decode($mtResponse->getContent(), true);
+                    $data['marcomm_trackers'] = $mtData['trackers'] ?? [];
+                    if ($limit > 0 && count($data['marcomm_trackers']) > $limit) {
+                        $data['marcomm_trackers'] = array_slice($data['marcomm_trackers'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Marcomm Tracker approvals: ' . $e->getMessage());
             }
 
                 return $data;

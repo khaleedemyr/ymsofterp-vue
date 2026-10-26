@@ -1130,6 +1130,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/wfh-requests/{id}/approve', [\App\Http\Controllers\WfhRequestController::class, 'approve'])->name('wfh-requests.approve');
     Route::post('/wfh-requests/{id}/reject', [\App\Http\Controllers\WfhRequestController::class, 'reject'])->name('wfh-requests.reject');
 
+    Route::get('/marcomm-trackers/approvers', [\App\Http\Controllers\MarcommTrackerController::class, 'getApprovers'])->name('marcomm-trackers.approvers');
+    Route::get('/marcomm-trackers/pic-users', [\App\Http\Controllers\MarcommTrackerController::class, 'getPicUsers'])->name('marcomm-trackers.pic-users');
+    Route::resource('marcomm-trackers', \App\Http\Controllers\MarcommTrackerController::class);
+    Route::post('/marcomm-trackers/{id}/approve', [\App\Http\Controllers\MarcommTrackerController::class, 'approve'])->name('marcomm-trackers.approve');
+    Route::post('/marcomm-trackers/{id}/reject', [\App\Http\Controllers\MarcommTrackerController::class, 'reject'])->name('marcomm-trackers.reject');
+
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
     Route::resource('one-plus-one-submissions', \App\Http\Controllers\OnePlusOneSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
 
@@ -2928,6 +2934,11 @@ Route::get('/api/wfh-requests/pending-approvals', [\App\Http\Controllers\WfhRequ
 Route::get('/api/wfh-requests/{id}/approval-details', [\App\Http\Controllers\WfhRequestController::class, 'getApprovalDetails'])->name('wfh-requests.approval-details')->middleware('auth');
 Route::post('/api/wfh-requests/{id}/approve', [\App\Http\Controllers\WfhRequestController::class, 'approve'])->name('api.wfh-requests.approve')->middleware('auth');
 Route::post('/api/wfh-requests/{id}/reject', [\App\Http\Controllers\WfhRequestController::class, 'reject'])->name('api.wfh-requests.reject')->middleware('auth');
+
+Route::get('/api/marcomm-trackers/pending-approvals', [\App\Http\Controllers\MarcommTrackerController::class, 'getPendingApprovals'])->name('marcomm-trackers.pending-approvals')->middleware('auth');
+Route::get('/api/marcomm-trackers/{id}/approval-details', [\App\Http\Controllers\MarcommTrackerController::class, 'getApprovalDetails'])->name('marcomm-trackers.approval-details')->middleware('auth');
+Route::post('/api/marcomm-trackers/{id}/approve', [\App\Http\Controllers\MarcommTrackerController::class, 'approve'])->name('api.marcomm-trackers.approve')->middleware('auth');
+Route::post('/api/marcomm-trackers/{id}/reject', [\App\Http\Controllers\MarcommTrackerController::class, 'reject'])->name('api.marcomm-trackers.reject')->middleware('auth');
 Route::get('/api/sop-development-completion/pending-approvals', [SopDevelopmentCompletionController::class, 'getPendingApprovals'])->name('sop-development-completion.pending-approvals')->middleware('auth');
 Route::get('/api/sop-development-completion/{sopDevelopmentCompletion}', [SopDevelopmentCompletionController::class, 'show'])->name('sop-development-completion.show')->middleware('auth');
 Route::post('/api/sop-development-completion/{sopDevelopmentCompletion}/approve', [SopDevelopmentCompletionController::class, 'approve'])->name('sop-development-completion.approve')->middleware('auth');

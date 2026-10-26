@@ -86,6 +86,11 @@ const loadingWfhApprovals = ref(false);
 const showWfhApprovalModal = ref(false);
 const selectedWfhApproval = ref(null);
 const selectedWfhApprovals = ref(new Set());
+const pendingMarcommApprovals = ref([]);
+const loadingMarcommApprovals = ref(false);
+const showMarcommApprovalModal = ref(false);
+const selectedMarcommApproval = ref(null);
+const showAllMarcommModal = ref(false);
 const isSelectingWfhApprovals = ref(false);
 const showAllWfhModal = ref(false);
 
@@ -882,6 +887,8 @@ const prApprovalCount = computed(() => {
     return count > 0 ? count : 0;
 });
 
+const marcommApprovalCount = computed(() => pendingMarcommApprovals.value.length);
+
 const wfhApprovalCount = computed(() => {
     const count = pendingWfhApprovals.value.length;
     return count > 0 ? count : 0;
@@ -1193,6 +1200,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingCoachingApprovals.value = true;
     loadingCorrectionApprovals.value = true;
     loadingWfhApprovals.value = true;
+    loadingMarcommApprovals.value = true;
     
     try {
         const response = await axios.get('/api/pending-approvals/all', {
@@ -1205,6 +1213,7 @@ async function loadAllPendingApprovalsOptimized() {
             // Assign ke variabel yang sudah ada
             pendingPrApprovals.value = data.purchase_requisitions || [];
             pendingWfhApprovals.value = data.wfh_requests || [];
+            pendingMarcommApprovals.value = data.marcomm_trackers || [];
             pendingPoOpsApprovals.value = (data.purchase_order_ops || []).filter(po => isPoOpsVisibleToCurrentUser(po));
             pendingContraBonApprovals.value = [];
             pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
@@ -1231,6 +1240,7 @@ async function loadAllPendingApprovalsOptimized() {
             // Set loading states to false
             loadingPrApprovals.value = false;
             loadingWfhApprovals.value = false;
+            loadingMarcommApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1257,6 +1267,7 @@ async function loadAllPendingApprovalsOptimized() {
             // Set loading states to false jika response tidak success
             loadingPrApprovals.value = false;
             loadingWfhApprovals.value = false;
+            loadingMarcommApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1273,6 +1284,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingNpdPlanReportApprovals.value = false;
             loadingEmployeeOnboardingApprovals.value = false;
             loadingQa2CapApprovals.value = false;
+            loadingMarcommApprovals.value = false;
             return false;
         }
     } catch (error) {
@@ -1280,6 +1292,7 @@ async function loadAllPendingApprovalsOptimized() {
         // Set loading states to false untuk fallback
         loadingPrApprovals.value = false;
         loadingWfhApprovals.value = false;
+        loadingMarcommApprovals.value = false;
         loadingPoOpsApprovals.value = false;
         loadingContraBonApprovals.value = false;
         loadingCategoryCostApprovals.value = false;
@@ -6607,6 +6620,78 @@ function formatWfhTime(value) {
     return String(value).substring(0, 5);
 }
 
+async function showMarcommApprovalDetails(trackerId) {
+    try {
+        if (showAllMarcommModal.value) {
+            showAllMarcommModal.value = false;
+        }
+        const response = await axios.get(`/api/marcomm-trackers/${trackerId}/approval-details`);
+        if (response.data.success) {
+            selectedMarcommApproval.value = response.data.tracker;
+            showMarcommApprovalModal.value = true;
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal memuat detail Marcomm Tracker', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading Marcomm approval details:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal memuat detail Marcomm Tracker', 'error');
+    }
+}
+
+async function approveMarcomm(trackerId) {
+    try {
+        const response = await axios.post(`/api/marcomm-trackers/${trackerId}/approve`, { notes: '' });
+        if (response.data?.success) {
+            Swal.fire('Success', response.data.message || 'Marcomm Tracker berhasil disetujui', 'success');
+            showMarcommApprovalModal.value = false;
+            await loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire('Error', response.data?.message || 'Gagal menyetujui Marcomm Tracker', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving Marcomm Tracker:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal menyetujui Marcomm Tracker', 'error');
+    }
+}
+
+function showRejectMarcommModal(trackerId) {
+    Swal.fire({
+        title: 'Tolak Marcomm Tracker',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+        inputValidator: (value) => {
+            if (!value) return 'Alasan penolakan harus diisi!';
+        },
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+        try {
+            const response = await axios.post(`/api/marcomm-trackers/${trackerId}/reject`, {
+                rejection_reason: result.value,
+            });
+            if (response.data?.success) {
+                Swal.fire('Success', response.data.message || 'Marcomm Tracker berhasil ditolak', 'success');
+                showMarcommApprovalModal.value = false;
+                await loadAllPendingApprovalsOptimized();
+            } else {
+                Swal.fire('Error', response.data?.message || 'Gagal menolak Marcomm Tracker', 'error');
+            }
+        } catch (error) {
+            console.error('Error rejecting Marcomm Tracker:', error);
+            Swal.fire('Error', error.response?.data?.message || 'Gagal menolak Marcomm Tracker', 'error');
+        }
+    });
+}
+
+function openAllMarcommModal() {
+    showAllMarcommModal.value = true;
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -7562,6 +7647,65 @@ watch(locale, () => {
                             <div v-if="pendingWfhApprovals.length > 3" class="text-center pt-2">
                                 <button @click="openAllWfhModal" class="text-sm text-teal-500 hover:text-teal-700 font-medium">
                                     Lihat {{ pendingWfhApprovals.length - 3 }} WFH lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Marcomm Tracker Approval Section -->
+                <div v-if="marcommApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-pink-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa-solid fa-bullhorn mr-2 text-pink-500"></i>
+                                    Marcomm Tracker Approval
+                                </h3>
+                            </div>
+                            <div class="bg-pink-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ marcommApprovalCount }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingMarcommApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-pink-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="mt in pendingMarcommApprovals.slice(0, 3)"
+                                :key="'marcomm-approval-' + mt.id"
+                                @click="showMarcommApprovalDetails(mt.id)"
+                                class="p-3 rounded-lg transition-all duration-200 cursor-pointer hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-pink-50 hover:bg-pink-100'"
+                            >
+                                <div class="flex items-center justify-between">
+                                    <div class="flex-1">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ mt.number }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ mt.job_category }} · {{ mt.pic?.nama_lengkap || '-' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-calendar mr-1 text-pink-500"></i>
+                                            Due {{ formatDate(mt.due_date) }}
+                                            · {{ mt.job_status_label || mt.job_status }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-pink-500 font-medium">
+                                        <i class="fa fa-user-check mr-1"></i>{{ mt.approver_name || 'Marcomm Approval' }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="pendingMarcommApprovals.length > 3" class="text-center pt-2">
+                                <button @click="openAllMarcommModal" class="text-sm text-pink-500 hover:text-pink-700 font-medium">
+                                    Lihat {{ pendingMarcommApprovals.length - 3 }} tracker lainnya...
                                 </button>
                             </div>
                         </div>
@@ -9853,6 +9997,126 @@ watch(locale, () => {
                         <div class="font-semibold text-sm">{{ wfh.number }}</div>
                         <div class="text-xs text-gray-500">
                             {{ wfh.user?.nama_lengkap || '-' }} · {{ formatDate(wfh.wfh_date) }} · {{ wfh.approver_name || `Level ${wfh.approval_level || 1}` }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Marcomm Tracker Approval Detail Modal -->
+        <div v-if="showMarcommApprovalModal && selectedMarcommApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showMarcommApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa-solid fa-bullhorn mr-2 text-pink-500"></i>
+                        Detail Marcomm Tracker
+                    </h3>
+                    <button @click="showMarcommApprovalModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="bg-pink-50 dark:bg-pink-900/20 p-4 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <div class="text-xs text-gray-500">Nomor</div>
+                            <div class="font-semibold">{{ selectedMarcommApproval.number }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Job Category</div>
+                            <div class="font-semibold">{{ selectedMarcommApproval.job_category }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">PIC</div>
+                            <div class="font-semibold">{{ selectedMarcommApproval.pic?.nama_lengkap || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Due Date</div>
+                            <div class="font-semibold">{{ formatDate(selectedMarcommApproval.due_date) }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Job Status</div>
+                            <div class="font-semibold">{{ selectedMarcommApproval.job_status_label || selectedMarcommApproval.job_status }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Creator</div>
+                            <div class="font-semibold">{{ selectedMarcommApproval.creator?.nama_lengkap || '-' }}</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-2">Task</h4>
+                        <div class="text-sm prose prose-sm max-w-none" v-html="selectedMarcommApproval.task || '-'"></div>
+                    </div>
+
+                    <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                        <h4 class="text-md font-semibold text-gray-900 dark:text-white mb-3">Approval Flow</h4>
+                        <div class="space-y-2">
+                            <div
+                                v-for="flow in (selectedMarcommApproval.approval_flows || []).slice().sort((a, b) => a.approval_level - b.approval_level)"
+                                :key="flow.id"
+                                class="flex items-center justify-between p-3 rounded-lg"
+                                :class="flow.status === 'APPROVED' ? 'bg-green-100' : flow.status === 'REJECTED' ? 'bg-red-100' : 'bg-gray-100'"
+                            >
+                                <div>
+                                    <div class="text-xs font-semibold text-pink-600">Level {{ flow.approval_level }}</div>
+                                    <div class="font-medium text-gray-900">{{ flow.approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <span
+                                    class="px-2 py-1 rounded text-xs font-medium text-white"
+                                    :class="flow.status === 'APPROVED' ? 'bg-green-500' : flow.status === 'REJECTED' ? 'bg-red-500' : 'bg-amber-500'"
+                                >
+                                    {{ flow.status }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <button
+                        @click="showMarcommApprovalModal = false"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        Tutup
+                    </button>
+                    <button
+                        v-if="selectedMarcommApproval.can_approve"
+                        @click="approveMarcomm(selectedMarcommApproval.id)"
+                        class="px-4 py-2 bg-pink-600 text-white rounded-md hover:bg-pink-700 transition-colors"
+                    >
+                        <i class="fa fa-check mr-2"></i>Approve
+                    </button>
+                    <button
+                        v-if="selectedMarcommApproval.can_approve"
+                        @click="showRejectMarcommModal(selectedMarcommApproval.id)"
+                        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                    >
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Marcomm Tracker Modal -->
+        <div v-if="showAllMarcommModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllMarcommModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Semua Marcomm Tracker Pending</h3>
+                    <button @click="showAllMarcommModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    <div
+                        v-for="mt in pendingMarcommApprovals"
+                        :key="'all-marcomm-' + mt.id"
+                        @click="showMarcommApprovalDetails(mt.id)"
+                        class="p-3 rounded-lg cursor-pointer border hover:border-pink-400 bg-gray-50 hover:bg-pink-50"
+                    >
+                        <div class="font-semibold text-sm">{{ mt.number }}</div>
+                        <div class="text-xs text-gray-500">
+                            {{ mt.job_category }} · {{ mt.pic?.nama_lengkap || '-' }} · {{ mt.approver_name || `Level ${mt.approval_level || 1}` }}
                         </div>
                     </div>
                 </div>

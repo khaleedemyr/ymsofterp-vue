@@ -290,6 +290,7 @@ export default {
     "scrapper_google_review": "Scrapper Google Review",
     "promo": "Promo",
     "marketing_visit_checklist": "Marketing Visit Checklist",
+    "marcomm_tracker": "Marcomm Tracker",
     "reservasi": "Reservasi",
     "data_roulette": "Data Roulette",
     "menu_book": "Menu Book",
