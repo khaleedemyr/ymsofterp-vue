@@ -1145,6 +1145,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('/sales-leads/dashboard', [\App\Http\Controllers\SalesLeadController::class, 'dashboard'])->name('sales-leads.dashboard');
     Route::post('/sales-leads/targets', [\App\Http\Controllers\SalesLeadController::class, 'saveTargets'])->name('sales-leads.targets');
+    Route::post('/sales-leads/outlet-targets', [\App\Http\Controllers\SalesLeadController::class, 'saveOutletTargets'])->name('sales-leads.outlet-targets');
     Route::post('/sales-leads/{id}/actual', [\App\Http\Controllers\SalesLeadController::class, 'updateActual'])->name('sales-leads.actual');
     Route::resource('sales-leads', \App\Http\Controllers\SalesLeadController::class);
 

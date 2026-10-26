@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Outlet;
 use App\Models\SalesLead;
+use App\Models\SalesLeadOutletTarget;
 use App\Models\SalesLeadTarget;
 use App\Models\User;
 use Carbon\Carbon;
@@ -272,6 +273,15 @@ class SalesLeadController extends Controller
             'contribution_pct' => $groupSalesTotal > 0 ? round(($gTotal / $groupSalesTotal) * 100, 2) : null,
         ];
 
+        [$outletGroups, $outletGrand] = $this->buildOutletContribution(
+            $periodStart,
+            $periodEnd,
+            $prevStart,
+            $prevEnd,
+            $year,
+            $month
+        );
+
         return Inertia::render('SalesLead/Dashboard', [
             'filters' => [
                 'year' => $year,
@@ -283,6 +293,8 @@ class SalesLeadController extends Controller
             'perSales' => $perSales,
             'grand' => $grand,
             'segments' => $segments,
+            'outletGroups' => $outletGroups,
+            'outletGrand' => $outletGrand,
         ]);
     }
 
@@ -312,6 +324,32 @@ class SalesLeadController extends Controller
         }
 
         return back()->with('success', 'Target berhasil disimpan.');
+    }
+
+    public function saveOutletTargets(Request $request)
+    {
+        $validated = $request->validate([
+            'year' => 'required|integer|min:2020|max:2100',
+            'month' => 'required|integer|min:1|max:12',
+            'budgets' => 'required|array',
+            'budgets.*.outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'budgets.*.budget_amount' => 'nullable|numeric|min:0',
+        ]);
+
+        foreach ($validated['budgets'] as $row) {
+            SalesLeadOutletTarget::updateOrCreate(
+                [
+                    'outlet_id' => $row['outlet_id'],
+                    'year' => $validated['year'],
+                    'month' => $validated['month'],
+                ],
+                [
+                    'budget_amount' => $row['budget_amount'] ?? 0,
+                ]
+            );
+        }
+
+        return back()->with('success', 'Budget outlet berhasil disimpan.');
     }
 
     public function create(): Response
@@ -514,6 +552,197 @@ class SalesLeadController extends Controller
             ])
             ->groupBy('sales_user_id', 'segment_1')
             ->get();
+    }
+
+    private function aggregateRevenueByOutlet(Carbon $start, Carbon $end)
+    {
+        $amountExpr = 'COALESCE(real_revenue, revenue, 0)';
+        $paxExpr = 'COALESCE(real_pax, pax)';
+
+        return $this->visibleQuery()
+            ->whereNotNull('outlet_id')
+            ->where('status', '!=', 'cancelled')
+            ->where(function ($q) use ($start, $end) {
+                $q->where(function ($inner) use ($start, $end) {
+                    $inner->whereNotNull('event_date')
+                        ->whereDate('event_date', '>=', $start->toDateString())
+                        ->whereDate('event_date', '<=', $end->toDateString());
+                })->orWhere(function ($inner) use ($start, $end) {
+                    $inner->whereNull('event_date')
+                        ->whereDate('created_at', '>=', $start->toDateString())
+                        ->whereDate('created_at', '<=', $end->toDateString());
+                });
+            })
+            ->select([
+                'outlet_id',
+                DB::raw("SUM(CASE WHEN {$paxExpr} > 15 THEN {$amountExpr} ELSE 0 END) as rev_gt_15"),
+                DB::raw("SUM(CASE WHEN {$paxExpr} IS NOT NULL AND {$paxExpr} < 16 THEN {$amountExpr} ELSE 0 END) as rev_lt_16"),
+            ])
+            ->groupBy('outlet_id')
+            ->get();
+    }
+
+    /**
+     * @return array{0: array<int, array>, 1: array}
+     */
+    private function buildOutletContribution(
+        Carbon $periodStart,
+        Carbon $periodEnd,
+        Carbon $prevStart,
+        Carbon $prevEnd,
+        int $year,
+        int $month
+    ): array {
+        $currentRows = $this->aggregateRevenueByOutlet($periodStart, $periodEnd);
+        $prevRows = $this->aggregateRevenueByOutlet($prevStart, $prevEnd);
+
+        $outletIds = collect($currentRows)->pluck('outlet_id')
+            ->merge(collect($prevRows)->pluck('outlet_id'))
+            ->merge(
+                SalesLeadOutletTarget::query()
+                    ->where('year', $year)
+                    ->where('month', $month)
+                    ->pluck('outlet_id')
+            )
+            ->unique()
+            ->filter()
+            ->values();
+
+        if ($outletIds->isEmpty()) {
+            return [[], [
+                'rows' => [],
+                'total' => [
+                    'budget' => 0,
+                    'rev_gt_15' => 0,
+                    'rev_lt_16' => 0,
+                    'total' => 0,
+                    'performance' => null,
+                    'last_month' => 0,
+                    'variance' => 0,
+                    'growth' => 0.0,
+                ],
+            ]];
+        }
+
+        $outlets = Outlet::query()
+            ->with('region:id,name')
+            ->whereIn('id_outlet', $outletIds->all())
+            ->get(['id_outlet', 'nama_outlet', 'region_id'])
+            ->keyBy('id_outlet');
+
+        $budgets = SalesLeadOutletTarget::query()
+            ->where('year', $year)
+            ->where('month', $month)
+            ->whereIn('outlet_id', $outletIds->all())
+            ->get()
+            ->keyBy('outlet_id');
+
+        $currMap = collect($currentRows)->keyBy('outlet_id');
+        $prevMap = collect($prevRows)->keyBy('outlet_id');
+
+        $grouped = [];
+        foreach ($outletIds as $outletId) {
+            $outlet = $outlets->get($outletId);
+            if (! $outlet) {
+                continue;
+            }
+
+            $curr = $currMap->get($outletId);
+            $prev = $prevMap->get($outletId);
+            $revGt = (float) ($curr->rev_gt_15 ?? 0);
+            $revLt = (float) ($curr->rev_lt_16 ?? 0);
+            $total = $revGt + $revLt;
+            $lastMonth = (float) (($prev->rev_gt_15 ?? 0) + ($prev->rev_lt_16 ?? 0));
+            $budget = (float) ($budgets->get($outletId)?->budget_amount ?? 0);
+            $variance = $total - $lastMonth;
+            $growth = $lastMonth > 0
+                ? round(($variance / $lastMonth) * 100, 2)
+                : ($total > 0 ? 100.0 : 0.0);
+            $performance = $budget > 0 ? round(($total / $budget) * 100, 2) : null;
+
+            $regionName = strtoupper(trim((string) ($outlet->region?->name ?? 'LAINNYA'))) ?: 'LAINNYA';
+
+            $grouped[$regionName][] = [
+                'outlet_id' => (int) $outletId,
+                'outlet_name' => $outlet->nama_outlet,
+                'budget' => $budget,
+                'rev_gt_15' => $revGt,
+                'rev_lt_16' => $revLt,
+                'total' => $total,
+                'performance' => $performance,
+                'last_month' => $lastMonth,
+                'variance' => $variance,
+                'growth' => $growth,
+            ];
+        }
+
+        ksort($grouped, SORT_NATURAL | SORT_FLAG_CASE);
+
+        $outletGroups = [];
+        $gBudget = $gGt = $gLt = $gTotal = $gLast = 0;
+
+        foreach ($grouped as $regionName => $rows) {
+            usort($rows, fn ($a, $b) => strnatcasecmp($a['outlet_name'], $b['outlet_name']));
+
+            $sumBudget = 0;
+            $sumGt = 0;
+            $sumLt = 0;
+            $sumTotal = 0;
+            $sumLast = 0;
+
+            foreach ($rows as $row) {
+                $sumBudget += $row['budget'];
+                $sumGt += $row['rev_gt_15'];
+                $sumLt += $row['rev_lt_16'];
+                $sumTotal += $row['total'];
+                $sumLast += $row['last_month'];
+            }
+
+            $sumVariance = $sumTotal - $sumLast;
+            $regionTotal = [
+                'budget' => $sumBudget,
+                'rev_gt_15' => $sumGt,
+                'rev_lt_16' => $sumLt,
+                'total' => $sumTotal,
+                'performance' => $sumBudget > 0 ? round(($sumTotal / $sumBudget) * 100, 2) : null,
+                'last_month' => $sumLast,
+                'variance' => $sumVariance,
+                'growth' => $sumLast > 0
+                    ? round(($sumVariance / $sumLast) * 100, 2)
+                    : ($sumTotal > 0 ? 100.0 : 0.0),
+            ];
+
+            $outletGroups[] = [
+                'region' => $regionName,
+                'rows' => $rows,
+                'total' => $regionTotal,
+            ];
+
+            $gBudget += $sumBudget;
+            $gGt += $sumGt;
+            $gLt += $sumLt;
+            $gTotal += $sumTotal;
+            $gLast += $sumLast;
+        }
+
+        $gVariance = $gTotal - $gLast;
+        $outletGrand = [
+            'rows' => collect($outletGroups)->flatMap(fn ($g) => $g['rows'])->values()->all(),
+            'total' => [
+                'budget' => $gBudget,
+                'rev_gt_15' => $gGt,
+                'rev_lt_16' => $gLt,
+                'total' => $gTotal,
+                'performance' => $gBudget > 0 ? round(($gTotal / $gBudget) * 100, 2) : null,
+                'last_month' => $gLast,
+                'variance' => $gVariance,
+                'growth' => $gLast > 0
+                    ? round(($gVariance / $gLast) * 100, 2)
+                    : ($gTotal > 0 ? 100.0 : 0.0),
+            ],
+        ];
+
+        return [$outletGroups, $outletGrand];
     }
 
     private function formOptions(): array

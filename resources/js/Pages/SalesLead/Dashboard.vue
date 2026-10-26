@@ -9,7 +9,7 @@
             </span>
             <span>
               Sales Leads Summary
-              <span class="block text-sm font-medium text-emerald-600 mt-0.5">{{ periodLabel }} · per sales & total</span>
+              <span class="block text-sm font-medium text-emerald-600 mt-0.5">{{ periodLabel }}</span>
             </span>
           </h1>
         </div>
@@ -23,7 +23,7 @@
         </div>
       </div>
 
-      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-6">
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4">
         <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
           <div>
             <label class="block text-xs font-semibold text-gray-600 mb-1">Bulan</label>
@@ -53,43 +53,95 @@
           </button>
         </form>
         <p class="text-xs text-gray-500 mt-2">
-          Revenue pakai Real Revenue jika ada, else Revenue plan. Split &gt;15 / &lt;15 pakai Real Pax jika ada, else Pax plan. Last Month = {{ prevPeriodLabel }}.
+          Revenue pakai Real Revenue jika ada, else Revenue plan. Split &gt;15 / &lt;16 pakai Real Pax jika ada, else Pax plan. Last Month = {{ prevPeriodLabel }}.
         </p>
       </div>
 
+      <div class="flex gap-2 mb-6">
+        <button
+          type="button"
+          class="px-4 py-2 rounded-xl text-sm font-semibold transition"
+          :class="tab === 'sales' ? 'bg-emerald-600 text-white shadow' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'"
+          @click="tab = 'sales'"
+        >
+          <i class="fa-solid fa-user-tie mr-1"></i> Per Sales
+        </button>
+        <button
+          type="button"
+          class="px-4 py-2 rounded-xl text-sm font-semibold transition"
+          :class="tab === 'outlet' ? 'bg-emerald-600 text-white shadow' : 'bg-white border border-gray-200 text-gray-700 hover:bg-gray-50'"
+          @click="tab = 'outlet'"
+        >
+          <i class="fa-solid fa-store mr-1"></i> Outlet Contribution
+        </button>
+      </div>
+
       <!-- Per Sales -->
-      <div v-for="block in perSales" :key="block.sales_user_id" class="mb-8">
+      <template v-if="tab === 'sales'">
+        <div v-for="block in perSales" :key="block.sales_user_id" class="mb-8">
+          <SummaryTable
+            :title="block.sales_name"
+            :rows="block.rows"
+            :total="block.total"
+            :achievement-pct="block.achievement_pct"
+            :variance="block.variance"
+            :variance-pct="block.variance_pct"
+            :editable-targets="true"
+            :sales-user-id="block.sales_user_id"
+            :year="filters.year"
+            :month="filters.month"
+            @save-targets="saveTargets"
+          />
+        </div>
+
+        <div v-if="!perSales.length" class="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center text-gray-400 mb-8">
+          Belum ada data sales lead untuk periode ini.
+        </div>
+
         <SummaryTable
-          :title="block.sales_name"
-          :rows="block.rows"
-          :total="block.total"
-          :achievement-pct="block.achievement_pct"
-          :variance="block.variance"
-          :variance-pct="block.variance_pct"
-          :editable-targets="true"
-          :sales-user-id="block.sales_user_id"
-          :year="filters.year"
-          :month="filters.month"
-          @save-targets="saveTargets"
+          title="SUMMARY TOTAL"
+          :rows="grand.rows"
+          :total="grand.total"
+          :achievement-pct="grand.achievement_pct"
+          :variance="grand.variance"
+          :variance-pct="grand.variance_pct"
+          :contribution-pct="grand.contribution_pct"
+          :period-label="periodLabel"
+          variant="grand"
         />
-      </div>
+      </template>
 
-      <div v-if="!perSales.length" class="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center text-gray-400 mb-8">
-        Belum ada data sales lead untuk periode ini.
-      </div>
+      <!-- Outlet Contribution -->
+      <template v-else>
+        <div class="mb-4">
+          <h2 class="text-lg font-bold text-gray-900">
+            MTD Revenue {{ periodLabel }}
+            <span class="block text-sm font-medium text-emerald-600">Outlet Contribution per region</span>
+          </h2>
+        </div>
 
-      <!-- Grand Total -->
-      <SummaryTable
-        title="SUMMARY TOTAL"
-        :rows="grand.rows"
-        :total="grand.total"
-        :achievement-pct="grand.achievement_pct"
-        :variance="grand.variance"
-        :variance-pct="grand.variance_pct"
-        :contribution-pct="grand.contribution_pct"
-        :period-label="periodLabel"
-        variant="grand"
-      />
+        <div v-for="group in outletGroups" :key="group.region" class="mb-8">
+          <OutletContributionTable
+            :title="group.region"
+            :rows="group.rows"
+            :total="group.total"
+            :editable-budgets="true"
+            @save-budgets="saveOutletBudgets"
+          />
+        </div>
+
+        <div v-if="!outletGroups.length" class="bg-white rounded-2xl border border-dashed border-gray-200 p-10 text-center text-gray-400 mb-8">
+          Belum ada data outlet untuk periode ini.
+        </div>
+
+        <OutletContributionTable
+          v-if="outletGroups.length"
+          title="SUMMARY TOTAL ALL OUTLET"
+          :rows="outletGrand.rows"
+          :total="outletGrand.total"
+          :editable-budgets="false"
+        />
+      </template>
     </div>
   </AppLayout>
 </template>
@@ -97,8 +149,9 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import SummaryTable from './SummaryTable.vue';
+import OutletContributionTable from './OutletContributionTable.vue';
 import { Link, router } from '@inertiajs/vue3';
-import { computed, reactive } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import Swal from 'sweetalert2';
 import axios from 'axios';
 
@@ -109,7 +162,11 @@ const props = defineProps({
   perSales: { type: Array, default: () => [] },
   grand: { type: Object, default: () => ({ rows: [], total: {} }) },
   segments: { type: Array, default: () => [] },
+  outletGroups: { type: Array, default: () => [] },
+  outletGrand: { type: Object, default: () => ({ rows: [], total: {} }) },
 });
+
+const tab = ref('sales');
 
 const localFilters = reactive({
   year: props.filters.year || new Date().getFullYear(),
@@ -141,6 +198,20 @@ const saveTargets = async ({ sales_user_id, targets }) => {
     router.reload({ only: ['perSales', 'grand'] });
   } catch (e) {
     Swal.fire('Error', e.response?.data?.message || 'Gagal simpan target', 'error');
+  }
+};
+
+const saveOutletBudgets = async ({ budgets }) => {
+  try {
+    await axios.post(route('sales-leads.outlet-targets'), {
+      year: props.filters.year,
+      month: props.filters.month,
+      budgets,
+    });
+    Swal.fire({ toast: true, position: 'top-end', icon: 'success', title: 'Budget outlet tersimpan', showConfirmButton: false, timer: 1500 });
+    router.reload({ only: ['outletGroups', 'outletGrand'] });
+  } catch (e) {
+    Swal.fire('Error', e.response?.data?.message || 'Gagal simpan budget', 'error');
   }
 };
 </script>
