@@ -63,16 +63,24 @@
             <div class="font-medium">{{ formatDate(record.event_date) }}</div>
           </div>
           <div>
-            <div class="text-xs text-gray-500">Pax</div>
+            <div class="text-xs text-gray-500">Pax (Plan)</div>
             <div class="font-medium">{{ record.pax ?? '-' }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Real Pax</div>
+            <div class="font-medium">{{ record.real_pax ?? '-' }}</div>
           </div>
           <div>
             <div class="text-xs text-gray-500">Outlet</div>
             <div class="font-medium">{{ record.outlet?.nama_outlet || '-' }}</div>
           </div>
           <div>
-            <div class="text-xs text-gray-500">Revenue</div>
+            <div class="text-xs text-gray-500">Revenue (Plan)</div>
             <div class="font-medium">{{ formatMoney(record.revenue) }}</div>
+          </div>
+          <div>
+            <div class="text-xs text-gray-500">Real Revenue</div>
+            <div class="font-medium">{{ formatMoney(record.real_revenue) }}</div>
           </div>
           <div>
             <div class="text-xs text-gray-500">Sales</div>
@@ -81,8 +89,20 @@
         </div>
 
         <div class="mt-4">
+          <div class="text-xs text-gray-500 mb-1">Foto Bill</div>
+          <a v-if="record.bill_photo_url" :href="record.bill_photo_url" target="_blank" rel="noopener">
+            <img :src="record.bill_photo_url" alt="Bill" class="w-40 h-40 object-cover rounded-lg border border-gray-200" />
+          </a>
+          <div v-else class="text-sm text-gray-400">-</div>
+        </div>
+
+        <div class="mt-4">
           <div class="text-xs text-gray-500 mb-1">Remarks</div>
           <div class="text-sm whitespace-pre-wrap border rounded-lg p-3 bg-gray-50">{{ record.remarks || '-' }}</div>
+        </div>
+        <div class="mt-4">
+          <div class="text-xs text-gray-500 mb-1">Closing Remarks</div>
+          <div class="text-sm whitespace-pre-wrap border rounded-lg p-3 bg-gray-50">{{ record.closing_remarks || '-' }}</div>
         </div>
       </div>
     </div>

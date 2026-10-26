@@ -56,20 +56,37 @@ class SalesLead extends Model
         'type_of_event',
         'event_date',
         'pax',
+        'real_pax',
         'outlet_id',
         'status',
         'revenue',
+        'real_revenue',
+        'bill_photo',
         'sales_user_id',
         'remarks',
+        'closing_remarks',
         'created_by',
         'updated_by',
     ];
 
+    protected $appends = ['bill_photo_url'];
+
     protected $casts = [
         'event_date' => 'date',
         'revenue' => 'decimal:2',
+        'real_revenue' => 'decimal:2',
         'pax' => 'integer',
+        'real_pax' => 'integer',
     ];
+
+    public function getBillPhotoUrlAttribute(): ?string
+    {
+        if (! $this->bill_photo) {
+            return null;
+        }
+
+        return asset('storage/'.$this->bill_photo);
+    }
 
     public function outlet(): BelongsTo
     {

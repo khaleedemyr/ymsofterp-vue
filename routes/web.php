@@ -1143,6 +1143,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/content-plans/{id}/approve', [\App\Http\Controllers\ContentPlanController::class, 'approve'])->name('content-plans.approve');
     Route::post('/content-plans/{id}/reject', [\App\Http\Controllers\ContentPlanController::class, 'reject'])->name('content-plans.reject');
 
+    Route::get('/sales-leads/dashboard', [\App\Http\Controllers\SalesLeadController::class, 'dashboard'])->name('sales-leads.dashboard');
+    Route::post('/sales-leads/targets', [\App\Http\Controllers\SalesLeadController::class, 'saveTargets'])->name('sales-leads.targets');
+    Route::post('/sales-leads/{id}/actual', [\App\Http\Controllers\SalesLeadController::class, 'updateActual'])->name('sales-leads.actual');
     Route::resource('sales-leads', \App\Http\Controllers\SalesLeadController::class);
 
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
