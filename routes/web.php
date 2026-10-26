@@ -1143,6 +1143,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/content-plans/{id}/approve', [\App\Http\Controllers\ContentPlanController::class, 'approve'])->name('content-plans.approve');
     Route::post('/content-plans/{id}/reject', [\App\Http\Controllers\ContentPlanController::class, 'reject'])->name('content-plans.reject');
 
+    Route::resource('sales-leads', \App\Http\Controllers\SalesLeadController::class);
+
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');
     Route::resource('one-plus-one-submissions', \App\Http\Controllers\OnePlusOneSubmissionController::class)->only(['index', 'create', 'store', 'destroy']);
 

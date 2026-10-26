@@ -292,6 +292,7 @@ export default {
     "marketing_visit_checklist": "Marketing Visit Checklist",
     "marcomm_tracker": "Marcomm Tracker",
     "content_plan": "Content Plan",
+    "sales_leads": "Sales Leads",
     "reservasi": "Reservasi",
     "data_roulette": "Data Roulette",
     "menu_book": "Menu Book",
