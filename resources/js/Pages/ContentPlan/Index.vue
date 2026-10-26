@@ -9,13 +9,22 @@
           </h1>
           <p class="text-sm text-gray-500 mt-1">Planning konten sosial media — list & detail lengkap.</p>
         </div>
-        <Link
-          :href="route('content-plans.create')"
-          class="inline-flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg shadow hover:bg-violet-700 transition"
-        >
-          <i class="fa-solid fa-plus"></i>
-          Buat Content Plan
-        </Link>
+        <div class="flex flex-wrap gap-2">
+          <Link
+            :href="route('content-plans.dashboard')"
+            class="inline-flex items-center gap-2 bg-white border border-violet-200 text-violet-700 px-4 py-2 rounded-lg shadow-sm hover:bg-violet-50 transition"
+          >
+            <i class="fa-solid fa-chart-pie"></i>
+            Dashboard
+          </Link>
+          <Link
+            :href="route('content-plans.create')"
+            class="inline-flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg shadow hover:bg-violet-700 transition"
+          >
+            <i class="fa-solid fa-plus"></i>
+            Buat Content Plan
+          </Link>
+        </div>
       </div>
 
       <div class="bg-white rounded-xl shadow p-4 mb-6">

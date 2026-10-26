@@ -1137,6 +1137,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/marcomm-trackers/{id}/approve', [\App\Http\Controllers\MarcommTrackerController::class, 'approve'])->name('marcomm-trackers.approve');
     Route::post('/marcomm-trackers/{id}/reject', [\App\Http\Controllers\MarcommTrackerController::class, 'reject'])->name('marcomm-trackers.reject');
 
+    Route::get('/content-plans/dashboard', [\App\Http\Controllers\ContentPlanController::class, 'dashboard'])->name('content-plans.dashboard');
     Route::get('/content-plans/approvers', [\App\Http\Controllers\ContentPlanController::class, 'getApprovers'])->name('content-plans.approvers');
     Route::resource('content-plans', \App\Http\Controllers\ContentPlanController::class);
     Route::post('/content-plans/{id}/approve', [\App\Http\Controllers\ContentPlanController::class, 'approve'])->name('content-plans.approve');

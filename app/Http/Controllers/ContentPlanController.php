@@ -57,6 +57,182 @@ class ContentPlanController extends Controller
         ]);
     }
 
+    public function dashboard(Request $request): Response
+    {
+        $dateFrom = $request->get('date_from', now()->startOfMonth()->toDateString());
+        $dateTo = $request->get('date_to', now()->toDateString());
+        $platform = trim((string) $request->get('platform', ''));
+        $funnel = trim((string) $request->get('funnel', ''));
+        $pillar = trim((string) $request->get('pillar', ''));
+
+        $base = $this->visibleQuery()
+            ->when($dateFrom, fn ($q) => $q->where(function ($inner) use ($dateFrom) {
+                $inner->whereDate('date_post', '>=', $dateFrom)
+                    ->orWhere(function ($o) use ($dateFrom) {
+                        $o->whereNull('date_post')->whereDate('created_at', '>=', $dateFrom);
+                    });
+            }))
+            ->when($dateTo, fn ($q) => $q->where(function ($inner) use ($dateTo) {
+                $inner->whereDate('date_post', '<=', $dateTo)
+                    ->orWhere(function ($o) use ($dateTo) {
+                        $o->whereNull('date_post')->whereDate('created_at', '<=', $dateTo);
+                    });
+            }))
+            ->when($platform !== '', fn ($q) => $q->where('platform', $platform))
+            ->when($funnel !== '', fn ($q) => $q->where('funnel', $funnel))
+            ->when($pillar !== '', fn ($q) => $q->where('pillar', $pillar));
+
+        $total = (clone $base)->count();
+        $byWorkflow = (clone $base)
+            ->select('workflow_status', DB::raw('COUNT(*) as total'))
+            ->groupBy('workflow_status')
+            ->pluck('total', 'workflow_status')
+            ->all();
+
+        $byJobStatus = (clone $base)
+            ->select('job_status', DB::raw('COUNT(*) as total'))
+            ->groupBy('job_status')
+            ->pluck('total', 'job_status')
+            ->all();
+
+        $byPlatform = (clone $base)
+            ->select('platform', DB::raw('COUNT(*) as total'))
+            ->groupBy('platform')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => ['label' => $r->platform, 'total' => (int) $r->total])
+            ->values()
+            ->all();
+
+        $byFunnel = (clone $base)
+            ->whereNotNull('funnel')
+            ->where('funnel', '!=', '')
+            ->select('funnel', DB::raw('COUNT(*) as total'))
+            ->groupBy('funnel')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => ['label' => $r->funnel, 'total' => (int) $r->total])
+            ->values()
+            ->all();
+
+        $byPillar = (clone $base)
+            ->whereNotNull('pillar')
+            ->where('pillar', '!=', '')
+            ->select('pillar', DB::raw('COUNT(*) as total'))
+            ->groupBy('pillar')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => ['label' => $r->pillar, 'total' => (int) $r->total])
+            ->values()
+            ->all();
+
+        $byFormat = (clone $base)
+            ->whereNotNull('format')
+            ->where('format', '!=', '')
+            ->select('format', DB::raw('COUNT(*) as total'))
+            ->groupBy('format')
+            ->orderByDesc('total')
+            ->get()
+            ->map(fn ($r) => ['label' => $r->format, 'total' => (int) $r->total])
+            ->values()
+            ->all();
+
+        $approved = (int) ($byWorkflow['approved'] ?? 0);
+        $submitted = (int) ($byWorkflow['submitted'] ?? 0);
+        $draft = (int) ($byWorkflow['draft'] ?? 0);
+        $rejected = (int) ($byWorkflow['rejected'] ?? 0);
+        $completionRate = $total > 0 ? round(($approved / $total) * 100, 1) : 0;
+
+        $postedCount = (clone $base)
+            ->where(function ($q) {
+                $q->whereNotNull('actual_post_date')
+                    ->orWhere(function ($inner) {
+                        $inner->whereNotNull('actual_post_links')
+                            ->where('actual_post_links', '!=', '[]')
+                            ->where('actual_post_links', '!=', 'null');
+                    });
+            })
+            ->count();
+
+        $overdueCount = (clone $base)
+            ->whereNotNull('date_post')
+            ->whereDate('date_post', '<', now()->toDateString())
+            ->where('workflow_status', '!=', 'approved')
+            ->count();
+
+        $dueSoonCount = (clone $base)
+            ->whereNotNull('date_post')
+            ->whereDate('date_post', '>=', now()->toDateString())
+            ->whereDate('date_post', '<=', now()->addDays(7)->toDateString())
+            ->where('workflow_status', '!=', 'approved')
+            ->count();
+
+        $trend = (clone $base)
+            ->whereNotNull('date_post')
+            ->select(DB::raw('DATE(date_post) as day'), DB::raw('COUNT(*) as total'))
+            ->groupBy(DB::raw('DATE(date_post)'))
+            ->orderBy('day')
+            ->get()
+            ->map(fn ($r) => ['day' => $r->day, 'total' => (int) $r->total])
+            ->values()
+            ->all();
+
+        $jobStatusBreakdown = collect(ContentPlan::JOB_STATUSES)->map(fn ($label, $key) => [
+            'key' => $key,
+            'label' => $label,
+            'total' => (int) ($byJobStatus[$key] ?? 0),
+        ])->values()->all();
+
+        $recentPlans = (clone $base)
+            ->with(['creator:id,nama_lengkap'])
+            ->orderByDesc('id')
+            ->limit(12)
+            ->get(['id', 'number', 'platform', 'date_post', 'day_name', 'pillar', 'format', 'job_status', 'workflow_status', 'created_at']);
+
+        $overduePlans = (clone $base)
+            ->with(['creator:id,nama_lengkap'])
+            ->whereNotNull('date_post')
+            ->whereDate('date_post', '<', now()->toDateString())
+            ->where('workflow_status', '!=', 'approved')
+            ->orderBy('date_post')
+            ->limit(15)
+            ->get(['id', 'number', 'platform', 'date_post', 'day_name', 'pillar', 'job_status', 'workflow_status']);
+
+        return Inertia::render('ContentPlan/Dashboard', [
+            'filters' => [
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'platform' => $platform,
+                'funnel' => $funnel,
+                'pillar' => $pillar,
+            ],
+            'platforms' => ContentPlan::PLATFORMS,
+            'funnels' => ContentPlan::FUNNELS,
+            'pillars' => ContentPlan::PILLARS,
+            'jobStatuses' => ContentPlan::JOB_STATUSES,
+            'workflowStatuses' => ContentPlan::WORKFLOW_STATUSES,
+            'summary' => [
+                'total' => $total,
+                'draft' => $draft,
+                'submitted' => $submitted,
+                'approved' => $approved,
+                'rejected' => $rejected,
+                'posted' => $postedCount,
+                'overdue' => $overdueCount,
+                'due_soon' => $dueSoonCount,
+                'completion_rate' => $completionRate,
+            ],
+            'byPlatform' => $byPlatform,
+            'byFunnel' => $byFunnel,
+            'byPillar' => $byPillar,
+            'byFormat' => $byFormat,
+            'byJobStatus' => $jobStatusBreakdown,
+            'trend' => $trend,
+            'recentPlans' => $recentPlans,
+            'overduePlans' => $overduePlans,
+        ]);
+    }
+
     public function create(): Response
     {
         return Inertia::render('ContentPlan/Create', $this->formOptions());
