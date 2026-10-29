@@ -1665,6 +1665,18 @@ Route::middleware(['auth'])->group(function () {
     Route::delete('/chiller-temperature/{id}', [\App\Http\Controllers\ChillerTemperatureController::class, 'destroy'])->name('chiller-temperature.destroy');
 });
 
+// Cleaning IPAL
+Route::middleware(['auth'])->group(function () {
+    Route::get('/cleaning-ipal', [\App\Http\Controllers\CleaningIpalController::class, 'index'])->name('cleaning-ipal.index');
+    Route::get('/cleaning-ipal/create', [\App\Http\Controllers\CleaningIpalController::class, 'create'])->name('cleaning-ipal.create');
+    Route::post('/cleaning-ipal', [\App\Http\Controllers\CleaningIpalController::class, 'store'])->name('cleaning-ipal.store');
+    Route::get('/cleaning-ipal/lookup-outlet', [\App\Http\Controllers\CleaningIpalController::class, 'lookupOutlet'])->name('cleaning-ipal.lookup-outlet');
+    Route::get('/cleaning-ipal/{id}/edit', [\App\Http\Controllers\CleaningIpalController::class, 'edit'])->name('cleaning-ipal.edit');
+    Route::put('/cleaning-ipal/{id}', [\App\Http\Controllers\CleaningIpalController::class, 'update'])->name('cleaning-ipal.update');
+    Route::post('/cleaning-ipal/{id}', [\App\Http\Controllers\CleaningIpalController::class, 'update']); // multipart method spoof fallback
+    Route::delete('/cleaning-ipal/{id}', [\App\Http\Controllers\CleaningIpalController::class, 'destroy'])->name('cleaning-ipal.destroy');
+});
+
 Route::prefix('ops-kitchen')->group(function () {
     Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');
     Route::get('/action-plan-guest-review/create', [ActionPlanGuestReviewController::class, 'create'])->name('ops-kitchen.action-plan-guest-review.create');

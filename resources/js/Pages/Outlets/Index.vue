@@ -3,6 +3,7 @@ import { ref, watch, onMounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { debounce } from 'lodash';
 import Swal from 'sweetalert2';
+import QRCode from 'qrcode';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Switch } from '@headlessui/vue';
 import OutletFormModal from './OutletFormModal.vue';
@@ -178,6 +179,102 @@ function openMapModal(outlet) {
   mapAlamat.value = outlet.lokasi || outlet.nama_outlet;
   showMapModal.value = true;
 }
+
+function wrapText(ctx, text, maxWidth) {
+  const words = String(text || '-').split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const test = line ? `${line} ${word}` : word;
+    if (ctx.measureText(test).width > maxWidth && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = test;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.length ? lines : ['-'];
+}
+
+async function downloadOutletQr(outlet) {
+  const qrValue = String(outlet?.qr_code || '').trim();
+  const outletName = String(outlet?.nama_outlet || '-').trim();
+
+  if (!qrValue) {
+    Swal.fire('Perhatian', 'Outlet ini belum memiliki QR Code.', 'warning');
+    return;
+  }
+
+  try {
+    const qrDataUrl = await QRCode.toDataURL(qrValue, {
+      width: 480,
+      margin: 2,
+      errorCorrectionLevel: 'M',
+      color: { dark: '#000000', light: '#FFFFFF' },
+    });
+
+    const qrSize = 360;
+    const paddingX = 40;
+    const paddingTop = 36;
+    const gap = 20;
+    const lineHeight = 30;
+    const canvasWidth = 520;
+
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    measureCtx.font = 'bold 22px Arial, sans-serif';
+    const nameLines = wrapText(measureCtx, outletName, canvasWidth - paddingX * 2);
+    measureCtx.font = '16px Arial, sans-serif';
+    const codeLines = wrapText(measureCtx, qrValue, canvasWidth - paddingX * 2);
+
+    const canvasHeight = paddingTop + qrSize + gap + (nameLines.length + codeLines.length) * lineHeight + 48;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasWidth;
+    canvas.height = canvasHeight;
+    const ctx = canvas.getContext('2d');
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+
+    const qrImg = await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = qrDataUrl;
+    });
+
+    ctx.drawImage(qrImg, (canvasWidth - qrSize) / 2, paddingTop, qrSize, qrSize);
+
+    let y = paddingTop + qrSize + gap + 8;
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#111827';
+    ctx.font = 'bold 22px Arial, sans-serif';
+    for (const line of nameLines) {
+      ctx.fillText(line, canvasWidth / 2, y);
+      y += lineHeight;
+    }
+
+    y += 4;
+    ctx.fillStyle = '#4B5563';
+    ctx.font = '16px Arial, sans-serif';
+    for (const line of codeLines) {
+      ctx.fillText(line, canvasWidth / 2, y);
+      y += lineHeight;
+    }
+
+    const safeName = outletName.replace(/[^\w.-]+/g, '_').slice(0, 60) || 'outlet';
+    const link = document.createElement('a');
+    link.href = canvas.toDataURL('image/png');
+    link.download = `outlet-qr-${safeName}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  } catch (error) {
+    console.error('Failed to download outlet QR:', error);
+    Swal.fire('Error', 'Gagal membuat QR Code untuk diunduh.', 'error');
+  }
+}
 </script>
 
 <template>
@@ -243,8 +340,18 @@ function openMapModal(outlet) {
                 </td>
                 <td class="px-6 py-3">{{ outlet.region?.name || '-' }}</td>
                 <td class="px-6 py-3">
-                  <div class="flex items-center gap-2">
-                    <span class="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{{ outlet.qr_code }}</span>
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-xs font-mono bg-gray-100 px-2 py-1 rounded">{{ outlet.qr_code || '-' }}</span>
+                    <button
+                      v-if="outlet.qr_code"
+                      type="button"
+                      class="inline-flex items-center gap-1 px-2 py-1 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 text-xs font-semibold transition"
+                      title="Download QR Code"
+                      @click="downloadOutletQr(outlet)"
+                    >
+                      <i class="fa-solid fa-download"></i>
+                      Download QR
+                    </button>
                     <a v-if="outlet.url_places" :href="outlet.url_places" target="_blank" class="text-blue-500 hover:text-blue-700">
                       <i class="fa-solid fa-external-link-alt text-xs"></i>
                     </a>

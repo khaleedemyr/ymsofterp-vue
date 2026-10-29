@@ -323,6 +323,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.outlet_wip_production'), icon: 'fa-solid fa-industry', route: '/outlet-wip', code: 'outlet_wip_production' },
             { name: () => t('sidebar.menus.laporan_outlet_wip'), icon: 'fa-solid fa-file-lines', route: '/outlet-wip/report', code: 'outlet_wip_report' },
             { name: () => t('sidebar.menus.chiller_temperature'), icon: 'fa-solid fa-temperature-half', route: '/chiller-temperature', code: 'chiller_temperature' },
+            { name: () => t('sidebar.menus.cleaning_ipal'), icon: 'fa-solid fa-broom', route: '/cleaning-ipal', code: 'cleaning_ipal' },
         ],
     },
     {

@@ -186,6 +186,7 @@ export default {
     "retail_non_food": "Retail Non Food",
     "outlet_food_return": "Outlet Food Return",
     "chiller_temperature": "Chiller & Freezer Temperature Control",
+    "cleaning_ipal": "IPAL Cleaning",
     "stock_opname": "Stock Opname",
     "report_invoice_outlet": "Report Invoice Outlet",
     "stock_cut": "Stock Cut",
