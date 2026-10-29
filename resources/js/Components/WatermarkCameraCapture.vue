@@ -263,6 +263,17 @@ async function capture() {
       metaLabel: `${dateLabel}${geo ? ` · ${geo.lat.toFixed(5)},${geo.lng.toFixed(5)}` : ''}`,
     },
   ];
+
+  const total = items.value.length;
+  Swal.fire({
+    toast: true,
+    position: 'top-end',
+    icon: 'success',
+    title: `${props.title} berhasil di-capture (${total})`,
+    showConfirmButton: false,
+    timer: 1800,
+    timerProgressBar: true,
+  });
 }
 
 function removeAt(index) {

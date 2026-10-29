@@ -192,6 +192,13 @@ function deleteSlot(slot) {
                                         <td class="px-2 py-2 border border-gray-200 text-center align-top">
                                             <template v-if="row.slots[time]">
                                                 <div class="font-semibold text-gray-800">{{ formatTemp(row.slots[time].temp_actual) }}</div>
+                                                <div
+                                                    v-if="row.slots[time].notes"
+                                                    class="mt-1 text-[10px] text-gray-500 leading-tight max-w-[110px] mx-auto break-words"
+                                                    :title="row.slots[time].notes"
+                                                >
+                                                    <i class="fa-regular fa-note-sticky mr-0.5"></i>{{ row.slots[time].notes }}
+                                                </div>
                                             </template>
                                             <span v-else class="text-gray-300">-</span>
                                         </td>
