@@ -44,14 +44,26 @@
             </button>
           </div>
           <div class="p-4 space-y-3">
+            <div
+              v-if="captureNotice"
+              class="rounded-xl bg-emerald-600 text-white px-4 py-3 text-sm font-semibold flex items-center gap-2 shadow"
+            >
+              <i class="fa-solid fa-circle-check text-lg"></i>
+              <span>{{ captureNotice }}</span>
+            </div>
             <div class="relative bg-black rounded-xl overflow-hidden aspect-[3/4]">
               <video ref="videoEl" autoplay playsinline muted class="w-full h-full object-cover"></video>
+              <div
+                v-if="flashOn"
+                class="absolute inset-0 bg-white pointer-events-none transition-opacity duration-150"
+              ></div>
               <div class="absolute left-2 right-2 bottom-2 text-[11px] text-white bg-black/55 rounded px-2 py-1.5 leading-tight">
                 <div>{{ liveDateTime }}</div>
                 <div>{{ liveGeoLabel }}</div>
               </div>
             </div>
             <p v-if="geoError" class="text-xs text-amber-600">{{ geoError }}</p>
+            <p class="text-xs text-center text-gray-500">Total foto {{ title }}: <b>{{ items.length }}</b></p>
             <div class="flex gap-2">
               <button
                 type="button"
@@ -95,9 +107,12 @@ const videoEl = ref(null);
 const liveDateTime = ref('');
 const liveGeo = ref(null);
 const geoError = ref('');
+const captureNotice = ref('');
+const flashOn = ref(false);
 let mediaStream = null;
 let clockTimer = null;
 let geoWatchId = null;
+let noticeTimer = null;
 
 function formatDateTime(date = new Date()) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -187,6 +202,12 @@ async function openCamera() {
 function closeCamera() {
   cameraOpen.value = false;
   streamReady.value = false;
+  captureNotice.value = '';
+  flashOn.value = false;
+  if (noticeTimer) {
+    clearTimeout(noticeTimer);
+    noticeTimer = null;
+  }
   stopClock();
   stopGeo();
   if (mediaStream) {
@@ -265,14 +286,33 @@ async function capture() {
   ];
 
   const total = items.value.length;
+  const msg = `${props.title} berhasil di-capture (${total} foto)`;
+
+  // Flash putih di preview kamera biar terasa "klik shutter"
+  flashOn.value = true;
+  setTimeout(() => { flashOn.value = false; }, 120);
+
+  // Banner hijau di dalam modal (tidak tertutup overlay)
+  captureNotice.value = msg;
+  if (noticeTimer) clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => { captureNotice.value = ''; }, 2500);
+
+  // Toast juga, z-index di atas modal kamera
   Swal.fire({
     toast: true,
-    position: 'top-end',
+    position: 'top',
     icon: 'success',
-    title: `${props.title} berhasil di-capture (${total})`,
+    title: msg,
     showConfirmButton: false,
-    timer: 1800,
+    timer: 2200,
     timerProgressBar: true,
+    customClass: {
+      container: 'swal-above-camera',
+    },
+    didOpen: (toastEl) => {
+      const container = toastEl.closest('.swal2-container');
+      if (container) container.style.zIndex = '99999';
+    },
   });
 }
 
