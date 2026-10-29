@@ -1,59 +1,77 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link, useForm } from '@inertiajs/vue3';
-import { ref, onBeforeUnmount } from 'vue';
+import WatermarkCameraCapture from '@/Components/WatermarkCameraCapture.vue';
+import { Link, router } from '@inertiajs/vue3';
+import { ref } from 'vue';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
     log: { type: Object, required: true },
     canChooseOutlet: { type: Boolean, default: false },
 });
 
-const beforePreview = ref(props.log.photo_before ? `/storage/${props.log.photo_before}` : '');
-const afterPreview = ref(props.log.photo_after ? `/storage/${props.log.photo_after}` : '');
-const newBeforeObjectUrl = ref('');
-const newAfterObjectUrl = ref('');
+const cleaningDate = ref(props.log.cleaning_date);
+const keterangan = ref(props.log.keterangan || '');
+const saving = ref(false);
 
-const form = useForm({
-    cleaning_date: props.log.cleaning_date,
-    keterangan: props.log.keterangan || '',
-    photo_before: null,
-    photo_after: null,
-});
+const photosBefore = ref(
+    (props.log.photos_before || []).map((path, idx) => ({
+        key: `before-old-${idx}`,
+        file: null,
+        previewUrl: `/storage/${path}`,
+        isNew: false,
+        path,
+        metaLabel: path.split('/').pop(),
+    }))
+);
 
-function onBeforeChange(e) {
-    const file = e.target.files?.[0] || null;
-    form.photo_before = file;
-    if (newBeforeObjectUrl.value) URL.revokeObjectURL(newBeforeObjectUrl.value);
-    if (file) {
-        newBeforeObjectUrl.value = URL.createObjectURL(file);
-        beforePreview.value = newBeforeObjectUrl.value;
-    }
-}
-
-function onAfterChange(e) {
-    const file = e.target.files?.[0] || null;
-    form.photo_after = file;
-    if (newAfterObjectUrl.value) URL.revokeObjectURL(newAfterObjectUrl.value);
-    if (file) {
-        newAfterObjectUrl.value = URL.createObjectURL(file);
-        afterPreview.value = newAfterObjectUrl.value;
-    }
-}
-
-onBeforeUnmount(() => {
-    if (newBeforeObjectUrl.value) URL.revokeObjectURL(newBeforeObjectUrl.value);
-    if (newAfterObjectUrl.value) URL.revokeObjectURL(newAfterObjectUrl.value);
-});
+const photosAfter = ref(
+    (props.log.photos_after || []).map((path, idx) => ({
+        key: `after-old-${idx}`,
+        file: null,
+        previewUrl: `/storage/${path}`,
+        isNew: false,
+        path,
+        metaLabel: path.split('/').pop(),
+    }))
+);
 
 function submit() {
-    form
-        .transform((data) => ({
-            ...data,
-            _method: 'put',
-        }))
-        .post(`/cleaning-ipal/${props.log.id}`, {
-            forceFormData: true,
-        });
+    if (!photosBefore.value.length) {
+        Swal.fire('Perhatian', 'Minimal 1 foto before wajib ada.', 'warning');
+        return;
+    }
+
+    saving.value = true;
+    const fd = new FormData();
+    fd.append('_method', 'put');
+    fd.append('cleaning_date', cleaningDate.value);
+    fd.append('keterangan', keterangan.value || '');
+
+    photosBefore.value.forEach((item) => {
+        if (item.isNew && item.file) {
+            fd.append('photos_before[]', item.file);
+        } else if (item.path) {
+            fd.append('keep_before[]', item.path);
+        }
+    });
+
+    photosAfter.value.forEach((item) => {
+        if (item.isNew && item.file) {
+            fd.append('photos_after[]', item.file);
+        } else if (item.path) {
+            fd.append('keep_after[]', item.path);
+        }
+    });
+
+    router.post(`/cleaning-ipal/${props.log.id}`, fd, {
+        forceFormData: true,
+        onFinish: () => { saving.value = false; },
+        onError: (errors) => {
+            const msg = errors.photos_before || errors.message || 'Gagal menyimpan perubahan.';
+            Swal.fire('Gagal', msg, 'error');
+        },
+    });
 }
 </script>
 
@@ -67,20 +85,20 @@ function submit() {
             </div>
 
             <h1 class="text-2xl font-bold text-emerald-800 mb-2">
-                {{ log.photo_after ? 'Edit Cleaning IPAL' : 'Lengkapi Foto After' }}
+                {{ (log.photos_after || []).length ? 'Edit Cleaning IPAL' : 'Lengkapi Foto After' }}
             </h1>
-            <p class="text-sm text-gray-500 mb-6">Update keterangan dan/atau unggah foto after.</p>
+            <p class="text-sm text-gray-500 mb-6">Capture foto tambahan (before/after bisa banyak). Upload file tidak diizinkan.</p>
 
             <div class="bg-emerald-50 border border-emerald-200 rounded-xl p-5 mb-6">
                 <div class="text-lg font-bold text-gray-900">{{ log.outlet_name }}</div>
                 <div class="font-mono text-emerald-800 mt-0.5">{{ log.outlet_qr_code || '-' }}</div>
             </div>
 
-            <form class="bg-white rounded-xl shadow p-5 space-y-4" @submit.prevent="submit">
+            <div class="bg-white rounded-xl shadow p-5 space-y-5">
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
                     <input
-                        v-model="form.cleaning_date"
+                        v-model="cleaningDate"
                         type="date"
                         required
                         class="w-full rounded-lg border-gray-300 text-sm focus:ring-emerald-500 focus:border-emerald-500"
@@ -90,40 +108,30 @@ function submit() {
                 <div>
                     <label class="block text-xs font-medium text-gray-500 mb-1">Keterangan</label>
                     <textarea
-                        v-model="form.keterangan"
+                        v-model="keterangan"
                         rows="3"
                         class="w-full rounded-lg border-gray-300 text-sm focus:ring-emerald-500 focus:border-emerald-500"
                     />
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">Foto Before</label>
-                        <img v-if="beforePreview" :src="beforePreview" alt="Before" class="w-full h-40 object-cover rounded-lg border mb-2" />
-                        <input type="file" accept="image/*" capture="environment" class="w-full text-sm" @change="onBeforeChange" />
-                        <p class="text-xs text-gray-400 mt-1">Kosongkan jika tidak diganti.</p>
-                    </div>
-                    <div>
-                        <label class="block text-xs font-medium text-gray-500 mb-1">
-                            Foto After
-                            <span v-if="!log.photo_after" class="text-amber-600">(belum diisi)</span>
-                        </label>
-                        <img v-if="afterPreview" :src="afterPreview" alt="After" class="w-full h-40 object-cover rounded-lg border mb-2" />
-                        <div
-                            v-else
-                            class="w-full h-40 rounded-lg border border-dashed border-amber-300 bg-amber-50 flex items-center justify-center text-amber-700 text-sm mb-2"
-                        >
-                            Belum ada foto after
-                        </div>
-                        <input type="file" accept="image/*" capture="environment" class="w-full text-sm" @change="onAfterChange" />
-                    </div>
-                </div>
+                <WatermarkCameraCapture
+                    v-model="photosBefore"
+                    title="Foto Before"
+                    subtitle="Minimal 1 foto. Capture tambahan atau hapus yang tidak perlu."
+                />
+
+                <WatermarkCameraCapture
+                    v-model="photosAfter"
+                    title="Foto After"
+                    subtitle="Capture foto after (bisa lebih dari satu)."
+                />
 
                 <div class="flex gap-3 pt-2">
                     <button
-                        type="submit"
-                        :disabled="form.processing"
+                        type="button"
+                        :disabled="saving"
                         class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-semibold text-sm"
+                        @click="submit"
                     >
                         Simpan Perubahan
                     </button>
@@ -134,7 +142,7 @@ function submit() {
                         Batal
                     </Link>
                 </div>
-            </form>
+            </div>
         </div>
     </AppLayout>
 </template>

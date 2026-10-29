@@ -1,9 +1,11 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
-import { Link, useForm } from '@inertiajs/vue3';
+import WatermarkCameraCapture from '@/Components/WatermarkCameraCapture.vue';
+import { Link, router } from '@inertiajs/vue3';
 import { ref, watch, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { pickRearCameraId } from '@/utils/pickRearCamera';
 
 const props = defineProps({
     defaultDate: { type: String, default: '' },
@@ -19,17 +21,12 @@ const scanning = ref(false);
 const lookupLoading = ref(false);
 const scannedOutlet = ref(null);
 const manualQr = ref('');
-const beforePreview = ref('');
-const afterPreview = ref('');
+const cleaningDate = ref(props.defaultDate || new Date().toISOString().slice(0, 10));
+const keterangan = ref('');
+const photosBefore = ref([]);
+const photosAfter = ref([]);
+const saving = ref(false);
 let html5QrCode = null;
-
-const form = useForm({
-    outlet_id: '',
-    cleaning_date: props.defaultDate || new Date().toISOString().slice(0, 10),
-    keterangan: '',
-    photo_before: null,
-    photo_after: null,
-});
 
 async function lookupOutlet(rawValue) {
     const qrCode = String(rawValue || '').trim();
@@ -44,7 +41,6 @@ async function lookupOutlet(rawValue) {
             throw new Error(data.message || 'Outlet tidak ditemukan');
         }
         scannedOutlet.value = data.outlet;
-        form.outlet_id = data.outlet.id_outlet;
         closeScanner();
         Swal.fire({
             toast: true,
@@ -56,7 +52,6 @@ async function lookupOutlet(rawValue) {
         });
     } catch (error) {
         scannedOutlet.value = null;
-        form.outlet_id = '';
         Swal.fire('Gagal', error?.response?.data?.message || error.message || 'Lookup gagal', 'error');
     } finally {
         lookupLoading.value = false;
@@ -69,7 +64,6 @@ function onManualLookup() {
 
 function clearOutlet() {
     scannedOutlet.value = null;
-    form.outlet_id = '';
     manualQr.value = '';
     showScanner.value = true;
 }
@@ -91,28 +85,59 @@ async function setupCameras() {
     if (!window.Html5Qrcode) return;
     try {
         cameras.value = await window.Html5Qrcode.getCameras();
-        selectedCameraId.value = cameras.value[0]?.id || '';
+        selectedCameraId.value = pickRearCameraId(cameras.value);
         startScanner();
     } catch (e) {
-        Swal.fire('Kamera', 'Tidak dapat mengakses kamera. Gunakan input manual QR outlet.', 'warning');
+        // Fallback: facingMode environment without enumerating
+        startScannerWithFacingMode();
     }
 }
 
-function startScanner() {
-    if (!window.Html5Qrcode || !selectedCameraId.value || !showScanner.value) return;
+async function startScannerWithFacingMode() {
+    if (!window.Html5Qrcode || !showScanner.value) return;
     stopScanner();
     html5QrCode = new window.Html5Qrcode('cleaning-ipal-qr-reader');
     scanning.value = true;
-    html5QrCode.start(
-        selectedCameraId.value,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-            if (lookupLoading.value) return;
-            lookupOutlet(decodedText);
-        }
-    ).catch(() => {
+    try {
+        await html5QrCode.start(
+            { facingMode: 'environment' },
+            { fps: 10, qrbox: { width: 250, height: 250 } },
+            (decodedText) => {
+                if (lookupLoading.value) return;
+                lookupOutlet(decodedText);
+            }
+        );
+    } catch (e) {
         scanning.value = false;
-    });
+        Swal.fire('Kamera', 'Tidak dapat mengakses kamera belakang. Gunakan input manual QR outlet.', 'warning');
+    }
+}
+
+async function startScanner() {
+    if (!window.Html5Qrcode || !showScanner.value) return;
+    stopScanner();
+    html5QrCode = new window.Html5Qrcode('cleaning-ipal-qr-reader');
+    scanning.value = true;
+
+    const onSuccess = (decodedText) => {
+        if (lookupLoading.value) return;
+        lookupOutlet(decodedText);
+    };
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    try {
+        if (selectedCameraId.value) {
+            await html5QrCode.start(selectedCameraId.value, config, onSuccess);
+        } else {
+            await html5QrCode.start({ facingMode: 'environment' }, config, onSuccess);
+        }
+    } catch (e) {
+        try {
+            await html5QrCode.start({ facingMode: 'environment' }, config, onSuccess);
+        } catch (err) {
+            scanning.value = false;
+        }
+    }
 }
 
 watch(showScanner, async (val) => {
@@ -134,40 +159,35 @@ watch(selectedCameraId, () => {
     if (showScanner.value) startScanner();
 });
 
-onBeforeUnmount(() => {
-    stopScanner();
-    if (beforePreview.value) URL.revokeObjectURL(beforePreview.value);
-    if (afterPreview.value) URL.revokeObjectURL(afterPreview.value);
-});
+onBeforeUnmount(() => stopScanner());
 
-function onBeforeChange(e) {
-    const file = e.target.files?.[0] || null;
-    form.photo_before = file;
-    if (beforePreview.value) URL.revokeObjectURL(beforePreview.value);
-    beforePreview.value = file ? URL.createObjectURL(file) : '';
-}
-
-function onAfterChange(e) {
-    const file = e.target.files?.[0] || null;
-    form.photo_after = file;
-    if (afterPreview.value) URL.revokeObjectURL(afterPreview.value);
-    afterPreview.value = file ? URL.createObjectURL(file) : '';
-}
-
-function submit() {
-    if (!form.outlet_id) {
+async function submit() {
+    if (!scannedOutlet.value?.id_outlet) {
         Swal.fire('Perhatian', 'Scan QR outlet terlebih dahulu.', 'warning');
         return;
     }
-    if (!form.photo_before) {
-        Swal.fire('Perhatian', 'Foto before wajib diisi saat membuat data.', 'warning');
+    if (!photosBefore.value.length) {
+        Swal.fire('Perhatian', 'Minimal 1 foto before wajib di-capture.', 'warning');
         return;
     }
 
-    form.post('/cleaning-ipal', {
+    saving.value = true;
+    const fd = new FormData();
+    fd.append('outlet_id', scannedOutlet.value.id_outlet);
+    fd.append('cleaning_date', cleaningDate.value);
+    fd.append('keterangan', keterangan.value || '');
+    photosBefore.value.forEach((item) => {
+        if (item.file) fd.append('photos_before[]', item.file);
+    });
+    photosAfter.value.forEach((item) => {
+        if (item.file) fd.append('photos_after[]', item.file);
+    });
+
+    router.post('/cleaning-ipal', fd, {
         forceFormData: true,
+        onFinish: () => { saving.value = false; },
         onError: (errors) => {
-            const msg = errors.outlet_id || errors.photo_before || errors.message || 'Gagal menyimpan data.';
+            const msg = errors.outlet_id || errors.photos_before || errors.message || 'Gagal menyimpan data.';
             Swal.fire('Gagal', msg, 'error');
         },
     });
@@ -185,7 +205,7 @@ function submit() {
 
             <h1 class="text-2xl font-bold text-emerald-800 mb-2">Tambah Cleaning IPAL</h1>
             <p class="text-sm text-gray-500 mb-6">
-                Scan QR outlet, isi keterangan + foto before. Foto after bisa dilengkapi belakangan lewat Edit.
+                Scan QR outlet, capture foto before (bisa banyak). Foto after bisa dilengkapi belakangan.
             </p>
 
             <div v-if="!tableReady" class="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-yellow-800 text-sm">
@@ -212,10 +232,11 @@ function submit() {
                             <select v-model="selectedCameraId" class="w-full rounded-lg border-gray-300 text-sm">
                                 <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.label || cam.id }}</option>
                             </select>
+                            <p class="text-[11px] text-gray-400 mt-1">Default otomatis kamera belakang.</p>
                         </div>
                         <div id="cleaning-ipal-qr-reader" class="overflow-hidden rounded-xl border border-gray-200 bg-black/5 min-h-[240px]"></div>
                         <p class="text-xs text-gray-500 text-center">
-                            {{ scanning ? 'Arahkan kamera ke QR Code outlet...' : 'Menyiapkan kamera...' }}
+                            {{ scanning ? 'Arahkan kamera belakang ke QR Code outlet...' : 'Menyiapkan kamera belakang...' }}
                         </p>
                         <button type="button" class="text-sm text-gray-500 hover:underline" @click="closeScanner">
                             Tutup scanner / pakai input manual
@@ -253,13 +274,13 @@ function submit() {
                     </div>
                 </div>
 
-                <form v-if="scannedOutlet" class="bg-white rounded-xl shadow p-5 space-y-4" @submit.prevent="submit">
+                <div v-if="scannedOutlet" class="bg-white rounded-xl shadow p-5 space-y-5">
                     <h2 class="font-semibold text-gray-800">2. Data Cleaning</h2>
 
                     <div>
                         <label class="block text-xs font-medium text-gray-500 mb-1">Tanggal</label>
                         <input
-                            v-model="form.cleaning_date"
+                            v-model="cleaningDate"
                             type="date"
                             required
                             class="w-full rounded-lg border-gray-300 text-sm focus:ring-emerald-500 focus:border-emerald-500"
@@ -269,34 +290,31 @@ function submit() {
                     <div>
                         <label class="block text-xs font-medium text-gray-500 mb-1">Keterangan</label>
                         <textarea
-                            v-model="form.keterangan"
+                            v-model="keterangan"
                             rows="3"
                             placeholder="Catatan cleaning IPAL..."
                             class="w-full rounded-lg border-gray-300 text-sm focus:ring-emerald-500 focus:border-emerald-500"
                         />
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-xs font-medium text-gray-500 mb-1">Foto Before <span class="text-red-500">*</span></label>
-                            <input type="file" accept="image/*" capture="environment" class="w-full text-sm" @change="onBeforeChange" />
-                            <img v-if="beforePreview" :src="beforePreview" alt="Before preview" class="mt-2 w-full h-40 object-cover rounded-lg border" />
-                        </div>
-                        <div>
-                            <label class="block text-xs font-medium text-gray-500 mb-1">
-                                Foto After <span class="text-gray-400">(opsional)</span>
-                            </label>
-                            <input type="file" accept="image/*" capture="environment" class="w-full text-sm" @change="onAfterChange" />
-                            <img v-if="afterPreview" :src="afterPreview" alt="After preview" class="mt-2 w-full h-40 object-cover rounded-lg border" />
-                            <p class="text-xs text-gray-400 mt-1">Bisa diisi nanti lewat Edit / Isi After.</p>
-                        </div>
-                    </div>
+                    <WatermarkCameraCapture
+                        v-model="photosBefore"
+                        title="Foto Before"
+                        subtitle="Wajib minimal 1. Capture saja (ada watermark waktu & GPS)."
+                    />
+
+                    <WatermarkCameraCapture
+                        v-model="photosAfter"
+                        title="Foto After"
+                        subtitle="Opsional. Bisa dilengkapi nanti lewat Edit / Isi After."
+                    />
 
                     <div class="flex gap-3 pt-2">
                         <button
-                            type="submit"
-                            :disabled="form.processing"
+                            type="button"
+                            :disabled="saving"
                             class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg font-semibold text-sm"
+                            @click="submit"
                         >
                             Simpan
                         </button>
@@ -304,7 +322,7 @@ function submit() {
                             Batal
                         </Link>
                     </div>
-                </form>
+                </div>
             </template>
         </div>
     </AppLayout>

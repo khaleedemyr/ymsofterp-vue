@@ -4,6 +4,7 @@ import { Link, useForm } from '@inertiajs/vue3';
 import { ref, watch, onBeforeUnmount } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { pickRearCameraId } from '@/utils/pickRearCamera';
 
 const props = defineProps({
     checkTimes: { type: Array, default: () => ['10:00', '16:00', '22:00'] },
@@ -91,28 +92,39 @@ async function setupCameras() {
     if (!window.Html5Qrcode) return;
     try {
         cameras.value = await window.Html5Qrcode.getCameras();
-        selectedCameraId.value = cameras.value[0]?.id || '';
+        selectedCameraId.value = pickRearCameraId(cameras.value);
         startScanner();
     } catch (e) {
-        Swal.fire('Kamera', 'Tidak dapat mengakses kamera. Gunakan input manual nomor seri.', 'warning');
+        startScanner();
     }
 }
 
-function startScanner() {
-    if (!window.Html5Qrcode || !selectedCameraId.value || !showScanner.value) return;
+async function startScanner() {
+    if (!window.Html5Qrcode || !showScanner.value) return;
     stopScanner();
     html5QrCode = new window.Html5Qrcode('chiller-qr-reader');
     scanning.value = true;
-    html5QrCode.start(
-        selectedCameraId.value,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-            if (lookupLoading.value) return;
-            lookupSerial(decodedText);
+
+    const onSuccess = (decodedText) => {
+        if (lookupLoading.value) return;
+        lookupSerial(decodedText);
+    };
+    const config = { fps: 10, qrbox: { width: 250, height: 250 } };
+
+    try {
+        if (selectedCameraId.value) {
+            await html5QrCode.start(selectedCameraId.value, config, onSuccess);
+        } else {
+            await html5QrCode.start({ facingMode: 'environment' }, config, onSuccess);
         }
-    ).catch(() => {
-        scanning.value = false;
-    });
+    } catch (e) {
+        try {
+            await html5QrCode.start({ facingMode: 'environment' }, config, onSuccess);
+        } catch (err) {
+            scanning.value = false;
+            Swal.fire('Kamera', 'Tidak dapat mengakses kamera belakang. Gunakan input manual nomor seri.', 'warning');
+        }
+    }
 }
 
 watch(showScanner, async (val) => {
@@ -189,10 +201,11 @@ function submit() {
                             >
                                 <option v-for="cam in cameras" :key="cam.id" :value="cam.id">{{ cam.label || cam.id }}</option>
                             </select>
+                            <p class="text-[11px] text-gray-400 mt-1">Default otomatis kamera belakang.</p>
                         </div>
                         <div id="chiller-qr-reader" class="overflow-hidden rounded-xl border border-gray-200 bg-black/5 min-h-[240px]"></div>
                         <p class="text-xs text-gray-500 text-center">
-                            {{ scanning ? 'Arahkan kamera ke QR Code asset serial...' : 'Menyiapkan kamera...' }}
+                            {{ scanning ? 'Arahkan kamera belakang ke QR Code asset serial...' : 'Menyiapkan kamera belakang...' }}
                         </p>
                         <button type="button" class="text-sm text-gray-500 hover:underline" @click="closeScanner">
                             Tutup scanner / pakai input manual

@@ -72,8 +72,17 @@ class CleaningIpalController extends Controller
                 ->get();
         }
 
+        $paginator = $query->paginate(25)->withQueryString();
+        $paginator->setCollection(
+            $paginator->getCollection()->map(function ($row) {
+                $row->photos_before = $this->decodePhotoList($row->photo_before ?? null);
+                $row->photos_after = $this->decodePhotoList($row->photo_after ?? null);
+                return $row;
+            })
+        );
+
         return Inertia::render('CleaningIpal/Index', [
-            'records' => $query->paginate(25)->withQueryString(),
+            'records' => $paginator,
             'filters' => [
                 'date' => $date,
                 'outlet_id' => $canChooseOutlet && $outletFilter > 0 ? $outletFilter : '',
@@ -101,15 +110,17 @@ class CleaningIpalController extends Controller
     {
         $this->ensureTableReady();
 
-        $data = $request->validate([
+        $request->validate([
             'outlet_id' => 'required|integer',
             'cleaning_date' => 'required|date',
             'keterangan' => 'nullable|string|max:2000',
-            'photo_before' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
-            'photo_after' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'photos_before' => 'required|array|min:1',
+            'photos_before.*' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:8192',
+            'photos_after' => 'nullable|array',
+            'photos_after.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:8192',
         ]);
 
-        $outlet = $this->findOutlet((int) $data['outlet_id']);
+        $outlet = $this->findOutlet((int) $request->input('outlet_id'));
         if (!$outlet) {
             return back()->withErrors(['outlet_id' => 'Outlet tidak ditemukan.']);
         }
@@ -119,20 +130,18 @@ class CleaningIpalController extends Controller
             return back()->withErrors(['outlet_id' => $authError]);
         }
 
-        $beforePath = $request->file('photo_before')->store('cleaning-ipal/before', 'public');
-        $afterPath = $request->hasFile('photo_after')
-            ? $request->file('photo_after')->store('cleaning-ipal/after', 'public')
-            : null;
+        $beforePaths = $this->storeUploadedPhotos($request->file('photos_before', []), 'cleaning-ipal/before');
+        $afterPaths = $this->storeUploadedPhotos($request->file('photos_after', []) ?: [], 'cleaning-ipal/after');
 
         $now = now();
         DB::table('cleaning_ipal_logs')->insert([
             'outlet_id' => (int) $outlet->id_outlet,
             'outlet_qr_code' => $outlet->qr_code,
             'outlet_name' => $outlet->nama_outlet,
-            'cleaning_date' => $data['cleaning_date'],
-            'keterangan' => $data['keterangan'] ?? null,
-            'photo_before' => $beforePath,
-            'photo_after' => $afterPath,
+            'cleaning_date' => $request->input('cleaning_date'),
+            'keterangan' => $request->input('keterangan'),
+            'photo_before' => $this->encodePhotoList($beforePaths),
+            'photo_after' => $this->encodePhotoList($afterPaths),
             'created_by' => $request->user()->id,
             'updated_by' => $request->user()->id,
             'created_at' => $now,
@@ -140,7 +149,7 @@ class CleaningIpalController extends Controller
         ]);
 
         return redirect()
-            ->route('cleaning-ipal.index', ['date' => $data['cleaning_date']])
+            ->route('cleaning-ipal.index', ['date' => $request->input('cleaning_date')])
             ->with('success', 'Data Cleaning IPAL berhasil disimpan.');
     }
 
@@ -154,6 +163,9 @@ class CleaningIpalController extends Controller
         }
 
         $this->authorizeLogAccess(request(), $log);
+
+        $log->photos_before = $this->decodePhotoList($log->photo_before ?? null);
+        $log->photos_after = $this->decodePhotoList($log->photo_after ?? null);
 
         return Inertia::render('CleaningIpal/Edit', [
             'log' => $log,
@@ -172,40 +184,55 @@ class CleaningIpalController extends Controller
 
         $this->authorizeLogAccess($request, $log);
 
-        $data = $request->validate([
+        $request->validate([
             'cleaning_date' => 'required|date',
             'keterangan' => 'nullable|string|max:2000',
-            'photo_before' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
-            'photo_after' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:5120',
+            'keep_before' => 'nullable|array',
+            'keep_before.*' => 'nullable|string|max:500',
+            'keep_after' => 'nullable|array',
+            'keep_after.*' => 'nullable|string|max:500',
+            'photos_before' => 'nullable|array',
+            'photos_before.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:8192',
+            'photos_after' => 'nullable|array',
+            'photos_after.*' => 'nullable|image|mimes:jpeg,png,jpg,gif,webp|max:8192',
         ]);
 
-        $update = [
-            'cleaning_date' => $data['cleaning_date'],
-            'keterangan' => $data['keterangan'] ?? null,
+        $oldBefore = $this->decodePhotoList($log->photo_before ?? null);
+        $oldAfter = $this->decodePhotoList($log->photo_after ?? null);
+
+        $keepBefore = array_values(array_filter(
+            array_map('strval', $request->input('keep_before', [])),
+            fn ($path) => in_array($path, $oldBefore, true)
+        ));
+        $keepAfter = array_values(array_filter(
+            array_map('strval', $request->input('keep_after', [])),
+            fn ($path) => in_array($path, $oldAfter, true)
+        ));
+
+        $newBefore = $this->storeUploadedPhotos($request->file('photos_before', []) ?: [], 'cleaning-ipal/before');
+        $newAfter = $this->storeUploadedPhotos($request->file('photos_after', []) ?: [], 'cleaning-ipal/after');
+
+        $finalBefore = array_values(array_merge($keepBefore, $newBefore));
+        $finalAfter = array_values(array_merge($keepAfter, $newAfter));
+
+        if (count($finalBefore) < 1) {
+            return back()->withErrors(['photos_before' => 'Minimal 1 foto before wajib ada.']);
+        }
+
+        $this->deleteRemovedPhotos($oldBefore, $keepBefore);
+        $this->deleteRemovedPhotos($oldAfter, $keepAfter);
+
+        DB::table('cleaning_ipal_logs')->where('id', $id)->update([
+            'cleaning_date' => $request->input('cleaning_date'),
+            'keterangan' => $request->input('keterangan'),
+            'photo_before' => $this->encodePhotoList($finalBefore),
+            'photo_after' => $this->encodePhotoList($finalAfter),
             'updated_by' => $request->user()->id,
             'updated_at' => now(),
-        ];
-
-        if ($request->hasFile('photo_before')) {
-            $newBefore = $request->file('photo_before')->store('cleaning-ipal/before', 'public');
-            if ($log->photo_before && Storage::disk('public')->exists($log->photo_before)) {
-                Storage::disk('public')->delete($log->photo_before);
-            }
-            $update['photo_before'] = $newBefore;
-        }
-
-        if ($request->hasFile('photo_after')) {
-            $newAfter = $request->file('photo_after')->store('cleaning-ipal/after', 'public');
-            if ($log->photo_after && Storage::disk('public')->exists($log->photo_after)) {
-                Storage::disk('public')->delete($log->photo_after);
-            }
-            $update['photo_after'] = $newAfter;
-        }
-
-        DB::table('cleaning_ipal_logs')->where('id', $id)->update($update);
+        ]);
 
         return redirect()
-            ->route('cleaning-ipal.index', ['date' => $data['cleaning_date']])
+            ->route('cleaning-ipal.index', ['date' => $request->input('cleaning_date')])
             ->with('success', 'Data Cleaning IPAL berhasil diperbarui.');
     }
 
@@ -220,11 +247,15 @@ class CleaningIpalController extends Controller
 
         $this->authorizeLogAccess($request, $log);
 
-        if ($log->photo_before && Storage::disk('public')->exists($log->photo_before)) {
-            Storage::disk('public')->delete($log->photo_before);
+        foreach ($this->decodePhotoList($log->photo_before ?? null) as $path) {
+            if ($path && Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
         }
-        if ($log->photo_after && Storage::disk('public')->exists($log->photo_after)) {
-            Storage::disk('public')->delete($log->photo_after);
+        foreach ($this->decodePhotoList($log->photo_after ?? null) as $path) {
+            if ($path && Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
         }
 
         $date = $log->cleaning_date;
@@ -266,6 +297,67 @@ class CleaningIpalController extends Controller
                 'status' => $outlet->status,
             ],
         ]);
+    }
+
+    private function storeUploadedPhotos(array $files, string $folder): array
+    {
+        $paths = [];
+        foreach ($files as $file) {
+            if (!$file) {
+                continue;
+            }
+            $paths[] = $file->store($folder, 'public');
+        }
+        return $paths;
+    }
+
+    private function decodePhotoList($raw): array
+    {
+        if ($raw === null || $raw === '') {
+            return [];
+        }
+
+        if (is_array($raw)) {
+            return array_values(array_filter(array_map('strval', $raw)));
+        }
+
+        $str = trim((string) $raw);
+        if ($str === '') {
+            return [];
+        }
+
+        // Legacy single path (plain string, not JSON)
+        if ($str[0] !== '[' && $str[0] !== '{') {
+            return [$str];
+        }
+
+        $decoded = json_decode($str, true);
+        if (!is_array($decoded)) {
+            return [$str];
+        }
+
+        return array_values(array_filter(array_map('strval', $decoded)));
+    }
+
+    private function encodePhotoList(array $paths): ?string
+    {
+        $paths = array_values(array_filter(array_map('strval', $paths)));
+        if (!count($paths)) {
+            return null;
+        }
+        return json_encode($paths);
+    }
+
+    private function deleteRemovedPhotos(array $oldPaths, array $keepPaths): void
+    {
+        foreach ($oldPaths as $path) {
+            if (!$path || in_array($path, $keepPaths, true)) {
+                continue;
+            }
+            if (Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
+        }
     }
 
     private function findLog(int $id): ?object

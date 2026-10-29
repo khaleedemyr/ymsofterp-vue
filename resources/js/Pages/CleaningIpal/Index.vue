@@ -37,12 +37,17 @@ function photoUrl(path) {
     return `/storage/${path}`;
 }
 
+function photosOf(row, type) {
+    if (type === 'before') return row.photos_before || [];
+    return row.photos_after || [];
+}
+
 function statusLabel(row) {
-    return row.photo_after ? 'Lengkap' : 'Menunggu After';
+    return photosOf(row, 'after').length ? 'Lengkap' : 'Menunggu After';
 }
 
 function statusClass(row) {
-    return row.photo_after
+    return photosOf(row, 'after').length
         ? 'bg-green-100 text-green-700'
         : 'bg-amber-100 text-amber-700';
 }
@@ -67,16 +72,31 @@ function deleteRow(row) {
     });
 }
 
-function openPreview(path) {
-    const url = photoUrl(path);
-    if (!url) return;
-    Swal.fire({
-        imageUrl: url,
-        imageAlt: 'Foto Cleaning IPAL',
-        width: 640,
-        showConfirmButton: false,
-        showCloseButton: true,
-    });
+function openPreview(paths, startIndex = 0) {
+    const list = (paths || []).map(photoUrl).filter(Boolean);
+    if (!list.length) return;
+    let index = startIndex;
+    const show = () => {
+        Swal.fire({
+            imageUrl: list[index],
+            imageAlt: `Foto ${index + 1}/${list.length}`,
+            width: 720,
+            showConfirmButton: list.length > 1,
+            confirmButtonText: 'Berikutnya',
+            showDenyButton: list.length > 1,
+            denyButtonText: 'Sebelumnya',
+            showCloseButton: true,
+        }).then((result) => {
+            if (result.isConfirmed) {
+                index = (index + 1) % list.length;
+                show();
+            } else if (result.isDenied) {
+                index = (index - 1 + list.length) % list.length;
+                show();
+            }
+        });
+    };
+    show();
 }
 </script>
 
@@ -171,25 +191,29 @@ function openPreview(path) {
                                         <div class="line-clamp-2 text-gray-700">{{ row.keterangan || '-' }}</div>
                                     </td>
                                     <td class="px-4 py-3 text-center">
-                                        <button
-                                            v-if="row.photo_before"
-                                            type="button"
-                                            class="inline-block"
-                                            @click="openPreview(row.photo_before)"
-                                        >
-                                            <img :src="photoUrl(row.photo_before)" alt="Before" class="w-14 h-14 object-cover rounded-lg border mx-auto" />
-                                        </button>
+                                        <div v-if="photosOf(row, 'before').length" class="flex flex-col items-center gap-1">
+                                            <button type="button" @click="openPreview(photosOf(row, 'before'))">
+                                                <img
+                                                    :src="photoUrl(photosOf(row, 'before')[0])"
+                                                    alt="Before"
+                                                    class="w-14 h-14 object-cover rounded-lg border"
+                                                />
+                                            </button>
+                                            <span class="text-[10px] text-gray-500">{{ photosOf(row, 'before').length }} foto</span>
+                                        </div>
                                         <span v-else class="text-gray-300">-</span>
                                     </td>
                                     <td class="px-4 py-3 text-center">
-                                        <button
-                                            v-if="row.photo_after"
-                                            type="button"
-                                            class="inline-block"
-                                            @click="openPreview(row.photo_after)"
-                                        >
-                                            <img :src="photoUrl(row.photo_after)" alt="After" class="w-14 h-14 object-cover rounded-lg border mx-auto" />
-                                        </button>
+                                        <div v-if="photosOf(row, 'after').length" class="flex flex-col items-center gap-1">
+                                            <button type="button" @click="openPreview(photosOf(row, 'after'))">
+                                                <img
+                                                    :src="photoUrl(photosOf(row, 'after')[0])"
+                                                    alt="After"
+                                                    class="w-14 h-14 object-cover rounded-lg border"
+                                                />
+                                            </button>
+                                            <span class="text-[10px] text-gray-500">{{ photosOf(row, 'after').length }} foto</span>
+                                        </div>
                                         <span v-else class="text-xs text-amber-600 font-medium">Belum ada</span>
                                     </td>
                                     <td class="px-4 py-3">
@@ -203,7 +227,7 @@ function openPreview(path) {
                                                 :href="`/cleaning-ipal/${row.id}/edit`"
                                                 class="text-emerald-700 hover:underline font-medium"
                                             >
-                                                {{ row.photo_after ? 'Edit' : 'Isi After' }}
+                                                {{ photosOf(row, 'after').length ? 'Edit' : 'Isi After' }}
                                             </Link>
                                             <button
                                                 type="button"
