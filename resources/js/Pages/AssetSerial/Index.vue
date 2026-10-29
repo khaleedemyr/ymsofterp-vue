@@ -1,5 +1,6 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import AssetSerialQrModal from '@/Pages/AssetSerial/AssetSerialQrModal.vue';
 import { ref, watch } from 'vue';
 import { router, Link } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
@@ -13,6 +14,28 @@ const props = defineProps({
     user: Object,
     tableReady: { type: Boolean, default: true },
 });
+
+const qrModal = ref({
+    open: false,
+    serialNumber: '',
+    itemName: '',
+    outletName: '',
+    warehouseName: '',
+});
+
+function openQr(row) {
+    qrModal.value = {
+        open: true,
+        serialNumber: row.serial_number || '',
+        itemName: row.item_name || '',
+        outletName: row.owner_outlet_name || '',
+        warehouseName: row.warehouse_name || '',
+    };
+}
+
+function closeQr() {
+    qrModal.value.open = false;
+}
 
 const filters = ref({
     search: props.filters?.search || '',
@@ -113,7 +136,7 @@ function deleteSerial(row) {
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                 <div>
                     <h1 class="text-2xl font-bold text-teal-700">Asset Nomor Seri</h1>
-                    <p class="text-sm text-gray-500 mt-1">Pelacakan unit fisik asset per nomor seri</p>
+                    <p class="text-sm text-gray-500 mt-1">Pelacakan unit fisik asset per nomor seri — unduh QR Code untuk label stok</p>
                 </div>
                 <Link v-if="tableReady" href="/asset-serials/create"
                     class="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white px-5 py-2.5 rounded-lg shadow font-semibold text-sm transition">
@@ -171,7 +194,6 @@ function deleteSerial(row) {
                                     <th class="px-4 py-3 text-left font-semibold text-gray-600">Barang</th>
                                     <th class="px-4 py-3 text-left font-semibold text-gray-600">Pemilik</th>
                                     <th class="px-4 py-3 text-left font-semibold text-gray-600">Warehouse</th>
-                                    <th class="px-4 py-3 text-left font-semibold text-gray-600">UID Tag</th>
                                     <th class="px-4 py-3 text-left font-semibold text-gray-600">Status</th>
                                     <th class="px-4 py-3 text-left font-semibold text-gray-600">Sumber</th>
                                     <th class="px-4 py-3 text-left font-semibold text-gray-600">Di-tag</th>
@@ -180,14 +202,13 @@ function deleteSerial(row) {
                             </thead>
                             <tbody class="divide-y divide-gray-100">
                                 <tr v-if="!serials.data?.length">
-                                    <td colspan="9" class="px-4 py-10 text-center text-gray-400">Belum ada nomor seri terdaftar.</td>
+                                    <td colspan="8" class="px-4 py-10 text-center text-gray-400">Belum ada nomor seri terdaftar.</td>
                                 </tr>
                                 <tr v-for="row in serials.data" :key="row.id" class="hover:bg-gray-50">
                                     <td class="px-4 py-3 font-mono font-semibold text-teal-700">{{ row.serial_number }}</td>
                                     <td class="px-4 py-3">{{ row.item_name }}</td>
                                     <td class="px-4 py-3">{{ row.owner_outlet_name }}</td>
                                     <td class="px-4 py-3">{{ row.warehouse_name || '-' }}</td>
-                                    <td class="px-4 py-3 font-mono text-xs text-gray-500">{{ row.tag_uid || '-' }}</td>
                                     <td class="px-4 py-3">
                                         <span class="px-2 py-0.5 rounded-full text-xs font-medium" :class="statusBadge(row.status)">
                                             {{ statusLabel(row.status) }}
@@ -197,6 +218,14 @@ function deleteSerial(row) {
                                     <td class="px-4 py-3 text-xs text-gray-500">{{ row.tagged_at ? new Date(row.tagged_at).toLocaleString('id-ID') : '-' }}</td>
                                     <td class="px-4 py-3">
                                         <div class="flex items-center gap-3">
+                                            <button
+                                                type="button"
+                                                @click.stop="openQr(row)"
+                                                class="inline-flex items-center gap-1 text-teal-600 hover:underline font-medium"
+                                                title="Download QR Code"
+                                            >
+                                                <i class="fa-solid fa-qrcode"></i> QR
+                                            </button>
                                             <Link :href="`/asset-serials/${row.id}`" class="text-teal-600 hover:underline font-medium">Lihat</Link>
                                             <button
                                                 v-if="canDeleteRow(row)"
@@ -220,5 +249,14 @@ function deleteSerial(row) {
                 </div>
             </template>
         </div>
+
+        <AssetSerialQrModal
+            :open="qrModal.open"
+            :serial-number="qrModal.serialNumber"
+            :item-name="qrModal.itemName"
+            :outlet-name="qrModal.outletName"
+            :warehouse-name="qrModal.warehouseName"
+            @close="closeQr"
+        />
     </AppLayout>
 </template>

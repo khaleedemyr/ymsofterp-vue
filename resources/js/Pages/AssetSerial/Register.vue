@@ -104,7 +104,7 @@ onMounted(() => {
             </div>
 
             <h1 class="text-2xl font-bold text-teal-700 mb-2">Daftarkan Nomor Seri</h1>
-            <p class="text-sm text-gray-500 mb-6">Registrasi manual untuk stok lama — tanpa NFC. Pilih barang yang punya stok, lalu generate nomor seri.</p>
+            <p class="text-sm text-gray-500 mb-6">Registrasi manual untuk stok lama. Pilih barang yang punya stok, generate nomor seri, lalu unduh QR Code dari daftar.</p>
 
             <div v-if="!tableReady" class="bg-yellow-50 border border-yellow-200 rounded-xl p-5 text-yellow-800 text-sm mb-6">
                 Jalankan <code class="bg-yellow-100 px-1 rounded">database/sql/asset_serial_mode.sql</code> terlebih dahulu.
@@ -160,7 +160,7 @@ onMounted(() => {
                         <div class="text-teal-700">{{ selectedItem.warehouse_name }} — sisa {{ selectedItem.remaining_qty }} unit</div>
                     </div>
 
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 gap-4">
                         <div>
                             <label class="block text-xs font-medium text-gray-500 mb-1">Nomor Seri</label>
                             <div class="flex gap-2">
@@ -169,13 +169,9 @@ onMounted(() => {
                                 <button type="button" @click="generatePreview"
                                     class="px-3 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-xs font-medium">Generate</button>
                             </div>
+                            <p class="text-xs text-gray-400 mt-1">Setelah disimpan, unduh QR Code dari daftar atau halaman detail.</p>
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-gray-500 mb-1">UID Tag RFID <span class="text-gray-400">(opsional)</span></label>
-                            <input v-model="form.tag_uid" type="text" placeholder="Isi jika sudah punya UID dari reader"
-                                class="w-full rounded-lg border-gray-300 text-sm font-mono focus:ring-teal-500 focus:border-teal-500" />
-                        </div>
-                        <div class="sm:col-span-2">
                             <label class="block text-xs font-medium text-gray-500 mb-1">Catatan</label>
                             <textarea v-model="form.notes" rows="2"
                                 class="w-full rounded-lg border-gray-300 text-sm focus:ring-teal-500 focus:border-teal-500" />

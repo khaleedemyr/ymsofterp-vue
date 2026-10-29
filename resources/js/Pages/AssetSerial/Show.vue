@@ -1,5 +1,7 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
+import AssetSerialQrModal from '@/Pages/AssetSerial/AssetSerialQrModal.vue';
+import { ref } from 'vue';
 import { Link, router } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 
@@ -8,6 +10,8 @@ const props = defineProps({
     movements: Array,
     canDelete: { type: Boolean, default: false },
 });
+
+const showQr = ref(false);
 
 function statusBadge(status) {
     const map = {
@@ -79,6 +83,13 @@ function deleteSerial() {
                             {{ statusLabel(serial.status) }}
                         </span>
                         <button
+                            type="button"
+                            @click="showQr = true"
+                            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-teal-50 text-teal-700 hover:bg-teal-100 text-sm font-medium transition"
+                        >
+                            <i class="fa-solid fa-qrcode"></i> Download QR
+                        </button>
+                        <button
                             v-if="canDelete"
                             type="button"
                             @click="deleteSerial"
@@ -93,7 +104,6 @@ function deleteSerial() {
                     <div><span class="text-gray-500">Pemilik:</span> <span class="font-medium">{{ serial.owner_outlet_name }}</span></div>
                     <div><span class="text-gray-500">Lokasi:</span> <span class="font-medium">{{ serial.location_outlet_name || '-' }}</span></div>
                     <div><span class="text-gray-500">Warehouse:</span> <span class="font-medium">{{ serial.warehouse_name || '-' }}</span></div>
-                    <div><span class="text-gray-500">UID Tag RFID:</span> <span class="font-mono text-xs">{{ serial.tag_uid || '-' }}</span></div>
                     <div><span class="text-gray-500">Unit Level:</span> <span class="font-medium uppercase">{{ serial.unit_level }}</span></div>
                     <div><span class="text-gray-500">Sumber:</span> <span class="font-medium">{{ serial.source_type || '-' }}</span></div>
                     <div><span class="text-gray-500">Di-tag oleh:</span> <span class="font-medium">{{ serial.tagged_by_name || '-' }}</span></div>
@@ -132,6 +142,15 @@ function deleteSerial() {
                     </table>
                 </div>
             </div>
+
+            <AssetSerialQrModal
+                :open="showQr"
+                :serial-number="serial.serial_number"
+                :item-name="serial.item_name"
+                :outlet-name="serial.owner_outlet_name"
+                :warehouse-name="serial.warehouse_name"
+                @close="showQr = false"
+            />
         </div>
     </AppLayout>
 </template>
