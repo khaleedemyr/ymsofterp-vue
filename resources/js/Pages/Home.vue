@@ -6320,38 +6320,42 @@ function viewAnnouncement(id) {
     window.open(`/announcement/${id}`, '_blank');
 }
 
-// Upload Avatar Function
+// Upload Avatar Function (web session route — jangan pakai /api/* tanpa sanctum)
 function uploadAvatar() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/*';
+    input.accept = 'image/jpeg,image/png,image/jpg,image/gif,image/webp';
     input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const formData = new FormData();
-            formData.append('avatar', file);
-            
-            try {
-                const response = await fetch('/api/user/upload-avatar', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                    }
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    // Update user avatar in the UI
-                    user.avatar = result.avatar_path;
-                    Swal.fire('Berhasil!', 'Avatar berhasil diupload.', 'success');
-                } else {
-                    Swal.fire('Error!', 'Gagal mengupload avatar.', 'error');
-                }
-            } catch (error) {
-                console.error('Error uploading avatar:', error);
-                Swal.fire('Error!', 'Terjadi kesalahan saat mengupload avatar.', 'error');
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 4 * 1024 * 1024) {
+            Swal.fire('Error!', 'Ukuran file maksimal 4MB.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('avatar', file);
+
+        try {
+            const { data } = await axios.post('/profile/avatar', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+
+            if (data?.success || data?.avatar_path || data?.avatar_url) {
+                user.avatar = data.avatar_path || user.avatar;
+                await Swal.fire('Berhasil!', 'Avatar berhasil diupload.', 'success');
+                router.reload({ only: ['auth'] });
+            } else {
+                Swal.fire('Error!', data?.message || 'Gagal mengupload avatar.', 'error');
             }
+        } catch (error) {
+            console.error('Error uploading avatar:', error);
+            const msg =
+                error?.response?.data?.message ||
+                error?.response?.data?.errors?.avatar?.[0] ||
+                'Terjadi kesalahan saat mengupload avatar.';
+            Swal.fire('Error!', msg, 'error');
         }
     };
     input.click();
@@ -6361,34 +6365,38 @@ function uploadAvatar() {
 function uploadBanner() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = 'image/*';
+    input.accept = 'image/jpeg,image/png,image/jpg,image/gif,image/webp';
     input.onchange = async (e) => {
-        const file = e.target.files[0];
-        if (file) {
-            const formData = new FormData();
-            formData.append('banner', file);
-            
-            try {
-                const response = await fetch('/api/user/upload-banner', {
-                    method: 'POST',
-                    body: formData,
-                    headers: {
-                        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
-                    }
-                });
-                
-                if (response.ok) {
-                    const result = await response.json();
-                    // Update banner in the UI
-                    user.banner = result.banner_path;
-                    Swal.fire('Berhasil!', 'Banner berhasil diupload.', 'success');
-                } else {
-                    Swal.fire('Error!', 'Gagal mengupload banner.', 'error');
-                }
-            } catch (error) {
-                console.error('Error uploading banner:', error);
-                Swal.fire('Error!', 'Terjadi kesalahan saat mengupload banner.', 'error');
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 5 * 1024 * 1024) {
+            Swal.fire('Error!', 'Ukuran file maksimal 5MB.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('banner', file);
+
+        try {
+            const { data } = await axios.post('/profile/banner', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' },
+            });
+
+            if (data?.success || data?.banner_path || data?.banner_url) {
+                user.banner = data.banner_path || user.banner;
+                await Swal.fire('Berhasil!', 'Banner berhasil diupload.', 'success');
+                router.reload({ only: ['auth'] });
+            } else {
+                Swal.fire('Error!', data?.message || 'Gagal mengupload banner.', 'error');
             }
+        } catch (error) {
+            console.error('Error uploading banner:', error);
+            const msg =
+                error?.response?.data?.message ||
+                error?.response?.data?.errors?.banner?.[0] ||
+                'Terjadi kesalahan saat mengupload banner.';
+            Swal.fire('Error!', msg, 'error');
         }
     };
     input.click();

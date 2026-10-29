@@ -185,6 +185,7 @@ export default {
     "retail_food": "Retail Food",
     "retail_non_food": "Retail Non Food",
     "outlet_food_return": "Retur Makanan Outlet",
+    "chiller_temperature": "Kontrol Suhu Chiller & Freezer",
     "stock_opname": "Stock Opname",
     "report_invoice_outlet": "Laporan Invoice Outlet",
     "stock_cut": "Stock Cut",

@@ -3,7 +3,7 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { useForm, usePage } from '@inertiajs/vue3';
+import { useForm, usePage, router } from '@inertiajs/vue3';
 import { Inertia } from '@inertiajs/inertia';
 import { ref, watch, onMounted } from 'vue';
 import axios from 'axios';
@@ -289,17 +289,25 @@ async function uploadAvatar(file) {
         const response = await axios.post('/profile/avatar', formData, {
             headers: { 'Content-Type': 'multipart/form-data' }
         });
-        
-        if (response.data.success) {
-            // Update preview with new avatar URL
+
+        if (response.data?.success || response.data?.avatar_url || response.data?.avatar_path) {
             if (response.data.avatar_url) {
                 previewUrl.value = response.data.avatar_url;
+            } else if (response.data.avatar_path) {
+                previewUrl.value = `/storage/${response.data.avatar_path}`;
             }
-            Swal.fire('Success', 'Avatar updated successfully!', 'success');
+            await Swal.fire('Success', 'Avatar updated successfully!', 'success');
+            router.reload({ only: ['auth'] });
+        } else {
+            Swal.fire('Error', response.data?.message || 'Failed to upload avatar!', 'error');
         }
     } catch (error) {
         console.error('Avatar upload error:', error);
-        Swal.fire('Error', error.response?.data?.message || 'Failed to upload avatar!', 'error');
+        const msg =
+            error.response?.data?.message ||
+            error.response?.data?.errors?.avatar?.[0] ||
+            'Failed to upload avatar!';
+        Swal.fire('Error', msg, 'error');
     } finally {
         isUploadingAvatar.value = false;
     }

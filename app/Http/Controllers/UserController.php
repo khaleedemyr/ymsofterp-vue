@@ -853,27 +853,31 @@ class UserController extends Controller
     public function uploadAvatar(Request $request)
     {
         $request->validate([
-            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048'
+            'avatar' => 'required|image|mimes:jpeg,png,jpg,gif,webp|max:4096'
         ]);
 
         try {
             $user = auth()->user();
-            
-            // Delete old avatar if exists
-            if ($user->avatar && \Storage::disk('public')->exists($user->avatar)) {
-                \Storage::disk('public')->delete($user->avatar);
+            if (!$user) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated',
+                ], 401);
             }
 
-            // Store new avatar
+            $oldAvatar = $user->avatar;
             $avatarPath = $request->file('avatar')->store('avatars', 'public');
-            
-            // Update user record
             $user->update(['avatar' => $avatarPath]);
+
+            if ($oldAvatar && $oldAvatar !== $avatarPath && \Storage::disk('public')->exists($oldAvatar)) {
+                \Storage::disk('public')->delete($oldAvatar);
+            }
 
             return response()->json([
                 'success' => true,
                 'message' => 'Avatar berhasil diupload',
-                'avatar_path' => $avatarPath
+                'avatar_path' => $avatarPath,
+                'avatar_url' => \Storage::disk('public')->url($avatarPath),
             ]);
 
         } catch (\Exception $e) {

@@ -87,33 +87,57 @@ class ProfileController extends Controller
      */
     public function updateAvatar(Request $request)
     {
-        // Debug: Log semua data yang diterima
-        \Log::info('Avatar update request data:', [
-            'all' => $request->all(),
-            'files' => $request->allFiles(),
-            'hasFile_avatar' => $request->hasFile('avatar'),
-            'file_avatar' => $request->file('avatar'),
-            'input_avatar' => $request->input('avatar'),
-        ]);
-        
         $request->validate([
-            'avatar' => ['required', 'image', 'max:2048'],
+            'avatar' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:4096'],
         ]);
 
         $user = $request->user();
+        $oldAvatar = $user->avatar;
 
-        // Delete old avatar if exists
-        if ($user->avatar) {
-            Storage::disk('public')->delete($user->avatar);
-        }
+        // Store new file first, then remove the old one (avoid losing photo on failure)
+        $avatarPath = $request->file('avatar')->store('avatars', 'public');
 
-        // Store new avatar
-        $user->avatar = $request->file('avatar')->store('users/avatars', 'public');
+        $user->avatar = $avatarPath;
         $user->save();
 
+        if ($oldAvatar && $oldAvatar !== $avatarPath && Storage::disk('public')->exists($oldAvatar)) {
+            Storage::disk('public')->delete($oldAvatar);
+        }
+
         return response()->json([
+            'success' => true,
             'message' => 'Avatar updated successfully',
-            'avatar_url' => Storage::disk('public')->url($user->avatar)
+            'avatar_path' => $avatarPath,
+            'avatar_url' => Storage::disk('public')->url($avatarPath),
+        ]);
+    }
+
+    /**
+     * Update the user's banner.
+     */
+    public function updateBanner(Request $request)
+    {
+        $request->validate([
+            'banner' => ['required', 'image', 'mimes:jpeg,png,jpg,gif,webp', 'max:5120'],
+        ]);
+
+        $user = $request->user();
+        $oldBanner = $user->banner;
+
+        $bannerPath = $request->file('banner')->store('banners', 'public');
+
+        $user->banner = $bannerPath;
+        $user->save();
+
+        if ($oldBanner && $oldBanner !== $bannerPath && Storage::disk('public')->exists($oldBanner)) {
+            Storage::disk('public')->delete($oldBanner);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Banner updated successfully',
+            'banner_path' => $bannerPath,
+            'banner_url' => Storage::disk('public')->url($bannerPath),
         ]);
     }
 

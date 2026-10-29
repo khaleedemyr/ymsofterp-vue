@@ -210,6 +210,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/profile', [ProfileController::class, 'update']);
     Route::patch('/profile/avatar', [ProfileController::class, 'updateAvatar'])->name('profile.update-avatar');
     Route::post('/profile/avatar', [ProfileController::class, 'updateAvatar']);
+    Route::post('/profile/banner', [ProfileController::class, 'updateBanner'])->name('profile.update-banner');
     Route::patch('/profile/documents', [ProfileController::class, 'updateDocuments'])->name('profile.update-documents');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
     Route::get('/home', [\App\Http\Controllers\HomeController::class, 'show'])->name('home');
@@ -1652,6 +1653,17 @@ Route::get('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialRec
 Route::delete('/outlet-serial-receive/{id}', [\App\Http\Controllers\OutletSerialReceiveController::class, 'destroy'])->name('outlet-serial-receive.destroy');
 Route::post('/api/outlet-serial-receive/validate-serial', [\App\Http\Controllers\OutletSerialReceiveController::class, 'validateSerial'])->name('outlet-serial-receive.validate-serial');
 Route::post('/api/outlet-serial-receive/log-reject', [\App\Http\Controllers\OutletSerialReceiveController::class, 'logRejectAttempt'])->name('outlet-serial-receive.log-reject');
+
+// Kontrol Suhu Chiller & Freezer
+Route::middleware(['auth'])->group(function () {
+    Route::get('/chiller-temperature', [\App\Http\Controllers\ChillerTemperatureController::class, 'index'])->name('chiller-temperature.index');
+    Route::get('/chiller-temperature/create', [\App\Http\Controllers\ChillerTemperatureController::class, 'create'])->name('chiller-temperature.create');
+    Route::post('/chiller-temperature', [\App\Http\Controllers\ChillerTemperatureController::class, 'store'])->name('chiller-temperature.store');
+    Route::get('/chiller-temperature/lookup-serial', [\App\Http\Controllers\ChillerTemperatureController::class, 'lookupSerial'])->name('chiller-temperature.lookup-serial');
+    Route::get('/chiller-temperature/{id}/edit', [\App\Http\Controllers\ChillerTemperatureController::class, 'edit'])->name('chiller-temperature.edit');
+    Route::put('/chiller-temperature/{id}', [\App\Http\Controllers\ChillerTemperatureController::class, 'update'])->name('chiller-temperature.update');
+    Route::delete('/chiller-temperature/{id}', [\App\Http\Controllers\ChillerTemperatureController::class, 'destroy'])->name('chiller-temperature.destroy');
+});
 
 Route::prefix('ops-kitchen')->group(function () {
     Route::get('/action-plan-guest-review', [ActionPlanGuestReviewController::class, 'index'])->name('ops-kitchen.action-plan-guest-review.index');

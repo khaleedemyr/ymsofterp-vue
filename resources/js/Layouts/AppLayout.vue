@@ -322,6 +322,7 @@ const menuGroups = [
             { name: () => t('sidebar.menus.stock_cut'), icon: 'fa-solid fa-scissors', route: '/stock-cut', code: 'stock_cut' },
             { name: () => t('sidebar.menus.outlet_wip_production'), icon: 'fa-solid fa-industry', route: '/outlet-wip', code: 'outlet_wip_production' },
             { name: () => t('sidebar.menus.laporan_outlet_wip'), icon: 'fa-solid fa-file-lines', route: '/outlet-wip/report', code: 'outlet_wip_report' },
+            { name: () => t('sidebar.menus.chiller_temperature'), icon: 'fa-solid fa-temperature-half', route: '/chiller-temperature', code: 'chiller_temperature' },
         ],
     },
     {
