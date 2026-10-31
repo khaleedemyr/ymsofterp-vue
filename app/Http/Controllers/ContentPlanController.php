@@ -688,16 +688,9 @@ class ContentPlanController extends Controller
 
     private function visibleQuery()
     {
-        $user = auth()->user();
-        $isSuperadmin = $this->isSuperadmin($user);
-
-        return ContentPlan::query()
-            ->when(! $isSuperadmin, function ($q) use ($user) {
-                $q->where(function ($inner) use ($user) {
-                    $inner->where('created_by', $user->id)
-                        ->orWhereHas('approvalFlows', fn ($f) => $f->where('approver_id', $user->id));
-                });
-            });
+        // Semua user yang punya akses menu boleh melihat seluruh Content Plan.
+        // Batasan create/edit/delete tetap di canEdit / canDelete (creator + superadmin).
+        return ContentPlan::query();
     }
 
     private function findVisible($id): ContentPlan
