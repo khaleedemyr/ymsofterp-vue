@@ -26,8 +26,8 @@ $rows = DB::table('retail_warehouse_sales as rws')
     ->where('c.type', 'branch')
     ->where('rws.status', 'completed')
     ->whereNull('op.id')
-    ->whereDate('rws.created_at', '>=', $date)
-    ->whereDate('rws.created_at', '<=', $date)
+    ->whereRaw('COALESCE(rws.sale_date, DATE(rws.created_at)) >= ?', [$date])
+    ->whereRaw('COALESCE(rws.sale_date, DATE(rws.created_at)) <= ?', [$date])
     ->select(
         'rws.id',
         'rws.number',

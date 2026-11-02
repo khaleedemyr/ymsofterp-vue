@@ -1167,13 +1167,8 @@ class OutletPaymentController extends Controller
                 'wd.name as division_name'
             );
 
-        // Apply filters - Use created_at instead of sale_date
-        if ($dateFrom) {
-            $retailQuery->whereDate('rws.created_at', '>=', $dateFrom);
-        }
-        if ($dateTo) {
-            $retailQuery->whereDate('rws.created_at', '<=', $dateTo);
-        }
+        // Samakan dengan Rekap FJ: COALESCE(sale_date, DATE(created_at))
+        $this->rekapFjApplyRetailWarehouseDateFilter($retailQuery, $dateFrom, $dateTo);
 
         // Debug: Get raw SQL query
         $rawSql = $retailQuery->toSql();
@@ -1629,12 +1624,8 @@ class OutletPaymentController extends Controller
         if ($request->to) {
             $grQuery->whereDate('gr.created_at', '<=', $request->to);
         }
-        if ($request->from) {
-            $rwsQuery->whereDate('rws.created_at', '>=', $request->from);
-        }
-        if ($request->to) {
-            $rwsQuery->whereDate('rws.created_at', '<=', $request->to);
-        }
+        // Samakan dengan Rekap FJ: COALESCE(sale_date, DATE(created_at))
+        $this->rekapFjApplyRetailWarehouseDateFilter($rwsQuery, $request->from, $request->to);
         if ($request->search) {
             $search = $request->search;
             $grQuery->where(function ($q) use ($search) {
@@ -1865,13 +1856,8 @@ class OutletPaymentController extends Controller
             $grQuery->whereDate('gr.created_at', '<=', $request->to);
         }
         
-        // Filter tanggal untuk RWS query
-        if ($request->from) {
-            $rwsQuery->whereDate('rws.created_at', '>=', $request->from);
-        }
-        if ($request->to) {
-            $rwsQuery->whereDate('rws.created_at', '<=', $request->to);
-        }
+        // Samakan dengan Rekap FJ: COALESCE(sale_date, DATE(created_at))
+        $this->rekapFjApplyRetailWarehouseDateFilter($rwsQuery, $request->from, $request->to);
         
         // Search untuk GR query
         if ($request->search) {
@@ -2502,7 +2488,8 @@ class OutletPaymentController extends Controller
     }
 
     /**
-     * Transaksi GR / GSR / Retail yang sudah dibayar pada rentang tanggal (receive_date / created_at retail).
+     * Transaksi GR / GSR / Retail yang sudah dibayar pada rentang tanggal
+     * (receive_date GR/GSR / COALESCE(sale_date, DATE(created_at)) retail — sama Rekap FJ).
      *
      * @return array<int, object>
      */
@@ -2610,7 +2597,7 @@ class OutletPaymentController extends Controller
             }
         }
 
-        $retailRows = DB::table('retail_warehouse_sales as rws')
+        $retailRowsQuery = DB::table('retail_warehouse_sales as rws')
             ->join('customers as c', 'rws.customer_id', '=', 'c.id')
             ->join('outlet_payments as op', function ($join) {
                 $join->on('rws.id', '=', 'op.retail_sales_id')->where('op.status', '!=', 'cancelled');
@@ -2619,8 +2606,6 @@ class OutletPaymentController extends Controller
             ->where('c.id_outlet', (string) $outletId)
             ->where('c.type', 'branch')
             ->where('rws.status', 'completed')
-            ->whereDate('rws.created_at', '>=', $dateFrom)
-            ->whereDate('rws.created_at', '<=', $dateTo)
             ->select(
                 'rws.id',
                 'rws.number',
@@ -2634,9 +2619,10 @@ class OutletPaymentController extends Controller
                 'op.status as payment_status',
                 'op.date as payment_date',
                 'op.total_amount as payment_record_amount'
-            )
-            ->orderBy('rws.sale_date', 'desc')
-            ->get();
+            );
+        // Samakan dengan Rekap FJ: COALESCE(sale_date, DATE(created_at))
+        $this->rekapFjApplyRetailWarehouseDateFilter($retailRowsQuery, $dateFrom, $dateTo);
+        $retailRows = $retailRowsQuery->orderBy('rws.sale_date', 'desc')->get();
 
         foreach ($retailRows as $retail) {
             $rows->push((object) [

@@ -357,7 +357,8 @@ if ($hasGsr) {
         ->count();
 }
 
-// Retail (filter created_at — sama OutletPaymentController)
+// Retail (filter COALESCE(sale_date, DATE(created_at)) — sama Rekap FJ / OutletPaymentController)
+$retailDateExpr = 'COALESCE(rws.sale_date, DATE(rws.created_at))';
 $retailTotal = (float) DB::table('retail_warehouse_sales as rws')
     ->join('customers as c', 'rws.customer_id', '=', 'c.id')
     ->leftJoin('outlet_payments as op', function ($join) {
@@ -367,8 +368,8 @@ $retailTotal = (float) DB::table('retail_warehouse_sales as rws')
     ->where('c.type', 'branch')
     ->where('rws.status', 'completed')
     ->whereNull('op.id')
-    ->whereDate('rws.created_at', '>=', $dateFrom)
-    ->whereDate('rws.created_at', '<=', $dateTo)
+    ->whereRaw("{$retailDateExpr} >= ?", [$dateFrom])
+    ->whereRaw("{$retailDateExpr} <= ?", [$dateTo])
     ->sum('rws.total_amount');
 
 $retailCount = DB::table('retail_warehouse_sales as rws')
@@ -380,8 +381,8 @@ $retailCount = DB::table('retail_warehouse_sales as rws')
     ->where('c.type', 'branch')
     ->where('rws.status', 'completed')
     ->whereNull('op.id')
-    ->whereDate('rws.created_at', '>=', $dateFrom)
-    ->whereDate('rws.created_at', '<=', $dateTo)
+    ->whereRaw("{$retailDateExpr} >= ?", [$dateFrom])
+    ->whereRaw("{$retailDateExpr} <= ?", [$dateTo])
     ->count();
 
 $opUnpaidFull = $unpaidGrTotal + $unpaidGsrCompletedTotal + $retailTotal;
@@ -391,7 +392,7 @@ echo "  Food GR unpaid     : {$fmt($unpaidGrTotal)} ({$unpaidGrCount} header)\n"
 echo "  Food GR paid       : {$fmt($paidGrTotal)} ({$paidGrCount} header)  <- ada di Rekap, tidak di OP\n";
 echo "  Serial GR unpaid   : {$fmt($unpaidGsrTotal)} ({$unpaidGsrCount} header, semua status)\n";
 echo "  Serial GR unpaid   : {$fmt($unpaidGsrCompletedTotal)} ({$unpaidGsrCompletedCount} header, status=completed) <- filter OP\n";
-echo "  Retail unpaid      : {$fmt($retailTotal)} ({$retailCount} sales, filter created_at)\n";
+echo "  Retail unpaid      : {$fmt($retailTotal)} ({$retailCount} sales, filter sale_date)\n";
 echo "  TOTAL OP (full)    : {$fmt($opUnpaidFull)}  [food + GSR completed + retail]\n\n";
 
 // ---------------------------------------------------------------------------
