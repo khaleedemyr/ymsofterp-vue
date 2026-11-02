@@ -11,9 +11,11 @@ const props = defineProps({
   customers: Array,
 });
 
+const todayDate = new Date().toISOString().split('T')[0];
+
 const form = ref({
   customer_id: '',
-  sale_date: new Date().toISOString().split('T')[0], // Default to today
+  sale_date: todayDate,
   warehouse_id: '',
   warehouse_division_id: '',
   notes: '',
@@ -393,6 +395,17 @@ async function submitForm() {
     return;
   }
 
+  if (form.value.sale_date && form.value.sale_date < todayDate) {
+    await Swal.fire({
+      icon: 'warning',
+      title: 'Tanggal Tidak Valid',
+      text: 'Tanggal penjualan tidak boleh backdate. Pilih tanggal hari ini atau setelahnya.',
+      confirmButtonText: 'OK',
+      confirmButtonColor: '#F59E0B'
+    });
+    return;
+  }
+
   const hasItems = form.value.items.length > 0;
   const hasSerials = scannedSerials.value.length > 0;
 
@@ -447,6 +460,14 @@ async function submitForm() {
     });
 
     const result = await response.json();
+
+    if (!response.ok) {
+      const validationMsg = result?.errors?.sale_date?.[0]
+        || result?.message
+        || 'Validasi gagal';
+      Swal.fire('Error', validationMsg, 'error');
+      return;
+    }
     
     if (result.success) {
       Swal.fire({
@@ -545,7 +566,8 @@ async function refreshItemPrice(index) {
               <label class="block text-sm font-medium text-gray-700 mb-2">Tanggal Penjualan</label>
               <input 
                 v-model="form.sale_date" 
-                type="date" 
+                type="date"
+                :min="todayDate"
                 class="w-full rounded-lg border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500"
               />
             </div>

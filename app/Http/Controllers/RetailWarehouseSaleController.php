@@ -89,7 +89,7 @@ class RetailWarehouseSaleController extends Controller
 
         $rules = [
             'customer_id' => 'required|exists:customers,id',
-            'sale_date' => 'required|date',
+            'sale_date' => 'required|date|after_or_equal:today',
             'warehouse_id' => 'required|exists:warehouses,id',
             'warehouse_division_id' => 'nullable|exists:warehouse_division,id',
             'total_amount' => 'required|numeric|min:0',
@@ -111,7 +111,9 @@ class RetailWarehouseSaleController extends Controller
             $rules['serial_items.*.price'] = 'required|numeric|min:0';
             $rules['serial_items.*.subtotal'] = 'required|numeric|min:0';
         }
-        $request->validate($rules);
+        $request->validate($rules, [
+            'sale_date.after_or_equal' => 'Tanggal penjualan tidak boleh backdate. Pilih tanggal hari ini atau setelahnya.',
+        ]);
 
         $saleMode = $hasItems && $hasSerials ? 'mixed' : ($hasSerials ? 'serial' : 'normal');
 
