@@ -11,7 +11,14 @@ const props = defineProps({
   customers: Array,
 });
 
-const todayDate = new Date().toISOString().split('T')[0];
+// Pakai tanggal lokal (WIB), bukan toISOString() yang UTC — sebelum jam 07:00 UTC masih "kemarin"
+const formatLocalDate = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+const todayDate = formatLocalDate();
 
 const form = ref({
   customer_id: '',
