@@ -48,6 +48,8 @@ class ContentPlan extends Model
 
     protected $fillable = [
         'number',
+        'brand_id',
+        'pic_user_id',
         'platform',
         'date_post',
         'day_name',
@@ -77,6 +79,16 @@ class ContentPlan extends Model
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
     ];
+
+    public function brand(): BelongsTo
+    {
+        return $this->belongsTo(Brand::class, 'brand_id');
+    }
+
+    public function pic(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'pic_user_id');
+    }
 
     public function creator(): BelongsTo
     {

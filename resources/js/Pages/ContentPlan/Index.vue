@@ -28,13 +28,17 @@
       </div>
 
       <div class="bg-white rounded-xl shadow p-4 mb-6">
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-6 gap-3">
           <input
             v-model="filterForm.search"
             type="text"
-            placeholder="Cari nomor / pillar / caption..."
+            placeholder="Cari nomor / pillar / caption / brand..."
             class="md:col-span-2 rounded-lg border-gray-300 focus:border-violet-500 focus:ring-violet-500"
           />
+          <select v-model="filterForm.brand_id" class="rounded-lg border-gray-300">
+            <option value="">Semua Brand</option>
+            <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.brand }}</option>
+          </select>
           <select v-model="filterForm.platform" class="rounded-lg border-gray-300">
             <option value="">Semua Platform</option>
             <option v-for="p in platforms" :key="p" :value="p">{{ p }}</option>
@@ -58,6 +62,8 @@
           <thead class="bg-gray-50 border-b">
             <tr>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Nomor</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700">Brand</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700">PIC</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Platform</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Date Post</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-700">Day</th>
@@ -69,10 +75,12 @@
           </thead>
           <tbody>
             <tr v-if="!records.data?.length">
-              <td colspan="8" class="px-4 py-8 text-center text-gray-500">Belum ada Content Plan.</td>
+              <td colspan="10" class="px-4 py-8 text-center text-gray-500">Belum ada Content Plan.</td>
             </tr>
             <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-violet-50/40 align-top">
               <td class="px-4 py-3 font-medium">{{ row.number }}</td>
+              <td class="px-4 py-3">{{ row.brand?.brand || '-' }}</td>
+              <td class="px-4 py-3">{{ row.pic?.nama_lengkap || '-' }}</td>
               <td class="px-4 py-3">{{ row.platform }}</td>
               <td class="px-4 py-3">{{ formatDate(row.date_post) }}</td>
               <td class="px-4 py-3">{{ row.day_name || '-' }}</td>
@@ -126,6 +134,7 @@ import Swal from 'sweetalert2';
 const props = defineProps({
   records: { type: Object, required: true },
   filters: { type: Object, default: () => ({}) },
+  brands: { type: Array, default: () => [] },
   platforms: { type: Array, default: () => [] },
   jobStatuses: { type: Object, default: () => ({}) },
   workflowStatuses: { type: Object, default: () => ({}) },
@@ -133,6 +142,7 @@ const props = defineProps({
 
 const filterForm = reactive({
   search: props.filters.search || '',
+  brand_id: props.filters.brand_id || '',
   platform: props.filters.platform || '',
   job_status: props.filters.job_status || '',
   workflow_status: props.filters.workflow_status || '',

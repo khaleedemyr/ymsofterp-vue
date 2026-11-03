@@ -7,6 +7,22 @@
       <div class="p-5 space-y-5">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
           <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Brand <span class="text-red-500">*</span></label>
+            <select v-model="form.brand_id" required :class="inputClass">
+              <option value="" disabled>Pilih brand</option>
+              <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.brand }}</option>
+            </select>
+            <p v-if="form.errors?.brand_id" class="text-sm text-red-600 mt-1">{{ form.errors.brand_id }}</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">PIC <span class="text-red-500">*</span></label>
+            <select v-model="form.pic_user_id" required :class="inputClass">
+              <option value="" disabled>Pilih PIC</option>
+              <option v-for="u in picUsers" :key="u.id" :value="u.id">{{ u.nama_lengkap }}</option>
+            </select>
+            <p v-if="form.errors?.pic_user_id" class="text-sm text-red-600 mt-1">{{ form.errors.pic_user_id }}</p>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Platform <span class="text-red-500">*</span></label>
             <select v-model="form.platform" required :class="inputClass">
               <option value="" disabled>Pilih platform</option>
@@ -172,6 +188,8 @@ import { computed, ref } from 'vue';
 
 const props = defineProps({
   form: { type: Object, required: true },
+  brands: { type: Array, default: () => [] },
+  picUsers: { type: Array, default: () => [] },
   platforms: { type: Array, default: () => [] },
   funnels: { type: Array, default: () => [] },
   pillars: { type: Array, default: () => [] },

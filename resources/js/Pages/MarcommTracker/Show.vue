@@ -29,6 +29,10 @@
       <div class="bg-white rounded-xl shadow p-6 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
           <div>
+            <div class="text-xs text-gray-500">Brand</div>
+            <div class="font-medium">{{ record.brand?.brand || '-' }}</div>
+          </div>
+          <div>
             <div class="text-xs text-gray-500">Job Category</div>
             <div class="font-medium">{{ record.job_category }}</div>
           </div>

@@ -36,6 +36,8 @@
 
       <div class="bg-white rounded-xl shadow p-6 mb-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div><div class="text-xs text-gray-500">Brand</div><div class="font-medium">{{ record.brand?.brand || '-' }}</div></div>
+          <div><div class="text-xs text-gray-500">PIC</div><div class="font-medium">{{ record.pic?.nama_lengkap || '-' }}</div></div>
           <div><div class="text-xs text-gray-500">Platform</div><div class="font-medium">{{ record.platform }}</div></div>
           <div><div class="text-xs text-gray-500">Date Post</div><div class="font-medium">{{ formatDate(record.date_post) }}</div></div>
           <div><div class="text-xs text-gray-500">Day</div><div class="font-medium">{{ record.day_name || '-' }}</div></div>

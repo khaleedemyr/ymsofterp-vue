@@ -165,6 +165,9 @@ class NotificationService
                 // Ticket types
                 'ticket_created' => 'Ticket Created',
                 'ticket_comment' => 'Ticket Comment',
+                'ticket_assigned' => 'Ticket Assigned',
+                'marcomm_tracker_pic_assigned' => 'Marcomm Tracker — PIC Assigned',
+                'content_plan_pic_assigned' => 'Content Plan — PIC Assigned',
                 
                 // Training/LMS types
                 'training_invitation' => 'Training Invitation',

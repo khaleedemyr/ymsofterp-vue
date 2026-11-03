@@ -36,6 +36,7 @@ class MarcommTracker extends Model
 
     protected $fillable = [
         'number',
+        'brand_id',
         'job_category',
         'pic_user_id',
         'task',
@@ -57,6 +58,11 @@ class MarcommTracker extends Model
         'submitted_at' => 'datetime',
         'approved_at' => 'datetime',
     ];
+
+    public function brand(): BelongsTo
+    {
+        return $this->belongsTo(Brand::class, 'brand_id');
+    }
 
     public function pic(): BelongsTo
     {

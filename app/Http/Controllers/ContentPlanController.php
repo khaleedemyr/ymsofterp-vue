@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Models\ContentPlan;
 use App\Models\ContentPlanApprovalFlow;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Support\PendingApprovalCache;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,12 +19,15 @@ class ContentPlanController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->get('search', ''));
+        $brandId = $request->get('brand_id');
         $platform = trim((string) $request->get('platform', ''));
         $jobStatus = trim((string) $request->get('job_status', ''));
         $workflowStatus = trim((string) $request->get('workflow_status', ''));
 
         $records = $this->visibleQuery()
             ->with([
+                'brand:id,brand',
+                'pic:id,nama_lengkap',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap',
             ])
@@ -32,9 +37,11 @@ class ContentPlanController extends Controller
                         ->orWhere('caption', 'like', "%{$search}%")
                         ->orWhere('objective', 'like', "%{$search}%")
                         ->orWhere('brief', 'like', "%{$search}%")
-                        ->orWhere('pillar', 'like', "%{$search}%");
+                        ->orWhere('pillar', 'like', "%{$search}%")
+                        ->orWhereHas('brand', fn ($b) => $b->where('brand', 'like', "%{$search}%"));
                 });
             })
+            ->when($brandId, fn ($q) => $q->where('brand_id', (int) $brandId))
             ->when($platform !== '', fn ($q) => $q->where('platform', $platform))
             ->when($jobStatus !== '', fn ($q) => $q->where('job_status', $jobStatus))
             ->when($workflowStatus !== '', fn ($q) => $q->where('workflow_status', $workflowStatus))
@@ -46,10 +53,12 @@ class ContentPlanController extends Controller
             'records' => $records,
             'filters' => [
                 'search' => $search,
+                'brand_id' => $brandId ? (int) $brandId : '',
                 'platform' => $platform,
                 'job_status' => $jobStatus,
                 'workflow_status' => $workflowStatus,
             ],
+            'brands' => $this->brands(),
             'platforms' => ContentPlan::PLATFORMS,
             'jobStatuses' => ContentPlan::JOB_STATUSES,
             'workflowStatuses' => ContentPlan::WORKFLOW_STATUSES,
@@ -248,6 +257,7 @@ class ContentPlanController extends Controller
             'canApprove' => (bool) $this->resolveCurrentApprovalFlow($record, $user),
             'canEdit' => $this->canEdit($record, $user),
             'canDelete' => $this->canDelete($record, $user),
+            'brands' => $this->brands(),
             'jobStatuses' => ContentPlan::JOB_STATUSES,
             'workflowStatuses' => ContentPlan::WORKFLOW_STATUSES,
         ]);
@@ -288,6 +298,7 @@ class ContentPlanController extends Controller
 
             DB::commit();
             $this->clearCaches($plan, $approverIds, [$user->id]);
+            $this->notifyPicAssigned($plan->fresh(['brand', 'pic']), null);
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -310,6 +321,7 @@ class ContentPlanController extends Controller
 
         $validated = $this->validatePayload($request);
         $approverIds = $this->normalizeApproverIds($validated['approvers'] ?? []);
+        $previousPicId = $record->pic_user_id ? (int) $record->pic_user_id : null;
 
         DB::beginTransaction();
         try {
@@ -348,7 +360,9 @@ class ContentPlanController extends Controller
             }
 
             DB::commit();
-            $this->clearCaches($record->fresh('approvalFlows'), $approverIds, [$user->id]);
+            $fresh = $record->fresh(['approvalFlows', 'brand', 'pic']);
+            $this->clearCaches($fresh, $approverIds, [$user->id]);
+            $this->notifyPicAssigned($fresh, $previousPicId);
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -583,6 +597,8 @@ class ContentPlanController extends Controller
     private function formOptions(): array
     {
         return [
+            'brands' => $this->brands(),
+            'picUsers' => $this->picUsers(),
             'platforms' => ContentPlan::PLATFORMS,
             'funnels' => ContentPlan::FUNNELS,
             'pillars' => ContentPlan::PILLARS,
@@ -591,9 +607,37 @@ class ContentPlanController extends Controller
         ];
     }
 
+    private function brands()
+    {
+        return DB::table('brands')
+            ->orderBy('brand')
+            ->get(['id', 'brand', 'logo']);
+    }
+
+    private function picUsers()
+    {
+        return User::query()
+            ->where('status', 'A')
+            ->whereIn('division_id', [7, 17])
+            ->orderBy('nama_lengkap')
+            ->get(['id', 'nama_lengkap', 'email', 'division_id']);
+    }
+
     private function validatePayload(Request $request): array
     {
         return $request->validate([
+            'brand_id' => 'required|integer|exists:brands,id',
+            'pic_user_id' => [
+                'required',
+                'integer',
+                'exists:users,id',
+                function ($attribute, $value, $fail) {
+                    $ok = User::where('id', $value)->whereIn('division_id', [7, 17])->exists();
+                    if (! $ok) {
+                        $fail('PIC harus user dengan division_id 7 atau 17.');
+                    }
+                },
+            ],
             'platform' => 'required|string|in:'.implode(',', ContentPlan::PLATFORMS),
             'date_post' => 'nullable|date',
             'funnel' => 'nullable|string|in:'.implode(',', ContentPlan::FUNNELS),
@@ -624,6 +668,8 @@ class ContentPlanController extends Controller
         }
 
         $payload = [
+            'brand_id' => $validated['brand_id'],
+            'pic_user_id' => $validated['pic_user_id'],
             'platform' => $validated['platform'],
             'date_post' => $datePost,
             'day_name' => $dayName,
@@ -697,11 +743,63 @@ class ContentPlanController extends Controller
     {
         return $this->visibleQuery()
             ->with([
+                'brand:id,brand,logo',
+                'pic:id,nama_lengkap,email,division_id',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap,email',
             ])
             ->where('id', $id)
             ->firstOrFail();
+    }
+
+    /**
+     * Notifikasi ke PIC saat di-assign / diganti (pola sama PR Ops / Ticket assign).
+     */
+    private function notifyPicAssigned(ContentPlan $plan, ?int $previousPicId = null): void
+    {
+        try {
+            $picId = $plan->pic_user_id ? (int) $plan->pic_user_id : null;
+            if (! $picId) {
+                return;
+            }
+
+            if ($previousPicId !== null && $previousPicId === $picId) {
+                return;
+            }
+
+            $actorId = auth()->id();
+            if ($actorId && (int) $actorId === $picId) {
+                return;
+            }
+
+            $plan->loadMissing(['brand', 'pic', 'creator']);
+            $assignerName = auth()->user()->nama_lengkap ?? 'System';
+            $brandName = $plan->brand->brand ?? '-';
+            $datePost = $plan->date_post ? $plan->date_post->format('Y-m-d') : '-';
+
+            $message = "Anda di-assign sebagai PIC Content Plan:\n\n";
+            $message .= "No: {$plan->number}\n";
+            $message .= "Brand: {$brandName}\n";
+            $message .= "Platform: {$plan->platform}\n";
+            $message .= "Date Post: {$datePost}\n";
+            $message .= 'Pillar: '.($plan->pillar ?: '-')."\n";
+            $message .= "Assigned by: {$assignerName}\n\n";
+            $message .= 'Silakan buka detail untuk meninjau content plan.';
+
+            NotificationService::insert([
+                'user_id' => $picId,
+                'task_id' => $plan->id,
+                'type' => 'content_plan_pic_assigned',
+                'message' => $message,
+                'url' => config('app.url').'/content-plans/'.$plan->id,
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send Content Plan PIC notification', [
+                'content_plan_id' => $plan->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     private function canEdit(ContentPlan $record, $user): bool

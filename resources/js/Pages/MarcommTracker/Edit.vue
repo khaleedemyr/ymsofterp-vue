@@ -17,6 +17,7 @@
       <form @submit.prevent="submit">
         <FormFields
           :form="form"
+          :brands="brands"
           :job-categories="jobCategories"
           :job-statuses="jobStatuses"
           :pic-users="picUsers"
@@ -50,6 +51,7 @@ import { Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
   record: { type: Object, required: true },
+  brands: { type: Array, default: () => [] },
   jobCategories: { type: Array, default: () => [] },
   jobStatuses: { type: Object, default: () => ({}) },
   picUsers: { type: Array, default: () => [] },
@@ -57,6 +59,7 @@ const props = defineProps({
 
 const remarks = props.record.status_remarks || {};
 const form = useForm({
+  brand_id: props.record.brand_id || '',
   job_category: props.record.job_category || '',
   pic_user_id: props.record.pic_user_id || '',
   task: props.record.task || '',

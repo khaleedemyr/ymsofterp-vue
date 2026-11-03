@@ -17,6 +17,8 @@
       <form @submit.prevent="submit">
         <FormFields
           :form="form"
+          :brands="brands"
+          :pic-users="picUsers"
           :platforms="platforms"
           :funnels="funnels"
           :pillars="pillars"
@@ -52,6 +54,8 @@ import { Link, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
   record: { type: Object, required: true },
+  brands: { type: Array, default: () => [] },
+  picUsers: { type: Array, default: () => [] },
   platforms: { type: Array, default: () => [] },
   funnels: { type: Array, default: () => [] },
   pillars: { type: Array, default: () => [] },
@@ -60,6 +64,8 @@ const props = defineProps({
 });
 
 const form = useForm({
+  brand_id: props.record.brand_id || '',
+  pic_user_id: props.record.pic_user_id || '',
   platform: props.record.platform || '',
   date_post: props.record.date_post ? String(props.record.date_post).substring(0, 10) : '',
   funnel: props.record.funnel || '',

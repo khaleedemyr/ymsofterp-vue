@@ -5,9 +5,11 @@ namespace App\Http\Controllers;
 use App\Models\MarcommTracker;
 use App\Models\MarcommTrackerApprovalFlow;
 use App\Models\User;
+use App\Services\NotificationService;
 use App\Support\PendingApprovalCache;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -16,11 +18,13 @@ class MarcommTrackerController extends Controller
     public function index(Request $request): Response
     {
         $search = trim((string) $request->get('search', ''));
+        $brandId = $request->get('brand_id');
         $jobCategory = trim((string) $request->get('job_category', ''));
         $jobStatus = trim((string) $request->get('job_status', ''));
         $workflowStatus = trim((string) $request->get('workflow_status', ''));
         $records = $this->visibleQuery()
             ->with([
+                'brand:id,brand',
                 'pic:id,nama_lengkap,division_id',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap',
@@ -30,9 +34,11 @@ class MarcommTrackerController extends Controller
                     $inner->where('number', 'like', "%{$search}%")
                         ->orWhere('task', 'like', "%{$search}%")
                         ->orWhere('remarks', 'like', "%{$search}%")
-                        ->orWhereHas('pic', fn ($u) => $u->where('nama_lengkap', 'like', "%{$search}%"));
+                        ->orWhereHas('pic', fn ($u) => $u->where('nama_lengkap', 'like', "%{$search}%"))
+                        ->orWhereHas('brand', fn ($b) => $b->where('brand', 'like', "%{$search}%"));
                 });
             })
+            ->when($brandId, fn ($q) => $q->where('brand_id', (int) $brandId))
             ->when($jobCategory !== '', fn ($q) => $q->where('job_category', $jobCategory))
             ->when($jobStatus !== '', fn ($q) => $q->where('job_status', $jobStatus))
             ->when($workflowStatus !== '', fn ($q) => $q->where('workflow_status', $workflowStatus))
@@ -44,10 +50,12 @@ class MarcommTrackerController extends Controller
             'records' => $records,
             'filters' => [
                 'search' => $search,
+                'brand_id' => $brandId ? (int) $brandId : '',
                 'job_category' => $jobCategory,
                 'job_status' => $jobStatus,
                 'workflow_status' => $workflowStatus,
             ],
+            'brands' => $this->brands(),
             'jobCategories' => MarcommTracker::JOB_CATEGORIES,
             'jobStatuses' => MarcommTracker::JOB_STATUSES,
             'workflowStatuses' => MarcommTracker::WORKFLOW_STATUSES,
@@ -208,6 +216,7 @@ class MarcommTrackerController extends Controller
     public function create(): Response
     {
         return Inertia::render('MarcommTracker/Create', [
+            'brands' => $this->brands(),
             'jobCategories' => MarcommTracker::JOB_CATEGORIES,
             'jobStatuses' => MarcommTracker::JOB_STATUSES,
             'picUsers' => $this->picUsers(),
@@ -225,6 +234,7 @@ class MarcommTrackerController extends Controller
             'record' => $record,
             'canApprove' => $canApprove,
             'canEdit' => $canEdit,
+            'brands' => $this->brands(),
             'jobCategories' => MarcommTracker::JOB_CATEGORIES,
             'jobStatuses' => MarcommTracker::JOB_STATUSES,
             'picUsers' => $this->picUsers(),
@@ -241,6 +251,7 @@ class MarcommTrackerController extends Controller
 
         return Inertia::render('MarcommTracker/Edit', [
             'record' => $record,
+            'brands' => $this->brands(),
             'jobCategories' => MarcommTracker::JOB_CATEGORIES,
             'jobStatuses' => MarcommTracker::JOB_STATUSES,
             'picUsers' => $this->picUsers(),
@@ -258,6 +269,7 @@ class MarcommTrackerController extends Controller
             $hasApprovers = $approverIds !== [];
             $tracker = MarcommTracker::create([
                 'number' => $this->generateNumber(),
+                'brand_id' => $validated['brand_id'],
                 'job_category' => $validated['job_category'],
                 'pic_user_id' => $validated['pic_user_id'],
                 'task' => $validated['task'] ?? null,
@@ -282,6 +294,7 @@ class MarcommTrackerController extends Controller
 
             DB::commit();
             $this->clearCaches($tracker, $approverIds, [$user->id]);
+            $this->notifyPicAssigned($tracker->fresh(['brand', 'pic']), null);
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -304,6 +317,7 @@ class MarcommTrackerController extends Controller
 
         $validated = $this->validatePayload($request, false);
         $approverIds = $this->normalizeApproverIds($validated['approvers'] ?? []);
+        $previousPicId = $record->pic_user_id ? (int) $record->pic_user_id : null;
 
         DB::beginTransaction();
         try {
@@ -312,6 +326,7 @@ class MarcommTrackerController extends Controller
             $becomesSubmitted = $wasDraft && $hasApprovers;
 
             $record->update([
+                'brand_id' => $validated['brand_id'],
                 'job_category' => $validated['job_category'],
                 'pic_user_id' => $validated['pic_user_id'],
                 'task' => $validated['task'] ?? null,
@@ -345,7 +360,9 @@ class MarcommTrackerController extends Controller
             }
 
             DB::commit();
-            $this->clearCaches($record->fresh('approvalFlows'), $approverIds, [$user->id]);
+            $fresh = $record->fresh(['approvalFlows', 'brand', 'pic']);
+            $this->clearCaches($fresh, $approverIds, [$user->id]);
+            $this->notifyPicAssigned($fresh, $previousPicId);
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -605,6 +622,7 @@ class MarcommTrackerController extends Controller
     private function validatePayload(Request $request, bool $requireApproversOptional = true): array
     {
         return $request->validate([
+            'brand_id' => 'required|integer|exists:brands,id',
             'job_category' => 'required|string|in:'.implode(',', MarcommTracker::JOB_CATEGORIES),
             'pic_user_id' => [
                 'required',
@@ -669,6 +687,63 @@ class MarcommTrackerController extends Controller
             ->get(['id', 'nama_lengkap', 'email', 'division_id']);
     }
 
+    private function brands()
+    {
+        return DB::table('brands')
+            ->orderBy('brand')
+            ->get(['id', 'brand', 'logo']);
+    }
+
+    /**
+     * Notifikasi ke PIC saat di-assign / diganti (pola sama PR Ops / Ticket assign).
+     */
+    private function notifyPicAssigned(MarcommTracker $tracker, ?int $previousPicId = null): void
+    {
+        try {
+            $picId = $tracker->pic_user_id ? (int) $tracker->pic_user_id : null;
+            if (! $picId) {
+                return;
+            }
+
+            // Hanya kirim saat create atau PIC berubah
+            if ($previousPicId !== null && $previousPicId === $picId) {
+                return;
+            }
+
+            $actorId = auth()->id();
+            if ($actorId && (int) $actorId === $picId) {
+                return;
+            }
+
+            $tracker->loadMissing(['brand', 'pic', 'creator']);
+            $assignerName = auth()->user()->nama_lengkap ?? 'System';
+            $brandName = $tracker->brand->brand ?? '-';
+            $dueDate = $tracker->due_date ? $tracker->due_date->format('Y-m-d') : '-';
+
+            $message = "Anda di-assign sebagai PIC Marcomm Tracker:\n\n";
+            $message .= "No: {$tracker->number}\n";
+            $message .= "Brand: {$brandName}\n";
+            $message .= "Category: {$tracker->job_category}\n";
+            $message .= "Due Date: {$dueDate}\n";
+            $message .= "Assigned by: {$assignerName}\n\n";
+            $message .= 'Silakan buka detail untuk meninjau task.';
+
+            NotificationService::insert([
+                'user_id' => $picId,
+                'task_id' => $tracker->id,
+                'type' => 'marcomm_tracker_pic_assigned',
+                'message' => $message,
+                'url' => config('app.url').'/marcomm-trackers/'.$tracker->id,
+                'is_read' => 0,
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send Marcomm Tracker PIC notification', [
+                'marcomm_tracker_id' => $tracker->id ?? null,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     private function generateNumber(): string
     {
         $prefix = 'MCT-'.now()->format('Ym').'-';
@@ -704,6 +779,7 @@ class MarcommTrackerController extends Controller
     {
         return $this->visibleQuery()
             ->with([
+                'brand:id,brand,logo',
                 'pic:id,nama_lengkap,division_id,email',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap,email',
