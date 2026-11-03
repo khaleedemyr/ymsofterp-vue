@@ -226,22 +226,20 @@ class FoodGoodReceiveController extends Controller
                 ], 422);
             }
 
+            // Generate gr_number dari MAX seq (bukan COUNT) + lock agar tidak bentrok
+            // saat concurrent create / setelah ada GR yang dihapus.
+            $grNumber = $this->generateUniqueGrNumber($request->receive_date);
+
             $goodReceiveId = DB::table('food_good_receives')->insertGetId([
                 'po_id' => $request->po_id,
                 'receive_date' => $request->receive_date,
                 'received_by' => Auth::id(),
                 'supplier_id' => $request->supplier_id,
                 'notes' => $request->notes,
+                'gr_number' => $grNumber,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
-            // Generate gr_number
-            $dateStr = date('Ymd', strtotime($request->receive_date));
-            $countToday = DB::table('food_good_receives')
-                ->whereDate('receive_date', $request->receive_date)
-                ->count();
-            $grNumber = 'GR-' . $dateStr . '-' . str_pad($countToday, 4, '0', STR_PAD_LEFT);
-            DB::table('food_good_receives')->where('id', $goodReceiveId)->update(['gr_number' => $grNumber]);
 
             foreach ($request->items as $item) {
                 $qtyRejected = array_key_exists('qty_rejected', $item) && $item['qty_rejected'] !== null && $item['qty_rejected'] !== ''
@@ -1424,5 +1422,30 @@ class FoodGoodReceiveController extends Controller
         }
 
         return $prefix . strtoupper(Str::random(6));
+    }
+
+    /**
+     * Nomor GR unik per tanggal receive: GR-YYYYMMDD-XXXX
+     * Pakai MAX sequence + lockForUpdate (bukan COUNT) supaya:
+     * - hapus GR lama tidak membuat nomor terpakai ulang
+     * - create bersamaan tidak dapat nomor yang sama
+     */
+    private function generateUniqueGrNumber(string $receiveDate): string
+    {
+        $dateStr = date('Ymd', strtotime($receiveDate));
+        $prefix = 'GR-'.$dateStr.'-';
+
+        $lastNumber = DB::table('food_good_receives')
+            ->where('gr_number', 'like', $prefix.'%')
+            ->lockForUpdate()
+            ->orderByDesc('gr_number')
+            ->value('gr_number');
+
+        $next = 1;
+        if ($lastNumber && preg_match('/-(\d+)$/', $lastNumber, $m)) {
+            $next = ((int) $m[1]) + 1;
+        }
+
+        return $prefix.str_pad((string) $next, 4, '0', STR_PAD_LEFT);
     }
 } 
