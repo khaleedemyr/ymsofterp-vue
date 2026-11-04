@@ -20,20 +20,20 @@ class RetailFoodTransactionReportExport
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->setTitle('Report Retail Food');
         $sheet->setCellValue('A1', 'Report Retail Food');
-        $sheet->mergeCells('A1:J1');
+        $sheet->mergeCells('A1:M1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         $filterText = sprintf('Tanggal: %s - %s', $this->filters['date_from'] ?: 'Semua', $this->filters['date_to'] ?: 'Semua');
         $sheet->setCellValue('A2', $filterText);
-        $sheet->mergeCells('A2:J2');
+        $sheet->mergeCells('A2:M2');
 
-        $headers = ['No', 'Tanggal', 'Supplier', 'Outlet', 'Metode Pembayaran', 'No. Transaksi', 'Item', 'Qty', 'Harga', 'Subtotal', 'Total'];
+        $headers = ['No', 'Tanggal', 'Supplier', 'Outlet', 'Metode Pembayaran', 'No. Transaksi', 'Item', 'Category', 'Sub Category', 'Qty', 'Harga', 'Subtotal', 'Total'];
         $headerRow = 4;
         foreach ($headers as $column => $header) {
             $sheet->setCellValueByColumnAndRow($column + 1, $headerRow, $header);
         }
-        $sheet->getStyle('A4:K4')->applyFromArray([
+        $sheet->getStyle('A4:M4')->applyFromArray([
             'font' => ['bold' => true, 'color' => ['rgb' => 'FFFFFF']],
             'fill' => ['fillType' => Fill::FILL_SOLID, 'startColor' => ['rgb' => '2563EB']],
             'alignment' => ['horizontal' => Alignment::HORIZONTAL_CENTER],
@@ -52,6 +52,8 @@ class RetailFoodTransactionReportExport
                     $this->paymentMethodLabel($transaction->payment_method),
                     $transaction->retail_number,
                     $item->item_name ?? '-',
+                    $item->category_name ?? '-',
+                    $item->sub_category_name ?? '-',
                     $item ? $item->qty . ' ' . $item->unit : '-',
                     $item ? $item->price : 0,
                     $item ? $item->subtotal : 0,
@@ -63,12 +65,12 @@ class RetailFoodTransactionReportExport
         }
 
         if ($row > $headerRow + 1) {
-            $sheet->getStyle('A5:K' . ($row - 1))->applyFromArray([
+            $sheet->getStyle('A5:M' . ($row - 1))->applyFromArray([
                 'borders' => ['allBorders' => ['borderStyle' => Border::BORDER_THIN, 'color' => ['rgb' => 'D1D5DB']]],
             ]);
-            $sheet->getStyle('I5:K' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0');
+            $sheet->getStyle('K5:M' . ($row - 1))->getNumberFormat()->setFormatCode('#,##0');
         }
-        foreach (range('A', 'K') as $column) {
+        foreach (range('A', 'M') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
 

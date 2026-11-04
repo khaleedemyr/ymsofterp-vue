@@ -1133,10 +1133,30 @@ class RetailFoodController extends Controller
 
         $transactionRows = $paginate ? $transactions->getCollection() : $transactions;
 
-        $items = DB::table('retail_food_items')
-            ->whereIn('retail_food_id', $transactionRows->pluck('id'))
-            ->select(['id', 'retail_food_id', 'item_name', 'qty', 'unit', 'price', 'subtotal'])
-            ->orderBy('id')
+        $itemNameMap = DB::table('items as im')
+            ->selectRaw('MIN(im.id) as item_id, TRIM(im.name) as item_name_key')
+            ->groupBy(DB::raw('TRIM(im.name)'));
+
+        $items = DB::table('retail_food_items as rfi')
+            ->leftJoinSub($itemNameMap, 'map_item', function ($join) {
+                $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+            })
+            ->leftJoin('items as it', 'map_item.item_id', '=', 'it.id')
+            ->leftJoin('categories as c', 'it.category_id', '=', 'c.id')
+            ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+            ->whereIn('rfi.retail_food_id', $transactionRows->pluck('id'))
+            ->select([
+                'rfi.id',
+                'rfi.retail_food_id',
+                'rfi.item_name',
+                'rfi.qty',
+                'rfi.unit',
+                'rfi.price',
+                'rfi.subtotal',
+                'c.name as category_name',
+                'sc.name as sub_category_name',
+            ])
+            ->orderBy('rfi.id')
             ->get()
             ->groupBy('retail_food_id');
 
@@ -1258,22 +1278,34 @@ class RetailFoodController extends Controller
             ->orderBy('rf.id')
             ->get();
 
-        // Get items for all transactions
+        // Get items for all transactions (with category from item master)
         $transactionIds = $transactions->pluck('retail_food_id')->toArray();
         $items = [];
         if (!empty($transactionIds)) {
-            $items = DB::table('retail_food_items')
-                ->whereIn('retail_food_id', $transactionIds)
+            $itemNameMap = DB::table('items as im')
+                ->selectRaw('MIN(im.id) as item_id, TRIM(im.name) as item_name_key')
+                ->groupBy(DB::raw('TRIM(im.name)'));
+
+            $items = DB::table('retail_food_items as rfi')
+                ->leftJoinSub($itemNameMap, 'map_item', function ($join) {
+                    $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+                })
+                ->leftJoin('items as it', 'map_item.item_id', '=', 'it.id')
+                ->leftJoin('categories as c', 'it.category_id', '=', 'c.id')
+                ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->whereIn('rfi.retail_food_id', $transactionIds)
                 ->select([
-                    'id',
-                    'retail_food_id',
-                    'item_name',
-                    'qty',
-                    'unit',
-                    'price',
-                    'subtotal'
+                    'rfi.id',
+                    'rfi.retail_food_id',
+                    'rfi.item_name',
+                    'rfi.qty',
+                    'rfi.unit',
+                    'rfi.price',
+                    'rfi.subtotal',
+                    'c.name as category_name',
+                    'sc.name as sub_category_name',
                 ])
-                ->orderBy('id')
+                ->orderBy('rfi.id')
                 ->get()
                 ->groupBy('retail_food_id');
         }
@@ -1328,6 +1360,8 @@ class RetailFoodController extends Controller
                         return [
                             'id' => $item->id,
                             'item_name' => $item->item_name,
+                            'category_name' => $item->category_name,
+                            'sub_category_name' => $item->sub_category_name,
                             'qty' => $item->qty,
                             'unit' => $item->unit,
                             'price' => $item->price,
@@ -1457,22 +1491,34 @@ class RetailFoodController extends Controller
             ->orderBy('rf.id')
             ->get();
 
-        // Get items for all transactions
+        // Get items for all transactions (with category from item master)
         $transactionIds = $transactions->pluck('retail_food_id')->toArray();
         $items = [];
         if (!empty($transactionIds)) {
-            $items = DB::table('retail_food_items')
-                ->whereIn('retail_food_id', $transactionIds)
+            $itemNameMap = DB::table('items as im')
+                ->selectRaw('MIN(im.id) as item_id, TRIM(im.name) as item_name_key')
+                ->groupBy(DB::raw('TRIM(im.name)'));
+
+            $items = DB::table('retail_food_items as rfi')
+                ->leftJoinSub($itemNameMap, 'map_item', function ($join) {
+                    $join->on(DB::raw('TRIM(rfi.item_name)'), '=', DB::raw('map_item.item_name_key'));
+                })
+                ->leftJoin('items as it', 'map_item.item_id', '=', 'it.id')
+                ->leftJoin('categories as c', 'it.category_id', '=', 'c.id')
+                ->leftJoin('sub_categories as sc', 'it.sub_category_id', '=', 'sc.id')
+                ->whereIn('rfi.retail_food_id', $transactionIds)
                 ->select([
-                    'id',
-                    'retail_food_id',
-                    'item_name',
-                    'qty',
-                    'unit',
-                    'price',
-                    'subtotal'
+                    'rfi.id',
+                    'rfi.retail_food_id',
+                    'rfi.item_name',
+                    'rfi.qty',
+                    'rfi.unit',
+                    'rfi.price',
+                    'rfi.subtotal',
+                    'c.name as category_name',
+                    'sc.name as sub_category_name',
                 ])
-                ->orderBy('id')
+                ->orderBy('rfi.id')
                 ->get()
                 ->groupBy('retail_food_id');
         }
@@ -1527,6 +1573,8 @@ class RetailFoodController extends Controller
                         return [
                             'id' => $item->id,
                             'item_name' => $item->item_name,
+                            'category_name' => $item->category_name,
+                            'sub_category_name' => $item->sub_category_name,
                             'qty' => $item->qty,
                             'unit' => $item->unit,
                             'price' => $item->price,

@@ -206,6 +206,7 @@
                         <thead class="bg-gray-100">
                           <tr>
                             <th class="px-4 py-2 text-left text-xs font-semibold text-gray-700 uppercase">Item</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-gray-700 uppercase">Category</th>
                             <th class="px-4 py-2 text-right text-xs font-semibold text-gray-700 uppercase">Qty</th>
                             <th class="px-4 py-2 text-right text-xs font-semibold text-gray-700 uppercase">Harga</th>
                             <th class="px-4 py-2 text-right text-xs font-semibold text-gray-700 uppercase">Subtotal</th>
@@ -214,6 +215,10 @@
                         <tbody class="divide-y divide-gray-200">
                           <tr v-for="item in transaction.items" :key="item.id" class="hover:bg-gray-50">
                             <td class="px-4 py-2 text-sm text-gray-800">{{ item.item_name }}</td>
+                            <td class="px-4 py-2 text-sm text-gray-600">
+                              <div>{{ item.category_name || '-' }}</div>
+                              <div v-if="item.sub_category_name" class="text-xs text-gray-400">{{ item.sub_category_name }}</div>
+                            </td>
                             <td class="px-4 py-2 text-sm text-gray-600 text-right">
                               {{ formatNumber(item.qty) }} {{ item.unit }}
                             </td>

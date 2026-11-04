@@ -184,6 +184,7 @@
                         <thead class="bg-gray-50">
                           <tr>
                             <th class="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Item</th>
+                            <th class="px-4 py-2.5 text-left text-xs font-bold text-gray-500 uppercase tracking-wide">Category</th>
                             <th class="px-4 py-2.5 text-right text-xs font-bold text-gray-500 uppercase tracking-wide">Qty</th>
                             <th class="px-4 py-2.5 text-right text-xs font-bold text-gray-500 uppercase tracking-wide">Harga</th>
                             <th class="px-4 py-2.5 text-right text-xs font-bold text-gray-500 uppercase tracking-wide">Subtotal</th>
@@ -192,12 +193,16 @@
                         <tbody class="divide-y divide-gray-100">
                           <tr v-for="item in transaction.items" :key="item.id">
                             <td class="px-4 py-2.5 font-medium text-gray-800">{{ item.item_name }}</td>
+                            <td class="px-4 py-2.5 text-gray-600">
+                              <div>{{ item.category_name || '-' }}</div>
+                              <div v-if="item.sub_category_name" class="text-xs text-gray-400">{{ item.sub_category_name }}</div>
+                            </td>
                             <td class="px-4 py-2.5 text-right text-gray-600">{{ formatNumber(item.qty) }} {{ item.unit }}</td>
                             <td class="px-4 py-2.5 text-right text-gray-600">Rp {{ formatCurrency(item.price) }}</td>
                             <td class="px-4 py-2.5 text-right font-semibold text-gray-800">Rp {{ formatCurrency(item.subtotal) }}</td>
                           </tr>
                           <tr v-if="!transaction.items.length">
-                            <td colspan="4" class="px-4 py-6 text-center text-gray-500">Tidak ada item pada transaksi ini.</td>
+                            <td colspan="5" class="px-4 py-6 text-center text-gray-500">Tidak ada item pada transaksi ini.</td>
                           </tr>
                         </tbody>
                       </table>

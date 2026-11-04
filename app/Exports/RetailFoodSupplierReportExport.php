@@ -23,13 +23,13 @@ class RetailFoodSupplierReportExport
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        
+
         // Set title
         $sheet->setCellValue('A1', 'Laporan Retail Food per Supplier');
-        $sheet->mergeCells('A1:J1');
+        $sheet->mergeCells('A1:O1');
         $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
         $sheet->getStyle('A1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
-        
+
         // Set filter info
         $row = 2;
         if (!empty($this->filters)) {
@@ -44,13 +44,13 @@ class RetailFoodSupplierReportExport
             if (!empty($filters)) {
                 $filterText .= implode(' | ', $filters);
                 $sheet->setCellValue('A' . $row, $filterText);
-                $sheet->mergeCells('A' . $row . ':J' . $row);
+                $sheet->mergeCells('A' . $row . ':O' . $row);
                 $row++;
             }
         }
-        
+
         $row++; // Empty row
-        
+
         // Header row
         $headers = [
             'No',
@@ -60,19 +60,21 @@ class RetailFoodSupplierReportExport
             'No. Transaksi',
             'Tanggal Transaksi',
             'Item',
+            'Category',
+            'Sub Category',
             'Qty',
             'Unit',
             'Harga',
             'Subtotal',
             'Total Transaksi',
-            'Catatan'
+            'Catatan',
         ];
-        
+
         $headerRow = $row;
         foreach ($headers as $col => $header) {
             $sheet->setCellValueByColumnAndRow($col + 1, $headerRow, $header);
         }
-        
+
         // Style headers
         $headerStyle = [
             'font' => [
@@ -95,13 +97,13 @@ class RetailFoodSupplierReportExport
                 ],
             ],
         ];
-        $sheet->getStyle('A' . $headerRow . ':M' . $headerRow)->applyFromArray($headerStyle);
+        $sheet->getStyle('A' . $headerRow . ':O' . $headerRow)->applyFromArray($headerStyle);
         $sheet->getRowDimension($headerRow)->setRowHeight(25);
-        
+
         // Data rows
         $currentRow = $headerRow + 1;
         $no = 1;
-        
+
         foreach ($this->suppliers as $supplier) {
             foreach ($supplier['outlets'] as $outlet) {
                 foreach ($outlet['transactions'] as $transaction) {
@@ -120,8 +122,10 @@ class RetailFoodSupplierReportExport
                         $sheet->setCellValueByColumnAndRow(9, $currentRow, '-');
                         $sheet->setCellValueByColumnAndRow(10, $currentRow, '-');
                         $sheet->setCellValueByColumnAndRow(11, $currentRow, '-');
-                        $sheet->setCellValueByColumnAndRow(12, $currentRow, $this->formatRupiah($transaction['total_amount']));
-                        $sheet->setCellValueByColumnAndRow(13, $currentRow, $transaction['notes'] ?? '-');
+                        $sheet->setCellValueByColumnAndRow(12, $currentRow, '-');
+                        $sheet->setCellValueByColumnAndRow(13, $currentRow, '-');
+                        $sheet->setCellValueByColumnAndRow(14, $currentRow, $this->formatRupiah($transaction['total_amount']));
+                        $sheet->setCellValueByColumnAndRow(15, $currentRow, $transaction['notes'] ?? '-');
                         $currentRow++;
                         $no++;
                     } else {
@@ -134,12 +138,14 @@ class RetailFoodSupplierReportExport
                             $sheet->setCellValueByColumnAndRow(5, $currentRow, $transaction['retail_number']);
                             $sheet->setCellValueByColumnAndRow(6, $currentRow, $this->formatDate($transaction['transaction_date']));
                             $sheet->setCellValueByColumnAndRow(7, $currentRow, $item['item_name'] ?? '-');
-                            $sheet->setCellValueByColumnAndRow(8, $currentRow, $this->formatNumber($item['qty'] ?? 0));
-                            $sheet->setCellValueByColumnAndRow(9, $currentRow, $item['unit'] ?? '-');
-                            $sheet->setCellValueByColumnAndRow(10, $currentRow, $this->formatRupiah($item['price'] ?? 0));
-                            $sheet->setCellValueByColumnAndRow(11, $currentRow, $this->formatRupiah($item['subtotal'] ?? 0));
-                            $sheet->setCellValueByColumnAndRow(12, $currentRow, $this->formatRupiah($transaction['total_amount']));
-                            $sheet->setCellValueByColumnAndRow(13, $currentRow, $transaction['notes'] ?? '-');
+                            $sheet->setCellValueByColumnAndRow(8, $currentRow, $item['category_name'] ?? '-');
+                            $sheet->setCellValueByColumnAndRow(9, $currentRow, $item['sub_category_name'] ?? '-');
+                            $sheet->setCellValueByColumnAndRow(10, $currentRow, $this->formatNumber($item['qty'] ?? 0));
+                            $sheet->setCellValueByColumnAndRow(11, $currentRow, $item['unit'] ?? '-');
+                            $sheet->setCellValueByColumnAndRow(12, $currentRow, $this->formatRupiah($item['price'] ?? 0));
+                            $sheet->setCellValueByColumnAndRow(13, $currentRow, $this->formatRupiah($item['subtotal'] ?? 0));
+                            $sheet->setCellValueByColumnAndRow(14, $currentRow, $this->formatRupiah($transaction['total_amount']));
+                            $sheet->setCellValueByColumnAndRow(15, $currentRow, $transaction['notes'] ?? '-');
 
                             $currentRow++;
                         }
@@ -148,7 +154,7 @@ class RetailFoodSupplierReportExport
                 }
             }
         }
-        
+
         // Apply borders to data
         $lastRow = $currentRow - 1;
         if ($lastRow >= $headerRow + 1) {
@@ -163,14 +169,14 @@ class RetailFoodSupplierReportExport
                     'vertical' => Alignment::VERTICAL_TOP,
                 ],
             ];
-            $sheet->getStyle('A' . ($headerRow + 1) . ':M' . $lastRow)->applyFromArray($styleArray);
+            $sheet->getStyle('A' . ($headerRow + 1) . ':O' . $lastRow)->applyFromArray($styleArray);
         }
-        
+
         // Auto size columns
-        foreach (range('A', 'M') as $column) {
+        foreach (range('A', 'O') as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
         }
-        
+
         // Set column widths for better readability
         $sheet->getColumnDimension('A')->setWidth(6);  // No
         $sheet->getColumnDimension('B')->setWidth(25); // Supplier
@@ -179,26 +185,28 @@ class RetailFoodSupplierReportExport
         $sheet->getColumnDimension('E')->setWidth(20); // No. Transaksi
         $sheet->getColumnDimension('F')->setWidth(18); // Tanggal
         $sheet->getColumnDimension('G')->setWidth(30); // Item
-        $sheet->getColumnDimension('H')->setWidth(12); // Qty
-        $sheet->getColumnDimension('I')->setWidth(10); // Unit
-        $sheet->getColumnDimension('J')->setWidth(15); // Harga
-        $sheet->getColumnDimension('K')->setWidth(15); // Subtotal
-        $sheet->getColumnDimension('L')->setWidth(18); // Total Transaksi
-        $sheet->getColumnDimension('M')->setWidth(30); // Catatan
-        
+        $sheet->getColumnDimension('H')->setWidth(18); // Category
+        $sheet->getColumnDimension('I')->setWidth(18); // Sub Category
+        $sheet->getColumnDimension('J')->setWidth(12); // Qty
+        $sheet->getColumnDimension('K')->setWidth(10); // Unit
+        $sheet->getColumnDimension('L')->setWidth(15); // Harga
+        $sheet->getColumnDimension('M')->setWidth(15); // Subtotal
+        $sheet->getColumnDimension('N')->setWidth(18); // Total Transaksi
+        $sheet->getColumnDimension('O')->setWidth(30); // Catatan
+
         // Set alignment for numeric columns
-        $sheet->getStyle('H' . ($headerRow + 1) . ':H' . $lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        $sheet->getStyle('J' . ($headerRow + 1) . ':L' . $lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
-        
+        $sheet->getStyle('J' . ($headerRow + 1) . ':J' . $lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+        $sheet->getStyle('L' . ($headerRow + 1) . ':N' . $lastRow)->getAlignment()->setHorizontal(Alignment::HORIZONTAL_RIGHT);
+
         // Wrap text for long content
-        $sheet->getStyle('B' . ($headerRow + 1) . ':M' . $lastRow)->getAlignment()->setWrapText(true);
-        
+        $sheet->getStyle('B' . ($headerRow + 1) . ':O' . $lastRow)->getAlignment()->setWrapText(true);
+
         // Freeze first row (header)
         $sheet->freezePane('A' . ($headerRow + 1));
-        
+
         // Create writer
         $writer = new Xlsx($spreadsheet);
-        
+
         // Set headers for download
         $dateRange = '';
         if (isset($this->filters['date_from']) && isset($this->filters['date_to'])) {
@@ -208,31 +216,39 @@ class RetailFoodSupplierReportExport
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment;filename="' . $filename . '"');
         header('Cache-Control: max-age=0');
-        
+
         // Output file
         $writer->save('php://output');
         exit;
     }
-    
+
     private function formatDate($date)
     {
-        if (!$date) return '-';
+        if (!$date) {
+            return '-';
+        }
         if (is_string($date)) {
             return date('d/m/Y', strtotime($date));
         }
+
         return $date->format('d/m/Y');
     }
-    
+
     private function formatRupiah($value)
     {
-        if ($value === null || $value === '') return '0';
+        if ($value === null || $value === '') {
+            return '0';
+        }
+
         return number_format((float) $value, 0, ',', '.');
     }
-    
+
     private function formatNumber($value)
     {
-        if ($value === null || $value === '') return '0';
+        if ($value === null || $value === '') {
+            return '0';
+        }
+
         return number_format((float) $value, 2, ',', '.');
     }
 }
-
