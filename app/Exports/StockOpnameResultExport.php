@@ -23,8 +23,14 @@ class StockOpnameResultExport implements FromCollection, WithHeadings, WithMappi
 
     public function collection()
     {
-        // Hanya export item yang punya qty fisik > 0 (minimal di salah satu unit).
+        // Hanya export item yang sudah diisi qty fisik dan total fisik > 0.
         return $this->stockOpname->items->filter(function ($item) {
+            if ($item->qty_physical_small === null
+                && $item->qty_physical_medium === null
+                && $item->qty_physical_large === null) {
+                return false;
+            }
+
             $qtyPhyS = $item->qty_physical_small !== null ? (float) $item->qty_physical_small : 0;
             $qtyPhyM = $item->qty_physical_medium !== null ? (float) $item->qty_physical_medium : 0;
             $qtyPhyL = $item->qty_physical_large !== null ? (float) $item->qty_physical_large : 0;

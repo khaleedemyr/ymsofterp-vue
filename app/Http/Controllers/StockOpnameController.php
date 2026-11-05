@@ -39,8 +39,8 @@ class StockOpnameController extends Controller
 
     /**
      * Autosave: hanya kirim baris yang benar-benar diisi (ringan).
-     * Simpan penuh (klik Simpan): semua baris dari form — qty kosong di backend sama dengan stok sistem.
-     * Tanpa ini, update() memakai filterFilledItems lalu whereNotIn delete sehingga baris yang "belum diisi eksplisit" terhapus dari DB.
+     * Simpan penuh (klik Simpan): semua baris dari form.
+     * Qty fisik kosong TIDAK diisi otomatis dari qty sistem (disimpan NULL, selisih 0).
      */
     private function opnameItemsPayload(Request $request, array $items): array
     {
@@ -51,6 +51,50 @@ class StockOpnameController extends Controller
         return array_values(array_filter($items, function ($row) {
             return isset($row['inventory_item_id']) && $row['inventory_item_id'] !== '' && $row['inventory_item_id'] !== null;
         }));
+    }
+
+    private function isPhysicalQtyProvided(array $itemData, string $key): bool
+    {
+        return array_key_exists($key, $itemData)
+            && $itemData[$key] !== null
+            && $itemData[$key] !== '';
+    }
+
+    /**
+     * Qty fisik kosong = NULL (bukan copy qty sistem, juga bukan 0).
+     * NULL = belum dihitung → saat Process inventory di-skip (stok tetap).
+     * 0 eksplisit = memang dihitung 0 → saat Process stok jadi 0.
+     */
+    private function resolvePhysicalQuantities(array $itemData, float $qtySystemSmall, float $qtySystemMedium, float $qtySystemLarge): array
+    {
+        $hasSmall = $this->isPhysicalQtyProvided($itemData, 'qty_physical_small');
+        $hasMedium = $this->isPhysicalQtyProvided($itemData, 'qty_physical_medium');
+        $hasLarge = $this->isPhysicalQtyProvided($itemData, 'qty_physical_large');
+        $hasAnyPhysical = $hasSmall || $hasMedium || $hasLarge;
+
+        if (!$hasAnyPhysical) {
+            return [
+                'qty_physical_small' => null,
+                'qty_physical_medium' => null,
+                'qty_physical_large' => null,
+                'qty_diff_small' => 0.0,
+                'qty_diff_medium' => 0.0,
+                'qty_diff_large' => 0.0,
+            ];
+        }
+
+        $qtyPhysicalSmall = $hasSmall ? (float) $itemData['qty_physical_small'] : 0.0;
+        $qtyPhysicalMedium = $hasMedium ? (float) $itemData['qty_physical_medium'] : 0.0;
+        $qtyPhysicalLarge = $hasLarge ? (float) $itemData['qty_physical_large'] : 0.0;
+
+        return [
+            'qty_physical_small' => $qtyPhysicalSmall,
+            'qty_physical_medium' => $qtyPhysicalMedium,
+            'qty_physical_large' => $qtyPhysicalLarge,
+            'qty_diff_small' => $qtyPhysicalSmall - $qtySystemSmall,
+            'qty_diff_medium' => $qtyPhysicalMedium - $qtySystemMedium,
+            'qty_diff_large' => $qtyPhysicalLarge - $qtySystemLarge,
+        ];
     }
 
     /**
@@ -327,24 +371,18 @@ class StockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = (float) ($stock->last_cost_small ?? 0);
 
-                // Get physical qty from request
-                // Check if value is explicitly provided (not null and not empty string)
-                // If null or empty string, use system qty (tombol "=")
-                // If 0 or any numeric value is provided, use that value
-                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
-                    ? (float)$itemData['qty_physical_small'] 
-                    : $qtySystemSmall;
-                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') 
-                    ? (float)$itemData['qty_physical_medium'] 
-                    : $qtySystemMedium;
-                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
-                    ? (float)$itemData['qty_physical_large'] 
-                    : $qtySystemLarge;
-
-                // Calculate difference
-                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
-                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
-                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $physical = $this->resolvePhysicalQuantities(
+                    $itemData,
+                    (float) $qtySystemSmall,
+                    (float) $qtySystemMedium,
+                    (float) $qtySystemLarge
+                );
+                $qtyPhysicalSmall = $physical['qty_physical_small'];
+                $qtyPhysicalMedium = $physical['qty_physical_medium'];
+                $qtyPhysicalLarge = $physical['qty_physical_large'];
+                $qtyDiffSmall = $physical['qty_diff_small'];
+                $qtyDiffMedium = $physical['qty_diff_medium'];
+                $qtyDiffLarge = $physical['qty_diff_large'];
 
                 // Reason is optional now (not required even if there's a difference)
 
@@ -752,19 +790,18 @@ class StockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = (float) ($stock->last_cost_small ?? 0);
 
-                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') 
-                    ? (float)$itemData['qty_physical_small'] 
-                    : $qtySystemSmall;
-                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') 
-                    ? (float)$itemData['qty_physical_medium'] 
-                    : $qtySystemMedium;
-                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') 
-                    ? (float)$itemData['qty_physical_large'] 
-                    : $qtySystemLarge;
-
-                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
-                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
-                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $physical = $this->resolvePhysicalQuantities(
+                    $itemData,
+                    (float) $qtySystemSmall,
+                    (float) $qtySystemMedium,
+                    (float) $qtySystemLarge
+                );
+                $qtyPhysicalSmall = $physical['qty_physical_small'];
+                $qtyPhysicalMedium = $physical['qty_physical_medium'];
+                $qtyPhysicalLarge = $physical['qty_physical_large'];
+                $qtyDiffSmall = $physical['qty_diff_small'];
+                $qtyDiffMedium = $physical['qty_diff_medium'];
+                $qtyDiffLarge = $physical['qty_diff_large'];
 
                 // Reason is optional now (not required even if there's a difference)
 
@@ -1536,13 +1573,18 @@ class StockOpnameController extends Controller
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = (float) ($stock->last_cost_small ?? 0);
 
-                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
-                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
-                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') ? (float)$itemData['qty_physical_large'] : $qtySystemLarge;
-
-                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
-                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
-                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $physical = $this->resolvePhysicalQuantities(
+                    $itemData,
+                    (float) $qtySystemSmall,
+                    (float) $qtySystemMedium,
+                    (float) $qtySystemLarge
+                );
+                $qtyPhysicalSmall = $physical['qty_physical_small'];
+                $qtyPhysicalMedium = $physical['qty_physical_medium'];
+                $qtyPhysicalLarge = $physical['qty_physical_large'];
+                $qtyDiffSmall = $physical['qty_diff_small'];
+                $qtyDiffMedium = $physical['qty_diff_medium'];
+                $qtyDiffLarge = $physical['qty_diff_large'];
                 $valueAdjustment = $qtyDiffSmall * $mac;
 
                 $itemsToInsert[] = [
@@ -1657,12 +1699,18 @@ class StockOpnameController extends Controller
                 $qtySystemMedium = $stock->qty_medium ?? 0;
                 $qtySystemLarge = $stock->qty_large ?? 0;
                 $mac = (float) ($stock->last_cost_small ?? 0);
-                $qtyPhysicalSmall = (array_key_exists('qty_physical_small', $itemData) && $itemData['qty_physical_small'] !== null && $itemData['qty_physical_small'] !== '') ? (float)$itemData['qty_physical_small'] : $qtySystemSmall;
-                $qtyPhysicalMedium = (array_key_exists('qty_physical_medium', $itemData) && $itemData['qty_physical_medium'] !== null && $itemData['qty_physical_medium'] !== '') ? (float)$itemData['qty_physical_medium'] : $qtySystemMedium;
-                $qtyPhysicalLarge = (array_key_exists('qty_physical_large', $itemData) && $itemData['qty_physical_large'] !== null && $itemData['qty_physical_large'] !== '') ? (float)$itemData['qty_physical_large'] : $qtySystemLarge;
-                $qtyDiffSmall = $qtyPhysicalSmall - $qtySystemSmall;
-                $qtyDiffMedium = $qtyPhysicalMedium - $qtySystemMedium;
-                $qtyDiffLarge = $qtyPhysicalLarge - $qtySystemLarge;
+                $physical = $this->resolvePhysicalQuantities(
+                    $itemData,
+                    (float) $qtySystemSmall,
+                    (float) $qtySystemMedium,
+                    (float) $qtySystemLarge
+                );
+                $qtyPhysicalSmall = $physical['qty_physical_small'];
+                $qtyPhysicalMedium = $physical['qty_physical_medium'];
+                $qtyPhysicalLarge = $physical['qty_physical_large'];
+                $qtyDiffSmall = $physical['qty_diff_small'];
+                $qtyDiffMedium = $physical['qty_diff_medium'];
+                $qtyDiffLarge = $physical['qty_diff_large'];
                 $valueAdjustment = $qtyDiffSmall * $mac;
 
                 $itemDataToSave = [
@@ -2468,6 +2516,13 @@ class StockOpnameController extends Controller
         $liveQtySmall = (float) $stock->qty_small;
         $liveQtyMedium = (float) $stock->qty_medium;
         $liveQtyLarge = (float) $stock->qty_large;
+
+        // Belum diisi qty fisik (NULL) = tidak dihitung → jangan ubah inventory.
+        if ($item->qty_physical_small === null
+            && $item->qty_physical_medium === null
+            && $item->qty_physical_large === null) {
+            return;
+        }
 
         $physicalSmall = (float) ($item->qty_physical_small ?? $liveQtySmall);
         $physicalMedium = (float) ($item->qty_physical_medium ?? $liveQtyMedium);
