@@ -26,7 +26,7 @@ class NegativeCommentRadarService
 
     private const MAX_CASES_PER_RUN = 300;
 
-    private const AI_CHUNK_SIZE = 25;
+    private const AI_CHUNK_SIZE = 15;
 
     /**
      * @return list<array{code: string, label: string}>
@@ -440,26 +440,33 @@ class NegativeCommentRadarService
         $nicheList = implode(', ', array_keys(self::NICHES));
         $prompt = <<<PROMPT
 Anda adalah analist Voice of Customer untuk restoran F&B (Justus).
-Tugas: klasifikasikan setiap komentar NEGATIF ke niche training berikut (kode persis):
-- staff_friendliness: keramahan, sikap, komunikasi staff, kurang ramah, kasar, tidak menyapa
-- speed_serving_time: lama menunggu, lambat, antrian, serving time, order lama
-- wrong_transaction: salah charge, salah order, salah bayar, bill salah, transaksi keliru
-- food_quality: rasa, porsi, dingin, gosong, basi, kualitas makanan/minuman
-- cleanliness: kotor, lalat, toilet, meja kotor, higiene area
-- grooming: penampilan staff, seragam, rambut, kuku, bau badan, tidak rapi
+Klasifikasikan setiap komentar NEGATIF ke niche training (kode PERSIS salah satu):
+- staff_friendliness: sikap/keramahan staff, kasar, cuek, dipaksa kasih review/rating, komunikasi buruk, tidak empati
+- speed_serving_time: INTI masalah = waktu tunggu makanan/minuman/antrian/serving lambat (bukan menunggu review, bukan waiting list meja saja jika inti adalah reservasi salah)
+- wrong_transaction: salah charge/bill, dine-in tercatat delivery, kelebihan/kekurangan bayar, salah order, tidak cross-check pesanan, transaksi keliru
+- food_quality: rasa, porsi, suhu makanan, gosong, basi, kualitas F&B
+- cleanliness: kotor, hama, toilet, higiene area/meja
+- grooming: seragam, rambut, kuku, bau badan, penampilan staff
+
+Disambiguasi WAJIB:
+- "bill salah / Gofood / kelebihan bayar / salah catat order" → wrong_transaction (BUKAN speed)
+- "dipaksa/ditodong kasih penilaian/review sambil ditunggu waitress" → staff_friendliness (BUKAN speed meski ada kata tunggu)
+- "waitress tidak cross-check makanan" → wrong_transaction (atau staff_friendliness), BUKAN speed
+- Waiting list / makanan 40 menit baru keluar → speed_serving_time boleh primary
+- Jangan pilih speed hanya karena ada kata "nunggu/lama" jika inti komplain beda
 
 Data JSON:
 {$jsonInput}
 
-Aturan:
-1. primary_niche wajib salah satu: {$nicheList}
-2. niches: 1–3 niche paling relevan (termasuk primary)
+Aturan output:
+1. primary_niche wajib: {$nicheList}
+2. niches: 1–3 niche relevan (termasuk primary)
 3. confidence 0–100
-4. reason: 1 kalimat singkat Bahasa Indonesia
-5. training_hint: saran topik training singkat untuk trainer (Bahasa Indonesia)
+4. reason: 1 kalimat singkat Bahasa Indonesia menjelaskan kenapa niche itu
+5. training_hint: saran topik training singkat untuk trainer
 
 Output HANYA JSON valid tanpa markdown:
-{"items":[{"idx":0,"primary_niche":"food_quality","niches":["food_quality","cleanliness"],"confidence":82,"reason":"...","training_hint":"..."}]}
+{"items":[{"idx":0,"primary_niche":"wrong_transaction","niches":["wrong_transaction"],"confidence":88,"reason":"...","training_hint":"..."}]}
 Semua idx input harus muncul tepat sekali.
 PROMPT;
 
@@ -499,24 +506,134 @@ PROMPT;
      */
     private function keywordFallback(string $text, string $topics = ''): array
     {
-        $hay = mb_strtolower(trim($text.' '.$topics));
+        $hay = mb_strtolower(trim($text));
+        $topicHay = mb_strtolower(trim($topics));
         $scores = array_fill_keys(array_keys(self::NICHES), 0);
 
-        $rules = [
-            'staff_friendliness' => ['tidak ramah', 'kurang ramah', 'kasar', 'cuek', 'tidak menyapa', 'unfriendly', 'attitude', 'sombong', 'galak', 'pelayanan buruk', 'service buruk', 'staff'],
-            'speed_serving_time' => ['lama', 'lambat', 'nunggu', 'menunggu', 'antrian', 'serving', 'lambat datang', 'order lama', 'slow', 'wait', 'kelamaan'],
-            'wrong_transaction' => ['salah charge', 'salah bayar', 'salah hitung', 'bill salah', 'tagihan', 'salah order', 'order salah', 'transaksi', 'double charge', 'overcharge', 'kurang bayar'],
-            'food_quality' => ['rasa', 'hambar', 'asin', 'gosong', 'basi', 'dingin', 'porsi', 'tidak enak', 'makanan', 'minuman', 'quality', 'busuk', 'mentah'],
-            'cleanliness' => ['kotor', 'lalat', 'kecoa', 'bau', 'toilet', 'higiene', 'hygiene', 'bersih', 'noda', 'debu', 'sampah'],
-            'grooming' => ['seragam', 'rambut', 'kuku', 'bau badan', 'tidak rapi', 'grooming', 'penampilan', 'kumis', 'jenggot', 'baju kotor'],
+        // Frasa kuat dulu (bobot tinggi) — hindari keyword pendek yang false-positive ("lama", "wait", "nunggu").
+        $phraseRules = [
+            'wrong_transaction' => [
+                'kelebihan pembayaran' => 8,
+                'kelebihan bayar' => 8,
+                'kekurangan bayar' => 8,
+                'salah charge' => 8,
+                'double charge' => 8,
+                'overcharge' => 8,
+                'salah bayar' => 7,
+                'salah hitung' => 7,
+                'bill salah' => 7,
+                'salah order' => 7,
+                'order salah' => 7,
+                'tidak cross-check' => 7,
+                'tidak di cross' => 7,
+                'cross check' => 6,
+                'cross-check' => 6,
+                'tercatat gofood' => 8,
+                'tercatat gojek' => 8,
+                'tercatat grab' => 8,
+                'dine in' => 3,
+                'dine-in' => 3,
+                'salah catat' => 7,
+                'tagihan salah' => 7,
+                'bill' => 2,
+                'pembayaran' => 2,
+            ],
+            'staff_friendliness' => [
+                'ditodong' => 8,
+                'dipaksa' => 7,
+                'kasih penilaian' => 7,
+                'kasih review' => 7,
+                'ngasi penilaian' => 7,
+                'ngasi review' => 7,
+                'beri penilaian' => 6,
+                'tidak ramah' => 7,
+                'kurang ramah' => 7,
+                'kurang nyaman' => 5,
+                'kasar' => 6,
+                'cuek' => 6,
+                'tidak menyapa' => 6,
+                'pelayanan buruk' => 6,
+                'sikap' => 3,
+                'waitress' => 2,
+                'waiter' => 2,
+            ],
+            'speed_serving_time' => [
+                'waiting list' => 6,
+                'antrian panjang' => 6,
+                'makanan lama' => 7,
+                'minuman lama' => 7,
+                'order lama' => 7,
+                'pelayanan lama' => 6,
+                'serving time' => 7,
+                'lambat datang' => 7,
+                'baru keluar' => 4,
+                'menunggu makanan' => 7,
+                'nunggu makanan' => 7,
+                'kelamaan' => 5,
+                'sangat lambat' => 6,
+                'terlalu lama menunggu' => 7,
+                'lama menunggu' => 6,
+            ],
+            'food_quality' => [
+                'tidak enak' => 7,
+                'hambar' => 6,
+                'gosong' => 6,
+                'basi' => 7,
+                'busuk' => 7,
+                'mentah' => 6,
+                'porsi kecil' => 5,
+                'porsi kurang' => 5,
+                'makanan dingin' => 6,
+                'rasa' => 3,
+            ],
+            'cleanliness' => [
+                'kotor' => 6,
+                'lalat' => 7,
+                'kecoa' => 7,
+                'toilet kotor' => 7,
+                'tidak higienis' => 6,
+                'hygiene' => 5,
+                'higiene' => 5,
+            ],
+            'grooming' => [
+                'bau badan' => 7,
+                'seragam' => 5,
+                'tidak rapi' => 5,
+                'grooming' => 6,
+                'kuku panjang' => 6,
+            ],
         ];
 
-        foreach ($rules as $niche => $keywords) {
-            foreach ($keywords as $kw) {
-                if ($kw !== '' && str_contains($hay, $kw)) {
-                    $scores[$niche] += 2;
+        foreach ($phraseRules as $niche => $phrases) {
+            foreach ($phrases as $phrase => $weight) {
+                if ($phrase !== '' && str_contains($hay, $phrase)) {
+                    $scores[$niche] += $weight;
                 }
             }
+        }
+
+        // Mapping topic CVCC (sinyal lemah saja — jangan mendominasi)
+        $topicMap = [
+            'wait_time' => 'speed_serving_time',
+            'service' => 'staff_friendliness',
+            'food_quality' => 'food_quality',
+            'hygiene' => 'cleanliness',
+            'portion' => 'food_quality',
+            'price' => 'wrong_transaction',
+        ];
+        foreach ($topicMap as $topic => $niche) {
+            if ($topicHay !== '' && preg_match('/\b'.preg_quote($topic, '/').'\b/u', $topicHay)) {
+                $scores[$niche] += 1;
+            }
+        }
+
+        // Jika ada sinyal transaksi kuat, kurangi bobot speed agar tidak salah niche
+        if ($scores['wrong_transaction'] >= 6) {
+            $scores['speed_serving_time'] = max(0, $scores['speed_serving_time'] - 4);
+        }
+        // Paksa review / sikap → staff, bukan speed
+        if ($scores['staff_friendliness'] >= 6) {
+            $scores['speed_serving_time'] = max(0, $scores['speed_serving_time'] - 3);
         }
 
         arsort($scores);
@@ -527,12 +644,13 @@ PROMPT;
 
         $primary = $ranked[0];
         $niches = array_slice($ranked, 0, 2);
+        $topScore = (int) ($scores[$primary] ?? 0);
 
         return [
             'primary_niche' => $primary,
             'niches' => $niches,
-            'confidence' => 48.0,
-            'reason' => 'Klasifikasi fallback berbasis kata kunci (AI tidak tersedia / gagal).',
+            'confidence' => round(min(72, 40 + ($topScore * 2)), 2),
+            'reason' => 'Klasifikasi fallback kata kunci (AI gagal/tidak tersedia) — skor frasa: '.$topScore.'.',
             'training_hint' => $this->defaultTrainingHint($primary),
         ];
     }
@@ -734,49 +852,77 @@ PROMPT;
             throw new \RuntimeException('GOOGLE_GEMINI_API_KEY kosong.');
         }
 
-        $model = (string) config('ai.gemini.model', 'gemini-1.5-flash');
-        $model = preg_replace('#^models/#', '', $model) ?: 'gemini-1.5-flash';
-        // Prefer flash for classification cost/latency if pro configured
-        if (str_contains($model, '1.5-pro') || str_contains($model, '2.0-pro')) {
-            $model = 'gemini-1.5-flash';
-        }
-
-        $url = 'https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.urlencode($apiKey);
-        $http = Http::timeout(120);
-        if (config('app.env') === 'local' || config('app.debug')) {
-            $http = $http->withoutVerifying();
-        }
-
-        $response = $http->post($url, [
-            'contents' => [
-                ['parts' => [['text' => $prompt]]],
-            ],
-            'generationConfig' => [
-                'temperature' => 0.2,
-                'maxOutputTokens' => 4096,
-            ],
-        ]);
-
-        if (! $response->successful()) {
-            Log::error('NCR Gemini failed', ['status' => $response->status(), 'body' => $response->body()]);
-            throw new \RuntimeException('Gemini API error: '.$response->status());
-        }
-
-        $parts = $response->json('candidates.0.content.parts') ?? [];
-        $text = '';
-        if (is_array($parts)) {
-            foreach ($parts as $part) {
-                if (is_array($part) && isset($part['text'])) {
-                    $text .= $part['text'];
+        $lastError = null;
+        foreach ($this->geminiModelCandidates() as $model) {
+            try {
+                $url = 'https://generativelanguage.googleapis.com/v1beta/models/'.$model.':generateContent?key='.urlencode($apiKey);
+                $http = Http::timeout(120);
+                if (config('app.env') === 'local' || config('app.debug')) {
+                    $http = $http->withoutVerifying();
                 }
+
+                $response = $http->post($url, [
+                    'contents' => [
+                        ['parts' => [['text' => $prompt]]],
+                    ],
+                    'generationConfig' => [
+                        'temperature' => 0.15,
+                        'maxOutputTokens' => 4096,
+                    ],
+                ]);
+
+                if (! $response->successful()) {
+                    $lastError = 'Gemini HTTP '.$response->status().' model='.$model;
+                    Log::warning('NCR Gemini model failed', [
+                        'model' => $model,
+                        'status' => $response->status(),
+                        'body' => Str::limit($response->body(), 400),
+                    ]);
+                    continue;
+                }
+
+                $parts = $response->json('candidates.0.content.parts') ?? [];
+                $text = '';
+                if (is_array($parts)) {
+                    foreach ($parts as $part) {
+                        if (is_array($part) && isset($part['text'])) {
+                            $text .= $part['text'];
+                        }
+                    }
+                }
+
+                if (trim($text) === '') {
+                    $lastError = 'Jawaban Gemini kosong model='.$model;
+                    continue;
+                }
+
+                return trim($text);
+            } catch (\Throwable $e) {
+                $lastError = $e->getMessage();
+                Log::warning('NCR Gemini exception', ['model' => $model, 'message' => $e->getMessage()]);
             }
         }
 
-        if (trim($text) === '') {
-            throw new \RuntimeException('Jawaban Gemini kosong.');
-        }
+        throw new \RuntimeException($lastError ?: 'Semua model Gemini gagal untuk NCR.');
+    }
 
-        return trim($text);
+    /**
+     * @return list<string>
+     */
+    private function geminiModelCandidates(): array
+    {
+        $primary = (string) config('ai.gemini.model', 'gemini-2.5-flash');
+        $primary = preg_replace('#^models/#', '', trim($primary)) ?: 'gemini-2.5-flash';
+
+        $fallbacks = [
+            'gemini-2.5-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+            'gemini-1.5-pro',
+        ];
+
+        return array_values(array_unique(array_filter(array_merge([$primary], $fallbacks))));
     }
 
     private function invokeOpenAi(string $prompt): string
