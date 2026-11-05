@@ -1,10 +1,30 @@
 <template>
   <AppLayout>
     <div class="w-full py-8 px-2">
-      <div class="flex items-center justify-between mb-6">
+      <div class="flex items-center justify-between mb-6 gap-3 flex-wrap">
         <h1 class="text-2xl font-bold flex items-center gap-2">
           <i class="fa-solid fa-file-lines text-blue-500"></i> Outlet Stock Opname Report
         </h1>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="exportExcel"
+            :disabled="exporting || stockOpnames.length === 0"
+            class="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg shadow hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i class="fa-solid fa-file-excel"></i>
+            {{ exporting === 'excel' ? 'Menyiapkan...' : 'Export Excel' }}
+          </button>
+          <button
+            type="button"
+            @click="exportPdf"
+            :disabled="exporting || stockOpnames.length === 0"
+            class="inline-flex items-center gap-2 bg-red-600 text-white px-4 py-2 rounded-lg shadow hover:bg-red-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i class="fa-solid fa-file-pdf"></i>
+            {{ exporting === 'pdf' ? 'Menyiapkan...' : 'Export PDF' }}
+          </button>
+        </div>
       </div>
 
       <!-- Filter Section -->
@@ -335,12 +355,37 @@ const props = defineProps({
 });
 
 const loading = ref(false);
+const exporting = ref(null);
 const outlets = ref(props.outlets || []);
 const warehouseOutlets = ref(props.warehouseOutlets || []);
 const stockOpnames = ref(props.stockOpnames || []);
 const totals = ref(props.totals || {});
 const pagination = ref(props.pagination || {});
 const filters = ref({ ...props.filters });
+
+function buildExportQuery() {
+  const params = new URLSearchParams();
+  Object.entries(filters.value || {}).forEach(([key, value]) => {
+    if (value !== null && value !== undefined && value !== '') {
+      params.set(key, String(value));
+    }
+  });
+  return params.toString();
+}
+
+function exportExcel() {
+  if (stockOpnames.value.length === 0) return;
+  exporting.value = 'excel';
+  window.open(`${route('outlet-stock-opname-report.export-excel')}?${buildExportQuery()}`, '_blank');
+  window.setTimeout(() => { exporting.value = null; }, 2000);
+}
+
+function exportPdf() {
+  if (stockOpnames.value.length === 0) return;
+  exporting.value = 'pdf';
+  window.open(`${route('outlet-stock-opname-report.export-pdf')}?${buildExportQuery()}`, '_blank');
+  window.setTimeout(() => { exporting.value = null; }, 2000);
+}
 
 // Check if user can select outlet (only superadmin with id_outlet = 1)
 const outletSelectable = computed(() => {

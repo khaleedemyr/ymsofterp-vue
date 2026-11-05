@@ -1774,6 +1774,8 @@ Route::get('/stock-opname-adjustment-report', [\App\Http\Controllers\StockOpname
 
 // Outlet Stock Opname Report Routes (Only Approved)
 Route::get('/outlet-stock-opname-report', [\App\Http\Controllers\OutletStockOpnameReportController::class, 'index'])->name('outlet-stock-opname-report.index');
+Route::get('/outlet-stock-opname-report/export-excel', [\App\Http\Controllers\OutletStockOpnameReportController::class, 'exportExcel'])->name('outlet-stock-opname-report.export-excel');
+Route::get('/outlet-stock-opname-report/export-pdf', [\App\Http\Controllers\OutletStockOpnameReportController::class, 'exportPdf'])->name('outlet-stock-opname-report.export-pdf');
 
 // Warehouse Stock Opname Routes
 Route::get('/warehouse-stock-opnames', [\App\Http\Controllers\WarehouseStockOpnameController::class, 'index'])->name('warehouse-stock-opnames.index');
