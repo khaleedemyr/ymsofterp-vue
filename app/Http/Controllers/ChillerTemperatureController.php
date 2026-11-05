@@ -2,11 +2,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\ChillerTemperatureReportExport;
+use App\Models\Divisi;
+use App\Models\Ticket;
+use App\Models\TicketCategory;
+use App\Models\TicketHistory;
+use App\Models\TicketPriority;
+use App\Models\TicketStatus;
+use App\Services\TicketTeamAutoAssignService;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ChillerTemperatureController extends Controller
 {
@@ -34,43 +45,8 @@ class ChillerTemperatureController extends Controller
             ]);
         }
 
-        $date = $request->input('date') ?: now()->toDateString();
-        $search = trim((string) $request->input('search', ''));
-        $outletFilter = $canChooseOutlet ? (int) $request->input('outlet_id', 0) : $userOutletId;
-
-        $query = DB::table('chiller_temperature_logs as l')
-            ->leftJoin('tbl_data_outlet as o', 'l.outlet_id', '=', 'o.id_outlet')
-            ->leftJoin('warehouse_outlets as wo', 'l.warehouse_outlet_id', '=', 'wo.id')
-            ->where('l.check_date', $date)
-            ->select(
-                'l.*',
-                'o.nama_outlet as outlet_name',
-                'wo.name as warehouse_name'
-            )
-            ->orderBy('o.nama_outlet')
-            ->orderBy('wo.name')
-            ->orderBy('l.item_name')
-            ->orderBy('l.serial_number');
-
-        if ($canChooseOutlet) {
-            if ($outletFilter > 0) {
-                $query->where('l.outlet_id', $outletFilter);
-            }
-        } elseif ($userOutletId > 0) {
-            $query->where('l.outlet_id', $userOutletId);
-        } else {
-            $query->whereRaw('0 = 1');
-        }
-
-        if ($search !== '') {
-            $query->where(function ($q) use ($search) {
-                $q->where('l.item_name', 'like', "%{$search}%")
-                    ->orWhere('l.serial_number', 'like', "%{$search}%");
-            });
-        }
-
-        $logs = $query->get();
-        $rows = $this->pivotRows($logs);
+        $resolved = $this->resolveIndexFilters($request);
+        $rows = $this->pivotRows($this->fetchLogs($resolved));
 
         $outlets = [];
         if ($canChooseOutlet) {
@@ -83,9 +59,9 @@ class ChillerTemperatureController extends Controller
         return Inertia::render('ChillerTemperature/Index', [
             'rows' => $rows,
             'filters' => [
-                'date' => $date,
-                'outlet_id' => $canChooseOutlet && $outletFilter > 0 ? $outletFilter : '',
-                'search' => $search,
+                'date' => $resolved['date'],
+                'outlet_id' => $canChooseOutlet && $resolved['outlet_filter'] > 0 ? $resolved['outlet_filter'] : '',
+                'search' => $resolved['search'],
             ],
             'outlets' => $outlets,
             'canChooseOutlet' => $canChooseOutlet,
@@ -93,6 +69,135 @@ class ChillerTemperatureController extends Controller
             'tableReady' => true,
             'checkTimes' => self::CHECK_TIMES,
         ]);
+    }
+
+    public function exportExcel(Request $request)
+    {
+        $this->ensureTableReady();
+
+        $resolved = $this->resolveIndexFilters($request);
+        $rows = $this->pivotRows($this->fetchLogs($resolved));
+
+        if (empty($rows)) {
+            return back()->with('error', 'Tidak ada data untuk diekspor.');
+        }
+
+        $exportRows = [];
+        $no = 1;
+        foreach ($rows as $row) {
+            $slot1000 = $row['slots']['10:00'] ?? null;
+            $slot1600 = $row['slots']['16:00'] ?? null;
+            $slot2200 = $row['slots']['22:00'] ?? null;
+
+            $exportRows[] = [
+                $no++,
+                $row['check_date'] ?? $resolved['date'],
+                $row['outlet_name'] ?? '-',
+                $row['warehouse_name'] ?? '-',
+                $row['item_name'] ?? '-',
+                $row['serial_number'] ?? '-',
+                $slot1000 ? (float) $slot1000['temp_display'] : '-',
+                $slot1000 ? (float) $slot1000['temp_actual'] : '-',
+                $slot1600 ? (float) $slot1600['temp_display'] : '-',
+                $slot1600 ? (float) $slot1600['temp_actual'] : '-',
+                $slot2200 ? (float) $slot2200['temp_display'] : '-',
+                $slot2200 ? (float) $slot2200['temp_actual'] : '-',
+                $slot1000['notes'] ?? '-',
+                $slot1600['notes'] ?? '-',
+                $slot2200['notes'] ?? '-',
+            ];
+        }
+
+        $filename = 'kontrol-suhu-chiller-' . now()->format('YmdHis') . '.xlsx';
+
+        return Excel::download(new ChillerTemperatureReportExport($exportRows), $filename);
+    }
+
+    public function exportPdf(Request $request)
+    {
+        $this->ensureTableReady();
+
+        $resolved = $this->resolveIndexFilters($request);
+        $rows = $this->pivotRows($this->fetchLogs($resolved));
+
+        if (empty($rows)) {
+            return back()->with('error', 'Tidak ada data untuk diekspor.');
+        }
+
+        $outletName = 'Semua Outlet';
+        if ($resolved['outlet_filter'] > 0) {
+            $outletName = DB::table('tbl_data_outlet')
+                ->where('id_outlet', $resolved['outlet_filter'])
+                ->value('nama_outlet') ?: ('Outlet #' . $resolved['outlet_filter']);
+        } elseif (!$resolved['can_choose_outlet']) {
+            $outletName = 'Outlet sendiri';
+        }
+
+        $pdf = Pdf::loadView('exports.chiller_temperature_report_pdf', [
+            'rows' => $rows,
+            'filters' => [
+                'date' => $resolved['date'],
+                'outlet_name' => $outletName,
+                'search' => $resolved['search'],
+            ],
+            'generatedAt' => now()->format('d/m/Y H:i'),
+        ])->setPaper('a4', 'landscape');
+
+        $filename = 'kontrol-suhu-chiller-' . now()->format('YmdHis') . '.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    private function resolveIndexFilters(Request $request): array
+    {
+        $user = $request->user();
+        $userOutletId = (int) ($user->id_outlet ?? 0);
+        $canChooseOutlet = $userOutletId === 1;
+
+        return [
+            'date' => $request->input('date') ?: now()->toDateString(),
+            'search' => trim((string) $request->input('search', '')),
+            'outlet_filter' => $canChooseOutlet ? (int) $request->input('outlet_id', 0) : $userOutletId,
+            'can_choose_outlet' => $canChooseOutlet,
+            'user_outlet_id' => $userOutletId,
+        ];
+    }
+
+    private function fetchLogs(array $resolved)
+    {
+        $query = DB::table('chiller_temperature_logs as l')
+            ->leftJoin('tbl_data_outlet as o', 'l.outlet_id', '=', 'o.id_outlet')
+            ->leftJoin('warehouse_outlets as wo', 'l.warehouse_outlet_id', '=', 'wo.id')
+            ->where('l.check_date', $resolved['date'])
+            ->select(
+                'l.*',
+                'o.nama_outlet as outlet_name',
+                'wo.name as warehouse_name'
+            )
+            ->orderBy('o.nama_outlet')
+            ->orderBy('wo.name')
+            ->orderBy('l.item_name')
+            ->orderBy('l.serial_number');
+
+        if ($resolved['can_choose_outlet']) {
+            if ($resolved['outlet_filter'] > 0) {
+                $query->where('l.outlet_id', $resolved['outlet_filter']);
+            }
+        } elseif ($resolved['user_outlet_id'] > 0) {
+            $query->where('l.outlet_id', $resolved['user_outlet_id']);
+        } else {
+            $query->whereRaw('0 = 1');
+        }
+
+        if ($resolved['search'] !== '') {
+            $search = $resolved['search'];
+            $query->where(function ($q) use ($search) {
+                $q->where('l.item_name', 'like', "%{$search}%")
+                    ->orWhere('l.serial_number', 'like', "%{$search}%");
+            });
+        }
+
+        return $query->get();
     }
 
     public function create(Request $request)
@@ -251,6 +356,123 @@ class ChillerTemperatureController extends Controller
         return redirect()
             ->route('chiller-temperature.index', ['date' => $date])
             ->with('success', 'Data suhu berhasil dihapus.');
+    }
+
+    public function ticketOptions(Request $request)
+    {
+        $this->ensureHeadOfficeUser($request);
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'categories' => TicketCategory::active()->orderBy('name')->get(['id', 'name']),
+                'priorities' => TicketPriority::active()->orderBy('level', 'desc')->get(['id', 'name', 'level', 'max_days', 'description']),
+                'divisis' => Divisi::active()->orderBy('nama_divisi')->get(['id', 'nama_divisi']),
+            ],
+        ]);
+    }
+
+    public function createTicket(Request $request)
+    {
+        $this->ensureTableReady();
+        $this->ensureHeadOfficeUser($request);
+
+        $validator = Validator::make($request->all(), [
+            'outlet_id' => 'required|exists:tbl_data_outlet,id_outlet',
+            'asset_serial_id' => 'required|integer',
+            'serial_number' => 'nullable|string|max:100',
+            'item_name' => 'nullable|string|max:255',
+            'warehouse_name' => 'nullable|string|max:255',
+            'check_date' => 'required|date',
+            'title' => 'required|string|max:255',
+            'description' => 'required|string',
+            'category_id' => 'required|exists:ticket_categories,id',
+            'priority_id' => 'required|exists:ticket_priorities,id',
+            'divisi_id' => 'required|exists:tbl_data_divisi,id',
+            'temps' => 'nullable|array',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validasi gagal',
+                'errors' => $validator->errors(),
+            ], 422);
+        }
+
+        $data = $validator->validated();
+
+        DB::beginTransaction();
+        try {
+            $defaultStatus = TicketStatus::where('slug', 'open')->first()
+                ?: TicketStatus::active()->first()
+                ?: TicketStatus::first();
+
+            if (!$defaultStatus) {
+                throw new \Exception('No ticket status found. Please seed ticket statuses.');
+            }
+
+            $priority = TicketPriority::findOrFail($data['priority_id']);
+            $dueDate = now()->addDays($priority->max_days ?? 7);
+
+            $description = trim($data['description']);
+            $tempSummary = $this->buildTemperatureSummary($data['temps'] ?? []);
+            if ($tempSummary !== '') {
+                $description .= "\n\n--- Data Suhu (" . $data['check_date'] . ") ---\n" . $tempSummary;
+            }
+
+            $metaLines = [
+                'Sumber: Kontrol Suhu Chiller & Freezer',
+                'Outlet ID: ' . $data['outlet_id'],
+                'Item: ' . ($data['item_name'] ?? '-'),
+                'Serial: ' . ($data['serial_number'] ?? '-'),
+                'Warehouse: ' . ($data['warehouse_name'] ?? '-'),
+                'Tanggal cek: ' . $data['check_date'],
+            ];
+            $description .= "\n\n" . implode("\n", $metaLines);
+
+            $ticket = Ticket::create([
+                'ticket_number' => Ticket::generateTicketNumber(),
+                'title' => $data['title'],
+                'description' => $description,
+                'category_id' => $data['category_id'],
+                'priority_id' => $data['priority_id'],
+                'status_id' => $defaultStatus->id,
+                'divisi_id' => $data['divisi_id'],
+                'outlet_id' => $data['outlet_id'],
+                'created_by' => $request->user()->id,
+                'due_date' => $dueDate,
+                'source' => 'chiller_temperature',
+                'source_id' => $data['asset_serial_id'],
+            ]);
+
+            TicketHistory::create([
+                'ticket_id' => $ticket->id,
+                'user_id' => $request->user()->id,
+                'action' => 'created',
+                'field_name' => null,
+                'old_value' => null,
+                'new_value' => null,
+                'description' => 'Ticket created from Kontrol Suhu Chiller/Freezer (serial #' . ($data['serial_number'] ?? $data['asset_serial_id']) . ')',
+            ]);
+
+            app(TicketTeamAutoAssignService::class)->assignIfMatch($ticket, $request->user()->id);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Ticket berhasil dibuat dari Kontrol Suhu',
+                'data' => $ticket->load(['category', 'priority', 'status', 'divisi', 'outlet', 'creator']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Gagal membuat ticket: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     public function lookupSerial(Request $request)
@@ -434,5 +656,35 @@ class ChillerTemperatureController extends Controller
         if (!Schema::hasTable('chiller_temperature_logs')) {
             abort(503, 'Tabel chiller_temperature_logs belum tersedia. Jalankan database/sql/chiller_temperature_logs.sql');
         }
+    }
+
+    private function ensureHeadOfficeUser(Request $request): void
+    {
+        if ((int) ($request->user()->id_outlet ?? 0) !== 1) {
+            abort(403, 'Hanya Head Office yang dapat membuat ticket dari Kontrol Suhu.');
+        }
+    }
+
+    private function buildTemperatureSummary(array $temps): string
+    {
+        $lines = [];
+        foreach (self::CHECK_TIMES as $time) {
+            $slot = $temps[$time] ?? null;
+            if (!$slot || (!isset($slot['temp_display']) && !isset($slot['temp_actual']))) {
+                $lines[] = "{$time}: belum diisi";
+                continue;
+            }
+
+            $display = isset($slot['temp_display']) ? number_format((float) $slot['temp_display'], 1, '.', '') : '-';
+            $actual = isset($slot['temp_actual']) ? number_format((float) $slot['temp_actual'], 1, '.', '') : '-';
+            $notes = trim((string) ($slot['notes'] ?? ''));
+            $line = "{$time}: Display {$display}°C / Actual {$actual}°C";
+            if ($notes !== '') {
+                $line .= " (Notes: {$notes})";
+            }
+            $lines[] = $line;
+        }
+
+        return implode("\n", $lines);
     }
 }

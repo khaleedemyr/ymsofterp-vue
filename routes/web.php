@@ -1657,6 +1657,10 @@ Route::post('/api/outlet-serial-receive/log-reject', [\App\Http\Controllers\Outl
 // Kontrol Suhu Chiller & Freezer
 Route::middleware(['auth'])->group(function () {
     Route::get('/chiller-temperature', [\App\Http\Controllers\ChillerTemperatureController::class, 'index'])->name('chiller-temperature.index');
+    Route::get('/chiller-temperature/export-excel', [\App\Http\Controllers\ChillerTemperatureController::class, 'exportExcel'])->name('chiller-temperature.export-excel');
+    Route::get('/chiller-temperature/export-pdf', [\App\Http\Controllers\ChillerTemperatureController::class, 'exportPdf'])->name('chiller-temperature.export-pdf');
+    Route::get('/chiller-temperature/ticket-options', [\App\Http\Controllers\ChillerTemperatureController::class, 'ticketOptions'])->name('chiller-temperature.ticket-options');
+    Route::post('/chiller-temperature/create-ticket', [\App\Http\Controllers\ChillerTemperatureController::class, 'createTicket'])->name('chiller-temperature.create-ticket');
     Route::get('/chiller-temperature/create', [\App\Http\Controllers\ChillerTemperatureController::class, 'create'])->name('chiller-temperature.create');
     Route::post('/chiller-temperature', [\App\Http\Controllers\ChillerTemperatureController::class, 'store'])->name('chiller-temperature.store');
     Route::get('/chiller-temperature/lookup-serial', [\App\Http\Controllers\ChillerTemperatureController::class, 'lookupSerial'])->name('chiller-temperature.lookup-serial');
