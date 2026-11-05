@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\CustomerVoiceCasesExcelExport;
 use App\Exports\FeedbackCapaExcelExport;
 use App\Models\FeedbackCapaApprovalFlow;
 use App\Models\Outlet;
@@ -853,6 +854,40 @@ class CustomerVoiceCommandCenterController extends Controller
         @ini_set('memory_limit', '1024M');
         @ini_set('max_execution_time', '180');
 
+        $export = $this->buildCaseListExportRows($request);
+        $casesForPdf = $export['rows'];
+
+        $pdf = \PDF::loadView('exports.customer_voice_cases_pdf', [
+            'cases' => $casesForPdf,
+            'dateFrom' => (string) $request->input('date_from'),
+            'dateTo' => (string) $request->input('date_to'),
+            'generatedAt' => now()->format('Y-m-d H:i'),
+            'totalExported' => $casesForPdf->count(),
+            'totalMatching' => $export['total_matching'],
+            'maxRows' => $export['max_rows'],
+        ])->setPaper('a4', 'landscape');
+
+        $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    public function exportExcel(Request $request)
+    {
+        @ini_set('memory_limit', '1024M');
+        @ini_set('max_execution_time', '180');
+
+        $export = $this->buildCaseListExportRows($request);
+        $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.xlsx';
+
+        return Excel::download(new CustomerVoiceCasesExcelExport($export['rows']), $filename);
+    }
+
+    /**
+     * @return array{rows: \Illuminate\Support\Collection<int, object>, total_matching: int, max_rows: int}
+     */
+    private function buildCaseListExportRows(Request $request): array
+    {
         $request->validate([
             'date_from' => 'required|date',
             'date_to' => 'required|date|after_or_equal:date_from',
@@ -913,7 +948,7 @@ class CustomerVoiceCommandCenterController extends Controller
             ? []
             : User::query()->whereIn('id', array_values($regionalUserIds))->pluck('nama_lengkap', 'id')->all();
 
-        $casesForPdf = $presentedRows->map(function (array $row) use ($regionalUserNames) {
+        $rows = $presentedRows->values()->map(function (array $row, int $index) use ($regionalUserNames) {
             $regionalIds = isset($row['regional_user_ids']) && is_array($row['regional_user_ids'])
                 ? $row['regional_user_ids']
                 : [];
@@ -926,6 +961,7 @@ class CustomerVoiceCommandCenterController extends Controller
             }
 
             return (object) [
+                'export_no' => $index + 1,
                 'id' => (int) ($row['id'] ?? 0),
                 'event_at' => $row['event_at'] ?? null,
                 'nama_outlet' => (string) ($row['nama_outlet'] ?? ''),
@@ -950,21 +986,11 @@ class CustomerVoiceCommandCenterController extends Controller
             ];
         });
 
-        unset($cases);
-
-        $pdf = \PDF::loadView('exports.customer_voice_cases_pdf', [
-            'cases' => $casesForPdf,
-            'dateFrom' => (string) $request->input('date_from'),
-            'dateTo' => (string) $request->input('date_to'),
-            'generatedAt' => now()->format('Y-m-d H:i'),
-            'totalExported' => $casesForPdf->count(),
-            'totalMatching' => $totalMatching,
-            'maxRows' => $maxRows,
-        ])->setPaper('a4', 'landscape');
-
-        $filename = 'customer-voice-'.$request->input('date_from').'_to_'.$request->input('date_to').'.pdf';
-
-        return $pdf->download($filename);
+        return [
+            'rows' => $rows,
+            'total_matching' => $totalMatching,
+            'max_rows' => $maxRows,
+        ];
     }
 
     /**

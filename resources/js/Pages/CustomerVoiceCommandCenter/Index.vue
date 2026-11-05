@@ -284,7 +284,17 @@
               :class="{ 'pointer-events-none opacity-45': !canExportPdf }"
               @click="(e) => { if (!canExportPdf) e.preventDefault() }"
             >
-              Export PDF (range + filter)
+              Export PDF
+            </a>
+            <a
+              :href="exportExcelHref"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex h-10 items-center justify-center rounded-xl bg-green-600 px-4 text-sm font-semibold text-white transition hover:bg-green-700"
+              :class="{ 'pointer-events-none opacity-45': !canExportPdf }"
+              @click="(e) => { if (!canExportPdf) e.preventDefault() }"
+            >
+              Export Excel
             </a>
             <p class="text-xs leading-relaxed text-slate-500">
               Isi <span class="font-semibold text-slate-600">Event dari / sampai</span>, gunakan filter di atas bila perlu, lalu Export — hingga <span class="font-semibold text-slate-600">600</span> baris terbaru per file (jika lebih banyak, persempit filter atau export beberapa kali). Timeline di PDF: 8 aktivitas terakhir per case.
@@ -1429,9 +1439,9 @@ async function shareToWhatsApp(row) {
   }
 }
 
-const exportPdfHref = computed(() => {
+function buildCaseExportParams() {
   if (!dateFrom.value || !dateTo.value) {
-    return '#'
+    return null
   }
   const params = {
     date_from: dateFrom.value,
@@ -1445,7 +1455,17 @@ const exportPdfHref = computed(() => {
   if (idOutlet.value) params.id_outlet = idOutlet.value
   if (overdueOnly.value) params.overdue_only = 1
   if (showAll.value) params.show_all = 1
-  return route('customer-voice-command-center.export-pdf', params)
+  return params
+}
+
+const exportPdfHref = computed(() => {
+  const params = buildCaseExportParams()
+  return params ? route('customer-voice-command-center.export-pdf', params) : '#'
+})
+
+const exportExcelHref = computed(() => {
+  const params = buildCaseExportParams()
+  return params ? route('customer-voice-command-center.export-excel', params) : '#'
 })
 
 function syncArchiveFiltersFromMain() {

@@ -256,6 +256,8 @@ Route::middleware('auth')->group(function () {
         ->name('customer-voice-command-center.cases.brief');
     Route::get('/customer-voice-command-center/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportPdf'])
         ->name('customer-voice-command-center.export-pdf');
+    Route::get('/customer-voice-command-center/export-excel', [CustomerVoiceCommandCenterController::class, 'exportExcel'])
+        ->name('customer-voice-command-center.export-excel');
     Route::get('/customer-voice-command-center/cases/{id}/capa/export-pdf', [CustomerVoiceCommandCenterController::class, 'exportCapaPdf'])
         ->name('customer-voice-command-center.cases.capa.export-pdf');
     Route::get('/customer-voice-command-center/cases/{id}/capa/export-excel', [CustomerVoiceCommandCenterController::class, 'exportCapaExcel'])
@@ -4119,6 +4121,11 @@ Route::middleware(['auth', 'verified'])->prefix('just-academy')->name('just-acad
     Route::get('/reports', [\App\Http\Controllers\JustAcademy\ReportController::class, 'index'])->name('reports.index');
     Route::get('/attendance-recap', [\App\Http\Controllers\JustAcademy\AttendanceRecapController::class, 'index'])->name('attendance-recap.index');
     Route::get('/attendance-recap/export', [\App\Http\Controllers\JustAcademy\AttendanceRecapController::class, 'export'])->name('attendance-recap.export');
+
+    Route::get('/negative-comment-radar', [\App\Http\Controllers\JustAcademy\NegativeCommentRadarController::class, 'index'])
+        ->name('negative-comment-radar.index');
+    Route::post('/negative-comment-radar/analyze', [\App\Http\Controllers\JustAcademy\NegativeCommentRadarController::class, 'analyze'])
+        ->name('negative-comment-radar.analyze');
 
     Route::prefix('api')->name('api.')->group(function () {
         Route::get('/users/search', [\App\Http\Controllers\JustAcademy\LookupController::class, 'searchUsers'])->name('users.search');
