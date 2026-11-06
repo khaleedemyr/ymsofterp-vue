@@ -63,5 +63,12 @@ return [
         'provider' => env('GOOGLE_REVIEW_AI_PROVIDER'),
         'gemini_model' => env('GOOGLE_REVIEW_GEMINI_MODEL'),
     ],
+
+    // Negative Comment Radar (Just Academy): default samakan dengan Guest Comment OCR (Gemini),
+    // supaya tidak ikut AI_PROVIDER=claude yang dipakai dashboard insight.
+    'negative_comment_radar' => [
+        'provider' => env('NCR_AI_PROVIDER', env('GUEST_COMMENT_AI_PROVIDER')),
+        'gemini_model' => env('NCR_GEMINI_MODEL', env('GUEST_COMMENT_GEMINI_MODEL', env('GOOGLE_REVIEW_GEMINI_MODEL'))),
+    ],
 ];
 

@@ -57,6 +57,32 @@
               </div>
             </div>
 
+            <!-- PR Foods Information -->
+            <div v-if="prFoodsInfo?.length" class="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 class="text-lg font-semibold mb-3 text-blue-800">
+                Informasi Purchase Request
+                <span v-if="prFoodsInfo.length > 1" class="text-sm font-normal text-blue-600">({{ prFoodsInfo.length }} PR)</span>
+              </h3>
+              <div class="space-y-4">
+                <div
+                  v-for="pr in prFoodsInfo"
+                  :key="pr.pr_id"
+                  class="grid grid-cols-2 gap-4 rounded-md border border-blue-100 bg-white/60 p-3"
+                >
+                  <div class="space-y-2">
+                    <p><span class="font-medium text-blue-700">Nomor PR:</span> {{ pr.pr_number }}</p>
+                    <p><span class="font-medium text-blue-700">Tanggal PR:</span> {{ formatDate(pr.pr_date) }}</p>
+                    <p><span class="font-medium text-blue-700">Status PR:</span> {{ pr.pr_status || '-' }}</p>
+                  </div>
+                  <div class="space-y-2">
+                    <p><span class="font-medium text-blue-700">Warehouse:</span> {{ pr.warehouse_name || '-' }}</p>
+                    <p><span class="font-medium text-blue-700">Pembuat PR:</span> {{ pr.pr_creator || '-' }}</p>
+                    <p><span class="font-medium text-blue-700">Deskripsi PR:</span> {{ pr.pr_description || '-' }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Items Table -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-4">Daftar Item</h3>
@@ -158,6 +184,10 @@ const props = defineProps({
   roSupplierInfo: {
     type: Object,
     default: null
+  },
+  prFoodsInfo: {
+    type: Array,
+    default: () => []
   },
   user: {
     type: Object,

@@ -26,7 +26,7 @@ class NegativeCommentRadarService
 
     private const MAX_CASES_PER_RUN = 300;
 
-    private const AI_CHUNK_SIZE = 15;
+    private const AI_CHUNK_SIZE = 10;
 
     /**
      * @return list<array{code: string, label: string}>
@@ -366,10 +366,27 @@ class NegativeCommentRadarService
                     $aiByIdx[(int) $idx] = $result;
                 }
             } catch (\Throwable $e) {
-                Log::warning('NCR AI chunk failed, using keyword fallback', [
+                Log::warning('NCR AI chunk failed, retry half-size', [
+                    'provider' => $provider,
                     'message' => $e->getMessage(),
                     'count' => count($chunkItems),
                 ]);
+                // Retry setengah chunk biar tidak seluruh batch jatuh ke keyword fallback.
+                $half = (int) max(1, (int) ceil(count($chunkItems) / 2));
+                foreach (array_chunk($chunkItems, $half) as $sub) {
+                    try {
+                        $mapped = $this->classifyChunkWithAi($sub, $provider);
+                        foreach ($mapped as $idx => $result) {
+                            $aiByIdx[(int) $idx] = $result;
+                        }
+                    } catch (\Throwable $e2) {
+                        Log::warning('NCR AI sub-chunk failed, keyword fallback for these rows', [
+                            'provider' => $provider,
+                            'message' => $e2->getMessage(),
+                            'count' => count($sub),
+                        ]);
+                    }
+                }
             }
         }
 
@@ -577,13 +594,25 @@ PROMPT;
             'food_quality' => [
                 'tidak enak' => 7,
                 'hambar' => 6,
+                'asin' => 7,
+                'manis sekali' => 5,
                 'gosong' => 6,
                 'basi' => 7,
                 'busuk' => 7,
                 'mentah' => 6,
+                'welldone' => 7,
+                'well done' => 7,
+                'overcook' => 7,
+                'overcooked' => 7,
+                'undercook' => 6,
+                'medium rare' => 4,
+                'datengnya well' => 7,
+                'datang well' => 7,
+                'kematangan' => 6,
                 'porsi kecil' => 5,
                 'porsi kurang' => 5,
                 'makanan dingin' => 6,
+                'steak' => 3,
                 'rasa' => 3,
             ],
             'cleanliness' => [
@@ -594,6 +623,14 @@ PROMPT;
                 'tidak higienis' => 6,
                 'hygiene' => 5,
                 'higiene' => 5,
+                'ac kurang dingin' => 6,
+                'ac nya kurang' => 6,
+                'ac-nya kurang' => 6,
+                'ac tidak dingin' => 6,
+                'ac gede' => 3,
+                'suhu ruangan' => 5,
+                'ruangan panas' => 5,
+                'kipas' => 3,
             ],
             'grooming' => [
                 'bau badan' => 7,
@@ -831,7 +868,17 @@ PROMPT;
 
     private function resolveProvider(): string
     {
-        $p = strtolower((string) config('ai.provider', 'gemini'));
+        // Samakan default dengan Guest Comment OCR / Google Review classify (Gemini),
+        // jangan ikut AI_PROVIDER=claude milik dashboard insight.
+        $override = config('ai.negative_comment_radar.provider');
+        if (is_string($override) && trim($override) !== '') {
+            $p = strtolower(trim($override));
+        } else {
+            $guest = config('ai.guest_comment_ocr.provider');
+            $p = (is_string($guest) && trim($guest) !== '')
+                ? strtolower(trim($guest))
+                : strtolower((string) config('ai.provider', 'gemini'));
+        }
 
         return in_array($p, ['gemini', 'openai', 'claude'], true) ? $p : 'gemini';
     }
@@ -911,7 +958,10 @@ PROMPT;
      */
     private function geminiModelCandidates(): array
     {
-        $primary = (string) config('ai.gemini.model', 'gemini-2.5-flash');
+        $ncrModel = config('ai.negative_comment_radar.gemini_model');
+        $primary = (is_string($ncrModel) && trim($ncrModel) !== '')
+            ? trim($ncrModel)
+            : (string) config('ai.gemini.model', 'gemini-2.5-flash');
         $primary = preg_replace('#^models/#', '', trim($primary)) ?: 'gemini-2.5-flash';
 
         $fallbacks = [

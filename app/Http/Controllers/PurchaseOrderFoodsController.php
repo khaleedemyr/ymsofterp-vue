@@ -15,6 +15,7 @@ use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Models\ActivityLog;
 use Illuminate\Support\Facades\Auth;
@@ -1128,6 +1129,63 @@ class PurchaseOrderFoodsController extends Controller
             }
         }
 
+        // Add PR Foods information if PO is from Purchase Request (or legacy PR-linked items)
+        $prFoodsInfo = null;
+        $isFromPr = in_array($po->source_type, ['pr_foods', null, ''], true)
+            || $po->items->contains(fn ($item) => ! empty($item->pr_food_item_id));
+
+        if ($isFromPr && $po->source_type !== 'ro_supplier') {
+            $prIds = collect();
+
+            if ($po->source_type === 'pr_foods' && $po->source_id) {
+                $prIds->push((int) $po->source_id);
+            }
+
+            $prItemIds = $po->items
+                ->pluck('pr_food_item_id')
+                ->filter()
+                ->unique()
+                ->values();
+
+            if ($prItemIds->isNotEmpty()) {
+                $linkedPrIds = DB::table('pr_food_items')
+                    ->whereIn('id', $prItemIds)
+                    ->pluck('pr_food_id');
+                $prIds = $prIds->merge($linkedPrIds);
+            }
+
+            // Pivot fallback (jika dipakai)
+            if (Schema::hasTable('purchase_order_food_purchase_request')) {
+                $pivotPrIds = DB::table('purchase_order_food_purchase_request')
+                    ->where('purchase_order_food_id', $po->id)
+                    ->pluck('purchase_requisition_food_id');
+                $prIds = $prIds->merge($pivotPrIds);
+            }
+
+            $prIds = $prIds->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->unique()->values();
+
+            if ($prIds->isNotEmpty()) {
+                $prs = PurchaseRequisitionFood::with(['requester', 'warehouse'])
+                    ->whereIn('id', $prIds)
+                    ->orderByDesc('tanggal')
+                    ->get();
+
+                if ($prs->isNotEmpty()) {
+                    $prFoodsInfo = $prs->map(function ($pr) {
+                        return [
+                            'pr_id' => (int) $pr->id,
+                            'pr_number' => (string) $pr->pr_number,
+                            'pr_date' => $pr->tanggal,
+                            'pr_status' => (string) ($pr->status ?? ''),
+                            'warehouse_name' => $pr->warehouse ? (string) $pr->warehouse->name : '-',
+                            'pr_creator' => $pr->requester ? (string) $pr->requester->nama_lengkap : '-',
+                            'pr_description' => $pr->description,
+                        ];
+                    })->values()->all();
+                }
+            }
+        }
+
         $user = auth()->user();
         $userData = [
             'id' => $user->id,
@@ -1140,6 +1198,7 @@ class PurchaseOrderFoodsController extends Controller
         return inertia('PurchaseOrder/DetailPurchaseOrderFoods', [
             'po' => $po,
             'roSupplierInfo' => $roSupplierInfo,
+            'prFoodsInfo' => $prFoodsInfo,
             'user' => $userData
         ]);
     }
