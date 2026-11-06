@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch, reactive, onMounted } from 'vue';
+import { ref, watch, reactive } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 import Swal from 'sweetalert2';
 import axios from 'axios';
@@ -22,34 +22,82 @@ const bomRows = ref([]); // [{item_id, qty, unit_id, stock_cut}]
 const allItems = ref([]); // {id, name}
 const itemUnits = reactive({}); // item_id -> [{id, name, type}]
 const itemSearch = ref([]); // search keyword per baris
+const itemsLoading = ref(false);
+const itemsError = ref('');
 
-async function fetchAllItems() {
+function normalizeBomRow(row) {
+  return {
+    item_id: row?.item_id !== undefined && row?.item_id !== null && row?.item_id !== ''
+      ? Number(row.item_id)
+      : '',
+    qty: row?.qty ?? '',
+    unit_id: row?.unit_id !== undefined && row?.unit_id !== null && row?.unit_id !== ''
+      ? Number(row.unit_id)
+      : '',
+    // Backend: stock_cut false/0/null = Ya ikut potong; true/1 = Tidak ikut.
+    stock_cut: row?.stock_cut === undefined
+      ? false
+      : row.stock_cut === true || row.stock_cut === 1 || row.stock_cut === '1',
+  };
+}
+
+async function fetchAllItems(includeIds = []) {
+  itemsLoading.value = true;
+  itemsError.value = '';
   try {
-    const res = await axios.get('/api/items/for-modifier-bom');
+    const params = {};
+    const ids = (includeIds || []).filter((id) => Number(id) > 0);
+    if (ids.length) {
+      params.include_ids = ids.join(',');
+    }
+    const res = await axios.get('/api/items/for-modifier-bom', { params });
     let items = [];
     if (Array.isArray(res.data)) {
       items = res.data;
-    } else if (Array.isArray(res.data.items)) {
+    } else if (Array.isArray(res.data?.items)) {
       items = res.data.items;
-    } else if (Array.isArray(res.data.data)) {
+    } else if (Array.isArray(res.data?.data)) {
       items = res.data.data;
     }
-    allItems.value = items.map(i => ({ id: i.id, name: i.name }));
+    allItems.value = items.map((i) => ({ id: Number(i.id), name: i.name }));
+    if (!allItems.value.length) {
+      itemsError.value = 'Daftar item kosong.';
+    }
   } catch (e) {
     allItems.value = [];
+    itemsError.value = e?.response?.data?.message || e.message || 'Gagal memuat daftar item.';
+  } finally {
+    itemsLoading.value = false;
   }
 }
 
 async function fetchItemUnits(itemId) {
   if (!itemId) return [];
-  if (itemUnits[itemId]) return itemUnits[itemId];
-  const res = await axios.get(`/api/items/${itemId}/detail`);
-  itemUnits[itemId] = res.data.item.units || [];
-  return itemUnits[itemId];
+  const key = String(itemId);
+  if (itemUnits[key]) return itemUnits[key];
+  try {
+    const res = await axios.get(`/api/items/${itemId}/detail`);
+    const units = (res.data?.item?.units || []).map((u) => ({
+      id: Number(u.id),
+      name: u.name,
+      type: u.type,
+    }));
+    itemUnits[key] = units;
+    return units;
+  } catch {
+    itemUnits[key] = [];
+    return [];
+  }
+}
+
+async function prefetchBomUnits(rows) {
+  const ids = [...new Set(rows.map((r) => Number(r.item_id)).filter((id) => id > 0))];
+  await Promise.all(ids.map((id) => fetchItemUnits(id)));
 }
 
 function addBomRow() {
-  bomRows.value.push({ item_id: '', qty: '', unit_id: '', stock_cut: true });
+  // stock_cut false/0 = ikut dipotong (sama seperti BOM item & Recipe Checker)
+  bomRows.value.push({ item_id: '', qty: 1, unit_id: '', stock_cut: false });
 }
 function removeBomRow(idx) {
   bomRows.value.splice(idx, 1);
@@ -63,45 +111,67 @@ function ensureItemSearchLength() {
 watch(bomRows, ensureItemSearchLength, { deep: true });
 
 function filteredItems(idx) {
-  const keyword = (itemSearch.value[idx] || '').toLowerCase();
-  if (!keyword) return allItems.value;
-  return allItems.value.filter(i => i.name.toLowerCase().includes(keyword));
+  const keyword = (itemSearch.value[idx] || '').toLowerCase().trim();
+  const selectedId = Number(bomRows.value[idx]?.item_id) || null;
+  let list = allItems.value;
+  if (keyword) {
+    list = list.filter((i) => i.name.toLowerCase().includes(keyword));
+  }
+  // Pastikan item terpilih tetap ada di opsi meski sedang difilter / tidak ketemu keyword
+  if (selectedId && !list.some((i) => Number(i.id) === selectedId)) {
+    const selected = allItems.value.find((i) => Number(i.id) === selectedId);
+    if (selected) list = [selected, ...list];
+  }
+  return list;
+}
+
+async function onItemChange(row) {
+  row.unit_id = '';
+  if (!row.qty) row.qty = 1;
+  await fetchItemUnits(row.item_id);
 }
 
 watch(() => props.show, async (val) => {
-  if (val) {
-    await fetchAllItems();
-    if (props.mode === 'edit' && props.option) {
-      form.modifier_id = props.option.modifier_id;
-      form.name = props.option.name;
-      if (props.option.modifier_bom_json) {
-        try {
-          const parsed = JSON.parse(props.option.modifier_bom_json);
-          bomRows.value = Array.isArray(parsed)
-            ? parsed.map((row) => ({
-                ...row,
-                stock_cut: row?.stock_cut === undefined ? true : row.stock_cut === true || row.stock_cut === 1 || row.stock_cut === '1',
-              }))
-            : [];
-        } catch {
-          bomRows.value = [];
-        }
-      } else {
-        bomRows.value = [];
+  if (!val) return;
+
+  let parsedRows = [];
+  if (props.mode === 'edit' && props.option) {
+    form.modifier_id = props.option.modifier_id;
+    form.name = props.option.name;
+    if (props.option.modifier_bom_json) {
+      try {
+        const parsed = JSON.parse(props.option.modifier_bom_json);
+        parsedRows = Array.isArray(parsed) ? parsed.map(normalizeBomRow) : [];
+      } catch {
+        parsedRows = [];
       }
-    } else if (props.mode === 'create') {
-      form.modifier_id = '';
-      form.name = '';
-      bomRows.value = [];
     }
+  } else {
+    form.modifier_id = '';
+    form.name = '';
+    parsedRows = [];
   }
+
+  bomRows.value = parsedRows;
+  itemSearch.value = parsedRows.map(() => '');
+
+  const includeIds = parsedRows.map((r) => r.item_id).filter(Boolean);
+  await fetchAllItems(includeIds);
+  await prefetchBomUnits(parsedRows);
 });
 
 const isSubmitting = ref(false);
 
 async function submit() {
   isSubmitting.value = true;
-  form.modifier_bom_json = JSON.stringify(bomRows.value);
+  form.modifier_bom_json = JSON.stringify(
+    bomRows.value.map((row) => ({
+      item_id: row.item_id === '' ? null : Number(row.item_id),
+      qty: row.qty === '' || row.qty === null ? 0 : Number(row.qty),
+      unit_id: row.unit_id === '' ? null : Number(row.unit_id),
+      stock_cut: !!row.stock_cut,
+    }))
+  );
   if (props.mode === 'create') {
     form.post(route('modifier-options.store'), {
       onSuccess: () => {
@@ -109,8 +179,8 @@ async function submit() {
         emit('success');
         emit('close');
       },
-      onError: () => isSubmitting.value = false,
-      onFinish: () => isSubmitting.value = false,
+      onError: () => { isSubmitting.value = false; },
+      onFinish: () => { isSubmitting.value = false; },
     });
   } else if (props.mode === 'edit' && props.option) {
     form.put(route('modifier-options.update', props.option.id), {
@@ -119,8 +189,8 @@ async function submit() {
         emit('success');
         emit('close');
       },
-      onError: () => isSubmitting.value = false,
-      onFinish: () => isSubmitting.value = false,
+      onError: () => { isSubmitting.value = false; },
+      onFinish: () => { isSubmitting.value = false; },
     });
   }
 }
@@ -131,8 +201,8 @@ function closeModal() {
 </script>
 
 <template>
-  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 transition-all">
-    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-auto p-0 animate-fade-in">
+  <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 transition-all p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-3xl mx-auto p-0 animate-fade-in max-h-[92vh] overflow-y-auto">
       <div class="px-8 pt-8 pb-2">
         <div class="flex items-center gap-2 mb-6">
           <svg class="w-7 h-7 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -162,23 +232,29 @@ function closeModal() {
               <span class="font-semibold text-gray-700">BOM Modifier (Potong Stok)</span>
               <button type="button" @click="addBomRow" class="ml-auto bg-blue-500 text-white px-3 py-1 rounded shadow hover:bg-blue-700 text-xs">+ Tambah Baris</button>
             </div>
+            <p class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mb-2">
+              Kolom <b>Skip Cut</b>: centang = baris <b>tidak</b> ikut dipotong di Stock Cut (nilai stock_cut=1). Biarkan kosong agar ikut dipotong.
+            </p>
+            <p v-if="itemsLoading" class="text-xs text-blue-600 mb-2">Memuat daftar item...</p>
+            <p v-else-if="itemsError" class="text-xs text-red-600 mb-2">{{ itemsError }}</p>
+            <p v-else class="text-xs text-gray-500 mb-2">{{ allItems.length }} item tersedia di dropdown</p>
             <div v-if="bomRows.length === 0" class="text-gray-400 italic mb-2">Belum ada BOM</div>
-            <div v-if="bomRows.length" class="max-h-64 overflow-y-auto border border-gray-200 rounded-lg shadow-sm">
+            <div v-if="bomRows.length" class="max-h-80 overflow-y-auto border border-gray-200 rounded-lg shadow-sm">
               <table class="min-w-full text-sm">
                 <thead class="sticky top-0 bg-blue-100 text-blue-900 z-10">
                   <tr>
-                    <th class="px-2 py-1">Item</th>
-                    <th class="px-2 py-1">Qty</th>
-                    <th class="px-2 py-1">Unit</th>
-                    <th class="px-2 py-1">Stock Cut</th>
+                    <th class="px-2 py-1 text-left">Item</th>
+                    <th class="px-2 py-1 text-left">Qty</th>
+                    <th class="px-2 py-1 text-left">Unit</th>
+                    <th class="px-2 py-1 text-center" title="Centang = tidak ikut potong stok">Skip Cut</th>
                     <th class="px-2 py-1"></th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="(row, idx) in bomRows" :key="idx" class="bg-white border-b last:border-b-0">
-                    <td class="px-2 py-1">
+                    <td class="px-2 py-1 min-w-[220px]">
                       <input v-model="itemSearch[idx]" placeholder="Cari item..." class="w-full mb-1 rounded border-gray-200 px-2 py-1 text-xs" />
-                      <select v-model="row.item_id" class="w-full rounded border-gray-300" @change="async e => { row.unit_id = ''; row.qty = ''; await fetchItemUnits(row.item_id) }">
+                      <select v-model="row.item_id" class="w-full rounded border-gray-300" @change="onItemChange(row)">
                         <option value="">Pilih Item</option>
                         <option v-for="item in filteredItems(idx)" :key="item.id" :value="item.id">{{ item.name }}</option>
                       </select>
@@ -186,10 +262,14 @@ function closeModal() {
                     <td class="px-2 py-1">
                       <input v-model="row.qty" type="number" min="0" step="any" class="w-20 rounded border-gray-300" />
                     </td>
-                    <td class="px-2 py-1">
+                    <td class="px-2 py-1 min-w-[140px]">
                       <select v-model="row.unit_id" class="w-full rounded border-gray-300">
                         <option value="">Pilih Unit</option>
-                        <option v-for="unit in itemUnits[row.item_id] || []" :key="unit.id" :value="unit.id">{{ unit.name }} ({{ unit.type }})</option>
+                        <option
+                          v-for="unit in itemUnits[String(row.item_id)] || []"
+                          :key="unit.id"
+                          :value="unit.id"
+                        >{{ unit.name }} ({{ unit.type }})</option>
                       </select>
                     </td>
                     <td class="px-2 py-1 text-center">
@@ -205,7 +285,7 @@ function closeModal() {
           </div>
         </form>
       </div>
-      <div class="bg-gray-50 px-6 py-4 flex justify-end rounded-b-2xl">
+      <div class="bg-gray-50 px-6 py-4 flex justify-end rounded-b-2xl sticky bottom-0">
         <button type="button" @click="closeModal" class="inline-flex items-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition sm:w-auto sm:text-sm mr-2">
           Batal
         </button>
@@ -229,4 +309,4 @@ function closeModal() {
 .animate-fade-in {
   animation: fade-in 0.3s cubic-bezier(.4,0,.2,1);
 }
-</style> 
+</style>

@@ -1603,6 +1603,41 @@ class ItemController extends Controller
     }
 
     /**
+     * Daftar item untuk dropdown BOM Modifier Option.
+     * Query opsional: include_ids[] / include_ids=1,2,3 agar item inactive yang sudah di BOM tetap muncul.
+     */
+    public function apiForModifierBom(Request $request)
+    {
+        $includeIds = collect();
+        if ($request->filled('include_ids')) {
+            $raw = $request->input('include_ids');
+            if (is_string($raw)) {
+                $raw = preg_split('/\s*,\s*/', $raw) ?: [];
+            }
+            $includeIds = collect(is_array($raw) ? $raw : [])
+                ->map(fn ($id) => (int) $id)
+                ->filter(fn ($id) => $id > 0)
+                ->unique()
+                ->values();
+        }
+
+        $items = Item::query()
+            ->where(function ($q) use ($includeIds) {
+                $q->where('status', 'active');
+                if ($includeIds->isNotEmpty()) {
+                    $q->orWhereIn('id', $includeIds->all());
+                }
+            })
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json([
+            'success' => true,
+            'items' => $items,
+        ]);
+    }
+
+    /**
      * Ambil item berdasarkan warehouse_division_id yang terkait dengan FO Schedule tertentu dan status=active
      */
     public function getByFOSchedule($fo_schedule_id)
