@@ -1186,6 +1186,31 @@ class PurchaseOrderFoodsController extends Controller
             }
         }
 
+        // Good Receive info (jika PO sudah di-GR)
+        $grFoodsInfo = DB::table('food_good_receives as gr')
+            ->leftJoin('users as receiver', 'receiver.id', '=', 'gr.received_by')
+            ->where('gr.po_id', $po->id)
+            ->orderByDesc('gr.receive_date')
+            ->orderByDesc('gr.id')
+            ->get([
+                'gr.id',
+                'gr.gr_number',
+                'gr.receive_date',
+                'gr.notes',
+                'receiver.nama_lengkap as received_by_name',
+            ])
+            ->map(function ($gr) {
+                return [
+                    'gr_id' => (int) $gr->id,
+                    'gr_number' => (string) ($gr->gr_number ?? ''),
+                    'receive_date' => $gr->receive_date,
+                    'received_by' => (string) ($gr->received_by_name ?? '-'),
+                    'notes' => $gr->notes,
+                ];
+            })
+            ->values()
+            ->all();
+
         $user = auth()->user();
         $userData = [
             'id' => $user->id,
@@ -1199,6 +1224,7 @@ class PurchaseOrderFoodsController extends Controller
             'po' => $po,
             'roSupplierInfo' => $roSupplierInfo,
             'prFoodsInfo' => $prFoodsInfo,
+            'grFoodsInfo' => $grFoodsInfo,
             'user' => $userData
         ]);
     }

@@ -83,6 +83,40 @@
               </div>
             </div>
 
+            <!-- GR Foods Information -->
+            <div v-if="grFoodsInfo?.length" class="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4">
+              <h3 class="text-lg font-semibold mb-3 text-amber-800">
+                Informasi Good Receive
+                <span v-if="grFoodsInfo.length > 1" class="text-sm font-normal text-amber-700">({{ grFoodsInfo.length }} GR)</span>
+              </h3>
+              <div class="space-y-4">
+                <div
+                  v-for="gr in grFoodsInfo"
+                  :key="gr.gr_id"
+                  class="grid grid-cols-2 gap-4 rounded-md border border-amber-100 bg-white/60 p-3"
+                >
+                  <div class="space-y-2">
+                    <p>
+                      <span class="font-medium text-amber-700">Nomor GR:</span>
+                      <a
+                        v-if="gr.gr_id"
+                        :href="route('food-good-receive.show', gr.gr_id)"
+                        class="ml-1 font-semibold text-amber-800 underline hover:text-amber-950"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >{{ gr.gr_number || `#${gr.gr_id}` }}</a>
+                      <span v-else>{{ gr.gr_number || '-' }}</span>
+                    </p>
+                    <p><span class="font-medium text-amber-700">Tanggal Receive:</span> {{ formatDate(gr.receive_date) }}</p>
+                  </div>
+                  <div class="space-y-2">
+                    <p><span class="font-medium text-amber-700">Diterima oleh:</span> {{ gr.received_by || '-' }}</p>
+                    <p><span class="font-medium text-amber-700">Catatan GR:</span> {{ gr.notes || '-' }}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Items Table -->
             <div class="mb-6">
               <h3 class="text-lg font-semibold mb-4">Daftar Item</h3>
@@ -186,6 +220,10 @@ const props = defineProps({
     default: null
   },
   prFoodsInfo: {
+    type: Array,
+    default: () => []
+  },
+  grFoodsInfo: {
     type: Array,
     default: () => []
   },
