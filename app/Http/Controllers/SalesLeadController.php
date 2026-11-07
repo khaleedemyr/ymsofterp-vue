@@ -405,7 +405,7 @@ class SalesLeadController extends Controller
             'segment_1' => $validated['segment_1'] ?? null,
             'segment_2' => $validated['segment_2'] ?? null,
             'type_of_event' => $validated['type_of_event'] ?? null,
-            'event_date' => $validated['event_date'] ?? null,
+            'event_date' => $this->normalizeEventDate($validated['event_date'] ?? null),
             'pax' => $validated['pax'] ?? null,
             'outlet_id' => $validated['outlet_id'] ?? null,
             'status' => $validated['status'],
@@ -434,7 +434,7 @@ class SalesLeadController extends Controller
             'segment_1' => $validated['segment_1'] ?? null,
             'segment_2' => $validated['segment_2'] ?? null,
             'type_of_event' => $validated['type_of_event'] ?? null,
-            'event_date' => $validated['event_date'] ?? null,
+            'event_date' => $this->normalizeEventDate($validated['event_date'] ?? null),
             'pax' => $validated['pax'] ?? null,
             'outlet_id' => $validated['outlet_id'] ?? null,
             'status' => $validated['status'],
@@ -779,6 +779,26 @@ class SalesLeadController extends Controller
             'revenue' => 'nullable|numeric|min:0',
             'remarks' => 'nullable|string|max:5000',
         ]);
+    }
+
+    /**
+     * Simpan tanggal kalender apa adanya (Y-m-d), tanpa geser timezone.
+     */
+    private function normalizeEventDate(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}/', $value, $m)) {
+            return $m[0];
+        }
+
+        try {
+            return Carbon::parse($value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     private function generateNumber(): string

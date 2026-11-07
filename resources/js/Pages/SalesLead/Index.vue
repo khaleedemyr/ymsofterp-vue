@@ -366,7 +366,22 @@ const applyFilters = () => {
   router.get(route('sales-leads.index'), { ...filterForm }, { preserveState: true, replace: true });
 };
 
-const formatDate = (d) => (d ? String(d).substring(0, 10) : '-');
+const formatDate = (d) => {
+  if (!d) return '-'
+  const s = String(d)
+  // ISO UTC (…T17:00:00Z) → konversi ke tanggal lokal browser (Asia/Jakarta)
+  if (s.includes('T')) {
+    const dt = new Date(s)
+    if (!Number.isNaN(dt.getTime())) {
+      const y = dt.getFullYear()
+      const m = String(dt.getMonth() + 1).padStart(2, '0')
+      const day = String(dt.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+  }
+  const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+  return m ? m[1] : s.substring(0, 10)
+}
 
 const formatMoney = (v) => {
   if (v === null || v === undefined || v === '') return '-';

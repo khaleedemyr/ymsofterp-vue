@@ -66,7 +66,22 @@ const form = useForm({
   segment_1: props.record.segment_1 || '',
   segment_2: props.record.segment_2 || '',
   type_of_event: props.record.type_of_event || '',
-  event_date: props.record.event_date ? String(props.record.event_date).substring(0, 10) : '',
+  event_date: (() => {
+    if (!props.record.event_date) return ''
+    const s = String(props.record.event_date)
+    // Jika ISO UTC (…T17:00:00Z), tanggal lokal Jakarta = hari berikutnya
+    if (s.includes('T')) {
+      const dt = new Date(s)
+      if (!Number.isNaN(dt.getTime())) {
+        const y = dt.getFullYear()
+        const m = String(dt.getMonth() + 1).padStart(2, '0')
+        const day = String(dt.getDate()).padStart(2, '0')
+        return `${y}-${m}-${day}`
+      }
+    }
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})/)
+    return m ? m[1] : s.substring(0, 10)
+  })(),
   pax: props.record.pax ?? '',
   outlet_id: props.record.outlet_id || '',
   status: props.record.status || 'new_leads',

@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use Carbon\Carbon;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -72,12 +74,39 @@ class SalesLead extends Model
     protected $appends = ['bill_photo_url'];
 
     protected $casts = [
-        'event_date' => 'date',
         'revenue' => 'decimal:2',
         'real_revenue' => 'decimal:2',
         'pax' => 'integer',
         'real_pax' => 'integer',
     ];
+
+    /**
+     * Selalu kirim/simpan sebagai Y-m-d (tanpa timezone),
+     * supaya tidak geser -1 hari saat di-JSON ke frontend (UTC vs Asia/Jakarta).
+     */
+    protected function eventDate(): Attribute
+    {
+        return Attribute::make(
+            get: function ($value) {
+                if ($value === null || $value === '') {
+                    return null;
+                }
+
+                return Carbon::parse($value)->toDateString();
+            },
+            set: function ($value) {
+                if ($value === null || $value === '') {
+                    return null;
+                }
+
+                if (is_string($value) && preg_match('/^\d{4}-\d{2}-\d{2}/', $value, $m)) {
+                    return $m[0];
+                }
+
+                return Carbon::parse($value)->toDateString();
+            },
+        );
+    }
 
     public function getBillPhotoUrlAttribute(): ?string
     {
