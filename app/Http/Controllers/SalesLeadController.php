@@ -820,10 +820,10 @@ class SalesLeadController extends Controller
     private function visibleQuery()
     {
         $user = auth()->user();
-        $isSuperadmin = $this->isSuperadmin($user);
+        $canViewAll = $this->canViewAll($user);
 
         return SalesLead::query()
-            ->when(! $isSuperadmin, function ($q) use ($user) {
+            ->when(! $canViewAll, function ($q) use ($user) {
                 $q->where(function ($inner) use ($user) {
                     $inner->where('created_by', $user->id)
                         ->orWhere('sales_user_id', $user->id);
@@ -868,25 +868,18 @@ class SalesLeadController extends Controller
         return (int) $record->created_by === (int) $user->id;
     }
 
+    private function canViewAll($user): bool
+    {
+        return $this->isSuperadmin($user) || $this->isSalesDivision($user);
+    }
+
+    private function isSalesDivision($user): bool
+    {
+        return $user && (int) ($user->division_id ?? 0) === 17;
+    }
+
     private function isSuperadmin($user): bool
     {
-        if (! $user) {
-            return false;
-        }
-
-        $roleName = strtolower((string) ($user->role_name ?? $user->role ?? ''));
-        if (in_array($roleName, ['superadmin', 'super admin', 'administrator'], true)) {
-            return true;
-        }
-
-        try {
-            if (method_exists($user, 'roles')) {
-                return $user->roles()->whereIn('name', ['superadmin', 'Superadmin', 'Super Admin'])->exists();
-            }
-        } catch (\Throwable $e) {
-            // ignore
-        }
-
-        return (int) ($user->id ?? 0) === 1;
+        return $user && (string) ($user->id_role ?? '') === '5af56935b011a';
     }
 }
