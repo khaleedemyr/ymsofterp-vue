@@ -313,6 +313,7 @@ export default {
     "data_member": "Data Member",
     "member_transaction_report": "Report Transaksi Member",
     "member_visit_frequency_report": "Member Visit Frequency",
+    "member_visit_conversion_report": "Member Visit Conversion",
     "guest_comment_ocr": "Komentar Tamu (OCR)",
     "manual_cs_complaint": "Input Complaint CS",
     "manual_monthly_google_review": "Manual Monthly Google Review",

@@ -3234,8 +3234,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('crm.member-transaction-report');
     Route::get('/crm/member-transaction-report/export', [App\Http\Controllers\MemberTransactionReportController::class, 'export'])
         ->name('crm.member-transaction-report.export');
-    Route::get('/crm/member-transaction-report/{transactionId}/order-details', [App\Http\Controllers\MemberTransactionReportController::class, 'orderDetails'])
-        ->whereNumber('transactionId')
+    Route::get('/crm/member-transaction-report/{orderId}/order-details', [App\Http\Controllers\MemberTransactionReportController::class, 'orderDetails'])
+        ->where('orderId', '.*')
         ->name('crm.member-transaction-report.order-details');
 
     // Member Visit Frequency & Repeat Ratio
@@ -3247,6 +3247,10 @@ Route::middleware(['auth'])->group(function () {
         ->name('crm.member-visit-frequency-report.bucket-members');
     Route::get('/crm/member-visit-frequency-report/outlet-members', [App\Http\Controllers\MemberVisitFrequencyReportController::class, 'outletMembers'])
         ->name('crm.member-visit-frequency-report.outlet-members');
+
+    // Member Visit Conversion (marketing → guest/member visits)
+    Route::get('/crm/member-visit-conversion-report', [App\Http\Controllers\MemberVisitConversionReportController::class, 'index'])
+        ->name('crm.member-visit-conversion-report');
     
     // Point Management Routes
     Route::get('/crm/point-management', [App\Http\Controllers\PointManagementController::class, 'index'])->name('crm.point-management');

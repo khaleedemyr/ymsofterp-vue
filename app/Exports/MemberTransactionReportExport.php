@@ -37,24 +37,15 @@ class MemberTransactionReportExport implements FromCollection, WithHeadings, Wit
     public function headings(): array
     {
         return [
-            'No',
-            'Tanggal',
-            'Created At',
+            'NO',
+            'Tanggal Kunjungan',
             'Member ID',
             'Nama Member',
-            'Phone',
-            'Email',
-            'Tipe',
-            'Transaction Type',
-            'Channel',
-            'Point',
-            'Nilai Transaksi',
-            'Paid Number',
-            'Order / Reference ID',
+            'Tier',
             'Outlet',
-            'Earning Rate',
-            'Expires At',
-            'Keterangan',
+            'No. Struk / Check ID',
+            'Total Cover',
+            'Nilai Transaksi',
         ];
     }
 
@@ -67,33 +58,25 @@ class MemberTransactionReportExport implements FromCollection, WithHeadings, Wit
 
         return [
             $this->rowNumber,
-            $row['transaction_date'] ?? '',
-            $row['created_at'] ?? '',
+            $row['visit_at'] ?? ($row['visit_date'] ?? ''),
             $row['member_id'] ?? '',
             $row['member_name'] ?? '',
-            $row['member_phone'] ?? '',
-            $row['member_email'] ?? '',
-            $row['type_text'] ?? '',
-            $row['transaction_type'] ?? '',
-            $row['channel'] ?? '',
-            $row['point_amount'] ?? 0,
-            $row['transaction_amount'] ?? 0,
-            $row['paid_number'] ?? '',
-            $row['order_id'] ?? ($row['reference_id'] ?? ''),
+            $row['tier_label'] ?? ($row['tier'] ?? ''),
             $row['outlet_name'] ?? '',
-            $row['earning_rate'] ?? '',
-            $row['expires_at'] ?? '',
-            $row['description'] ?? '',
+            $row['check_id'] ?? '',
+            $row['total_cover'] ?? 0,
+            $row['transaction_amount'] ?? 0,
         ];
     }
 
     public function styles(Worksheet $sheet): array
     {
-        $sheet->getStyle('A1:R1')->getFont()->setBold(true);
-        $sheet->getStyle('A1:R1')->getFill()
+        $sheet->getStyle('A1:I1')->getFont()->setBold(true);
+        $sheet->getStyle('A1:I1')->getFill()
             ->setFillType(Fill::FILL_SOLID)
-            ->getStartColor()->setRGB('EDE9FE');
-        $sheet->getStyle('A1:R1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
+            ->getStartColor()->setRGB('1E3A5F');
+        $sheet->getStyle('A1:I1')->getFont()->getColor()->setRGB('FFFFFF');
+        $sheet->getStyle('A1:I1')->getAlignment()->setHorizontal(Alignment::HORIZONTAL_CENTER);
 
         return [];
     }
