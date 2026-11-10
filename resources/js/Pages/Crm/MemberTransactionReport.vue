@@ -11,10 +11,19 @@
             Riwayat earn / redeem poin member — terhubung ke bill POS bila ada.
           </p>
         </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-white shadow hover:bg-emerald-700 disabled:opacity-60"
+          :disabled="exporting"
+          @click="exportExcel"
+        >
+          <i :class="exporting ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-file-excel'"></i>
+          {{ exporting ? 'Exporting...' : 'Export Excel' }}
+        </button>
       </div>
 
       <div class="bg-white rounded-xl shadow p-4 mb-4">
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-3">
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-8 gap-3">
           <div class="xl:col-span-2">
             <label class="mb-1 block text-xs text-gray-500">Cari</label>
             <input
@@ -28,6 +37,13 @@
             <label class="mb-1 block text-xs text-gray-500">Tipe</label>
             <select v-model="filterForm.type" class="w-full rounded-lg border-gray-300">
               <option v-for="(label, key) in typeOptions" :key="key || 'all'" :value="key">{{ label }}</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-gray-500">Channel</label>
+            <select v-model="filterForm.channel" class="w-full rounded-lg border-gray-300">
+              <option value="">Semua Channel</option>
+              <option v-for="ch in channelOptions" :key="ch" :value="ch">{{ ch }}</option>
             </select>
           </div>
           <div>
@@ -116,7 +132,9 @@
                   <span
                     :class="[
                       'inline-flex px-2 py-0.5 rounded-full text-xs font-semibold',
-                      row.is_earn ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800',
+                      row.is_bonus
+                        ? 'bg-amber-100 text-amber-800'
+                        : (row.is_earn ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'),
                     ]"
                   >
                     {{ row.type_text }}
@@ -133,7 +151,7 @@
                 </td>
                 <td class="px-3 py-3 whitespace-nowrap">
                   <div v-if="row.paid_number" class="font-mono text-xs text-blue-700">{{ row.paid_number }}</div>
-                  <div v-else-if="row.reference_id" class="font-mono text-xs text-gray-500">{{ row.reference_id }}</div>
+                  <div v-else-if="row.order_id" class="font-mono text-xs text-gray-500" :title="'Order ID: ' + row.order_id">{{ row.order_id }}</div>
                   <div v-else class="text-gray-400">-</div>
                 </td>
                 <td class="px-3 py-3">{{ row.outlet_name || '-' }}</td>
@@ -238,12 +256,14 @@ const props = defineProps({
   },
   filters: { type: Object, default: () => ({}) },
   outlets: { type: Array, default: () => [] },
+  channelOptions: { type: Array, default: () => [] },
   typeOptions: { type: Object, default: () => ({}) },
 });
 
 const filterForm = reactive({
   search: props.filters.search || '',
   type: props.filters.type || '',
+  channel: props.filters.channel || '',
   outlet_id: props.filters.outlet_id || '',
   date_from: props.filters.date_from || '',
   date_to: props.filters.date_to || '',
@@ -252,6 +272,7 @@ const filterForm = reactive({
 
 const expandedId = ref(null);
 const loadingDetailId = ref(null);
+const exporting = ref(false);
 const detailCache = reactive({});
 
 const formatNumber = (n) => Number(n || 0).toLocaleString('id-ID');
@@ -263,10 +284,26 @@ const applyFilters = () => {
 const resetFilters = () => {
   filterForm.search = '';
   filterForm.type = '';
+  filterForm.channel = '';
   filterForm.outlet_id = '';
   filterForm.date_from = '';
   filterForm.date_to = '';
   applyFilters();
+};
+
+const exportExcel = () => {
+  exporting.value = true;
+  const params = new URLSearchParams();
+  Object.entries(filterForm).forEach(([key, value]) => {
+    if (value !== '' && value !== null && value !== undefined) {
+      params.append(key, String(value));
+    }
+  });
+  const url = `${route('crm.member-transaction-report.export')}?${params.toString()}`;
+  window.location.href = url;
+  setTimeout(() => {
+    exporting.value = false;
+  }, 2000);
 };
 
 const goPage = (url) => {
@@ -289,7 +326,7 @@ const toggleDetail = async (row) => {
       detailCache[row.id] = {
         order: data.order,
         items: data.items || [],
-        message: data.order ? null : 'Tidak ada bill POS yang terhubung ke transaksi ini.',
+        message: data.message || (data.order ? null : 'Tidak ada bill POS yang terhubung ke transaksi ini.'),
       };
     } else {
       detailCache[row.id] = { order: null, items: [], message: data.message || 'Gagal memuat detail.' };

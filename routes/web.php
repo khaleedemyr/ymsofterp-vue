@@ -3232,6 +3232,8 @@ Route::middleware(['auth'])->group(function () {
     // Member Transaction Report (point earn/redeem ledger)
     Route::get('/crm/member-transaction-report', [App\Http\Controllers\MemberTransactionReportController::class, 'index'])
         ->name('crm.member-transaction-report');
+    Route::get('/crm/member-transaction-report/export', [App\Http\Controllers\MemberTransactionReportController::class, 'export'])
+        ->name('crm.member-transaction-report.export');
     Route::get('/crm/member-transaction-report/{transactionId}/order-details', [App\Http\Controllers\MemberTransactionReportController::class, 'orderDetails'])
         ->whereNumber('transactionId')
         ->name('crm.member-transaction-report.order-details');

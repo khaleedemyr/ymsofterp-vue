@@ -2,57 +2,27 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\MemberTransactionReportExport;
 use App\Services\RoleMenuService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Inertia\Response;
+use Maatwebsite\Excel\Facades\Excel;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class MemberTransactionReportController extends Controller
 {
+    private const EXPORT_LIMIT = 20000;
+
     public function index(Request $request): Response
     {
         $this->authorizeView($request);
 
-        $search = trim((string) $request->get('search', ''));
-        $type = trim((string) $request->get('type', ''));
-        $outletId = $request->filled('outlet_id') ? (int) $request->get('outlet_id') : null;
-        $dateFrom = trim((string) $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d')));
-        $dateTo = trim((string) $request->get('date_to', Carbon::now()->format('Y-m-d')));
-        $perPage = min(100, max(10, (int) $request->get('per_page', 25)));
-
-        $base = DB::table('member_apps_point_transactions as pt')
-            ->leftJoin('member_apps_members as m', 'm.id', '=', 'pt.member_id')
-            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'pt.outlet_id')
-            ->when($dateFrom !== '', fn ($q) => $q->whereDate('pt.transaction_date', '>=', $dateFrom))
-            ->when($dateTo !== '', fn ($q) => $q->whereDate('pt.transaction_date', '<=', $dateTo))
-            ->when($outletId, fn ($q) => $q->where('pt.outlet_id', $outletId))
-            ->when($type !== '', function ($q) use ($type) {
-                if ($type === 'earn') {
-                    $q->where(function ($inner) {
-                        $inner->where('pt.transaction_type', 'earn')
-                            ->orWhere('pt.point_amount', '>', 0);
-                    });
-                } elseif ($type === 'redeem') {
-                    $q->where(function ($inner) {
-                        $inner->whereIn('pt.transaction_type', ['redeem', 'reward_redemption', 'voucher_purchase'])
-                            ->orWhere('pt.point_amount', '<', 0);
-                    });
-                } else {
-                    $q->where('pt.transaction_type', $type);
-                }
-            })
-            ->when($search !== '', function ($q) use ($search) {
-                $q->where(function ($inner) use ($search) {
-                    $inner->where('m.member_id', 'like', "%{$search}%")
-                        ->orWhere('m.nama_lengkap', 'like', "%{$search}%")
-                        ->orWhere('m.email', 'like', "%{$search}%")
-                        ->orWhere('m.mobile_phone', 'like', "%{$search}%")
-                        ->orWhere('pt.reference_id', 'like', "%{$search}%")
-                        ->orWhere('pt.description', 'like', "%{$search}%");
-                });
-            });
+        $filters = $this->normalizeFilters($request);
+        $base = $this->filteredQuery($filters);
 
         $totals = (clone $base)
             ->selectRaw('COUNT(*) as total_transactions')
@@ -63,105 +33,14 @@ class MemberTransactionReportController extends Controller
             ->first();
 
         $paginator = (clone $base)
-            ->select([
-                'pt.id',
-                'pt.member_id as member_pk',
-                'pt.outlet_id',
-                'pt.transaction_type',
-                'pt.transaction_date',
-                'pt.point_amount',
-                'pt.transaction_amount',
-                'pt.earning_rate',
-                'pt.channel',
-                'pt.reference_id',
-                'pt.description',
-                'pt.expires_at',
-                'pt.created_at',
-                'm.member_id',
-                'm.nama_lengkap',
-                'm.mobile_phone',
-                'm.email',
-                'm.just_points',
-                'o.nama_outlet',
-                'o.qr_code',
-            ])
+            ->select($this->selectColumns())
             ->orderByDesc('pt.transaction_date')
             ->orderByDesc('pt.id')
-            ->paginate($perPage)
+            ->paginate($filters['per_page'])
             ->withQueryString();
 
-        $pageRows = collect($paginator->items());
-        $orderMeta = $this->resolveOrderMeta($pageRows);
-
-        $records = $pageRows->map(function ($row) use ($orderMeta) {
-            $pointAmount = (int) ($row->point_amount ?? 0);
-            $isEarn = $pointAmount > 0;
-            $ref = trim((string) ($row->reference_id ?? ''));
-            $meta = $orderMeta[$ref] ?? ($orderMeta[(string) ($row->id ?? '')] ?? null);
-
-            $paidNumber = $meta['paid_number'] ?? null;
-            if (! $paidNumber && $ref !== '' && ! str_contains($ref, '-')) {
-                // Manual inject biasanya menyimpan paid_number langsung di reference_id
-                $paidNumber = $ref;
-            } elseif (! $paidNumber && $meta) {
-                $paidNumber = $meta['paid_number'] ?? null;
-            }
-
-            if (! $paidNumber && $ref !== '' && preg_match('/^[A-Z]{2,}\d+/i', $ref)) {
-                $paidNumber = $ref;
-            }
-
-            $outletName = $row->nama_outlet
-                ?: ($meta['outlet_name'] ?? null)
-                ?: '-';
-
-            return [
-                'id' => (int) $row->id,
-                'member_pk' => (int) $row->member_pk,
-                'member_id' => (string) ($row->member_id ?? '-'),
-                'member_name' => (string) ($row->nama_lengkap ?? '-'),
-                'member_phone' => (string) ($row->mobile_phone ?? ''),
-                'member_email' => (string) ($row->email ?? ''),
-                'member_balance' => (int) ($row->just_points ?? 0),
-                'transaction_type' => (string) ($row->transaction_type ?? ''),
-                'type_text' => $isEarn ? 'EARNED' : 'REDEEMED',
-                'is_earn' => $isEarn,
-                'point_amount' => $pointAmount,
-                'point_abs' => abs($pointAmount),
-                'transaction_amount' => (float) ($row->transaction_amount ?? 0),
-                'transaction_amount_formatted' => 'Rp '.number_format((float) ($row->transaction_amount ?? 0), 0, ',', '.'),
-                'earning_rate' => (float) ($row->earning_rate ?? 0),
-                'channel' => (string) ($row->channel ?? '-'),
-                'reference_id' => $ref !== '' ? $ref : null,
-                'paid_number' => $paidNumber,
-                'order_id' => $meta['order_id'] ?? (isset($meta['id']) ? $meta['id'] : null),
-                'description' => (string) ($row->description ?? ''),
-                'outlet_id' => $row->outlet_id ? (int) $row->outlet_id : null,
-                'outlet_name' => $outletName,
-                'transaction_date' => $row->transaction_date
-                    ? Carbon::parse($row->transaction_date)->format('Y-m-d')
-                    : null,
-                'expires_at' => $row->expires_at
-                    ? Carbon::parse($row->expires_at)->format('Y-m-d')
-                    : null,
-                'created_at' => $row->created_at
-                    ? Carbon::parse($row->created_at)->format('Y-m-d H:i')
-                    : null,
-                'has_order_details' => ! empty($meta['order_id'] ?? $meta['id'] ?? null),
-            ];
-        })->values();
-
+        $records = $this->mapRows(collect($paginator->items()));
         $paginator->setCollection($records);
-
-        $outlets = DB::table('tbl_data_outlet')
-            ->orderBy('nama_outlet')
-            ->get(['id_outlet', 'nama_outlet'])
-            ->map(fn ($o) => [
-                'id' => (int) $o->id_outlet,
-                'name' => (string) $o->nama_outlet,
-            ])
-            ->values()
-            ->all();
 
         return Inertia::render('Crm/MemberTransactionReport', [
             'records' => $paginator,
@@ -173,24 +52,39 @@ class MemberTransactionReportController extends Controller
                 'total_amount' => (float) ($totals->total_amount ?? 0),
                 'total_amount_formatted' => 'Rp '.number_format((float) ($totals->total_amount ?? 0), 0, ',', '.'),
             ],
-            'filters' => [
-                'search' => $search,
-                'type' => $type,
-                'outlet_id' => $outletId ?: '',
-                'date_from' => $dateFrom,
-                'date_to' => $dateTo,
-                'per_page' => $perPage,
-            ],
-            'outlets' => $outlets,
+            'filters' => $filters,
+            'outlets' => $this->outletOptions(),
+            'channelOptions' => $this->channelOptions(),
             'typeOptions' => [
                 '' => 'Semua Tipe',
-                'earn' => 'Earned',
+                'earn' => 'Earned (POS)',
+                'bonus' => 'Bonus',
                 'redeem' => 'Redeemed',
                 'adjustment' => 'Adjustment',
                 'reward_redemption' => 'Reward Redemption',
                 'voucher_purchase' => 'Voucher Purchase',
             ],
         ]);
+    }
+
+    public function export(Request $request): BinaryFileResponse
+    {
+        $this->authorizeView($request);
+
+        $filters = $this->normalizeFilters($request);
+        $rows = $this->filteredQuery($filters)
+            ->select($this->selectColumns())
+            ->orderByDesc('pt.transaction_date')
+            ->orderByDesc('pt.id')
+            ->limit(self::EXPORT_LIMIT)
+            ->get();
+
+        $mapped = $this->mapRows($rows);
+        $from = $filters['date_from'] ?: 'all';
+        $to = $filters['date_to'] ?: 'all';
+        $filename = 'member-transaction-report_'.$from.'_'.$to.'_'.now()->format('Ymd_His').'.xlsx';
+
+        return Excel::download(new MemberTransactionReportExport($mapped), $filename);
     }
 
     public function orderDetails(Request $request, int $transactionId)
@@ -206,6 +100,7 @@ class MemberTransactionReportController extends Controller
                 'pt.point_amount',
                 'pt.transaction_amount',
                 'pt.transaction_type',
+                'pt.channel',
                 'pt.description',
                 'm.member_id',
             ])
@@ -217,10 +112,32 @@ class MemberTransactionReportController extends Controller
 
         $ref = trim((string) ($pt->reference_id ?? ''));
         $memberCode = trim((string) ($pt->member_id ?? ''));
-        $order = null;
+        $txType = strtolower((string) ($pt->transaction_type ?? ''));
+        $channel = strtolower((string) ($pt->channel ?? ''));
+        $isBonusLike = $txType === 'bonus'
+            || in_array($channel, ['registration', 'birthday', 'challenge_reward'], true);
+        $refIsMemberId = $ref !== '' && $memberCode !== '' && strcasecmp($ref, $memberCode) === 0;
 
+        if ($isBonusLike || $refIsMemberId) {
+            return response()->json([
+                'status' => 'success',
+                'transaction' => [
+                    'id' => (int) $pt->id,
+                    'reference_id' => $ref !== '' ? $ref : null,
+                    'point_amount' => (int) $pt->point_amount,
+                    'transaction_amount' => (float) $pt->transaction_amount,
+                    'transaction_type' => (string) $pt->transaction_type,
+                    'description' => (string) ($pt->description ?? ''),
+                ],
+                'order' => null,
+                'items' => [],
+                'message' => 'Ini transaksi bonus/non-POS. Nilai di reference adalah member ID, bukan paid number bill.',
+            ]);
+        }
+
+        $order = null;
         if ($ref !== '') {
-            $orderQuery = DB::connection('db_justus')
+            $order = DB::connection('db_justus')
                 ->table('orders as o')
                 ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
                 ->select([
@@ -235,13 +152,8 @@ class MemberTransactionReportController extends Controller
                 ])
                 ->where(function ($q) use ($ref) {
                     $q->where('o.id', $ref)->orWhere('o.paid_number', $ref);
-                });
-
-            if ($memberCode !== '') {
-                $orderQuery->where('o.member_id', $memberCode);
-            }
-
-            $order = $orderQuery->first();
+                })
+                ->first();
         }
 
         $items = [];
@@ -301,23 +213,199 @@ class MemberTransactionReportController extends Controller
                     : null,
             ] : null,
             'items' => $items,
+            'message' => $order ? null : 'Tidak ada bill POS yang terhubung ke transaksi ini.',
         ]);
     }
 
     /**
-     * Batch-resolve order paid_number / outlet for current page references.
-     *
-     * @param  \Illuminate\Support\Collection<int, object>  $rows
+     * @return array{
+     *   search: string,
+     *   type: string,
+     *   channel: string,
+     *   outlet_id: int|string,
+     *   date_from: string,
+     *   date_to: string,
+     *   per_page: int
+     * }
+     */
+    private function normalizeFilters(Request $request): array
+    {
+        return [
+            'search' => trim((string) $request->get('search', '')),
+            'type' => trim((string) $request->get('type', '')),
+            'channel' => trim((string) $request->get('channel', '')),
+            'outlet_id' => $request->filled('outlet_id') ? (int) $request->get('outlet_id') : '',
+            'date_from' => trim((string) $request->get('date_from', Carbon::now()->startOfMonth()->format('Y-m-d'))),
+            'date_to' => trim((string) $request->get('date_to', Carbon::now()->format('Y-m-d'))),
+            'per_page' => min(100, max(10, (int) $request->get('per_page', 25))),
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $filters
+     */
+    private function filteredQuery(array $filters)
+    {
+        $search = (string) ($filters['search'] ?? '');
+        $type = (string) ($filters['type'] ?? '');
+        $channel = (string) ($filters['channel'] ?? '');
+        $outletId = $filters['outlet_id'] !== '' ? (int) $filters['outlet_id'] : null;
+        $dateFrom = (string) ($filters['date_from'] ?? '');
+        $dateTo = (string) ($filters['date_to'] ?? '');
+
+        return DB::table('member_apps_point_transactions as pt')
+            ->leftJoin('member_apps_members as m', 'm.id', '=', 'pt.member_id')
+            ->leftJoin('tbl_data_outlet as o', 'o.id_outlet', '=', 'pt.outlet_id')
+            ->when($dateFrom !== '', fn ($q) => $q->whereDate('pt.transaction_date', '>=', $dateFrom))
+            ->when($dateTo !== '', fn ($q) => $q->whereDate('pt.transaction_date', '<=', $dateTo))
+            ->when($outletId, fn ($q) => $q->where('pt.outlet_id', $outletId))
+            ->when($channel !== '', fn ($q) => $q->where('pt.channel', $channel))
+            ->when($type !== '', function ($q) use ($type) {
+                if ($type === 'earn') {
+                    $q->where('pt.transaction_type', 'earn')
+                        ->where('pt.point_amount', '>', 0);
+                } elseif ($type === 'redeem') {
+                    $q->where(function ($inner) {
+                        $inner->whereIn('pt.transaction_type', ['redeem', 'reward_redemption', 'voucher_purchase'])
+                            ->orWhere('pt.point_amount', '<', 0);
+                    });
+                } else {
+                    $q->where('pt.transaction_type', $type);
+                }
+            })
+            ->when($search !== '', function ($q) use ($search) {
+                $q->where(function ($inner) use ($search) {
+                    $inner->where('m.member_id', 'like', "%{$search}%")
+                        ->orWhere('m.nama_lengkap', 'like', "%{$search}%")
+                        ->orWhere('m.email', 'like', "%{$search}%")
+                        ->orWhere('m.mobile_phone', 'like', "%{$search}%")
+                        ->orWhere('pt.reference_id', 'like', "%{$search}%")
+                        ->orWhere('pt.description', 'like', "%{$search}%");
+                });
+            });
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function selectColumns(): array
+    {
+        return [
+            'pt.id',
+            'pt.member_id as member_pk',
+            'pt.outlet_id',
+            'pt.transaction_type',
+            'pt.transaction_date',
+            'pt.point_amount',
+            'pt.transaction_amount',
+            'pt.earning_rate',
+            'pt.channel',
+            'pt.reference_id',
+            'pt.description',
+            'pt.expires_at',
+            'pt.created_at',
+            'm.member_id',
+            'm.nama_lengkap',
+            'm.mobile_phone',
+            'm.email',
+            'm.just_points',
+            'o.nama_outlet',
+            'o.qr_code',
+        ];
+    }
+
+    /**
+     * @param  Collection<int, object>  $rows
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function mapRows(Collection $rows): Collection
+    {
+        $orderMeta = $this->resolveOrderMeta($rows);
+
+        return $rows->map(function ($row) use ($orderMeta) {
+            $pointAmount = (int) ($row->point_amount ?? 0);
+            $isEarn = $pointAmount > 0;
+            $ref = trim((string) ($row->reference_id ?? ''));
+            $memberCode = trim((string) ($row->member_id ?? ''));
+            $txType = strtolower((string) ($row->transaction_type ?? ''));
+            $channel = strtolower((string) ($row->channel ?? ''));
+            $meta = $ref !== '' ? ($orderMeta[$ref] ?? null) : null;
+
+            $paidNumber = $meta['paid_number'] ?? null;
+            $isBonusLike = in_array($txType, ['bonus'], true)
+                || in_array($channel, ['registration', 'birthday', 'challenge_reward'], true);
+            $refIsMemberId = $ref !== '' && $memberCode !== '' && strcasecmp($ref, $memberCode) === 0;
+
+            if (! $paidNumber && ! $isBonusLike && ! $refIsMemberId && $ref !== '') {
+                $desc = (string) ($row->description ?? '');
+                $looksManual = str_contains($desc, 'ERP manual inject')
+                    || str_contains($desc, '[ERP manual');
+                $looksPaidNumber = (bool) preg_match('/^[A-Z]{2,}\d{5,}[A-Z0-9]*$/i', $ref)
+                    && ! str_contains($ref, '-');
+                if ($looksManual || ($looksPaidNumber && (float) ($row->transaction_amount ?? 0) > 0)) {
+                    $paidNumber = $ref;
+                }
+            }
+
+            $outletName = $row->nama_outlet
+                ?: ($meta['outlet_name'] ?? null)
+                ?: '-';
+
+            $typeText = 'EARNED';
+            if (! $isEarn) {
+                $typeText = 'REDEEMED';
+            } elseif ($isBonusLike) {
+                $typeText = 'BONUS';
+            }
+
+            return [
+                'id' => (int) $row->id,
+                'member_pk' => (int) $row->member_pk,
+                'member_id' => (string) ($row->member_id ?? '-'),
+                'member_name' => (string) ($row->nama_lengkap ?? '-'),
+                'member_phone' => (string) ($row->mobile_phone ?? ''),
+                'member_email' => (string) ($row->email ?? ''),
+                'member_balance' => (int) ($row->just_points ?? 0),
+                'transaction_type' => (string) ($row->transaction_type ?? ''),
+                'type_text' => $typeText,
+                'is_earn' => $isEarn,
+                'is_bonus' => $isBonusLike,
+                'point_amount' => $pointAmount,
+                'point_abs' => abs($pointAmount),
+                'transaction_amount' => (float) ($row->transaction_amount ?? 0),
+                'transaction_amount_formatted' => 'Rp '.number_format((float) ($row->transaction_amount ?? 0), 0, ',', '.'),
+                'earning_rate' => (float) ($row->earning_rate ?? 0),
+                'channel' => (string) ($row->channel ?? '-'),
+                'reference_id' => $ref !== '' ? $ref : null,
+                'paid_number' => $paidNumber,
+                'order_id' => $meta['order_id'] ?? null,
+                'description' => (string) ($row->description ?? ''),
+                'outlet_id' => $row->outlet_id ? (int) $row->outlet_id : null,
+                'outlet_name' => $outletName,
+                'transaction_date' => $row->transaction_date
+                    ? Carbon::parse($row->transaction_date)->format('Y-m-d')
+                    : null,
+                'expires_at' => $row->expires_at
+                    ? Carbon::parse($row->expires_at)->format('Y-m-d')
+                    : null,
+                'created_at' => $row->created_at
+                    ? Carbon::parse($row->created_at)->format('Y-m-d H:i')
+                    : null,
+                'has_order_details' => ! empty($meta['order_id']),
+            ];
+        })->values();
+    }
+
+    /**
+     * @param  Collection<int, object>  $rows
      * @return array<string, array{order_id?: string, id?: string, paid_number?: string|null, outlet_name?: string|null}>
      */
-    private function resolveOrderMeta($rows): array
+    private function resolveOrderMeta(Collection $rows): array
     {
         $refs = $rows->pluck('reference_id')->filter()->unique()->values()->all();
         if ($refs === []) {
             return [];
         }
-
-        $memberCodes = $rows->pluck('member_id')->filter()->unique()->values()->all();
 
         $orders = DB::connection('db_justus')
             ->table('orders as o')
@@ -325,7 +413,6 @@ class MemberTransactionReportController extends Controller
             ->where(function ($q) use ($refs) {
                 $q->whereIn('o.id', $refs)->orWhereIn('o.paid_number', $refs);
             })
-            ->when($memberCodes !== [], fn ($q) => $q->whereIn('o.member_id', $memberCodes))
             ->select([
                 'o.id',
                 'o.paid_number',
@@ -349,6 +436,38 @@ class MemberTransactionReportController extends Controller
         }
 
         return $meta;
+    }
+
+    /**
+     * @return list<array{id: int, name: string}>
+     */
+    private function outletOptions(): array
+    {
+        return DB::table('tbl_data_outlet')
+            ->orderBy('nama_outlet')
+            ->get(['id_outlet', 'nama_outlet'])
+            ->map(fn ($o) => [
+                'id' => (int) $o->id_outlet,
+                'name' => (string) $o->nama_outlet,
+            ])
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function channelOptions(): array
+    {
+        return DB::table('member_apps_point_transactions')
+            ->whereNotNull('channel')
+            ->where('channel', '!=', '')
+            ->distinct()
+            ->orderBy('channel')
+            ->pluck('channel')
+            ->map(fn ($c) => (string) $c)
+            ->values()
+            ->all();
     }
 
     private function authorizeView(Request $request): void
