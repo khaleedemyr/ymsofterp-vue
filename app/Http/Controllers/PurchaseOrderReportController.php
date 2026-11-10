@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\PoGrReportExport;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PurchaseOrderReportController extends Controller
 {
@@ -167,12 +168,93 @@ class PurchaseOrderReportController extends Controller
 
     public function export(Request $request)
     {
-        // Set default date range to current month if not provided
+        [$from, $to, $results] = $this->fetchExportRows($request);
+
+        $exportData = [];
+        foreach ($results as $row) {
+            $exportData[] = [
+                $row->gr_number ?? '-',
+                $row->receive_date ?? '-',
+                $row->po_number ?? '-',
+                $row->po_date ?? '-',
+                $row->supplier_name ?? '-',
+                $row->item_name ?? '-',
+                $row->category_name ?? '-',
+                $row->po_qty ?? 0,
+                $row->qty_received ?? 0,
+                $row->unit_name ?? '-',
+                $row->po_price ?? 0,
+                $row->previous_price ?? 0,
+                $row->price_change ?? 0,
+                $row->price_change_percentage ? $row->price_change_percentage . '%' : '-',
+                $row->po_creator_name ?? '-',
+                $row->received_by_name ?? '-',
+            ];
+        }
+
+        $filename = 'po_gr_report_' . date('Y-m-d_H-i-s') . '.xlsx';
+
+        return Excel::download(
+            new PoGrReportExport($exportData, $from, $to),
+            $filename
+        );
+    }
+
+    public function exportPdf(Request $request)
+    {
+        [$from, $to, $results] = $this->fetchExportRows($request);
+
+        if ($results->isEmpty()) {
+            return back()->with('error', 'Tidak ada data untuk diekspor. Silakan Load Data terlebih dahulu.');
+        }
+
+        $supplierName = null;
+        if ($request->supplier_id && $request->supplier_id !== '') {
+            $supplierName = DB::table('suppliers')->where('id', $request->supplier_id)->value('name');
+        }
+
+        $itemName = null;
+        if ($request->item_id && $request->item_id !== '') {
+            $itemName = DB::table('items')->where('id', $request->item_id)->value('name');
+        }
+
+        $summary = [
+            'total_items' => $results->count(),
+            'naik_harga' => $results->where('price_change', '>', 0)->count(),
+            'turun_harga' => $results->where('price_change', '<', 0)->count(),
+            'harga_stabil' => $results->filter(fn ($row) => (float) ($row->price_change ?? 0) == 0.0)->count(),
+        ];
+
+        $pdf = Pdf::loadView('exports.po_gr_report_pdf', [
+            'rows' => $results,
+            'summary' => $summary,
+            'filters' => [
+                'from' => $from,
+                'to' => $to,
+                'search' => $request->search ?: null,
+                'supplier_name' => $supplierName,
+                'item_name' => $itemName,
+                'has_price_change' => $request->hasPriceChange == 'true',
+                'price_increase' => $request->priceIncrease == 'true',
+                'price_decrease' => $request->priceDecrease == 'true',
+            ],
+            'generatedAt' => now()->format('d/m/Y H:i'),
+        ])->setPaper('a4', 'landscape');
+
+        $filename = 'po_gr_report_' . date('Y-m-d_H-i-s') . '.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    /**
+     * @return array{0: string|null, 1: string|null, 2: \Illuminate\Support\Collection}
+     */
+    private function fetchExportRows(Request $request): array
+    {
         $from = $request->from;
         $to = $request->to;
-        
-        if (!$from && !$to) {
-            // Default to current month (first day of current month to today)
+
+        if (! $from && ! $to) {
             $from = now()->startOfMonth()->format('Y-m-d');
             $to = now()->format('Y-m-d');
         }
@@ -205,7 +287,6 @@ class PurchaseOrderReportController extends Controller
                 'po_creator.nama_lengkap as po_creator_name'
             );
 
-        // Apply same filters as index
         if ($from) {
             $query->whereDate('gr.receive_date', '>=', $from);
         }
@@ -220,17 +301,16 @@ class PurchaseOrderReportController extends Controller
         }
         if ($request->search) {
             $search = $request->search;
-            $query->where(function($q) use ($search) {
+            $query->where(function ($q) use ($search) {
                 $q->where('po.number', 'like', "%$search%")
-                  ->orWhere('gr.gr_number', 'like', "%$search%")
-                  ->orWhere('s.name', 'like', "%$search%")
-                  ->orWhere('i.name', 'like', "%$search%");
+                    ->orWhere('gr.gr_number', 'like', "%$search%")
+                    ->orWhere('s.name', 'like', "%$search%")
+                    ->orWhere('i.name', 'like', "%$search%");
             });
         }
 
         $results = $query->orderBy('gr.receive_date', 'desc')->get();
 
-        // Add previous price information
         $results->transform(function ($item) {
             $previousPrice = DB::table('purchase_order_food_items as poi2')
                 ->join('purchase_order_foods as po2', 'poi2.purchase_order_food_id', '=', 'po2.id')
@@ -242,62 +322,29 @@ class PurchaseOrderReportController extends Controller
 
             $item->previous_price = $previousPrice;
             $item->price_change = $previousPrice ? $item->po_price - $previousPrice : 0;
-            $item->price_change_percentage = ($previousPrice !== null && $previousPrice != 0) ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2) : 0;
+            $item->price_change_percentage = ($previousPrice !== null && $previousPrice != 0)
+                ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2)
+                : 0;
 
             return $item;
         });
 
-        // Apply price change filters for export
         if ($request->hasPriceChange == 'true' || $request->priceIncrease == 'true' || $request->priceDecrease == 'true') {
             $results = $results->filter(function ($item) use ($request) {
-                // Filter for items with price change
                 if ($request->hasPriceChange == 'true' && $item->price_change == 0) {
                     return false;
                 }
-                
-                // Filter for price increase only
                 if ($request->priceIncrease == 'true' && $item->price_change <= 0) {
                     return false;
                 }
-                
-                // Filter for price decrease only
                 if ($request->priceDecrease == 'true' && $item->price_change >= 0) {
                     return false;
                 }
-                
+
                 return true;
-            });
+            })->values();
         }
 
-        // Prepare data for Excel export
-        $exportData = [];
-        foreach ($results as $row) {
-            $exportData[] = [
-                $row->gr_number ?? '-',
-                $row->receive_date ?? '-',
-                $row->po_number ?? '-',
-                $row->po_date ?? '-',
-                $row->supplier_name ?? '-',
-                $row->item_name ?? '-',
-                $row->category_name ?? '-',
-                $row->po_qty ?? 0,
-                $row->qty_received ?? 0,
-                $row->unit_name ?? '-',
-                $row->po_price ?? 0,
-                $row->previous_price ?? 0,
-                $row->price_change ?? 0,
-                $row->price_change_percentage ? $row->price_change_percentage . '%' : '-',
-                $row->po_creator_name ?? '-',
-                $row->received_by_name ?? '-'
-            ];
-        }
-
-        // Generate Excel file
-        $filename = 'po_gr_report_' . date('Y-m-d_H-i-s') . '.xlsx';
-        
-        return Excel::download(
-            new PoGrReportExport($exportData, $from, $to),
-            $filename
-        );
+        return [$from, $to, $results];
     }
 }

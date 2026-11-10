@@ -985,6 +985,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     // PO Report routes
     Route::get('/po-report', [\App\Http\Controllers\PurchaseOrderReportController::class, 'index'])->name('po-report.index');
     Route::get('/po-report/export', [\App\Http\Controllers\PurchaseOrderReportController::class, 'export'])->name('po-report.export');
+    Route::get('/po-report/export-pdf', [\App\Http\Controllers\PurchaseOrderReportController::class, 'exportPdf'])->name('po-report.export-pdf');
     
     // Debt Report
     Route::get('/debt-report', [\App\Http\Controllers\DebtReportController::class, 'index'])->name('debt-report.index');

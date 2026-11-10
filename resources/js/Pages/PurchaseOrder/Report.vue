@@ -25,9 +25,18 @@
                  <button 
                    @click="exportReport"
                    class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                   :disabled="loading"
+                   :disabled="loading || exporting"
                  >
-                   <i class="fas fa-download mr-2"></i> Export Excel
+                   <i class="fas fa-file-excel mr-2"></i> Export Excel
+                 </button>
+                 <button 
+                   @click="exportPdf"
+                   class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
+                   :disabled="loading || exporting"
+                 >
+                   <i v-if="exporting === 'pdf'" class="fas fa-spinner fa-spin mr-2"></i>
+                   <i v-else class="fas fa-file-pdf mr-2"></i>
+                   {{ exporting === 'pdf' ? 'Menyiapkan...' : 'Export PDF' }}
                  </button>
                </div>
              </div>
@@ -401,6 +410,7 @@ const filters = ref({
 });
 
 const loading = ref(false);
+const exporting = ref(null);
 
 // Watch for props changes to update filters
 watch(() => props.filters, (newFilters) => {
@@ -460,21 +470,29 @@ const clearFilters = () => {
   };
 };
 
+const buildExportParams = () => new URLSearchParams({
+  search: filters.value.search || '',
+  from: filters.value.from || '',
+  to: filters.value.to || '',
+  supplier_id: filters.value.supplier_id?.id || '',
+  item_id: filters.value.item_id?.id || '',
+  hasPriceChange: filters.value.hasPriceChange ? 'true' : 'false',
+  priceIncrease: filters.value.priceIncrease ? 'true' : 'false',
+  priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
+});
+
 const exportReport = () => {
-  if (loading.value) return;
-  
-  const params = new URLSearchParams({
-    search: filters.value.search || '',
-    from: filters.value.from || '',
-    to: filters.value.to || '',
-    supplier_id: filters.value.supplier_id?.id || '',
-    item_id: filters.value.item_id?.id || '',
-    hasPriceChange: filters.value.hasPriceChange ? 'true' : 'false',
-    priceIncrease: filters.value.priceIncrease ? 'true' : 'false',
-    priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
-  });
-  
-  window.open(`/po-report/export?${params.toString()}`, '_blank');
+  if (loading.value || exporting.value) return;
+  window.open(`/po-report/export?${buildExportParams().toString()}`, '_blank');
+};
+
+const exportPdf = () => {
+  if (loading.value || exporting.value) return;
+  exporting.value = 'pdf';
+  window.open(`/po-report/export-pdf?${buildExportParams().toString()}`, '_blank');
+  setTimeout(() => {
+    exporting.value = null;
+  }, 1500);
 };
 
 // Handle pagination clicks
