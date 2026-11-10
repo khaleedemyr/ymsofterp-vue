@@ -40,21 +40,30 @@
       <!-- Scorecards (mockup style) -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
         <div class="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
-          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3">Total Registered Members</div>
+          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3 inline-flex items-center justify-center gap-1.5 w-full">
+            Total Registered Members
+            <InfoTip :text="tips.registered" light />
+          </div>
           <div class="bg-[#dbe7f7] text-center py-6">
             <div class="text-3xl font-bold text-slate-800">{{ formatNumber(summary.total_registered_members) }}</div>
             <div class="text-xs text-slate-500 mt-1">member baru di periode</div>
           </div>
         </div>
         <div class="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
-          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3">Total Member Visits</div>
+          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3 inline-flex items-center justify-center gap-1.5 w-full">
+            Total Member Visits
+            <InfoTip :text="tips.memberVisits" light />
+          </div>
           <div class="bg-[#dbe7f7] text-center py-6">
             <div class="text-3xl font-bold text-slate-800">{{ formatNumber(summary.total_member_visits) }}</div>
             <div class="text-xs text-slate-500 mt-1">bill paid ber-member</div>
           </div>
         </div>
         <div class="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
-          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3">Total Member Sales</div>
+          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3 inline-flex items-center justify-center gap-1.5 w-full">
+            Total Member Sales
+            <InfoTip :text="tips.memberSales" light />
+          </div>
           <div class="bg-[#dbe7f7] text-center py-6">
             <div class="text-2xl font-bold text-slate-800">{{ summary.total_member_sales_formatted }}</div>
             <div class="text-xs text-slate-500 mt-1">total revenue dari member</div>
@@ -64,21 +73,30 @@
 
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div class="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
-          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3">Repeat Customers</div>
+          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3 inline-flex items-center justify-center gap-1.5 w-full">
+            Repeat Customers
+            <InfoTip :text="tips.repeatCustomers" light />
+          </div>
           <div class="bg-[#dbe7f7] text-center py-6">
             <div class="text-3xl font-bold text-slate-800">{{ formatNumber(summary.repeat_customers) }}</div>
             <div class="text-xs text-slate-500 mt-1">member visit ≥ 2× di periode</div>
           </div>
         </div>
         <div class="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
-          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3">Repeat Visit Ratio</div>
+          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3 inline-flex items-center justify-center gap-1.5 w-full">
+            Repeat Visit Ratio
+            <InfoTip :text="tips.repeatRatio" light />
+          </div>
           <div class="bg-[#dbe7f7] text-center py-6">
             <div class="text-3xl font-bold text-slate-800">{{ summary.repeat_visit_ratio }}%</div>
             <div class="text-xs text-slate-500 mt-1">Repeat Customer ÷ Total Member Visit</div>
           </div>
         </div>
         <div class="rounded-xl overflow-hidden border border-blue-200 shadow-sm">
-          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3">Member Visit Penetration</div>
+          <div class="bg-[#1e4b8f] text-white text-center text-sm font-semibold py-2 px-3 inline-flex items-center justify-center gap-1.5 w-full">
+            Member Visit Penetration
+            <InfoTip :text="tips.penetration" light />
+          </div>
           <div class="bg-[#dbe7f7] text-center py-6">
             <div class="text-3xl font-bold text-slate-800">{{ summary.member_visit_penetration }}%</div>
             <div class="text-xs text-slate-500 mt-1">Total Member Visit ÷ Check ({{ formatNumber(summary.total_checks) }})</div>
@@ -89,11 +107,17 @@
       <!-- Charts -->
       <div class="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-6">
         <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <h2 class="text-sm font-semibold text-[#1e4b8f] mb-3 text-center">Repeat Visit Ratio</h2>
+          <h2 class="text-sm font-semibold text-[#1e4b8f] mb-3 text-center inline-flex items-center justify-center gap-1.5 w-full">
+            Repeat Visit Ratio
+            <InfoTip :text="tips.chartRepeat" />
+          </h2>
           <VueApexCharts type="area" height="300" :options="repeatChartOptions" :series="repeatChartSeries" />
         </div>
         <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-4">
-          <h2 class="text-sm font-semibold text-[#1e4b8f] mb-3 text-center">Member Visit Penetration</h2>
+          <h2 class="text-sm font-semibold text-[#1e4b8f] mb-3 text-center inline-flex items-center justify-center gap-1.5 w-full">
+            Member Visit Penetration
+            <InfoTip :text="tips.chartPenetration" />
+          </h2>
           <VueApexCharts type="area" height="300" :options="penetrationChartOptions" :series="penetrationChartSeries" />
         </div>
       </div>
@@ -101,18 +125,35 @@
       <!-- Outlet breakdown -->
       <div class="bg-white rounded-xl shadow overflow-x-auto">
         <div class="px-4 py-3 border-b">
-          <h2 class="text-sm font-semibold text-gray-800">Breakdown per Outlet</h2>
+          <h2 class="text-sm font-semibold text-gray-800 inline-flex items-center gap-1.5">
+            Breakdown per Outlet
+            <InfoTip :text="tips.table" />
+          </h2>
         </div>
         <table class="min-w-full text-sm">
           <thead class="bg-slate-50 border-b">
             <tr>
-              <th class="px-3 py-2 text-left font-semibold text-gray-700">Outlet</th>
-              <th class="px-3 py-2 text-right font-semibold text-gray-700">Member Visits</th>
-              <th class="px-3 py-2 text-right font-semibold text-gray-700">Checks</th>
-              <th class="px-3 py-2 text-right font-semibold text-gray-700">Repeat Cust.</th>
-              <th class="px-3 py-2 text-right font-semibold text-gray-700">Repeat Ratio</th>
-              <th class="px-3 py-2 text-right font-semibold text-gray-700">Penetration</th>
-              <th class="px-3 py-2 text-right font-semibold text-gray-700">Member Sales</th>
+              <th class="px-3 py-2 text-left font-semibold text-gray-700">
+                <span class="inline-flex items-center gap-1">Outlet <InfoTip :text="tips.colOutlet" /></span>
+              </th>
+              <th class="px-3 py-2 text-right font-semibold text-gray-700">
+                <span class="inline-flex items-center justify-end gap-1">Member Visits <InfoTip :text="tips.memberVisits" /></span>
+              </th>
+              <th class="px-3 py-2 text-right font-semibold text-gray-700">
+                <span class="inline-flex items-center justify-end gap-1">Checks <InfoTip :text="tips.colChecks" /></span>
+              </th>
+              <th class="px-3 py-2 text-right font-semibold text-gray-700">
+                <span class="inline-flex items-center justify-end gap-1">Repeat Cust. <InfoTip :text="tips.repeatCustomers" /></span>
+              </th>
+              <th class="px-3 py-2 text-right font-semibold text-gray-700">
+                <span class="inline-flex items-center justify-end gap-1">Repeat Ratio <InfoTip :text="tips.repeatRatio" /></span>
+              </th>
+              <th class="px-3 py-2 text-right font-semibold text-gray-700">
+                <span class="inline-flex items-center justify-end gap-1">Penetration <InfoTip :text="tips.penetration" /></span>
+              </th>
+              <th class="px-3 py-2 text-right font-semibold text-gray-700">
+                <span class="inline-flex items-center justify-end gap-1">Member Sales <InfoTip :text="tips.memberSales" /></span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -141,8 +182,64 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { router } from '@inertiajs/vue3';
-import { computed, reactive } from 'vue';
+import { computed, defineComponent, h, reactive } from 'vue';
 import VueApexCharts from 'vue3-apexcharts';
+
+const InfoTip = defineComponent({
+  name: 'InfoTip',
+  props: {
+    text: { type: String, required: true },
+    light: { type: Boolean, default: false },
+  },
+  setup(props) {
+    return () =>
+      h(
+        'span',
+        { class: 'relative inline-flex group align-middle' },
+        [
+          h('i', {
+            class: props.light
+              ? 'fa-solid fa-circle-info text-[11px] text-blue-200 cursor-help group-hover:text-white'
+              : 'fa-solid fa-circle-info text-[11px] text-gray-400 cursor-help group-hover:text-sky-600',
+            'aria-label': 'info',
+          }),
+          h(
+            'span',
+            {
+              class:
+                'pointer-events-none absolute z-30 hidden group-hover:block w-64 sm:w-72 -right-1 top-5 rounded-lg bg-gray-900 text-white text-[11px] leading-relaxed px-3 py-2 shadow-lg whitespace-normal text-left font-normal normal-case',
+            },
+            props.text
+          ),
+        ]
+      );
+  },
+});
+
+const tips = {
+  registered:
+    'Sumber: member_apps_members. Perhitungan: COUNT(*) member dengan created_at di rentang filter tanggal (registrasi baru di periode). Tidak difilter outlet.',
+  memberVisits:
+    'Sumber: orders (db_justus) status=paid & member_id terisi. Perhitungan: COUNT(*) bill di periode & outlet filter. Satu bill = satu visit.',
+  memberSales:
+    'Sumber: orders.grand_total bill member paid. Perhitungan: SUM(grand_total) di periode & outlet filter. Total revenue dari kunjungan member.',
+  repeatCustomers:
+    'Sumber: orders member paid. Perhitungan: jumlah member unik (LOWER(member_id)) yang punya ≥2 bill/visit di periode & outlet filter.',
+  repeatRatio:
+    'Rumus: (Repeat Customers ÷ Total Member Visits) × 100. Mengukur seberapa besar porsi repeat customer terhadap total kunjungan member.',
+  penetration:
+    'Rumus: (Total Member Visits ÷ Total Checks) × 100. Checks = semua bill paid (member + non-member) di periode & outlet filter. Menunjukkan penetrasi kunjungan member di total transaksi.',
+  chartRepeat:
+    'Chart harian: untuk tiap tanggal, hitung unique member yang datang hari itu dan termasuk Repeat Customer di seluruh periode, lalu ÷ member visits hari itu × 100. Filter tanggal & outlet berlaku.',
+  chartPenetration:
+    'Chart harian: untuk tiap tanggal, (member visits hari itu ÷ semua checks/bill paid hari itu) × 100. Filter tanggal & outlet berlaku.',
+  table:
+    'Ringkasan metrik yang sama dengan scorecard, dipecah per outlet (orders.kode_outlet) sesuai filter tanggal.',
+  colOutlet:
+    'Nama outlet dari tbl_data_outlet (join orders.kode_outlet = qr_code). Ditampilkan per kode outlet yang punya transaksi di filter.',
+  colChecks:
+    'Sumber: semua orders status=paid (member + non-member) di outlet tersebut. Perhitungan: COUNT(*) bill di periode filter.',
+};
 
 const props = defineProps({
   summary: {
