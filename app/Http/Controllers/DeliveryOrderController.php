@@ -1682,13 +1682,14 @@ class DeliveryOrderController extends Controller
                 'i.name',
                 'doi.qty_scan',
                 'doi.unit',
+                'doi.serial_numbers',
                 'u.code as unit_code'
             )
             ->where('doi.delivery_order_id', $id)
             ->get();
 
-        // Harga sama dengan Report Invoice Outlet (tipe GR):
-        // food_floor_order_items.price by floor_order_id + item_id
+        // Harga default: food_floor_order_items (sama Report Invoice Outlet).
+        // Override: jika item mode auto + ada nomor seri → harga jual = cost serial + 12%.
         $foPricesByItem = collect();
         $floorOrderId = (int) ($order->floorOrderId ?? 0);
         if ($floorOrderId > 0 && $items->isNotEmpty()) {
@@ -1702,7 +1703,14 @@ class DeliveryOrderController extends Controller
             }
         }
 
-        $items = $items->map(function ($item) use ($foPricesByItem) {
+        $outletId = DB::table('food_floor_orders')->where('id', $floorOrderId)->value('id_outlet');
+        $outletId = $outletId !== null ? (string) $outletId : null;
+        $regionId = $outletId
+            ? (DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('region_id') ?: null)
+            : null;
+        $regionId = $regionId ? (int) $regionId : null;
+
+        $items = $items->map(function ($item) use ($foPricesByItem, $regionId, $outletId) {
             $unitPrice = 0.0;
             $rows = $foPricesByItem->get($item->item_id);
             if ($rows && $rows->isNotEmpty()) {
@@ -1715,10 +1723,19 @@ class DeliveryOrderController extends Controller
                 $unitPrice = (float) (($matched ?? $rows->first())->price ?? 0);
             }
 
+            $serialPrice = \App\Support\DoSerialSellPriceResolver::resolveFromDoItem(
+                $item,
+                $regionId,
+                $outletId
+            );
+            if ($serialPrice !== null && $serialPrice > 0) {
+                $unitPrice = $serialPrice;
+            }
+
             $qty = (float) ($item->qty_scan ?? 0);
             $item->unit_price = round($unitPrice, 2);
             $item->subtotal = round($qty * $unitPrice, 2);
-            unset($item->item_id);
+            unset($item->item_id, $item->serial_numbers);
 
             return $item;
         });

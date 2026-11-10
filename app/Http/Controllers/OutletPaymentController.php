@@ -1675,8 +1675,19 @@ class OutletPaymentController extends Controller
                 })
                 ->whereIn('gri.outlet_food_good_receive_id', $grIds)
                 ->whereNull('gr.deleted_at')
-                ->select('gri.outlet_food_good_receive_id as gr_id', 'i.name as item_name', 'gri.received_qty as qty', 'u.name as unit_name', DB::raw('COALESCE(ffoi.price, 0) as price'), DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal'))
+                ->select(
+                    'gri.outlet_food_good_receive_id as gr_id',
+                    'gri.item_id',
+                    'gr.delivery_order_id',
+                    'gr.outlet_id',
+                    'i.name as item_name',
+                    'gri.received_qty as qty',
+                    'u.name as unit_name',
+                    DB::raw('COALESCE(ffoi.price, 0) as price'),
+                    DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal')
+                )
                 ->get();
+            $grItemRows = $this->applySerialBasedPricesToInvoiceGrItems($grItemRows);
             foreach ($grItemRows as $row) {
                 $details[$this->invoiceReportDetailKey('GR', $row->gr_id)][] = $row;
             }
@@ -1911,6 +1922,9 @@ class OutletPaymentController extends Controller
                 ->whereIn('gri.outlet_food_good_receive_id', $grIds)
                 ->select(
                     'gri.outlet_food_good_receive_id as gr_id',
+                    'gri.item_id',
+                    'gr.delivery_order_id',
+                    'gr.outlet_id',
                     'i.name as item_name',
                     'gri.received_qty as qty',
                     'u.name as unit_name',
@@ -1918,6 +1932,7 @@ class OutletPaymentController extends Controller
                     DB::raw('(gri.received_qty * ffoi.price) as subtotal')
                 )
                 ->get();
+            $grItemRows = $this->applySerialBasedPricesToInvoiceGrItems($grItemRows);
             foreach ($grItemRows as $row) {
                 $details[$this->invoiceReportDetailKey('GR', $row->gr_id)][] = $row;
             }
@@ -2151,6 +2166,74 @@ class OutletPaymentController extends Controller
                 'created_by' => auth()->id() ?? 1,
             ]);
         }
+    }
+
+    /**
+     * Override harga detail GR invoice: jika item auto + DO punya nomor seri,
+     * pakai rata-rata cost serial + 12% (bukan FO last-purchase).
+     *
+     * @param  \Illuminate\Support\Collection<int, object>  $rows
+     * @return \Illuminate\Support\Collection<int, object>
+     */
+    protected function applySerialBasedPricesToInvoiceGrItems($rows)
+    {
+        if ($rows->isEmpty()) {
+            return $rows;
+        }
+
+        $doIds = $rows->pluck('delivery_order_id')->filter()->unique()->values()->all();
+        if ($doIds === []) {
+            return $rows;
+        }
+
+        $doItems = DB::table('delivery_order_items')
+            ->whereIn('delivery_order_id', $doIds)
+            ->get(['delivery_order_id', 'item_id', 'serial_numbers'])
+            ->groupBy(function ($row) {
+                return (int) $row->delivery_order_id . ':' . (int) $row->item_id;
+            });
+
+        $regionByOutlet = [];
+
+        return $rows->map(function ($row) use ($doItems, &$regionByOutlet) {
+            $doId = (int) ($row->delivery_order_id ?? 0);
+            $itemId = (int) ($row->item_id ?? 0);
+            if ($doId <= 0 || $itemId <= 0) {
+                return $row;
+            }
+
+            $key = $doId . ':' . $itemId;
+            $doItem = optional($doItems->get($key))->first();
+            if (! $doItem) {
+                return $row;
+            }
+
+            $outletId = isset($row->outlet_id) ? (string) $row->outlet_id : null;
+            $regionId = null;
+            if ($outletId) {
+                if (! array_key_exists($outletId, $regionByOutlet)) {
+                    $regionByOutlet[$outletId] = DB::table('tbl_data_outlet')
+                        ->where('id_outlet', $outletId)
+                        ->value('region_id');
+                }
+                $regionId = $regionByOutlet[$outletId] ? (int) $regionByOutlet[$outletId] : null;
+            }
+
+            $serialPrice = \App\Support\DoSerialSellPriceResolver::resolveFromDoItem(
+                $doItem,
+                $regionId,
+                $outletId
+            );
+            if ($serialPrice === null || $serialPrice <= 0) {
+                return $row;
+            }
+
+            $qty = (float) ($row->qty ?? 0);
+            $row->price = $serialPrice;
+            $row->subtotal = round($qty * $serialPrice, 2);
+
+            return $row;
+        });
     }
 
     protected function invoiceReportDetailKey(string $transactionType, $id, $warehouseDivisionId = null): string
