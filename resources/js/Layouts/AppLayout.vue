@@ -34,6 +34,7 @@ const crmMenusFromDb = computed(() => page.props.crmMenusFromDb ?? []);
 /** Urutan menu omnichannel di grup CRM (sama pola erp_menu + permission view) */
 const CRM_DB_MENU_ORDER = [
     'member_transaction_report',
+    'member_visit_frequency_report',
     'omnichannel_inbox',
     'omnichannel_chat_analytics',
     'social_performance',
@@ -723,6 +724,7 @@ const menuGroups = [
         menus: [
             { name: () => t('sidebar.menus.data_member'), icon: 'fa-solid fa-users', route: '/members', code: 'crm_members' },
             { name: () => t('sidebar.menus.member_transaction_report'), icon: 'fa-solid fa-receipt', route: '/crm/member-transaction-report', code: 'member_transaction_report' },
+            { name: () => t('sidebar.menus.member_visit_frequency_report'), icon: 'fa-solid fa-chart-simple', route: '/crm/member-visit-frequency-report', code: 'member_visit_frequency_report' },
             { name: () => t('sidebar.menus.guest_comment_ocr'), icon: 'fa-solid fa-comment-dots', route: '/guest-comment-forms', code: 'guest_comment_form' },
             { name: () => t('sidebar.menus.manual_cs_complaint'), icon: 'fa-solid fa-headset', route: '/manual-cs-complaints', code: 'manual_cs_complaint' },
             { name: () => t('sidebar.menus.manual_monthly_google_review'), icon: 'fa-brands fa-google', route: '/manual-monthly-google-review', code: 'manual_monthly_google_review' },

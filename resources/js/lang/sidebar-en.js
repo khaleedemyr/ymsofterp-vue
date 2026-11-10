@@ -312,6 +312,7 @@ export default {
     "announcement": "Announcement",
     "data_member": "Data Member",
     "member_transaction_report": "Member Transaction Report",
+    "member_visit_frequency_report": "Member Visit Frequency",
     "guest_comment_ocr": "Guest Comment (OCR)",
     "manual_cs_complaint": "Manual CS Complaint Input",
     "manual_monthly_google_review": "Manual Monthly Google Review",
