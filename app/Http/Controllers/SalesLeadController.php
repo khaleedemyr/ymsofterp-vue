@@ -23,6 +23,8 @@ class SalesLeadController extends Controller
         $status = trim((string) $request->get('status', ''));
         $outletId = $request->get('outlet_id');
         $result = trim((string) $request->get('result', ''));
+        $dateFrom = trim((string) $request->get('date_from', ''));
+        $dateTo = trim((string) $request->get('date_to', ''));
 
         $filtered = $this->visibleQuery()
             ->when($search !== '', function ($q) use ($search) {
@@ -36,6 +38,8 @@ class SalesLeadController extends Controller
             ->when($segment1 !== '', fn ($q) => $q->where('segment_1', $segment1))
             ->when($status !== '', fn ($q) => $q->where('status', $status))
             ->when($outletId, fn ($q) => $q->where('outlet_id', (int) $outletId))
+            ->when($dateFrom !== '', fn ($q) => $q->whereDate('event_date', '>=', $dateFrom))
+            ->when($dateTo !== '', fn ($q) => $q->whereDate('event_date', '<=', $dateTo))
             ->when($result === 'gt_15', function ($q) {
                 // Result pax: real_pax jika ada, else pax plan
                 $q->whereRaw('COALESCE(real_pax, pax) > 15');
@@ -70,6 +74,8 @@ class SalesLeadController extends Controller
                 'status' => $status,
                 'outlet_id' => $outletId ? (int) $outletId : '',
                 'result' => $result,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
             ],
             'totals' => [
                 'total_leads' => (int) ($totals->total_leads ?? 0),

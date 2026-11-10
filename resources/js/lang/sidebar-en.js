@@ -311,6 +311,7 @@ export default {
     "cctv_access_request": "CCTV Access Request",
     "announcement": "Announcement",
     "data_member": "Data Member",
+    "member_transaction_report": "Member Transaction Report",
     "guest_comment_ocr": "Guest Comment (OCR)",
     "manual_cs_complaint": "Manual CS Complaint Input",
     "manual_monthly_google_review": "Manual Monthly Google Review",

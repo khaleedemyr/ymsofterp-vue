@@ -30,7 +30,7 @@
       </div>
 
       <div class="bg-white rounded-xl shadow p-4 mb-4">
-        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <form @submit.prevent="applyFilters" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8 gap-3">
           <input
             v-model="filterForm.search"
             type="text"
@@ -50,11 +50,27 @@
             <option value="gt_15">Result &gt; 15 Pax</option>
             <option value="lt_15">Result &lt; 15 Pax</option>
           </select>
-          <div class="flex gap-2">
-            <select v-model="filterForm.outlet_id" class="flex-1 rounded-lg border-gray-300">
-              <option value="">Semua Outlet</option>
-              <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
-            </select>
+          <select v-model="filterForm.outlet_id" class="rounded-lg border-gray-300">
+            <option value="">Semua Outlet</option>
+            <option v-for="o in outlets" :key="o.id_outlet" :value="o.id_outlet">{{ o.nama_outlet }}</option>
+          </select>
+          <div>
+            <label class="mb-1 block text-xs text-gray-500">Event dari</label>
+            <input
+              v-model="filterForm.date_from"
+              type="date"
+              class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+            />
+          </div>
+          <div class="flex gap-2 items-end">
+            <div class="flex-1">
+              <label class="mb-1 block text-xs text-gray-500">Event sampai</label>
+              <input
+                v-model="filterForm.date_to"
+                type="date"
+                class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500"
+              />
+            </div>
             <button type="submit" class="px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700">Cari</button>
           </div>
         </form>
@@ -270,6 +286,8 @@ const filterForm = reactive({
   status: props.filters.status || '',
   outlet_id: props.filters.outlet_id || '',
   result: props.filters.result || '',
+  date_from: props.filters.date_from || '',
+  date_to: props.filters.date_to || '',
 });
 
 const actualForms = reactive({});

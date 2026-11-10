@@ -3228,6 +3228,13 @@ Route::middleware(['auth'])->group(function () {
     
     // Member Reports Routes
     Route::get('/crm/member-reports', [App\Http\Controllers\MemberReportsController::class, 'index'])->name('crm.member-reports');
+
+    // Member Transaction Report (point earn/redeem ledger)
+    Route::get('/crm/member-transaction-report', [App\Http\Controllers\MemberTransactionReportController::class, 'index'])
+        ->name('crm.member-transaction-report');
+    Route::get('/crm/member-transaction-report/{transactionId}/order-details', [App\Http\Controllers\MemberTransactionReportController::class, 'orderDetails'])
+        ->whereNumber('transactionId')
+        ->name('crm.member-transaction-report.order-details');
     
     // Point Management Routes
     Route::get('/crm/point-management', [App\Http\Controllers\PointManagementController::class, 'index'])->name('crm.point-management');

@@ -311,6 +311,7 @@ export default {
     "cctv_access_request": "Permintaan Akses CCTV",
     "announcement": "Pengumuman",
     "data_member": "Data Member",
+    "member_transaction_report": "Report Transaksi Member",
     "guest_comment_ocr": "Komentar Tamu (OCR)",
     "manual_cs_complaint": "Input Complaint CS",
     "manual_monthly_google_review": "Manual Monthly Google Review",
