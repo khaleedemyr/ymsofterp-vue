@@ -47,6 +47,227 @@ class MemberVisitFrequencyReportController extends Controller
     }
 
     /**
+     * Drill-down: members in a visit-frequency bucket + their visit transactions.
+     */
+    public function bucketMembers(Request $request)
+    {
+        $this->authorizeView($request);
+
+        $bucket = trim((string) $request->get('bucket', ''));
+        $range = $this->bucketVisitRange($bucket);
+        if (! $range) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Bucket frekuensi tidak valid.',
+            ], 422);
+        }
+
+        $filters = $this->normalizeFilters($request);
+        [$minVisits, $maxVisits] = $range;
+
+        $payload = $this->buildMemberDrilldown($filters, $minVisits, $maxVisits, $request);
+
+        return response()->json([
+            'status' => 'success',
+            'source' => 'bucket',
+            'bucket' => $bucket,
+            'label' => $this->bucketLabel($bucket),
+            ...$payload,
+        ]);
+    }
+
+    /**
+     * Drill-down: members + transactions for one outlet row.
+     */
+    public function outletMembers(Request $request)
+    {
+        $this->authorizeView($request);
+
+        $kodeOutlet = trim((string) $request->get('kode_outlet', ''));
+        if ($kodeOutlet === '') {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'kode_outlet wajib diisi.',
+            ], 422);
+        }
+
+        $filters = $this->normalizeFilters($request);
+        // Override outlet filter ke outlet yang diklik (abaikan filter outlet global).
+        $filters['outlet'] = $kodeOutlet;
+
+        $outletName = DB::table('tbl_data_outlet')
+            ->where('qr_code', $kodeOutlet)
+            ->value('nama_outlet');
+
+        $payload = $this->buildMemberDrilldown($filters, 1, null, $request);
+
+        return response()->json([
+            'status' => 'success',
+            'source' => 'outlet',
+            'kode_outlet' => $kodeOutlet,
+            'label' => $outletName ? (string) $outletName : $kodeOutlet,
+            ...$payload,
+        ]);
+    }
+
+    /**
+     * Shared member + visit list for bucket/outlet drill-down.
+     *
+     * @return array{members: \Illuminate\Support\Collection, total: int, limited: bool}
+     */
+    private function buildMemberDrilldown(array $filters, int $minVisits, ?int $maxVisits, Request $request): array
+    {
+        $search = trim((string) $request->get('search', ''));
+        $limit = min(500, max(1, (int) $request->get('limit', 200)));
+
+        $memberAgg = (clone $this->baseOrdersQuery($filters))
+            ->select([
+                DB::raw('LOWER(o.member_id) as member_key'),
+                DB::raw('MIN(o.member_id) as member_id_sample'),
+                DB::raw('COUNT(*) as visit_count'),
+                DB::raw('COALESCE(SUM(COALESCE(o.pax, 0)), 0) as total_pax'),
+                DB::raw('COALESCE(SUM(o.grand_total), 0) as revenue'),
+                DB::raw('MIN(o.created_at) as first_visit_at'),
+                DB::raw('MAX(o.created_at) as last_visit_at'),
+            ])
+            ->groupBy(DB::raw('LOWER(o.member_id)'))
+            ->havingRaw('COUNT(*) >= ?', [$minVisits])
+            ->when($maxVisits !== null, fn ($q) => $q->havingRaw('COUNT(*) <= ?', [$maxVisits]))
+            ->orderByDesc('visit_count')
+            ->orderBy('member_key')
+            ->limit($limit)
+            ->get();
+
+        if ($memberAgg->isEmpty()) {
+            return [
+                'members' => [],
+                'total' => 0,
+                'limited' => false,
+            ];
+        }
+
+        $memberKeys = $memberAgg->pluck('member_key')->all();
+        $memberSamples = $memberAgg->pluck('member_id_sample')->filter()->unique()->values()->all();
+
+        $profiles = DB::table('member_apps_members')
+            ->where(function ($q) use ($memberKeys, $memberSamples) {
+                $q->whereIn(DB::raw('LOWER(member_id)'), $memberKeys);
+                if ($memberSamples !== []) {
+                    $q->orWhereIn('member_id', $memberSamples);
+                }
+            })
+            ->get(['id', 'member_id', 'nama_lengkap', 'mobile_phone', 'email', 'just_points'])
+            ->keyBy(fn ($m) => strtolower((string) $m->member_id));
+
+        if ($search !== '') {
+            $needle = mb_strtolower($search);
+            $memberAgg = $memberAgg->filter(function ($row) use ($profiles, $needle) {
+                $key = strtolower((string) $row->member_key);
+                $profile = $profiles->get($key);
+                $hay = strtolower(implode(' ', [
+                    (string) ($row->member_id_sample ?? ''),
+                    (string) ($profile->nama_lengkap ?? ''),
+                    (string) ($profile->mobile_phone ?? ''),
+                    (string) ($profile->email ?? ''),
+                ]));
+
+                return str_contains($hay, $needle);
+            })->values();
+        }
+
+        $keysForVisits = $memberAgg->pluck('member_key')->all();
+        $visits = (clone $this->baseOrdersQuery($filters))
+            ->leftJoin('tbl_data_outlet as outlet', 'o.kode_outlet', '=', 'outlet.qr_code')
+            ->whereIn(DB::raw('LOWER(o.member_id)'), $keysForVisits)
+            ->select([
+                'o.id',
+                'o.member_id',
+                'o.paid_number',
+                'o.nomor',
+                'o.pax',
+                'o.grand_total',
+                'o.kode_outlet',
+                'o.created_at',
+                'outlet.nama_outlet',
+            ])
+            ->orderBy('o.created_at')
+            ->get()
+            ->groupBy(fn ($o) => strtolower((string) $o->member_id));
+
+        $members = $memberAgg->map(function ($row) use ($profiles, $visits) {
+            $key = strtolower((string) $row->member_key);
+            $profile = $profiles->get($key);
+            $memberVisits = ($visits->get($key) ?? collect())->map(function ($v) {
+                return [
+                    'order_id' => $v->id,
+                    'nomor' => $v->nomor,
+                    'paid_number' => $v->paid_number,
+                    'outlet_name' => $v->nama_outlet ?: ($v->kode_outlet ?: '-'),
+                    'kode_outlet' => $v->kode_outlet,
+                    'pax' => (int) ($v->pax ?? 0),
+                    'grand_total' => (float) ($v->grand_total ?? 0),
+                    'grand_total_formatted' => 'Rp '.number_format((float) ($v->grand_total ?? 0), 0, ',', '.'),
+                    'created_at' => $v->created_at
+                        ? Carbon::parse($v->created_at)->format('Y-m-d H:i')
+                        : null,
+                ];
+            })->values()->all();
+
+            return [
+                'member_id' => (string) ($profile->member_id ?? $row->member_id_sample ?? $row->member_key),
+                'member_name' => (string) ($profile->nama_lengkap ?? '-'),
+                'phone' => (string) ($profile->mobile_phone ?? ''),
+                'email' => (string) ($profile->email ?? ''),
+                'point_balance' => (int) ($profile->just_points ?? 0),
+                'visit_count' => (int) $row->visit_count,
+                'total_pax' => (int) $row->total_pax,
+                'revenue' => (float) $row->revenue,
+                'revenue_formatted' => 'Rp '.number_format((float) $row->revenue, 0, ',', '.'),
+                'first_visit_at' => $row->first_visit_at
+                    ? Carbon::parse($row->first_visit_at)->format('Y-m-d H:i')
+                    : null,
+                'last_visit_at' => $row->last_visit_at
+                    ? Carbon::parse($row->last_visit_at)->format('Y-m-d H:i')
+                    : null,
+                'visits' => $memberVisits,
+            ];
+        })->values();
+
+        return [
+            'members' => $members,
+            'total' => $members->count(),
+            'limited' => $members->count() >= $limit,
+        ];
+    }
+
+    /**
+     * @return array{0: int, 1: int|null}|null
+     */
+    private function bucketVisitRange(string $bucket): ?array
+    {
+        return match ($bucket) {
+            '1' => [1, 1],
+            '2' => [2, 2],
+            '3-5' => [3, 5],
+            '6-10' => [6, 10],
+            '11+' => [11, null],
+            default => null,
+        };
+    }
+
+    private function bucketLabel(string $bucket): string
+    {
+        return match ($bucket) {
+            '1' => '1 visit',
+            '2' => '2 visits',
+            '3-5' => '3–5 visits',
+            '6-10' => '6–10 visits',
+            '11+' => '11+ visits',
+            default => $bucket,
+        };
+    }
+
+    /**
      * @return array{
      *   date_from: string,
      *   date_to: string,
