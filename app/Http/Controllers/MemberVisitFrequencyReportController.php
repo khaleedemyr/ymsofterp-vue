@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Exports\MemberVisitFrequencyDetailExport;
 use App\Exports\MemberVisitFrequencyReportExport;
 use App\Services\RoleMenuService;
 use Carbon\Carbon;
@@ -44,6 +45,112 @@ class MemberVisitFrequencyReportController extends Controller
         $filename = 'member-visit-frequency_'.$from.'_'.$to.'_'.now()->format('Ymd_His').'.xlsx';
 
         return Excel::download(new MemberVisitFrequencyReportExport($rows), $filename);
+    }
+
+    /**
+     * Export Excel detail modal (bucket frekuensi atau outlet).
+     */
+    public function exportDetail(Request $request): BinaryFileResponse
+    {
+        $this->authorizeView($request);
+
+        $source = trim((string) $request->get('source', 'bucket'));
+        $filters = $this->normalizeFilters($request);
+        $label = 'Detail';
+        $minVisits = 1;
+        $maxVisits = null;
+
+        if ($source === 'outlet') {
+            $kodeOutlet = trim((string) $request->get('kode_outlet', ''));
+            if ($kodeOutlet === '') {
+                abort(422, 'kode_outlet wajib diisi.');
+            }
+            $filters['outlet'] = $kodeOutlet;
+            $outletName = DB::table('tbl_data_outlet')
+                ->where('qr_code', $kodeOutlet)
+                ->value('nama_outlet');
+            $label = $outletName ? (string) $outletName : $kodeOutlet;
+        } else {
+            $bucket = trim((string) $request->get('bucket', ''));
+            $range = $this->bucketVisitRange($bucket);
+            if (! $range) {
+                abort(422, 'Bucket frekuensi tidak valid.');
+            }
+            [$minVisits, $maxVisits] = $range;
+            $label = $this->bucketLabel($bucket);
+        }
+
+        // Export lebih lengkap dari modal (modal cap 200).
+        $request->merge(['limit' => min(5000, max(1, (int) $request->get('limit', 5000)))]);
+        $payload = $this->buildMemberDrilldown($filters, $minVisits, $maxVisits, $request);
+        $flatRows = $this->flattenMemberDrilldownForExport(collect($payload['members'] ?? []));
+
+        $from = $filters['date_from'] ?: 'all';
+        $to = $filters['date_to'] ?: 'all';
+        $safeLabel = preg_replace('/[^A-Za-z0-9_\-]+/', '_', $label) ?: 'detail';
+        $filename = 'member-visit-detail_'.$safeLabel.'_'.$from.'_'.$to.'_'.now()->format('Ymd_His').'.xlsx';
+
+        return Excel::download(
+            new MemberVisitFrequencyDetailExport($flatRows, 'Detail '.$label),
+            $filename
+        );
+    }
+
+    /**
+     * @param  Collection<int, array<string, mixed>>  $members
+     * @return Collection<int, array<string, mixed>>
+     */
+    private function flattenMemberDrilldownForExport(Collection $members): Collection
+    {
+        $rows = collect();
+
+        foreach ($members as $member) {
+            $visits = $member['visits'] ?? [];
+            if (! is_array($visits) || $visits === []) {
+                $rows->push([
+                    'member_id' => $member['member_id'] ?? '',
+                    'member_name' => $member['member_name'] ?? '',
+                    'phone' => $member['phone'] ?? '',
+                    'email' => $member['email'] ?? '',
+                    'visit_count' => $member['visit_count'] ?? 0,
+                    'total_pax' => $member['total_pax'] ?? 0,
+                    'revenue' => $member['revenue'] ?? 0,
+                    'first_visit_at' => $member['first_visit_at'] ?? '',
+                    'last_visit_at' => $member['last_visit_at'] ?? '',
+                    'visit_time' => '',
+                    'outlet_name' => '',
+                    'kode_outlet' => '',
+                    'paid_number' => '',
+                    'nomor' => '',
+                    'visit_pax' => 0,
+                    'visit_grand_total' => 0,
+                ]);
+                continue;
+            }
+
+            foreach ($visits as $visit) {
+                $rows->push([
+                    'member_id' => $member['member_id'] ?? '',
+                    'member_name' => $member['member_name'] ?? '',
+                    'phone' => $member['phone'] ?? '',
+                    'email' => $member['email'] ?? '',
+                    'visit_count' => $member['visit_count'] ?? 0,
+                    'total_pax' => $member['total_pax'] ?? 0,
+                    'revenue' => $member['revenue'] ?? 0,
+                    'first_visit_at' => $member['first_visit_at'] ?? '',
+                    'last_visit_at' => $member['last_visit_at'] ?? '',
+                    'visit_time' => $visit['created_at'] ?? '',
+                    'outlet_name' => $visit['outlet_name'] ?? '',
+                    'kode_outlet' => $visit['kode_outlet'] ?? '',
+                    'paid_number' => $visit['paid_number'] ?? '',
+                    'nomor' => $visit['nomor'] ?? '',
+                    'visit_pax' => $visit['pax'] ?? 0,
+                    'visit_grand_total' => $visit['grand_total'] ?? 0,
+                ]);
+            }
+        }
+
+        return $rows;
     }
 
     /**

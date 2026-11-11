@@ -3244,6 +3244,8 @@ Route::middleware(['auth'])->group(function () {
         ->name('crm.member-visit-frequency-report');
     Route::get('/crm/member-visit-frequency-report/export', [App\Http\Controllers\MemberVisitFrequencyReportController::class, 'export'])
         ->name('crm.member-visit-frequency-report.export');
+    Route::get('/crm/member-visit-frequency-report/export-detail', [App\Http\Controllers\MemberVisitFrequencyReportController::class, 'exportDetail'])
+        ->name('crm.member-visit-frequency-report.export-detail');
     Route::get('/crm/member-visit-frequency-report/bucket-members', [App\Http\Controllers\MemberVisitFrequencyReportController::class, 'bucketMembers'])
         ->name('crm.member-visit-frequency-report.bucket-members');
     Route::get('/crm/member-visit-frequency-report/outlet-members', [App\Http\Controllers\MemberVisitFrequencyReportController::class, 'outletMembers'])

@@ -200,9 +200,20 @@
                 <span v-if="bucketLimited"> (ditampilkan maks. 200)</span>
               </p>
             </div>
-            <button type="button" class="text-white/90 hover:text-white" @click="closeBucketDetail">
-              <i class="fa-solid fa-times text-xl"></i>
-            </button>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-600 disabled:opacity-60"
+                :disabled="loadingBucket || exportingDetail || !bucketMembers.length"
+                @click="exportDetailExcel"
+              >
+                <i :class="exportingDetail ? 'fa-solid fa-spinner fa-spin' : 'fa-solid fa-file-excel'"></i>
+                {{ exportingDetail ? 'Exporting...' : 'Export Excel' }}
+              </button>
+              <button type="button" class="text-white/90 hover:text-white" @click="closeBucketDetail">
+                <i class="fa-solid fa-times text-xl"></i>
+              </button>
+            </div>
           </div>
 
           <div class="p-4 border-b bg-slate-50">
@@ -368,10 +379,13 @@ const filterForm = reactive({
 });
 
 const exporting = ref(false);
+const exportingDetail = ref(false);
 const showBucketModal = ref(false);
 const loadingBucket = ref(false);
 const drilldownSource = ref('bucket');
 const activeBucketLabel = ref('');
+const activeBucketKey = ref('');
+const activeKodeOutlet = ref('');
 const bucketMembers = ref([]);
 const bucketLimited = ref(false);
 const bucketSearch = ref('');
@@ -413,6 +427,33 @@ const exportExcel = () => {
   }, 2000);
 };
 
+const exportDetailExcel = () => {
+  if (exportingDetail.value || loadingBucket.value || !bucketMembers.value.length) return;
+
+  exportingDetail.value = true;
+  const params = new URLSearchParams({
+    source: drilldownSource.value || 'bucket',
+    date_from: filterForm.date_from || '',
+    date_to: filterForm.date_to || '',
+  });
+
+  if (drilldownSource.value === 'outlet') {
+    params.append('kode_outlet', activeKodeOutlet.value || '');
+  } else {
+    params.append('bucket', activeBucketKey.value || '');
+    if (filterForm.outlet) params.append('outlet', filterForm.outlet);
+  }
+
+  if (bucketSearch.value.trim()) {
+    params.append('search', bucketSearch.value.trim());
+  }
+
+  window.location.href = `${route('crm.member-visit-frequency-report.export-detail')}?${params.toString()}`;
+  setTimeout(() => {
+    exportingDetail.value = false;
+  }, 2500);
+};
+
 const resetDrilldownState = (label) => {
   activeBucketLabel.value = label;
   showBucketModal.value = true;
@@ -425,6 +466,8 @@ const resetDrilldownState = (label) => {
 
 const openBucketDetail = async (bucket) => {
   drilldownSource.value = 'bucket';
+  activeBucketKey.value = bucket.key || '';
+  activeKodeOutlet.value = '';
   resetDrilldownState(bucket.label);
 
   try {
@@ -450,6 +493,8 @@ const openBucketDetail = async (bucket) => {
 
 const openOutletDetail = async (row) => {
   drilldownSource.value = 'outlet';
+  activeBucketKey.value = '';
+  activeKodeOutlet.value = row.kode_outlet || '';
   resetDrilldownState(row.outlet_name || row.kode_outlet);
 
   try {
