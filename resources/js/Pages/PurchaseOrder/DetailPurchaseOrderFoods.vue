@@ -2,16 +2,25 @@
   <AppLayout>
     <div class="py-12">
       <div class="max-w-7xl mx-auto sm:px-6 lg:px-8">
-        <div class="mb-4">
+        <div class="mb-4 flex flex-wrap items-center gap-2">
           <button @click="goBack" class="text-blue-500 hover:underline"><i class="fa fa-arrow-left"></i> Kembali</button>
           <button 
             @click="showPreview = true" 
-            class="ml-4 px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+            class="px-4 py-2 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
             :disabled="po.status !== 'approved'"
             :class="po.status !== 'approved' ? 'opacity-50 cursor-not-allowed' : ''"
             title="PO harus berstatus approved untuk preview"
           >
             <i class="fas fa-print mr-2"></i> Preview PO
+          </button>
+          <button
+            type="button"
+            class="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-60"
+            :disabled="exportingPdf"
+            @click="exportPdf"
+          >
+            <i :class="exportingPdf ? 'fas fa-spinner fa-spin mr-2' : 'fas fa-file-pdf mr-2'"></i>
+            {{ exportingPdf ? 'Menyiapkan...' : 'Export PDF' }}
           </button>
         </div>
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
@@ -235,6 +244,16 @@ const props = defineProps({
 
 const approvalNote = ref('')
 const showPreview = ref(false)
+const exportingPdf = ref(false)
+
+const exportPdf = () => {
+  if (exportingPdf.value) return
+  exportingPdf.value = true
+  window.open(route('po-foods.export-pdf', props.po.id), '_blank')
+  setTimeout(() => {
+    exportingPdf.value = false
+  }, 1500)
+}
 
 const isSuperadmin = computed(() =>
   props.user.id_role === '5af56935b011a' && props.user.status === 'A'

@@ -19,6 +19,7 @@ use Illuminate\Support\Facades\Schema;
 use Carbon\Carbon;
 use App\Models\ActivityLog;
 use Illuminate\Support\Facades\Auth;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PurchaseOrderFoodsController extends Controller
 {
@@ -1433,6 +1434,191 @@ class PurchaseOrderFoodsController extends Controller
         $po->printed_at = now();
         $po->save();
         return response()->json(['success' => true, 'printed_at' => $po->printed_at]);
+    }
+
+    public function exportPdf($id)
+    {
+        $po = PurchaseOrderFood::with([
+            'supplier',
+            'creator',
+            'items.item',
+            'items.unit',
+            'approvalFlows.approver',
+        ])->findOrFail($id);
+
+        $formatDate = static function ($value) {
+            if (! $value) {
+                return '-';
+            }
+            try {
+                return Carbon::parse($value)->format('d/m/Y');
+            } catch (\Throwable $e) {
+                return '-';
+            }
+        };
+        $formatDateTime = static function ($value) {
+            if (! $value) {
+                return '-';
+            }
+            try {
+                return Carbon::parse($value)->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i');
+            } catch (\Throwable $e) {
+                return '-';
+            }
+        };
+        $formatMoney = static function ($value) {
+            return 'Rp '.number_format((float) $value, 0, ',', '.');
+        };
+
+        $items = $po->items->map(function ($item) use ($formatMoney) {
+            $name = optional($item->item)->name;
+            if (! $name && $item->item_id) {
+                $name = optional(Item::find($item->item_id))->name;
+            }
+            $unitName = optional($item->unit)->name;
+            if (! $unitName && $item->unit_id) {
+                $unitName = optional(Unit::find($item->unit_id))->name;
+            }
+
+            return [
+                'name' => $name ?: '-',
+                'qty' => number_format((float) $item->quantity, 2, ',', '.'),
+                'unit' => $unitName ?: '-',
+                'price' => $formatMoney($item->price),
+                'total' => $formatMoney($item->total),
+            ];
+        })->values()->all();
+
+        $subtotal = (float) ($po->subtotal ?? $po->items->sum(fn ($i) => (float) $i->total));
+        $ppnEnabled = (bool) $po->ppn_enabled;
+        $ppnAmount = (float) ($po->ppn_amount ?? ($ppnEnabled ? $subtotal * 0.11 : 0));
+        $grandTotal = (float) ($po->grand_total ?? ($subtotal + $ppnAmount));
+
+        $roSupplier = null;
+        if ($po->source_type === 'ro_supplier' && $po->source_id) {
+            $ro = \App\Models\FoodFloorOrder::with(['outlet', 'warehouseOutlet', 'creator'])
+                ->find($po->source_id);
+            if ($ro) {
+                $roSupplier = [
+                    'ro_number' => $ro->order_number,
+                    'ro_date' => $formatDate($ro->tanggal),
+                    'outlet_name' => optional($ro->outlet)->nama_outlet ?: '-',
+                    'warehouse_outlet_name' => optional($ro->warehouseOutlet)->name ?: '-',
+                    'ro_creator' => optional($ro->creator)->nama_lengkap ?: '-',
+                ];
+            }
+        }
+
+        $prFoods = [];
+        $isFromPr = in_array($po->source_type, ['pr_foods', null, ''], true)
+            || $po->items->contains(fn ($item) => ! empty($item->pr_food_item_id));
+        if ($isFromPr && $po->source_type !== 'ro_supplier') {
+            $prIds = collect();
+            if ($po->source_type === 'pr_foods' && $po->source_id) {
+                $prIds->push((int) $po->source_id);
+            }
+            $prItemIds = $po->items->pluck('pr_food_item_id')->filter()->unique()->values();
+            if ($prItemIds->isNotEmpty()) {
+                $prIds = $prIds->merge(
+                    DB::table('pr_food_items')->whereIn('id', $prItemIds)->pluck('pr_food_id')
+                );
+            }
+            if (Schema::hasTable('purchase_order_food_purchase_request')) {
+                $prIds = $prIds->merge(
+                    DB::table('purchase_order_food_purchase_request')
+                        ->where('purchase_order_food_id', $po->id)
+                        ->pluck('purchase_requisition_food_id')
+                );
+            }
+            $prIds = $prIds->map(fn ($id) => (int) $id)->filter(fn ($id) => $id > 0)->unique()->values();
+            if ($prIds->isNotEmpty()) {
+                $prFoods = PurchaseRequisitionFood::with(['requester', 'warehouse'])
+                    ->whereIn('id', $prIds)
+                    ->orderByDesc('tanggal')
+                    ->get()
+                    ->map(function ($pr) use ($formatDate) {
+                        return [
+                            'pr_number' => (string) $pr->pr_number,
+                            'pr_date' => $formatDate($pr->tanggal),
+                            'pr_status' => (string) ($pr->status ?? '-'),
+                            'warehouse_name' => optional($pr->warehouse)->name ?: '-',
+                            'pr_creator' => optional($pr->requester)->nama_lengkap ?: '-',
+                        ];
+                    })->values()->all();
+            }
+        }
+
+        $grFoods = DB::table('food_good_receives as gr')
+            ->leftJoin('users as receiver', 'receiver.id', '=', 'gr.received_by')
+            ->where('gr.po_id', $po->id)
+            ->orderByDesc('gr.receive_date')
+            ->orderByDesc('gr.id')
+            ->get([
+                'gr.gr_number',
+                'gr.receive_date',
+                'receiver.nama_lengkap as received_by_name',
+            ])
+            ->map(function ($gr) use ($formatDate) {
+                return [
+                    'gr_number' => (string) ($gr->gr_number ?? '-'),
+                    'receive_date' => $formatDate($gr->receive_date),
+                    'received_by' => (string) ($gr->received_by_name ?? '-'),
+                ];
+            })->values()->all();
+
+        $approvals = collect($po->approvalFlows ?? [])
+            ->sortBy('approval_level')
+            ->map(function ($flow) use ($formatDateTime) {
+                $status = strtoupper((string) ($flow->status ?? 'PENDING'));
+                $time = '-';
+                if ($status === 'APPROVED') {
+                    $time = $formatDateTime($flow->approved_at);
+                } elseif ($status === 'REJECTED') {
+                    $time = $formatDateTime($flow->rejected_at);
+                }
+
+                return [
+                    'level' => $flow->approval_level,
+                    'approver' => optional($flow->approver)->nama_lengkap ?: (string) $flow->approver_id,
+                    'status' => $status,
+                    'time' => $time,
+                    'note' => (string) ($flow->comments ?: '-'),
+                ];
+            })->values()->all();
+
+        $logoPath = public_path('images/logojustusgroup.png');
+        $logoBase64 = (is_file($logoPath) && is_readable($logoPath))
+            ? base64_encode((string) file_get_contents($logoPath))
+            : '';
+
+        $pdf = Pdf::loadView('exports.po_food_detail_pdf', [
+            'po' => [
+                'number' => (string) $po->number,
+                'date' => $formatDate($po->date),
+                'status' => (string) $po->status,
+                'supplier_name' => optional($po->supplier)->name ?: '-',
+                'arrival_date' => $formatDate($po->arrival_date),
+                'creator_name' => optional($po->creator)->nama_lengkap ?: '-',
+                'notes' => $po->notes,
+            ],
+            'items' => $items,
+            'totals' => [
+                'subtotal' => $formatMoney($subtotal),
+                'ppn_enabled' => $ppnEnabled,
+                'ppn_amount' => $formatMoney($ppnAmount),
+                'grand_total' => $formatMoney($grandTotal),
+            ],
+            'ro_supplier' => $roSupplier,
+            'pr_foods' => $prFoods,
+            'gr_foods' => $grFoods,
+            'approvals' => $approvals,
+            'logo_base64' => $logoBase64,
+            'generated_at' => now()->timezone(config('app.timezone', 'Asia/Jakarta'))->format('d/m/Y H:i'),
+        ])->setPaper('a4', 'portrait');
+
+        $safeNumber = preg_replace('/[^A-Za-z0-9_\-]+/', '_', (string) $po->number) ?: ('po-'.$po->id);
+
+        return $pdf->download($safeNumber.'.pdf');
     }
 
     // Get PO yang pending GM Finance approval

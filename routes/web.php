@@ -973,6 +973,7 @@ Route::get('/test-approvers', [\App\Http\Controllers\PurchaseOrderOpsController:
     Route::get('/po-foods/create', [PurchaseOrderFoodsController::class, 'create'])->name('po-foods.create');
     Route::get('/po-foods/approvers', [PurchaseOrderFoodsController::class, 'getApprovers'])->name('po-foods.approvers');
     Route::get('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'show'])->name('po-foods.show');
+    Route::get('/po-foods/{id}/export-pdf', [PurchaseOrderFoodsController::class, 'exportPdf'])->name('po-foods.export-pdf');
     Route::get('/po-foods/{id}/edit', [PurchaseOrderFoodsController::class, 'edit'])->name('po-foods.edit');
     Route::put('/po-foods/{id}', [PurchaseOrderFoodsController::class, 'update'])->name('po-foods.update');
     Route::post('/po-foods/{id}/approve', [PurchaseOrderFoodsController::class, 'approvePurchasingManager'])->name('po-foods.approve');
