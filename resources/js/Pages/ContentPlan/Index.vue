@@ -99,10 +99,21 @@
                 <Link :href="route('content-plans.show', row.id)" class="text-violet-600 hover:text-violet-800 mr-3" title="Detail">
                   <i class="fa-solid fa-eye"></i>
                 </Link>
-                <Link :href="route('content-plans.edit', row.id)" class="text-indigo-600 hover:text-indigo-800 mr-3" title="Edit">
+                <Link
+                  v-if="row.can_edit"
+                  :href="route('content-plans.edit', row.id)"
+                  class="text-indigo-600 hover:text-indigo-800 mr-3"
+                  title="Edit"
+                >
                   <i class="fa-solid fa-pen"></i>
                 </Link>
-                <button type="button" class="text-red-600 hover:text-red-800" title="Hapus" @click="confirmDelete(row)">
+                <button
+                  v-if="row.can_delete"
+                  type="button"
+                  class="text-red-600 hover:text-red-800"
+                  title="Hapus"
+                  @click="confirmDelete(row)"
+                >
                   <i class="fa-solid fa-trash"></i>
                 </button>
               </td>

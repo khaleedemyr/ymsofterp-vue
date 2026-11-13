@@ -24,6 +24,8 @@ class ContentPlanController extends Controller
         $jobStatus = trim((string) $request->get('job_status', ''));
         $workflowStatus = trim((string) $request->get('workflow_status', ''));
 
+        $user = auth()->user();
+
         $records = $this->visibleQuery()
             ->with([
                 'brand:id,brand',
@@ -47,7 +49,13 @@ class ContentPlanController extends Controller
             ->when($workflowStatus !== '', fn ($q) => $q->where('workflow_status', $workflowStatus))
             ->orderByDesc('id')
             ->paginate(15)
-            ->withQueryString();
+            ->withQueryString()
+            ->through(function (ContentPlan $row) use ($user) {
+                $row->setAttribute('can_edit', $this->canEdit($row, $user));
+                $row->setAttribute('can_delete', $this->canDelete($row, $user));
+
+                return $row;
+            });
 
         return Inertia::render('ContentPlan/Index', [
             'records' => $records,
@@ -62,7 +70,6 @@ class ContentPlanController extends Controller
             'platforms' => ContentPlan::PLATFORMS,
             'jobStatuses' => ContentPlan::JOB_STATUSES,
             'workflowStatuses' => ContentPlan::WORKFLOW_STATUSES,
-            'canDelete' => true,
         ]);
     }
 
@@ -735,7 +742,7 @@ class ContentPlanController extends Controller
     private function visibleQuery()
     {
         // Semua user yang punya akses menu boleh melihat seluruh Content Plan.
-        // Batasan create/edit/delete tetap di canEdit / canDelete (creator + superadmin).
+        // Batasan edit: creator / PIC / superadmin; delete: creator / superadmin.
         return ContentPlan::query();
     }
 
@@ -811,12 +818,26 @@ class ContentPlanController extends Controller
             return true;
         }
 
-        return (int) $record->created_by === (int) $user->id;
+        // Creator atau PIC yang di-assign boleh edit.
+        if ((int) $record->created_by === (int) $user->id) {
+            return true;
+        }
+
+        return $record->pic_user_id
+            && (int) $record->pic_user_id === (int) $user->id;
     }
 
     private function canDelete(ContentPlan $record, $user): bool
     {
-        return $this->canEdit($record, $user);
+        if (! $user) {
+            return false;
+        }
+        if ($this->isSuperadmin($user)) {
+            return true;
+        }
+
+        // Hapus hanya creator (PIC boleh edit, bukan hapus).
+        return (int) $record->created_by === (int) $user->id;
     }
 
     private function resolveCurrentApprovalFlow(ContentPlan $plan, $user): ?ContentPlanApprovalFlow
