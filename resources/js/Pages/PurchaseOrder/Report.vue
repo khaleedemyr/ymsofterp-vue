@@ -5,8 +5,8 @@
         <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
           <div class="p-6 bg-white border-b border-gray-200">
                          <div class="flex justify-between items-center mb-6">
-               <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                 Report Item PO yang Sudah di-GR
+                 <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+                 Report PO GR
                </h2>
                <div class="flex items-center gap-2">
                  <div v-if="loading" class="flex items-center text-blue-600">
@@ -53,6 +53,8 @@
                          <li>Filter "Hanya item yang berubah harga" akan menampilkan item yang memiliki perubahan harga dari PO sebelumnya.</li>
                          <li>Filter "Hanya kenaikan harga" akan menampilkan item yang harganya naik dari PO sebelumnya.</li>
                          <li>Filter "Hanya penurunan harga" akan menampilkan item yang harganya turun dari PO sebelumnya.</li>
+                         <li>Kolom Status Bayar: apakah GR sudah dibayar finance (via Contra Bon → Food Payment).</li>
+                         <li>Opsi "Tampilkan PO belum GR" menampilkan item PO yang belum pernah di-GR.</li>
                        </ul>
                      </div>
                    </div>
@@ -107,7 +109,7 @@
                 </div>
               </div>
 
-                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
                  <!-- Supplier Filter -->
                  <div>
                    <label class="block text-sm font-medium text-gray-700 mb-1">Supplier</label>
@@ -184,6 +186,34 @@
                      </label>
                    </div>
                  </div>
+
+                 <!-- Payment Status Filter -->
+                 <div>
+                   <label class="block text-sm font-medium text-gray-700 mb-1">Status Bayar Finance</label>
+                   <select
+                     v-model="filters.payment_status"
+                     class="w-full rounded-md border-gray-300 shadow-sm focus:border-blue-300 focus:ring focus:ring-blue-200 focus:ring-opacity-50"
+                     :disabled="loading"
+                   >
+                     <option value="">Semua</option>
+                     <option value="paid">Sudah Dibayar</option>
+                     <option value="unpaid">Belum Dibayar</option>
+                   </select>
+                 </div>
+
+                 <!-- Include Ungr -->
+                 <div>
+                   <label class="block text-sm font-medium text-gray-700 mb-1">PO Belum GR</label>
+                   <label class="flex items-center mt-2">
+                     <input
+                       type="checkbox"
+                       v-model="filters.include_ungr"
+                       class="rounded border-gray-300 text-amber-600 shadow-sm focus:border-amber-300 focus:ring focus:ring-amber-200 focus:ring-opacity-50"
+                       :disabled="loading"
+                     />
+                     <span class="ml-2 text-sm text-gray-700">Tampilkan PO yang belum di-GR</span>
+                   </label>
+                 </div>
                </div>
 
                              <!-- Action Buttons -->
@@ -209,7 +239,7 @@
             </div>
 
                          <!-- Statistics -->
-             <div v-if="(reports?.data || []).length > 0" class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+             <div v-if="(reports?.data || []).length > 0" class="mb-6 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                <div class="bg-blue-50 p-4 rounded-lg border border-blue-200">
                  <div class="flex items-center">
                    <i class="fas fa-chart-line text-blue-600 text-xl mr-3"></i>
@@ -246,6 +276,24 @@
                    </div>
                  </div>
                </div>
+               <div class="bg-amber-50 p-4 rounded-lg border border-amber-200">
+                 <div class="flex items-center">
+                   <i class="fas fa-clock text-amber-600 text-xl mr-3"></i>
+                   <div>
+                     <p class="text-sm text-amber-600 font-medium">Belum GR</p>
+                     <p class="text-lg font-bold text-amber-800">{{ getUngrCount() }}</p>
+                   </div>
+                 </div>
+               </div>
+               <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-200">
+                 <div class="flex items-center">
+                   <i class="fas fa-check-circle text-emerald-600 text-xl mr-3"></i>
+                   <div>
+                     <p class="text-sm text-emerald-600 font-medium">Sudah Bayar</p>
+                     <p class="text-lg font-bold text-emerald-800">{{ getPaidCount() }}</p>
+                   </div>
+                 </div>
+               </div>
              </div>
 
              <!-- Table -->
@@ -274,13 +322,24 @@
                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO Price</th>
                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Previous Price</th>
                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Price Change</th>
+                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status Bayar</th>
+                     <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">No. Payment</th>
                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">PO Creator</th>
                      <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Received By</th>
                    </tr>
                  </thead>
                  <tbody class="bg-white divide-y divide-gray-200">
-                   <tr v-for="(report, index) in (reports?.data || [])" :key="report.gr_id || index" class="hover:bg-gray-50">
-                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ report.gr_number || '-' }}</td>
+                   <tr
+                     v-for="(report, index) in (reports?.data || [])"
+                     :key="(report.gr_id || report.po_item_id || index) + '-' + (report.row_type || 'gr')"
+                     :class="report.row_type === 'ungr' ? 'bg-amber-50 hover:bg-amber-100' : 'hover:bg-gray-50'"
+                   >
+                     <td class="px-6 py-4 whitespace-nowrap text-sm">
+                       <span v-if="report.row_type === 'ungr'" class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800">
+                         Belum GR
+                       </span>
+                       <span v-else class="text-gray-900">{{ report.gr_number || '-' }}</span>
+                     </td>
                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ formatDate(report.receive_date) }}</td>
                      <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 hover:text-blue-800">
                        <a v-if="report.po_id" :href="`/po-foods/${report.po_id}`" class="underline">{{ report.po_number || '-' }}</a>
@@ -304,6 +363,31 @@
                          <span class="text-xs">({{ report.price_change_percentage || 0 }}%)</span>
                        </span>
                        <span v-else class="text-gray-500">-</span>
+                     </td>
+                     <td class="px-6 py-4 whitespace-nowrap text-sm">
+                       <span
+                         v-if="report.row_type === 'ungr'"
+                         class="text-gray-400"
+                       >-</span>
+                       <span
+                         v-else-if="report.payment_status === 'paid' || report.is_paid"
+                         class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800"
+                       >{{ report.payment_status_label || 'Sudah Dibayar' }}</span>
+                       <span
+                         v-else-if="report.payment_status === 'in_process'"
+                         class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800"
+                       >{{ report.payment_status_label || 'Sudah Contra Bon' }}</span>
+                       <span
+                         v-else
+                         class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800"
+                       >{{ report.payment_status_label || 'Belum Dibayar' }}</span>
+                     </td>
+                     <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                       <template v-if="report.payment_number">
+                         <div>{{ report.payment_number }}</div>
+                         <div v-if="report.contra_bon_number" class="text-xs text-gray-500">{{ report.contra_bon_number }}</div>
+                       </template>
+                       <span v-else class="text-gray-400">-</span>
                      </td>
                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ report.po_creator_name || '-' }}</td>
                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{{ report.received_by_name || '-' }}</td>
@@ -406,7 +490,9 @@ const filters = ref({
   perPage: props.filters?.perPage || 15,
   hasPriceChange: props.filters?.hasPriceChange === 'true' || props.filters?.hasPriceChange === true || false,
   priceIncrease: props.filters?.priceIncrease === 'true' || props.filters?.priceIncrease === true || false,
-  priceDecrease: props.filters?.priceDecrease === 'true' || props.filters?.priceDecrease === true || false
+  priceDecrease: props.filters?.priceDecrease === 'true' || props.filters?.priceDecrease === true || false,
+  payment_status: props.filters?.payment_status || '',
+  include_ungr: props.filters?.include_ungr !== 'false' && props.filters?.include_ungr !== false,
 });
 
 const loading = ref(false);
@@ -424,7 +510,9 @@ watch(() => props.filters, (newFilters) => {
       perPage: newFilters.perPage || 15,
       hasPriceChange: newFilters.hasPriceChange === 'true' || newFilters.hasPriceChange === true,
       priceIncrease: newFilters.priceIncrease === 'true' || newFilters.priceIncrease === true,
-      priceDecrease: newFilters.priceDecrease === 'true' || newFilters.priceDecrease === true
+      priceDecrease: newFilters.priceDecrease === 'true' || newFilters.priceDecrease === true,
+      payment_status: newFilters.payment_status || '',
+      include_ungr: newFilters.include_ungr !== 'false' && newFilters.include_ungr !== false,
     };
   }
 }, { deep: true, immediate: true });
@@ -441,7 +529,9 @@ const loadData = () => {
     perPage: filters.value.perPage || 15,
     hasPriceChange: filters.value.hasPriceChange ? 'true' : 'false',
     priceIncrease: filters.value.priceIncrease ? 'true' : 'false',
-    priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
+    priceDecrease: filters.value.priceDecrease ? 'true' : 'false',
+    payment_status: filters.value.payment_status || '',
+    include_ungr: filters.value.include_ungr ? 'true' : 'false',
   };
   
   
@@ -459,14 +549,16 @@ const loadData = () => {
 const clearFilters = () => {
   filters.value = {
     search: '',
-    from: '',
-    to: '',
+    from: defaultDates.from,
+    to: defaultDates.to,
     supplier_id: null,
     item_id: null,
     perPage: 15,
     hasPriceChange: false,
     priceIncrease: false,
-    priceDecrease: false
+    priceDecrease: false,
+    payment_status: '',
+    include_ungr: true,
   };
 };
 
@@ -478,7 +570,9 @@ const buildExportParams = () => new URLSearchParams({
   item_id: filters.value.item_id?.id || '',
   hasPriceChange: filters.value.hasPriceChange ? 'true' : 'false',
   priceIncrease: filters.value.priceIncrease ? 'true' : 'false',
-  priceDecrease: filters.value.priceDecrease ? 'true' : 'false'
+  priceDecrease: filters.value.priceDecrease ? 'true' : 'false',
+  payment_status: filters.value.payment_status || '',
+  include_ungr: filters.value.include_ungr ? 'true' : 'false',
 });
 
 const exportReport = () => {
@@ -547,6 +641,16 @@ const getPriceDecreaseCount = () => {
 const getStablePriceCount = () => {
   if (!props.reports?.data) return 0;
   return props.reports.data.filter(item => item.price_change === 0 || item.price_change === null).length;
+};
+
+const getUngrCount = () => {
+  if (!props.reports?.data) return 0;
+  return props.reports.data.filter(item => item.row_type === 'ungr').length;
+};
+
+const getPaidCount = () => {
+  if (!props.reports?.data) return 0;
+  return props.reports.data.filter(item => item.payment_status === 'paid' || item.is_paid).length;
 };
 
 // Auto-load data on mount if no data or no date filters set

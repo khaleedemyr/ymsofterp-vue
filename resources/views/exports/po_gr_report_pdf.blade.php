@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Report Item PO yang Sudah di-GR</title>
+    <title>Report PO GR</title>
     <style>
         @page { margin: 8mm; }
         body {
@@ -46,7 +46,7 @@
             margin-bottom: 10px;
         }
         .summary td {
-            width: 25%;
+            width: 16.66%;
             border: 1px solid #dbeafe;
             background: #eff6ff;
             padding: 5px 7px;
@@ -63,6 +63,7 @@
         .summary .up { color: #dc2626; }
         .summary .down { color: #16a34a; }
         .summary .stable { color: #4b5563; }
+        .summary .warn { color: #d97706; }
         table.items {
             width: 100%;
             border-collapse: collapse;
@@ -70,7 +71,7 @@
         table.items th {
             background: #2563eb;
             color: #fff;
-            font-size: 6.5pt;
+            font-size: 6pt;
             padding: 3px 2px;
             text-align: left;
             border: 1px solid #1d4ed8;
@@ -78,16 +79,21 @@
         table.items td {
             border: 1px solid #e5e7eb;
             padding: 2px;
-            font-size: 6.5pt;
+            font-size: 6pt;
             vertical-align: top;
         }
         table.items tr:nth-child(even) td {
             background: #f9fafb;
         }
+        table.items tr.ungr td {
+            background: #fef3c7;
+        }
         .right { text-align: right; }
         .center { text-align: center; }
         .neg { color: #dc2626; }
         .pos { color: #16a34a; }
+        .paid { color: #16a34a; font-weight: bold; }
+        .unpaid { color: #dc2626; }
         .footer {
             margin-top: 10px;
             color: #9ca3af;
@@ -98,7 +104,7 @@
 </head>
 <body>
     <div class="header">
-        <h1>Report Item PO yang Sudah di-GR</h1>
+        <h1>Report PO GR</h1>
         <div class="sub">Generated at {{ $generatedAt }}</div>
     </div>
 
@@ -125,7 +131,7 @@
         </tr>
         <tr>
             <td class="label">Filter Harga</td>
-            <td colspan="3">
+            <td>
                 @php
                     $priceFilters = [];
                     if (!empty($filters['has_price_change'])) $priceFilters[] = 'Berubah harga';
@@ -133,6 +139,19 @@
                     if (!empty($filters['price_decrease'])) $priceFilters[] = 'Penurunan harga';
                 @endphp
                 {{ count($priceFilters) ? implode(', ', $priceFilters) : 'Semua' }}
+            </td>
+            <td class="label">Status Bayar</td>
+            <td>
+                @if(($filters['payment_status'] ?? '') === 'paid')
+                    Sudah Dibayar
+                @elseif(($filters['payment_status'] ?? '') === 'unpaid')
+                    Belum Dibayar
+                @else
+                    Semua
+                @endif
+                @if(!empty($filters['include_ungr']))
+                    · Termasuk PO belum GR
+                @endif
             </td>
         </tr>
     </table>
@@ -155,6 +174,14 @@
                 <div class="title">Harga Stabil</div>
                 <div class="value stable">{{ number_format($summary['harga_stabil'] ?? 0, 0, ',', '.') }}</div>
             </td>
+            <td>
+                <div class="title">Belum GR</div>
+                <div class="value warn">{{ number_format($summary['belum_gr'] ?? 0, 0, ',', '.') }}</div>
+            </td>
+            <td>
+                <div class="title">Sudah Bayar</div>
+                <div class="value down">{{ number_format($summary['sudah_bayar'] ?? 0, 0, ',', '.') }}</div>
+            </td>
         </tr>
     </table>
 
@@ -162,21 +189,23 @@
         <thead>
             <tr>
                 <th style="width: 2%;">No</th>
-                <th style="width: 8%;">GR Number</th>
+                <th style="width: 7%;">GR Number</th>
                 <th style="width: 5%;">Receive</th>
                 <th style="width: 7%;">PO Number</th>
                 <th style="width: 5%;">PO Date</th>
-                <th style="width: 10%;">Supplier</th>
-                <th style="width: 10%;">Item</th>
-                <th style="width: 6%;">Category</th>
+                <th style="width: 9%;">Supplier</th>
+                <th style="width: 9%;">Item</th>
+                <th style="width: 5%;">Category</th>
                 <th style="width: 4%;" class="right">Qty PO</th>
                 <th style="width: 4%;" class="right">Qty Rec</th>
                 <th style="width: 4%;">Unit</th>
-                <th style="width: 6%;" class="right">PO Price</th>
-                <th style="width: 6%;" class="right">Prev Price</th>
-                <th style="width: 6%;" class="right">Change</th>
-                <th style="width: 8%;">PO Creator</th>
-                <th style="width: 8%;">Received By</th>
+                <th style="width: 5%;" class="right">PO Price</th>
+                <th style="width: 5%;" class="right">Prev</th>
+                <th style="width: 5%;" class="right">Change</th>
+                <th style="width: 6%;">Status Bayar</th>
+                <th style="width: 6%;">Payment</th>
+                <th style="width: 6%;">PO Creator</th>
+                <th style="width: 6%;">Received By</th>
             </tr>
         </thead>
         <tbody>
@@ -185,10 +214,12 @@
                     $change = (float) ($row->price_change ?? 0);
                     $changeClass = $change > 0 ? 'pos' : ($change < 0 ? 'neg' : '');
                     $changePct = $row->price_change_percentage ?? 0;
+                    $isUngr = ($row->row_type ?? '') === 'ungr';
+                    $payClass = ($row->payment_status ?? '') === 'paid' ? 'paid' : 'unpaid';
                 @endphp
-                <tr>
+                <tr class="{{ $isUngr ? 'ungr' : '' }}">
                     <td class="center">{{ $index + 1 }}</td>
-                    <td>{{ $row->gr_number ?? '-' }}</td>
+                    <td>{{ $isUngr ? 'Belum GR' : ($row->gr_number ?? '-') }}</td>
                     <td>{{ $row->receive_date ? \Carbon\Carbon::parse($row->receive_date)->format('d/m/Y') : '-' }}</td>
                     <td>{{ $row->po_number ?? '-' }}</td>
                     <td>{{ $row->po_date ? \Carbon\Carbon::parse($row->po_date)->format('d/m/Y') : '-' }}</td>
@@ -210,12 +241,27 @@
                             @endif
                         @endif
                     </td>
+                    <td class="{{ $isUngr ? '' : $payClass }}">
+                        {{ $isUngr ? '-' : ($row->payment_status_label ?? '-') }}
+                    </td>
+                    <td>
+                        @if(!empty($row->payment_number))
+                            {{ $row->payment_number }}
+                            @if(!empty($row->contra_bon_number))
+                                <br>{{ $row->contra_bon_number }}
+                            @endif
+                        @elseif(!empty($row->contra_bon_number))
+                            {{ $row->contra_bon_number }}
+                        @else
+                            -
+                        @endif
+                    </td>
                     <td>{{ $row->po_creator_name ?? '-' }}</td>
                     <td>{{ $row->received_by_name ?? '-' }}</td>
                 </tr>
             @empty
                 <tr>
-                    <td colspan="16" class="center">Tidak ada data untuk diekspor.</td>
+                    <td colspan="18" class="center">Tidak ada data untuk diekspor.</td>
                 </tr>
             @endforelse
         </tbody>

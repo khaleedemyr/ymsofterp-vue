@@ -47,8 +47,11 @@ class PoGrReportExport implements FromArray, WithHeadings, WithStyles, WithColum
             'Previous Price',
             'Price Change',
             'Price Change %',
+            'Status Bayar Finance',
+            'No. Payment',
+            'No. Contra Bon',
             'PO Creator',
-            'Received By'
+            'Received By',
         ];
     }
 
@@ -74,15 +77,18 @@ class PoGrReportExport implements FromArray, WithHeadings, WithStyles, WithColum
             'L' => 15, // Previous Price
             'M' => 15, // Price Change
             'N' => 15, // Price Change %
-            'O' => 20, // PO Creator
-            'P' => 20, // Received By
+            'O' => 18, // Status Bayar
+            'P' => 18, // Payment No
+            'Q' => 18, // Contra Bon No
+            'R' => 20, // PO Creator
+            'S' => 20, // Received By
         ];
     }
 
     public function styles(Worksheet $sheet)
     {
         $lastRow = count($this->data) + 2; // +2 for header and title
-        $lastColumn = 'P';
+        $lastColumn = 'S';
 
         // Title row
         $sheet->insertNewRowBefore(1, 2);
@@ -178,6 +184,19 @@ class PoGrReportExport implements FromArray, WithHeadings, WithStyles, WithColum
                     'horizontal' => Alignment::HORIZONTAL_LEFT,
                 ],
             ]);
+
+            // Highlight "Belum GR" rows lightly
+            for ($r = $dataStartRow; $r <= $dataEndRow; $r++) {
+                $grVal = (string) $sheet->getCell('A'.$r)->getValue();
+                if ($grVal === 'Belum GR') {
+                    $sheet->getStyle('A'.$r.':'.$lastColumn.$r)->applyFromArray([
+                        'fill' => [
+                            'fillType' => Fill::FILL_SOLID,
+                            'startColor' => ['rgb' => 'FEF3C7'],
+                        ],
+                    ]);
+                }
+            }
         }
 
         return $sheet;

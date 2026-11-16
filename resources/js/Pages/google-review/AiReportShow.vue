@@ -12,11 +12,13 @@
           </div>
           <div class="actions">
             <Link href="/google-review/ai/reports" class="btn-sec">← Daftar laporan</Link>
-            <a
-              v-if="report.status === 'completed'"
-              :href="`/google-review/ai/reports/${report.id}/export`"
+            <button
+              v-if="(live.status || report.status) === 'completed'"
+              type="button"
               class="btn-prim"
-            >Download Excel</a>
+              :disabled="exportingExcel"
+              @click="downloadExcel"
+            >{{ exportingExcel ? 'Menyiapkan…' : 'Download Excel' }}</button>
           </div>
         </div>
 
@@ -261,6 +263,7 @@ const props = defineProps({
 
 const severity = ref(props.filters.severity || '')
 const polling = ref(false)
+const exportingExcel = ref(false)
 const savingId = ref(null)
 const editItem = ref(null)
 const editError = ref('')
@@ -271,6 +274,66 @@ const editForm = ref({
   impact: [],
   summary_id: '',
 })
+
+async function downloadExcel() {
+  if (exportingExcel.value) return
+  exportingExcel.value = true
+  try {
+    const res = await fetch(`/google-review/ai/reports/${props.report.id}/export`, {
+      method: 'GET',
+      credentials: 'same-origin',
+      headers: {
+        Accept: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/octet-stream,*/*',
+        'X-Requested-With': 'XMLHttpRequest',
+      },
+    })
+
+    const contentType = (res.headers.get('content-type') || '').toLowerCase()
+    if (!res.ok) {
+      let message = `Gagal download Excel (HTTP ${res.status}).`
+      if (contentType.includes('application/json')) {
+        const body = await res.json().catch(() => ({}))
+        if (body?.message) message = body.message
+      }
+      throw new Error(message)
+    }
+
+    // Kalau server mengembalikan HTML (login/error page), jangan simpan sebagai xlsx.
+    if (contentType.includes('text/html') || contentType.includes('application/json')) {
+      throw new Error('Server tidak mengirim file Excel. Coba refresh lalu download lagi.')
+    }
+
+    const blob = await res.blob()
+    if (!blob || blob.size < 32) {
+      throw new Error('File Excel kosong / gagal digenerate.')
+    }
+
+    const disposition = res.headers.get('content-disposition') || ''
+    const match = disposition.match(/filename\*?=(?:UTF-8''|")?([^\";]+)/i)
+    const filename = match
+      ? decodeURIComponent(match[1].replace(/"/g, ''))
+      : `google-review-ai-${props.report.id}.xlsx`
+
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = filename
+    document.body.appendChild(a)
+    a.click()
+    a.remove()
+    URL.revokeObjectURL(url)
+  } catch (e) {
+    const Swal = window.Swal
+    const message = e?.message || 'Gagal download Excel.'
+    if (Swal) {
+      await Swal.fire({ icon: 'error', title: 'Download gagal', text: message })
+    } else {
+      alert(message)
+    }
+  } finally {
+    exportingExcel.value = false
+  }
+}
 
 const topicOptions = [
   { id: 'food_quality', label: 'Food quality' },

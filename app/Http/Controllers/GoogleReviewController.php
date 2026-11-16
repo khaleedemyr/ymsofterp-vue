@@ -12,6 +12,7 @@ use App\Services\GoogleReviewDeduper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -1852,31 +1853,74 @@ class GoogleReviewController extends Controller
             abort(404, 'Laporan belum selesai atau tidak ada.');
         }
 
-        $rows = DB::table('google_review_ai_items')
-            ->where('report_id', $id)
-            ->orderBy('sort_order')
-            ->get();
-
-        if ($report->source === 'manual_db') {
-            $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
-            $idMap = [];
-            if ($hasSourceItemId) {
-                $sourceIds = $rows->pluck('source_item_id')
-                    ->filter(fn ($v) => is_numeric($v) && (int) $v > 0)
-                    ->map(fn ($v) => (int) $v)
-                    ->unique()
-                    ->values()
-                    ->all();
-                if ($sourceIds !== []) {
-                    $idMap = DB::table('google_review_manual_reviews')
-                        ->select('id', 'nama_outlet')
-                        ->whereIn('id', $sourceIds)
-                        ->get()
-                        ->keyBy('id')
-                        ->all();
-                }
+        try {
+            $excelTmp = storage_path('framework/cache/laravel-excel');
+            if (! is_dir($excelTmp)) {
+                @mkdir($excelTmp, 0755, true);
             }
 
+            $rows = DB::table('google_review_ai_items')
+                ->where('report_id', $id)
+                ->orderBy('sort_order')
+                ->get();
+
+            if ($report->source === 'manual_db') {
+                $rows = $this->enrichManualDbExportRows($rows, $report);
+            }
+
+            $filename = 'google-review-ai-'.$id.'-'.date('Ymd-His').'.xlsx';
+
+            return Excel::download(new GoogleReviewAiReportExport($rows, $report->nama_outlet), $filename);
+        } catch (\Throwable $e) {
+            Log::error('Google Review AI Excel export failed', [
+                'report_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Gagal generate Excel: '.$e->getMessage(),
+                ], 500);
+            }
+
+            abort(500, 'Gagal generate Excel: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Lengkapi nama_outlet untuk export sumber manual_db.
+     */
+    protected function enrichManualDbExportRows($rows, object $report)
+    {
+        $hasSourceItemId = Schema::hasColumn('google_review_ai_items', 'source_item_id');
+        $idMap = [];
+        if ($hasSourceItemId) {
+            $sourceIds = $rows->pluck('source_item_id')
+                ->filter(fn ($v) => is_numeric($v) && (int) $v > 0)
+                ->map(fn ($v) => (int) $v)
+                ->unique()
+                ->values()
+                ->all();
+            if ($sourceIds !== []) {
+                $idMap = DB::table('google_review_manual_reviews')
+                    ->select('id', 'nama_outlet')
+                    ->whereIn('id', $sourceIds)
+                    ->get()
+                    ->keyBy('id')
+                    ->all();
+            }
+        }
+
+        $needsFallback = $rows->contains(function ($row) use ($idMap) {
+            $sid = property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : 0;
+
+            return ! ($sid > 0 && isset($idMap[$sid]));
+        });
+
+        $fallbackCandidates = collect();
+        $fallbackByAuthorDate = collect();
+        if ($needsFallback && Schema::hasTable('google_review_manual_reviews')) {
             $fallbackCandidates = DB::table('google_review_manual_reviews')
                 ->select('author', 'review_date', 'text', 'nama_outlet')
                 ->orderByDesc('id')
@@ -1887,45 +1931,46 @@ class GoogleReviewController extends Controller
                 ->groupBy(fn ($r) => trim((string) $r->author).'|'.trim((string) $r->review_date))
                 ->map(function ($group) {
                     $hit = $group->first(fn ($r) => trim((string) ($r->nama_outlet ?? '')) !== '');
+
                     return $hit ? (string) $hit->nama_outlet : '';
                 });
-
-            $rows = $rows->map(function ($row) use ($idMap, $fallbackCandidates, $fallbackByAuthorDate, $report) {
-                $sid = property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : 0;
-                if ($sid > 0 && isset($idMap[$sid])) {
-                    $row->nama_outlet = (string) ($idMap[$sid]->nama_outlet ?? '');
-                    return $row;
-                }
-
-                $author = trim((string) ($row->author ?? ''));
-                $reviewDate = trim((string) ($row->review_date ?? ''));
-                $text = trim((string) ($row->text ?? ''));
-                if ($author !== '' && $text !== '') {
-                    $match = $fallbackCandidates->first(function ($c) use ($author, $reviewDate, $text) {
-                        return trim((string) $c->author) === $author
-                            && trim((string) $c->review_date) === $reviewDate
-                            && trim((string) $c->text) === $text;
-                    });
-                    if ($match) {
-                        $row->nama_outlet = (string) ($match->nama_outlet ?? '');
-                        return $row;
-                    }
-                }
-
-                $authorDateKey = $author.'|'.$reviewDate;
-                if ($author !== '' && $reviewDate !== '' && ! empty($fallbackByAuthorDate[$authorDateKey])) {
-                    $row->nama_outlet = (string) $fallbackByAuthorDate[$authorDateKey];
-                    return $row;
-                }
-
-                $row->nama_outlet = (string) ($report->nama_outlet ?? '');
-                return $row;
-            });
         }
 
-        $filename = 'google-review-ai-' . $id . '-' . date('Ymd-His') . '.xlsx';
+        return $rows->map(function ($row) use ($idMap, $fallbackCandidates, $fallbackByAuthorDate, $report) {
+            $sid = property_exists($row, 'source_item_id') ? (int) ($row->source_item_id ?? 0) : 0;
+            if ($sid > 0 && isset($idMap[$sid])) {
+                $row->nama_outlet = (string) ($idMap[$sid]->nama_outlet ?? '');
 
-        return Excel::download(new GoogleReviewAiReportExport($rows, $report->nama_outlet), $filename);
+                return $row;
+            }
+
+            $author = trim((string) ($row->author ?? ''));
+            $reviewDate = trim((string) ($row->review_date ?? ''));
+            $text = trim((string) ($row->text ?? ''));
+            if ($author !== '' && $text !== '' && $fallbackCandidates->isNotEmpty()) {
+                $match = $fallbackCandidates->first(function ($c) use ($author, $reviewDate, $text) {
+                    return trim((string) $c->author) === $author
+                        && trim((string) $c->review_date) === $reviewDate
+                        && trim((string) $c->text) === $text;
+                });
+                if ($match) {
+                    $row->nama_outlet = (string) ($match->nama_outlet ?? '');
+
+                    return $row;
+                }
+            }
+
+            $authorDateKey = $author.'|'.$reviewDate;
+            if ($author !== '' && $reviewDate !== '' && ! empty($fallbackByAuthorDate[$authorDateKey])) {
+                $row->nama_outlet = (string) $fallbackByAuthorDate[$authorDateKey];
+
+                return $row;
+            }
+
+            $row->nama_outlet = (string) ($report->nama_outlet ?? '');
+
+            return $row;
+        });
     }
 
     /**

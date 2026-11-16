@@ -16,15 +16,19 @@ final class FoodGrLastPurchaseForItem
      */
     public static function lastLine(int $itemId): ?array
     {
+        // Hanya GR yang benar-benar menerima qty (>0). Qty 0 / reject tidak boleh
+        // jadi acuan auto-price (bisa bikin lonjakan harga jika unit salah).
         $line = DB::table('food_good_receive_items as gri')
             ->join('food_good_receives as gr', 'gri.good_receive_id', '=', 'gr.id')
             ->leftJoin('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
             ->where('gri.item_id', $itemId)
+            ->where('gri.qty_received', '>', 0)
             ->orderByDesc('gr.receive_date')
             ->orderByDesc('gr.id')
             ->orderByDesc('gri.id')
             ->select(
                 'poi.price as po_price',
+                'poi.unit_id as po_unit_id',
                 'gri.unit_id as gr_unit_id',
                 'gr.receive_date',
                 'gr.gr_number'
@@ -41,7 +45,10 @@ final class FoodGrLastPurchaseForItem
         }
 
         $cost = (float) ($line->po_price ?? 0);
-        $unitId = $line->gr_unit_id ? (int) $line->gr_unit_id : null;
+        // Konversi harus pakai unit harga PO (bukan unit GR), karena po_price per unit PO.
+        $unitId = $line->po_unit_id
+            ? (int) $line->po_unit_id
+            : ($line->gr_unit_id ? (int) $line->gr_unit_id : null);
 
         $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
         $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
