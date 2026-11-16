@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 use Maatwebsite\Excel\Facades\Excel;
@@ -16,15 +18,19 @@ class PurchaseOrderReportController extends Controller
     {
         [$from, $to] = $this->resolveDateRange($request);
 
-        $results = $this->buildCombinedQuery($request, $from, $to)
-            ->paginate($request->perPage ?? 15)
-            ->withQueryString();
+        $perPage = (int) ($request->perPage ?? 15);
+        $page = max(1, (int) $request->get('page', 1));
 
+        $results = $this->paginateReport($request, $from, $to, $perPage, $page);
         $results->setCollection($this->enrichRows($results->getCollection()));
         $results->setCollection($this->applyPriceChangeFilters($results->getCollection(), $request));
 
-        $suppliers = DB::table('suppliers')->select('id', 'name')->orderBy('name')->get();
-        $items = DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        $suppliers = Cache::remember('po_report_suppliers', 600, function () {
+            return DB::table('suppliers')->select('id', 'name')->orderBy('name')->get();
+        });
+        $items = Cache::remember('po_report_items', 600, function () {
+            return DB::table('items')->select('id', 'name')->orderBy('name')->get();
+        });
 
         $filters = $request->only([
             'search', 'from', 'to', 'supplier_id', 'item_id', 'perPage',
@@ -36,7 +42,7 @@ class PurchaseOrderReportController extends Controller
             $filters['to'] = $to;
         }
         if (! array_key_exists('include_ungr', $filters) || $filters['include_ungr'] === null || $filters['include_ungr'] === '') {
-            $filters['include_ungr'] = 'true';
+            $filters['include_ungr'] = 'false';
         }
 
         return Inertia::render('PurchaseOrder/Report', [
@@ -141,13 +147,11 @@ class PurchaseOrderReportController extends Controller
     {
         [$from, $to] = $this->resolveDateRange($request);
 
-        $results = $this->buildCombinedQuery($request, $from, $to)
-            ->get();
+        $rows = $this->fetchAllRows($request, $from, $to);
+        $rows = $this->enrichRows($rows);
+        $rows = $this->applyPriceChangeFilters($rows, $request);
 
-        $results = $this->enrichRows($results);
-        $results = $this->applyPriceChangeFilters($results, $request);
-
-        return [$from, $to, $results];
+        return [$from, $to, $rows];
     }
 
     private function resolveDateRange(Request $request): array
@@ -165,34 +169,246 @@ class PurchaseOrderReportController extends Controller
 
     private function shouldIncludeUngr(Request $request): bool
     {
-        // Default ON supaya PO belum GR ikut muncul.
         if (! $request->has('include_ungr') || $request->include_ungr === null || $request->include_ungr === '') {
-            return true;
+            return false;
         }
 
         return in_array((string) $request->include_ungr, ['1', 'true', 'yes', 'on'], true);
     }
 
-    private function buildCombinedQuery(Request $request, ?string $from, ?string $to)
+    private function paginateReport(Request $request, ?string $from, ?string $to, int $perPage, int $page): LengthAwarePaginator
     {
-        $grQuery = $this->baseGrQuery($request, $from, $to);
-
         if (! $this->shouldIncludeUngr($request)) {
-            return DB::query()
-                ->fromSub($grQuery, 'report')
-                ->orderByRaw('COALESCE(sort_date, po_date) DESC')
-                ->orderByDesc('po_number')
-                ->orderBy('item_name');
+            $paginator = $this->baseGrQuery($request, $from, $to)
+                ->orderByDesc('gr.receive_date')
+                ->orderByDesc('po.number')
+                ->orderBy('i.name')
+                ->paginate($perPage, ['*'], 'page', $page)
+                ->withQueryString();
+
+            return $paginator;
         }
 
-        $ungrQuery = $this->baseUngrQuery($request, $from, $to);
-        $union = $grQuery->unionAll($ungrQuery);
+        // include_ungr: jangan SQL UNION (35s+). Ambil lite rows, merge di PHP, hydrate page.
+        $merged = $this->fetchLiteRows($request, $from, $to);
+        $total = $merged->count();
+        $pageSlice = $merged->forPage($page, $perPage)->values();
+        $hydrated = $this->hydrateLiteRows($pageSlice);
 
-        return DB::query()
-            ->fromSub($union, 'report')
-            ->orderByRaw('COALESCE(sort_date, po_date) DESC')
-            ->orderByDesc('po_number')
-            ->orderBy('item_name');
+        return (new LengthAwarePaginator(
+            $hydrated,
+            $total,
+            $perPage,
+            $page,
+            [
+                'path' => url()->current(),
+                'query' => $request->query(),
+            ]
+        ))->withQueryString();
+    }
+
+    private function fetchAllRows(Request $request, ?string $from, ?string $to): Collection
+    {
+        if (! $this->shouldIncludeUngr($request)) {
+            return $this->baseGrQuery($request, $from, $to)
+                ->orderByDesc('gr.receive_date')
+                ->orderByDesc('po.number')
+                ->orderBy('i.name')
+                ->get();
+        }
+
+        return $this->hydrateLiteRows($this->fetchLiteRows($request, $from, $to));
+    }
+
+    /**
+     * Lightweight rows for merge/sort (tanpa join berat berulang).
+     */
+    private function fetchLiteRows(Request $request, ?string $from, ?string $to): Collection
+    {
+        $grLite = $this->baseGrQuery($request, $from, $to)
+            ->select([
+                DB::raw("'received' as row_type"),
+                'gr.id as gr_id',
+                'gri.id as gri_id',
+                DB::raw('NULL as poi_id'),
+                'gr.receive_date as sort_date',
+                'po.number as po_number',
+                'i.name as item_name',
+            ])
+            ->orderByDesc('gr.receive_date')
+            ->get();
+
+        $ungrLite = collect();
+        $paymentStatus = trim((string) $request->get('payment_status', ''));
+        if ($paymentStatus === '' || $paymentStatus === 'belum_gr') {
+            $ungrLite = $this->fetchUngrLite($request, $from, $to);
+        }
+
+        return $grLite->concat($ungrLite)
+            ->sort(function ($a, $b) {
+                $da = (string) ($a->sort_date ?? '');
+                $db = (string) ($b->sort_date ?? '');
+                if ($da !== $db) {
+                    return $db <=> $da;
+                }
+                $cmp = strcmp((string) ($b->po_number ?? ''), (string) ($a->po_number ?? ''));
+                if ($cmp !== 0) {
+                    return $cmp;
+                }
+
+                return strcmp((string) ($a->item_name ?? ''), (string) ($b->item_name ?? ''));
+            })
+            ->values();
+    }
+
+    private function fetchUngrLite(Request $request, ?string $from, ?string $to): Collection
+    {
+        $poQuery = DB::table('purchase_order_foods as po')
+            ->whereNotIn('po.status', ['rejected', 'cancelled', 'draft']);
+
+        if ($from) {
+            $poQuery->where('po.date', '>=', $from);
+        }
+        if ($to) {
+            $poQuery->where('po.date', '<=', $to.' 23:59:59');
+        }
+        if ($request->supplier_id && $request->supplier_id !== '') {
+            $poQuery->where('po.supplier_id', $request->supplier_id);
+        }
+
+        $poIds = $poQuery->pluck('po.id');
+        if ($poIds->isEmpty()) {
+            return collect();
+        }
+
+        // Cepat: ambil poi yang sudah GR untuk PO di range, lalu exclude
+        $receivedPoItemIds = DB::table('food_good_receive_items as gri')
+            ->join('food_good_receives as gr', 'gr.id', '=', 'gri.good_receive_id')
+            ->whereIn('gr.po_id', $poIds)
+            ->whereNotNull('gri.po_item_id')
+            ->distinct()
+            ->pluck('gri.po_item_id');
+
+        $q = DB::table('purchase_order_food_items as poi')
+            ->join('purchase_order_foods as po', 'poi.purchase_order_food_id', '=', 'po.id')
+            ->join('items as i', 'poi.item_id', '=', 'i.id')
+            ->whereIn('poi.purchase_order_food_id', $poIds);
+
+        if ($receivedPoItemIds->isNotEmpty()) {
+            $q->whereNotIn('poi.id', $receivedPoItemIds);
+        }
+
+        if ($request->item_id && $request->item_id !== '') {
+            $q->where('poi.item_id', $request->item_id);
+        }
+        if ($request->search) {
+            $search = $request->search;
+            $q->where(function ($inner) use ($search) {
+                $inner->where('po.number', 'like', "%{$search}%")
+                    ->orWhere('i.name', 'like', "%{$search}%");
+            });
+        }
+
+        return $q->get([
+            DB::raw("'ungr' as row_type"),
+            DB::raw('NULL as gr_id'),
+            DB::raw('NULL as gri_id'),
+            'poi.id as poi_id',
+            'po.date as sort_date',
+            'po.number as po_number',
+            'i.name as item_name',
+        ]);
+    }
+
+    private function hydrateLiteRows(Collection $liteRows): Collection
+    {
+        if ($liteRows->isEmpty()) {
+            return collect();
+        }
+
+        $grIds = $liteRows->where('row_type', 'received')->pluck('gri_id')->filter()->unique()->values();
+        $poiIds = $liteRows->where('row_type', 'ungr')->pluck('poi_id')->filter()->unique()->values();
+
+        $grMap = collect();
+        if ($grIds->isNotEmpty()) {
+            $grMap = DB::table('food_good_receives as gr')
+                ->join('purchase_order_foods as po', 'gr.po_id', '=', 'po.id')
+                ->join('food_good_receive_items as gri', 'gr.id', '=', 'gri.good_receive_id')
+                ->join('purchase_order_food_items as poi', 'gri.po_item_id', '=', 'poi.id')
+                ->join('items as i', 'gri.item_id', '=', 'i.id')
+                ->join('units as u', 'gri.unit_id', '=', 'u.id')
+                ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->leftJoin('users as received_by', 'gr.received_by', '=', 'received_by.id')
+                ->leftJoin('users as po_creator', 'po.created_by', '=', 'po_creator.id')
+                ->whereIn('gri.id', $grIds)
+                ->get([
+                    DB::raw("'received' as row_type"),
+                    'gri.id as gri_id',
+                    'gr.id as gr_id',
+                    'gr.gr_number',
+                    'gr.receive_date',
+                    'gr.receive_date as sort_date',
+                    'po.id as po_id',
+                    'po.number as po_number',
+                    'po.date as po_date',
+                    'po.supplier_id',
+                    's.name as supplier_name',
+                    'i.id as item_id',
+                    'i.name as item_name',
+                    'c.name as category_name',
+                    'gri.qty_received',
+                    'poi.quantity as po_qty',
+                    'u.name as unit_name',
+                    'poi.price as po_price',
+                    'received_by.nama_lengkap as received_by_name',
+                    'po_creator.nama_lengkap as po_creator_name',
+                ])
+                ->keyBy('gri_id');
+        }
+
+        $ungrMap = collect();
+        if ($poiIds->isNotEmpty()) {
+            $ungrMap = DB::table('purchase_order_food_items as poi')
+                ->join('purchase_order_foods as po', 'poi.purchase_order_food_id', '=', 'po.id')
+                ->join('items as i', 'poi.item_id', '=', 'i.id')
+                ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
+                ->leftJoin('units as u', 'poi.unit_id', '=', 'u.id')
+                ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
+                ->leftJoin('users as po_creator', 'po.created_by', '=', 'po_creator.id')
+                ->whereIn('poi.id', $poiIds)
+                ->get([
+                    DB::raw("'ungr' as row_type"),
+                    'poi.id as poi_id',
+                    DB::raw('NULL as gr_id'),
+                    DB::raw('NULL as gr_number'),
+                    DB::raw('NULL as receive_date'),
+                    'po.date as sort_date',
+                    'po.id as po_id',
+                    'po.number as po_number',
+                    'po.date as po_date',
+                    'po.supplier_id',
+                    's.name as supplier_name',
+                    'i.id as item_id',
+                    'i.name as item_name',
+                    'c.name as category_name',
+                    DB::raw('0 as qty_received'),
+                    'poi.quantity as po_qty',
+                    'u.name as unit_name',
+                    'poi.price as po_price',
+                    DB::raw('NULL as received_by_name'),
+                    'po_creator.nama_lengkap as po_creator_name',
+                ])
+                ->keyBy('poi_id');
+        }
+
+        return $liteRows->map(function ($lite) use ($grMap, $ungrMap) {
+            if (($lite->row_type ?? '') === 'ungr') {
+                return $ungrMap->get($lite->poi_id);
+            }
+
+            return $grMap->get($lite->gri_id);
+        })->filter()->values();
     }
 
     private function baseGrQuery(Request $request, ?string $from, ?string $to)
@@ -230,64 +446,12 @@ class PurchaseOrderReportController extends Controller
             ]);
 
         if ($from) {
-            $query->whereDate('gr.receive_date', '>=', $from);
+            $query->where('gr.receive_date', '>=', $from);
         }
         if ($to) {
-            $query->whereDate('gr.receive_date', '<=', $to);
+            $query->where('gr.receive_date', '<=', $to.' 23:59:59');
         }
         $this->applyCommonFilters($query, $request, 'gri.item_id', true);
-
-        return $query;
-    }
-
-    private function baseUngrQuery(Request $request, ?string $from, ?string $to)
-    {
-        $query = DB::table('purchase_order_food_items as poi')
-            ->join('purchase_order_foods as po', 'poi.purchase_order_food_id', '=', 'po.id')
-            ->join('items as i', 'poi.item_id', '=', 'i.id')
-            ->join('suppliers as s', 'po.supplier_id', '=', 's.id')
-            ->leftJoin('units as u', 'poi.unit_id', '=', 'u.id')
-            ->leftJoin('categories as c', 'i.category_id', '=', 'c.id')
-            ->leftJoin('users as po_creator', 'po.created_by', '=', 'po_creator.id')
-            ->leftJoin('food_good_receive_items as gri', 'gri.po_item_id', '=', 'poi.id')
-            ->whereNull('gri.id')
-            ->whereNotIn('po.status', ['rejected', 'cancelled', 'draft'])
-            ->select([
-                DB::raw("'ungr' as row_type"),
-                DB::raw('NULL as gr_id'),
-                DB::raw('NULL as gr_number'),
-                DB::raw('NULL as receive_date'),
-                'po.date as sort_date',
-                'po.id as po_id',
-                'po.number as po_number',
-                'po.date as po_date',
-                'po.supplier_id',
-                's.name as supplier_name',
-                'i.id as item_id',
-                'i.name as item_name',
-                'c.name as category_name',
-                DB::raw('0 as qty_received'),
-                'poi.quantity as po_qty',
-                'u.name as unit_name',
-                'poi.price as po_price',
-                DB::raw('NULL as received_by_name'),
-                'po_creator.nama_lengkap as po_creator_name',
-            ]);
-
-        // PO belum GR difilter by tanggal PO
-        if ($from) {
-            $query->whereDate('po.date', '>=', $from);
-        }
-        if ($to) {
-            $query->whereDate('po.date', '<=', $to);
-        }
-        $this->applyCommonFilters($query, $request, 'poi.item_id', false);
-
-        // Jika filter status bayar spesifik (bukan belum_gr), jangan tampilkan baris unGR
-        $paymentStatus = trim((string) $request->get('payment_status', ''));
-        if ($paymentStatus !== '' && $paymentStatus !== 'belum_gr') {
-            $query->whereRaw('1 = 0');
-        }
 
         return $query;
     }
@@ -323,19 +487,16 @@ class PurchaseOrderReportController extends Controller
             $rows->where('row_type', 'received')->pluck('gr_id')->filter()->map(fn ($id) => (int) $id)->unique()->values()->all()
         );
 
-        return $rows->map(function ($item) use ($paymentByGr) {
-            $previousPrice = DB::table('purchase_order_food_items as poi2')
-                ->join('purchase_order_foods as po2', 'poi2.purchase_order_food_id', '=', 'po2.id')
-                ->where('poi2.item_id', $item->item_id)
-                ->where('po2.supplier_id', $item->supplier_id)
-                ->where('po2.date', '<', $item->po_date)
-                ->orderBy('po2.date', 'desc')
-                ->value('poi2.price');
+        $previousByKey = $this->loadPreviousPrices($rows);
 
-            $item->previous_price = $previousPrice;
-            $item->price_change = $previousPrice ? $item->po_price - $previousPrice : 0;
-            $item->price_change_percentage = ($previousPrice !== null && $previousPrice != 0)
-                ? round((($item->po_price - $previousPrice) / $previousPrice) * 100, 2)
+        return $rows->map(function ($item) use ($paymentByGr, $previousByKey) {
+            $key = ((int) $item->item_id).'|'.((int) $item->supplier_id).'|'.($item->po_date ?? '');
+            $prevVal = $previousByKey[$key] ?? null;
+
+            $item->previous_price = $prevVal;
+            $item->price_change = $prevVal !== null ? $item->po_price - $prevVal : 0;
+            $item->price_change_percentage = ($prevVal !== null && $prevVal != 0)
+                ? round((($item->po_price - $prevVal) / $prevVal) * 100, 2)
                 : 0;
 
             if (($item->row_type ?? '') === 'ungr') {
@@ -357,6 +518,68 @@ class PurchaseOrderReportController extends Controller
 
             return $item;
         })->values();
+    }
+
+    /**
+     * Previous price in one query for all page rows (hindari N+1).
+     *
+     * @return array<string, float|int|null>
+     */
+    private function loadPreviousPrices(Collection $rows): array
+    {
+        $map = [];
+        $pairs = [];
+        foreach ($rows as $r) {
+            $key = ((int) $r->item_id).'|'.((int) $r->supplier_id).'|'.($r->po_date ?? '');
+            if (! isset($pairs[$key]) && ! empty($r->po_date)) {
+                $pairs[$key] = [
+                    'item_id' => (int) $r->item_id,
+                    'supplier_id' => (int) $r->supplier_id,
+                    'po_date' => $r->po_date,
+                ];
+            } elseif (empty($r->po_date)) {
+                $map[$key] = null;
+            }
+        }
+
+        if ($pairs === []) {
+            return $map;
+        }
+
+        $history = DB::table('purchase_order_food_items as poi2')
+            ->join('purchase_order_foods as po2', 'poi2.purchase_order_food_id', '=', 'po2.id')
+            ->where(function ($q) use ($pairs) {
+                foreach ($pairs as $pair) {
+                    $q->orWhere(function ($inner) use ($pair) {
+                        $inner->where('poi2.item_id', $pair['item_id'])
+                            ->where('po2.supplier_id', $pair['supplier_id'])
+                            ->where('po2.date', '<', $pair['po_date']);
+                    });
+                }
+            })
+            ->orderByDesc('po2.date')
+            ->orderByDesc('poi2.id')
+            ->get(['poi2.item_id', 'po2.supplier_id', 'po2.date', 'poi2.price']);
+
+        $grouped = [];
+        foreach ($history as $h) {
+            $gkey = ((int) $h->item_id).'|'.((int) $h->supplier_id);
+            $grouped[$gkey][] = $h;
+        }
+
+        foreach ($pairs as $key => $pair) {
+            $gkey = $pair['item_id'].'|'.$pair['supplier_id'];
+            $prev = null;
+            foreach ($grouped[$gkey] ?? [] as $h) {
+                if ($h->date < $pair['po_date']) {
+                    $prev = $h->price;
+                    break;
+                }
+            }
+            $map[$key] = $prev;
+        }
+
+        return $map;
     }
 
     /**
@@ -388,7 +611,6 @@ class PurchaseOrderReportController extends Controller
             $this->mergePaymentRow($map, (int) $row->gr_id, $row);
         }
 
-        // Fallback via GR item → contra bon items (kalau belum ada di sources)
         $missing = array_values(array_diff($grIds, array_keys($map)));
         if ($missing !== []) {
             $fromItems = DB::table('food_good_receive_items as gri')
@@ -465,7 +687,6 @@ class PurchaseOrderReportController extends Controller
         if ($paymentStatus === 'paid') {
             $rows = $rows->filter(fn ($item) => ($item->payment_status ?? '') === 'paid')->values();
         } elseif ($paymentStatus === 'unpaid') {
-            // Belum lunas finance: belum dibayar ATAU sudah contra bon tapi belum paid
             $rows = $rows->filter(fn ($item) => in_array(($item->payment_status ?? ''), ['unpaid', 'in_process'], true))->values();
         }
 

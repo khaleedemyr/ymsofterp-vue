@@ -54,7 +54,7 @@
                          <li>Filter "Hanya kenaikan harga" akan menampilkan item yang harganya naik dari PO sebelumnya.</li>
                          <li>Filter "Hanya penurunan harga" akan menampilkan item yang harganya turun dari PO sebelumnya.</li>
                          <li>Kolom Status Bayar: apakah GR sudah dibayar finance (via Contra Bon → Food Payment).</li>
-                         <li>Opsi "Tampilkan PO belum GR" menampilkan item PO yang belum pernah di-GR.</li>
+                         <li>Opsi "Tampilkan PO belum GR" menampilkan item PO yang belum pernah di-GR (bisa lebih lambat).</li>
                        </ul>
                      </div>
                    </div>
@@ -492,7 +492,7 @@ const filters = ref({
   priceIncrease: props.filters?.priceIncrease === 'true' || props.filters?.priceIncrease === true || false,
   priceDecrease: props.filters?.priceDecrease === 'true' || props.filters?.priceDecrease === true || false,
   payment_status: props.filters?.payment_status || '',
-  include_ungr: props.filters?.include_ungr !== 'false' && props.filters?.include_ungr !== false,
+  include_ungr: props.filters?.include_ungr === 'true' || props.filters?.include_ungr === true || props.filters?.include_ungr === 1 || props.filters?.include_ungr === '1',
 });
 
 const loading = ref(false);
@@ -512,7 +512,7 @@ watch(() => props.filters, (newFilters) => {
       priceIncrease: newFilters.priceIncrease === 'true' || newFilters.priceIncrease === true,
       priceDecrease: newFilters.priceDecrease === 'true' || newFilters.priceDecrease === true,
       payment_status: newFilters.payment_status || '',
-      include_ungr: newFilters.include_ungr !== 'false' && newFilters.include_ungr !== false,
+      include_ungr: newFilters.include_ungr === 'true' || newFilters.include_ungr === true || newFilters.include_ungr === 1 || newFilters.include_ungr === '1',
     };
   }
 }, { deep: true, immediate: true });
@@ -558,7 +558,7 @@ const clearFilters = () => {
     priceIncrease: false,
     priceDecrease: false,
     payment_status: '',
-    include_ungr: true,
+    include_ungr: false,
   };
 };
 
