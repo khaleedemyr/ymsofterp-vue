@@ -62,6 +62,20 @@
         >
           <i class="fa-solid fa-filter mr-2"></i> Filter
         </button>
+        <button
+          @click="exportExcel"
+          class="px-4 py-2 rounded-xl bg-green-600 text-white font-semibold hover:bg-green-700 transition shadow"
+          :disabled="!rows?.length"
+        >
+          <i class="fa-solid fa-file-excel mr-2"></i> Export Excel
+        </button>
+        <button
+          @click="exportPdf"
+          class="px-4 py-2 rounded-xl bg-red-600 text-white font-semibold hover:bg-red-700 transition shadow"
+          :disabled="!rows?.length"
+        >
+          <i class="fa-solid fa-file-pdf mr-2"></i> Export PDF
+        </button>
       </div>
 
       <div class="bg-white rounded-2xl shadow-2xl overflow-x-auto transition-all mb-4">
@@ -151,14 +165,26 @@ watch(
   { immediate: true }
 );
 
-function applyFilters() {
-  router.get(route('outlet-transfer.report'), {
+function filterParams() {
+  return {
     from: filters.value.from || undefined,
     to: filters.value.to || undefined,
     outlet_from_id: filters.value.outlet_from_id || undefined,
     outlet_to_id: filters.value.outlet_to_id || undefined,
     status: filters.value.status || undefined,
-  }, { preserveState: true });
+  };
+}
+
+function applyFilters() {
+  router.get(route('outlet-transfer.report'), filterParams(), { preserveState: true });
+}
+
+function exportExcel() {
+  window.open(route('outlet-transfer.report.export-excel', filterParams()), '_blank');
+}
+
+function exportPdf() {
+  window.open(route('outlet-transfer.report.export-pdf', filterParams()), '_blank');
 }
 
 function formatDate(date) {
