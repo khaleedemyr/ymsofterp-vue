@@ -23,6 +23,11 @@
           <input type="date" v-model="to" class="border border-gray-300 rounded-lg px-2 py-2 focus:ring-blue-500 focus:border-blue-500" />
         </div>
       </div>
+
+      <div v-if="filteredData.length" class="mb-4 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3 text-sm text-emerald-800">
+        Total nilai: <span class="font-bold">{{ formatRupiah(filteredTotalValue) }}</span>
+      </div>
+
       <!-- Report Table -->
       <div class="bg-white rounded-xl shadow-lg overflow-hidden">
         <div class="overflow-x-auto">
@@ -35,6 +40,7 @@
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Item</th>
                 <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Qty</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Unit</th>
+                <th class="px-6 py-3 text-right text-xs font-bold text-gray-700 uppercase tracking-wider">Nilai (Rp)</th>
                 <th class="px-6 py-3 text-left text-xs font-bold text-gray-700 uppercase tracking-wider">Catatan</th>
               </tr>
             </thead>
@@ -46,10 +52,16 @@
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.item_name }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-right">{{ formatNumber(row.qty) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.unit_name }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-right font-medium">{{ formatRupiah(row.value_out) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">{{ row.notes || '-' }}</td>
               </tr>
+              <tr v-if="filteredData.length" class="bg-gray-50 font-semibold">
+                <td colspan="6" class="px-6 py-3 text-right text-sm">Total</td>
+                <td class="px-6 py-3 whitespace-nowrap text-sm text-right">{{ formatRupiah(filteredTotalValue) }}</td>
+                <td></td>
+              </tr>
               <tr v-if="!filteredData.length">
-                <td colspan="7" class="text-center py-8 text-gray-400">Tidak ada data.</td>
+                <td colspan="8" class="text-center py-8 text-gray-400">Tidak ada data.</td>
               </tr>
             </tbody>
           </table>
@@ -67,7 +79,11 @@ import { router } from '@inertiajs/vue3';
 const props = defineProps({
   data: Array,
   rukos: Array,
-  filters: Object
+  filters: Object,
+  total_value: {
+    type: Number,
+    default: 0,
+  },
 });
 
 const selectedRuko = ref(props.filters.ruko_id || '');
@@ -91,12 +107,16 @@ watch([selectedRuko, from, to], () => {
 });
 
 const filteredData = computed(() => {
-  let data = props.data;
+  let data = props.data || [];
   if (selectedRuko.value) {
     data = data.filter(row => String(row.ruko_id) === String(selectedRuko.value));
   }
   return data;
 });
+
+const filteredTotalValue = computed(() =>
+  filteredData.value.reduce((sum, row) => sum + (Number(row.value_out) || 0), 0)
+);
 
 function formatDate(date) {
   if (!date) return '-';
@@ -107,8 +127,17 @@ function formatNumber(val) {
   if (Number(val) % 1 === 0) return Number(val);
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+function formatRupiah(val) {
+  if (val == null || val === '') return '-';
+  return new Intl.NumberFormat('id-ID', {
+    style: 'currency',
+    currency: 'IDR',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(Number(val) || 0);
+}
 
 function goBack() {
   router.visit(route('internal-use-waste.index'))
 }
-</script> 
+</script>

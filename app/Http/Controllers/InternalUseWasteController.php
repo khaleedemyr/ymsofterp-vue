@@ -357,13 +357,19 @@ class InternalUseWasteController extends Controller
             ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
             ->leftJoin('tbl_data_ruko', 'internal_use_wastes.ruko_id', '=', 'tbl_data_ruko.id_ruko')
             ->leftJoin('internal_use_waste_headers as iuw_h', 'internal_use_wastes.header_id', '=', 'iuw_h.id')
+            ->leftJoin('food_inventory_cards as fic', function ($join) {
+                $join->on('fic.reference_id', '=', 'internal_use_wastes.id')
+                    ->where('fic.reference_type', '=', 'internal_use_waste');
+            })
             ->select(
                 'internal_use_wastes.*',
                 'warehouses.name as warehouse_name',
                 'items.name as item_name',
                 'units.name as unit_name',
                 'tbl_data_ruko.nama_ruko',
-                'iuw_h.notes as header_notes'
+                'iuw_h.notes as header_notes',
+                'fic.cost_per_small',
+                'fic.value_out'
             )
             ->where('internal_use_wastes.type', 'internal_use');
 
@@ -384,6 +390,7 @@ class InternalUseWasteController extends Controller
             'data' => $data,
             'rukos' => $rukos,
             'filters' => $request->only(['from', 'to', 'ruko_id']),
+            'total_value' => (float) $data->sum(fn ($row) => (float) ($row->value_out ?? 0)),
         ]);
     }
 
@@ -398,12 +405,18 @@ class InternalUseWasteController extends Controller
             ->leftJoin('items', 'internal_use_wastes.item_id', '=', 'items.id')
             ->leftJoin('units', 'internal_use_wastes.unit_id', '=', 'units.id')
             ->leftJoin('internal_use_waste_headers as iuw_h', 'internal_use_wastes.header_id', '=', 'iuw_h.id')
+            ->leftJoin('food_inventory_cards as fic', function ($join) {
+                $join->on('fic.reference_id', '=', 'internal_use_wastes.id')
+                    ->where('fic.reference_type', '=', 'internal_use_waste');
+            })
             ->select(
                 'internal_use_wastes.*',
                 'warehouses.name as warehouse_name',
                 'items.name as item_name',
                 'units.name as unit_name',
-                'iuw_h.notes as header_notes'
+                'iuw_h.notes as header_notes',
+                'fic.cost_per_small',
+                'fic.value_out'
             )
             ->whereIn('internal_use_wastes.type', ['spoil', 'waste']);
 
@@ -424,6 +437,7 @@ class InternalUseWasteController extends Controller
             'data' => $data,
             'warehouses' => $warehouses,
             'filters' => $request->only(['from', 'to', 'warehouse_id']),
+            'total_value' => (float) $data->sum(fn ($row) => (float) ($row->value_out ?? 0)),
         ]);
     }
 
