@@ -157,12 +157,11 @@ return Application::configure(basePath: dirname(__DIR__))
             ->appendOutputTo(storage_path('logs/expiring-vouchers-notifications.log'))
             ->description('Send notification to members who have vouchers expiring in 7 days');
 
-        // Instagram Login API — poll DM ke omnichannel (cadangan jika webhook tidak push)
+        // Instagram Login API — poll DM (cadangan webhook). Jangan tiap menit: mudah kena Meta rate limit (#4).
         if (filter_var(env('META_INSTAGRAM_INBOX_SYNC_ENABLED', true), FILTER_VALIDATE_BOOLEAN)) {
-            // --recent=60: sync ringan tiap 1 menit (sama seperti Messenger)
-            $schedule->command('meta:sync-instagram-inbox --recent=60')
-                ->everyMinute()
-                ->withoutOverlapping(3)
+            $schedule->command('meta:sync-instagram-inbox --recent=45')
+                ->everyFiveMinutes()
+                ->withoutOverlapping(8)
                 ->appendOutputTo(storage_path('logs/meta-instagram-inbox-sync.log'));
         }
 

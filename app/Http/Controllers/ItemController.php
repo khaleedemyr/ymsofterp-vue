@@ -60,19 +60,20 @@ class ItemController extends Controller
 
     private function buildItemPriceRow(Item $item, array $price): array
     {
+        $regionId = $price['region_id'] ?? null;
+        $outletId = $price['outlet_id'] ?? null;
+        if ($regionId === '' || $regionId === 'all' || $regionId === 'All') {
+            $regionId = null;
+        }
+        if ($outletId === '' || $outletId === 'all' || $outletId === 'All') {
+            $outletId = null;
+        }
+
         $type = 'all';
-        if (isset($price['price_type']) && $price['price_type'] === 'specific') {
-            if (! empty($price['region_id']) && empty($price['outlet_id'])) {
-                $type = 'region';
-            } elseif (! empty($price['outlet_id'])) {
-                $type = 'outlet';
-            }
-        } else {
-            if (! empty($price['region_id']) && empty($price['outlet_id'])) {
-                $type = 'region';
-            } elseif (! empty($price['outlet_id'])) {
-                $type = 'outlet';
-            }
+        if (! empty($regionId) && empty($outletId)) {
+            $type = 'region';
+        } elseif (! empty($outletId)) {
+            $type = 'outlet';
         }
 
         $mode = (($price['pricing_mode'] ?? 'manual') === 'auto') ? 'auto' : 'manual';
@@ -89,8 +90,8 @@ class ItemController extends Controller
         }
 
         return [
-            'region_id' => $price['region_id'] ?? null,
-            'outlet_id' => $price['outlet_id'] ?? null,
+            'region_id' => $regionId,
+            'outlet_id' => $outletId,
             'price' => round($amount, 2),
             'availability_price_type' => $type,
             'pricing_mode' => $mode,
@@ -107,6 +108,53 @@ class ItemController extends Controller
             'menuTypes'        => Cache::remember('master_menu_types', $ttl, fn() => \DB::table('menu_type')->where('status', 'active')->get()),
             'modifiers'        => Cache::remember('master_modifiers_with_options', $ttl, fn() => Modifier::with('options')->get()),
         ];
+    }
+
+    /**
+     * UI memakai nilai "all" untuk region/outlet global.
+     * Ubah ke null sebelum validasi exists:*, agar create/update tidak gagal.
+     */
+    protected function sanitizePriceAndAvailabilityPayload(Request $request): void
+    {
+        $normalizeId = static function ($value) {
+            if ($value === null || $value === '' || $value === 'all' || $value === 'All') {
+                return null;
+            }
+
+            return $value;
+        };
+
+        if ($request->has('prices') && is_array($request->input('prices'))) {
+            $prices = collect($request->input('prices'))
+                ->map(function ($row) use ($normalizeId) {
+                    if (! is_array($row)) {
+                        return $row;
+                    }
+                    $row['region_id'] = $normalizeId($row['region_id'] ?? null);
+                    $row['outlet_id'] = $normalizeId($row['outlet_id'] ?? null);
+
+                    return $row;
+                })
+                ->values()
+                ->all();
+            $request->merge(['prices' => $prices]);
+        }
+
+        if ($request->has('availabilities') && is_array($request->input('availabilities'))) {
+            $availabilities = collect($request->input('availabilities'))
+                ->map(function ($row) use ($normalizeId) {
+                    if (! is_array($row)) {
+                        return $row;
+                    }
+                    $row['region_id'] = $normalizeId($row['region_id'] ?? null);
+                    $row['outlet_id'] = $normalizeId($row['outlet_id'] ?? null);
+
+                    return $row;
+                })
+                ->values()
+                ->all();
+            $request->merge(['availabilities' => $availabilities]);
+        }
     }
 
     protected function sanitizeBomPayload(Request $request): void
@@ -343,6 +391,7 @@ class ItemController extends Controller
     public function store(Request $request)
     {
         $this->sanitizeBomPayload($request);
+        $this->sanitizePriceAndAvailabilityPayload($request);
 
         try {
             
@@ -445,15 +494,24 @@ class ItemController extends Controller
             // Simpan availability per region/outlet
             if ($request->availabilities) {
                 foreach ($request->availabilities as $availability) {
+                    $regionId = $availability['region_id'] ?? null;
+                    $outletId = $availability['outlet_id'] ?? null;
+                    if ($regionId === '' || $regionId === 'all' || $regionId === 'All') {
+                        $regionId = null;
+                    }
+                    if ($outletId === '' || $outletId === 'all' || $outletId === 'All') {
+                        $outletId = null;
+                    }
+
                     $type = 'all';
-                    if (!empty($availability['region_id']) && empty($availability['outlet_id'])) {
+                    if (! empty($regionId) && empty($outletId)) {
                         $type = 'region';
-                    } else if (!empty($availability['outlet_id'])) {
+                    } elseif (! empty($outletId)) {
                         $type = 'outlet';
                     }
                     $item->availabilities()->create([
-                        'region_id' => $availability['region_id'],
-                        'outlet_id' => $availability['outlet_id'],
+                        'region_id' => $regionId,
+                        'outlet_id' => $outletId,
                         'availability_type' => $type,
                     ]);
                 }
@@ -629,6 +687,7 @@ class ItemController extends Controller
     public function update(Request $request, Item $item)
     {
         $this->sanitizeBomPayload($request);
+        $this->sanitizePriceAndAvailabilityPayload($request);
         $warehouseDivisionId = $request->input('warehouse_division_id');
         $request->merge([
             'warehouse_division_id' => $warehouseDivisionId === '' || $warehouseDivisionId === null
@@ -724,15 +783,24 @@ class ItemController extends Controller
                 $item->availabilities()->delete();
                 if ($request->availabilities) {
                     foreach ($request->availabilities as $availability) {
+                        $regionId = $availability['region_id'] ?? null;
+                        $outletId = $availability['outlet_id'] ?? null;
+                        if ($regionId === '' || $regionId === 'all' || $regionId === 'All') {
+                            $regionId = null;
+                        }
+                        if ($outletId === '' || $outletId === 'all' || $outletId === 'All') {
+                            $outletId = null;
+                        }
+
                         $type = 'all';
-                        if (isset($availability['region_id']) && !empty($availability['region_id']) && (!isset($availability['outlet_id']) || empty($availability['outlet_id']))) {
+                        if (! empty($regionId) && empty($outletId)) {
                             $type = 'region';
-                        } else if (isset($availability['outlet_id']) && !empty($availability['outlet_id'])) {
+                        } elseif (! empty($outletId)) {
                             $type = 'outlet';
                         }
                         $item->availabilities()->create([
-                            'region_id' => isset($availability['region_id']) ? $availability['region_id'] : null,
-                            'outlet_id' => isset($availability['outlet_id']) ? $availability['outlet_id'] : null,
+                            'region_id' => $regionId,
+                            'outlet_id' => $outletId,
                             'availability_type' => $type,
                         ]);
                     }

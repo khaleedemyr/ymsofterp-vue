@@ -968,6 +968,14 @@ onMounted(() => {
 const regionsArray = computed(() => Array.isArray(props.regions) ? props.regions : Object.values(props.regions || {}));
 const outletsArray = computed(() => Array.isArray(props.outlets) ? props.outlets : Object.values(props.outlets || {}));
 
+function normalizeIdForSubmit(value) {
+  if (value === 'all' || value === 'All' || value === '' || value === null || typeof value === 'undefined') {
+    return null;
+  }
+  const num = Number(value);
+  return Number.isNaN(num) ? null : num;
+}
+
 function normalizePricesForSubmit(prices) {
   return (prices || []).map((p) => {
     const pricing_mode = p.pricing_mode === 'auto' ? 'auto' : 'manual';
@@ -978,8 +986,8 @@ function normalizePricesForSubmit(prices) {
       price_type = 'all';
     }
     if (price_type === 'specific') {
-      if (p.region_id !== '' && p.region_id != null) region_id = Number(p.region_id);
-      if (p.outlet_id !== '' && p.outlet_id != null) outlet_id = Number(p.outlet_id);
+      region_id = normalizeIdForSubmit(p.region_id);
+      outlet_id = normalizeIdForSubmit(p.outlet_id);
     }
     const raw = Number(p.price);
     const priceVal = Number.isNaN(raw) ? 0 : raw;
@@ -994,6 +1002,15 @@ function normalizePricesForSubmit(prices) {
     if (p.pricing_mode === 'auto') return true;
     return !Number.isNaN(Number(p.price)) && Number(p.price) >= 0;
   });
+}
+
+function normalizeAvailabilitiesForSubmit(availabilities) {
+  return (availabilities || []).map((a) => ({
+    ...a,
+    region_id: normalizeIdForSubmit(a.region_id),
+    outlet_id: normalizeIdForSubmit(a.outlet_id),
+    status: a.status || 'available',
+  }));
 }
 
 function formatPricePreviewScope(price) {
@@ -1020,13 +1037,14 @@ const handleSave = async () => {
     didOpen: () => { Swal.showLoading(); }
   });
   try {
-    const applyPrices = () => form.transform((data) => ({
+    const applyPayload = () => form.transform((data) => ({
       ...data,
       prices: normalizePricesForSubmit(data.prices),
+      availabilities: normalizeAvailabilitiesForSubmit(data.availabilities),
     }));
 
     if (props.mode === 'create') {
-      await applyPrices().post(route('items.store'), {
+      await applyPayload().post(route('items.store'), {
         preserveScroll: true,
         onSuccess: () => {
           Swal.fire('Berhasil', 'Item berhasil ditambahkan!', 'success');
@@ -1048,7 +1066,7 @@ const handleSave = async () => {
         onFinish: () => { isSaving.value = false; }
       });
     } else {
-      await applyPrices().put(route('items.update', props.item.id), {
+      await applyPayload().put(route('items.update', props.item.id), {
         preserveScroll: true,
         onSuccess: () => {
           Swal.fire('Berhasil', 'Item berhasil diupdate!', 'success');

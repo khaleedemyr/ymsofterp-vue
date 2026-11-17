@@ -25,16 +25,16 @@ return [
     'instagram_sync_notify_within_minutes' => (int) env('OMNI_INSTAGRAM_SYNC_NOTIFY_WITHIN_MINUTES', 30),
 
     /** Min interval sync IG saat inbox web dibuka / di-poll (detik). */
-    'instagram_inbox_poll_sync_seconds' => (int) env('OMNI_INSTAGRAM_POLL_SYNC_SECONDS', 45),
+    'instagram_inbox_poll_sync_seconds' => (int) env('OMNI_INSTAGRAM_POLL_SYNC_SECONDS', 180),
 
     /** Saat inbox dibuka: hanya tarik DM dalam N menit terakhir (sync cepat). */
     'instagram_inbox_sync_recent_minutes' => (int) env('OMNI_INSTAGRAM_INBOX_SYNC_RECENT_MINUTES', 45),
 
-    /** Jeda sync setelah Meta rate limit (menit). */
-    'instagram_rate_limit_backoff_minutes' => (int) env('OMNI_INSTAGRAM_RATE_LIMIT_BACKOFF_MINUTES', 10),
+    /** Jeda sync setelah Meta rate limit (menit). Default 60 — limit node IG sering lama. */
+    'instagram_rate_limit_backoff_minutes' => (int) env('OMNI_INSTAGRAM_RATE_LIMIT_BACKOFF_MINUTES', 60),
 
     /** Maks. thread IG per sekali sync (mode recent) — kurangi panggilan API. */
-    'instagram_max_conversations_per_poll' => (int) env('OMNI_INSTAGRAM_MAX_CONVERSATIONS_PER_POLL', 12),
+    'instagram_max_conversations_per_poll' => (int) env('OMNI_INSTAGRAM_MAX_CONVERSATIONS_PER_POLL', 5),
 
     /**
      * Jika webhook IG Login ke /instagram dapat sig_invalid (trace), proses payload tetap (object=instagram saja).

@@ -46,7 +46,7 @@ class SyncMetaInstagramInboxCommand extends Command
                 continue;
             }
 
-            $this->line(sprintf(
+            $line = sprintf(
                 '%s (@%s): conv=%d checked=%d imported=%d skip_db=%d skip_out=%d skip_no_from=%d api_err=%d',
                 $account['ig_id'] ?? '?',
                 $account['username'] ?? '-',
@@ -57,13 +57,20 @@ class SyncMetaInstagramInboxCommand extends Command
                 $account['skipped_outbound'] ?? 0,
                 $account['skipped_no_sender'] ?? 0,
                 $account['api_errors'] ?? 0,
-            ));
+            );
+            if (! empty($account['permission_denied'])) {
+                $line .= ' PERMISSION_DENIED';
+            }
+            $this->line($line);
+            if (! empty($account['permission_denied'])) {
+                $this->error('  → Token tidak bisa baca DM. Generate ulang dengan scope instagram_business_manage_messages, update .env, config:clear');
+            }
         }
 
         $this->info('Total imported: '.($result['imported'] ?? 0));
 
         if (($result['imported'] ?? 0) === 0) {
-            $this->warn('Imported 0 — cek skip_out (DM dari akun bisnis?) / api_err / skip_no_from.');
+            $this->warn('Imported 0 — cek skip_out (DM dari akun bisnis?) / api_err / skip_no_from / PERMISSION_DENIED.');
             $this->warn('Diagnosa: php artisan meta:debug-instagram-inbox');
         }
 

@@ -37,6 +37,7 @@ class DebugMetaInstagramInboxCommand extends Command
             $until = (int) Cache::get(MetaInstagramInboxSyncService::RATE_LIMIT_CACHE_KEY);
             $this->error('Rate limit backoff AKTIF sampai: '.date('Y-m-d H:i:s', $until));
             $this->line('  Hapus: php artisan meta:debug-instagram-inbox --clear-rate-limit');
+            $this->warn('  Catatan: cron tiap menit bisa mengisi ulang backoff jika /messages masih 403. Matikan dulu: META_INSTAGRAM_INBOX_SYNC_ENABLED=false');
             $this->line('  Lalu: php artisan meta:sync-instagram-inbox --recent=60 -v');
         } else {
             $this->info('Rate limit backoff: tidak aktif');
@@ -124,6 +125,38 @@ class DebugMetaInstagramInboxCommand extends Command
                 $this->line(json_encode($msgs->json('data') ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
             } else {
                 $this->warn('/messages edge gagal ('.$msgs->status().')');
+                $this->line('  body: '.mb_substr($msgs->body(), 0, 600));
+                $errCode = (int) ($msgs->json('error.code') ?? 0);
+                $errMsg = (string) ($msgs->json('error.message') ?? '');
+                if ($msgs->status() === 403 || $errCode === 10 || str_contains(strtolower($errMsg), 'permission')) {
+                    $this->error('  → Permission kurang. Generate ulang token dengan instagram_business_manage_messages.');
+                }
+                $msgsMinimal = Http::withToken($token)
+                    ->acceptJson()
+                    ->get("https://graph.instagram.com/{$version}/{$convId}/messages", [
+                        'fields' => 'id,created_time,from,message',
+                        'limit' => 3,
+                    ]);
+                if ($msgsMinimal->successful()) {
+                    $this->info('  /messages dengan field minimal: OK');
+                    $this->line(json_encode($msgsMinimal->json('data') ?? [], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
+                } else {
+                    $this->warn('  /messages field minimal juga gagal ('.$msgsMinimal->status().'): '.mb_substr($msgsMinimal->body(), 0, 400));
+                }
+
+                // Cek scopes token (debug_token butuh app token — skip jika tidak ada)
+                $appId = (string) config('services.meta.app_id', '');
+                $appSecret = (string) config('services.meta.app_secret', '');
+                if ($appId !== '' && $appSecret !== '') {
+                    $debug = Http::get('https://graph.facebook.com/debug_token', [
+                        'input_token' => $token,
+                        'access_token' => $appId.'|'.$appSecret,
+                    ]);
+                    if ($debug->successful()) {
+                        $scopes = $debug->json('data.scopes') ?? $debug->json('data.granular_scopes') ?? [];
+                        $this->line('  token scopes/granular: '.json_encode($scopes, JSON_UNESCAPED_UNICODE));
+                    }
+                }
             }
         }
 

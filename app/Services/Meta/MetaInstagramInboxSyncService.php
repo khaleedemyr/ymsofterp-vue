@@ -40,6 +40,9 @@ class MetaInstagramInboxSyncService
 
     private bool $rateLimitHitThisRun = false;
 
+    /** Stop scanning more conversations for this account (permission denied on /messages). */
+    private bool $permissionDeniedThisAccount = false;
+
     public static function isRateLimited(): bool
     {
         $until = Cache::get(self::RATE_LIMIT_CACHE_KEY);
@@ -136,6 +139,7 @@ class MetaInstagramInboxSyncService
     private function runSyncAccount(string $igProfessionalId, string $accessToken, bool $verbose = false, ?int $recentMinutes = null): array
     {
         $this->rateLimitHitThisRun = false;
+        $this->permissionDeniedThisAccount = false;
         $version = config('services.meta.instagram_graph_version', 'v25.0');
         $imported = 0;
         $messagesChecked = 0;
@@ -184,7 +188,7 @@ class MetaInstagramInboxSyncService
             : $conversationCount;
 
         foreach (array_slice($conversationRows, 0, $maxConversations) as $row) {
-            if ($this->rateLimitHitThisRun) {
+            if ($this->rateLimitHitThisRun || $this->permissionDeniedThisAccount) {
                 break;
             }
 
@@ -219,6 +223,7 @@ class MetaInstagramInboxSyncService
             'skipped_outbound' => $skippedOutbound,
             'skipped_no_sender' => $skippedNoSender,
             'api_errors' => $apiErrors,
+            'permission_denied' => $this->permissionDeniedThisAccount,
         ];
 
         Log::info('Meta Instagram inbox sync finished', $summary);
@@ -277,7 +282,20 @@ class MetaInstagramInboxSyncService
                     'conversation' => $metaConversationId,
                     'status' => $response->status(),
                     'body' => mb_substr($response->body(), 0, 400),
+                    'permission_denied' => $this->isPermissionDeniedResponse($response),
                 ]);
+
+                // Permission 403: jangan spam ratusan conversation (bikin rate limit)
+                if ($this->isPermissionDeniedResponse($response)) {
+                    $this->permissionDeniedThisAccount = true;
+                    Log::error('Instagram messages permission denied — stop sync akun ini. Generate ulang token dengan instagram_business_manage_messages.', [
+                        'ig' => $igProfessionalId,
+                        'body' => mb_substr($response->body(), 0, 500),
+                    ]);
+
+                    return;
+                }
+
                 $this->syncConversationMessagesLegacy(
                     $accessToken,
                     $version,
@@ -1019,22 +1037,67 @@ class MetaInstagramInboxSyncService
 
         $error = $response->json('error');
         if (! is_array($error)) {
+            // 403 tanpa body error = permission/forbidden, BUKAN rate limit
             return $response->status() === 429;
         }
 
         $code = (int) ($error['code'] ?? 0);
+        $message = strtolower((string) ($error['message'] ?? ''));
+        $type = strtolower((string) ($error['type'] ?? ''));
 
-        return $code === 4
-            || $code === 17
-            || $code === 32
-            || ($error['is_transient'] ?? false) === true;
+        // Permission / OAuth — jangan pause sync seluruh akun
+        if (in_array($code, [10, 190, 200, 294], true)
+            || str_contains($message, 'permission')
+            || str_contains($message, '(#10)')
+            || str_contains($type, 'oauthexception')
+        ) {
+            return false;
+        }
+
+        // Rate limit sejati
+        if ($code === 17 || $code === 32) {
+            return true;
+        }
+
+        if ($code === 4) {
+            return str_contains($message, 'limit')
+                || str_contains($message, 'throttl')
+                || str_contains($message, 'too many')
+                || str_contains($message, 'rate');
+        }
+
+        if (($error['is_transient'] ?? false) === true && $response->status() === 429) {
+            return true;
+        }
+
+        return $response->status() === 429;
+    }
+
+    private function isPermissionDeniedResponse(\Illuminate\Http\Client\Response $response): bool
+    {
+        if (! in_array($response->status(), [400, 403], true)) {
+            return false;
+        }
+
+        $error = $response->json('error');
+        if (! is_array($error)) {
+            return $response->status() === 403;
+        }
+
+        $code = (int) ($error['code'] ?? 0);
+        $message = strtolower((string) ($error['message'] ?? ''));
+
+        return in_array($code, [10, 200, 294], true)
+            || str_contains($message, 'permission')
+            || str_contains($message, 'does not have')
+            || ($response->status() === 403 && $code !== 4 && $code !== 17 && $code !== 32);
     }
 
     private function activateRateLimitBackoff(string $context, string $reference = ''): void
     {
         $this->rateLimitHitThisRun = true;
-        $minutes = max(5, (int) config('omnichannel.instagram_rate_limit_backoff_minutes', 20));
-        Cache::put(self::RATE_LIMIT_CACHE_KEY, now()->addMinutes($minutes)->timestamp, now()->addHours(3));
+        $minutes = max(5, (int) config('omnichannel.instagram_rate_limit_backoff_minutes', 10));
+        Cache::put(self::RATE_LIMIT_CACHE_KEY, now()->addMinutes($minutes)->timestamp, now()->addHours(2));
 
         Log::warning('Meta Instagram API rate limit — sync paused', [
             'context' => $context,
