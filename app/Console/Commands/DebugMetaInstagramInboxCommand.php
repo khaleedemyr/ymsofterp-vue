@@ -127,10 +127,37 @@ class DebugMetaInstagramInboxCommand extends Command
                 $this->warn('/messages edge gagal ('.$msgs->status().')');
                 $this->line('  body: '.mb_substr($msgs->body(), 0, 600));
                 $errCode = (int) ($msgs->json('error.code') ?? 0);
-                $errMsg = (string) ($msgs->json('error.message') ?? '');
-                if ($msgs->status() === 403 || $errCode === 10 || str_contains(strtolower($errMsg), 'permission')) {
-                    $this->error('  → Permission kurang. Generate ulang token dengan instagram_business_manage_messages.');
+                $errSub = (int) ($msgs->json('error.error_subcode') ?? 0);
+                $errMsg = strtolower((string) ($msgs->json('error.message') ?? ''));
+                $errTitle = strtolower((string) ($msgs->json('error.error_user_title') ?? ''));
+
+                $isRateLimit = $errCode === 4
+                    || $errCode === 17
+                    || $errCode === 32
+                    || $errSub === 1349210
+                    || str_contains($errMsg, 'request limit')
+                    || str_contains($errMsg, 'rate limit')
+                    || str_contains($errTitle, 'rate limit');
+
+                $isPermission = ! $isRateLimit && (
+                    $errCode === 10
+                    || $errCode === 200
+                    || $errCode === 294
+                    || str_contains($errMsg, 'permission')
+                    || str_contains($errMsg, 'does not have')
+                );
+
+                if ($isRateLimit) {
+                    $this->error('  → RATE LIMIT Meta (bukan permission). Jangan sync/debug dulu 1–2 jam.');
+                    $this->line('  → Matikan: META_INSTAGRAM_INBOX_SYNC_ENABLED=false lalu config:clear');
+                    // Jangan hit /messages lagi — memperparah limit
+                    continue;
                 }
+
+                if ($isPermission) {
+                    $this->error('  → Permission kurang di TOKEN. Generate ulang token (bukan cuma centang di dashboard).');
+                }
+
                 $msgsMinimal = Http::withToken($token)
                     ->acceptJson()
                     ->get("https://graph.instagram.com/{$version}/{$convId}/messages", [
@@ -144,7 +171,6 @@ class DebugMetaInstagramInboxCommand extends Command
                     $this->warn('  /messages field minimal juga gagal ('.$msgsMinimal->status().'): '.mb_substr($msgsMinimal->body(), 0, 400));
                 }
 
-                // Cek scopes token (debug_token butuh app token — skip jika tidak ada)
                 $appId = (string) config('services.meta.app_id', '');
                 $appSecret = (string) config('services.meta.app_secret', '');
                 if ($appId !== '' && $appSecret !== '') {
