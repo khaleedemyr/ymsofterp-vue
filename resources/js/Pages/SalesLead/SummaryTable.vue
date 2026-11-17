@@ -14,7 +14,7 @@
             <th class="px-3 py-2 text-left font-semibold">SEGMENTATION</th>
             <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">TARGET</th>
             <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">REVENUE &gt;15</th>
-            <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">REVENUE &lt;15</th>
+            <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">REVENUE &lt;16</th>
             <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">TOTAL</th>
             <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">% SEGMENT</th>
             <th class="px-3 py-2 text-right font-semibold whitespace-nowrap">LAST MONTH</th>

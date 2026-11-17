@@ -48,7 +48,7 @@
           <select v-model="filterForm.result" class="rounded-lg border-gray-300">
             <option value="">Semua Result</option>
             <option value="gt_15">Result &gt; 15 Pax</option>
-            <option value="lt_15">Result &lt; 15 Pax</option>
+            <option value="lt_15">Result &lt; 16 Pax</option>
           </select>
           <select v-model="filterForm.outlet_id" class="rounded-lg border-gray-300">
             <option value="">Semua Outlet</option>

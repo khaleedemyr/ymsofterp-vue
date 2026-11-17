@@ -45,7 +45,8 @@ class SalesLeadController extends Controller
                 $q->whereRaw('COALESCE(real_pax, pax) > 15');
             })
             ->when($result === 'lt_15', function ($q) {
-                $q->whereRaw('COALESCE(real_pax, pax) < 15')
+                // Include pax = 15 in the low bucket (align with dashboard <16)
+                $q->whereRaw('COALESCE(real_pax, pax) < 16')
                     ->whereRaw('COALESCE(real_pax, pax) IS NOT NULL');
             });
 
@@ -528,7 +529,7 @@ class SalesLeadController extends Controller
     /**
      * Aggregate revenue by sales + segment_1 for a period.
      * Amount: COALESCE(real_revenue, revenue)
-     * Pax split: COALESCE(real_pax, pax) > 15 / < 15
+     * Pax split: COALESCE(real_pax, pax) > 15 / < 16 (pax=15 masuk bucket rendah)
      */
     private function aggregateRevenueBySalesSegment(Carbon $start, Carbon $end)
     {
@@ -554,7 +555,7 @@ class SalesLeadController extends Controller
                 'sales_user_id',
                 'segment_1',
                 DB::raw("SUM(CASE WHEN {$paxExpr} > 15 THEN {$amountExpr} ELSE 0 END) as rev_gt_15"),
-                DB::raw("SUM(CASE WHEN {$paxExpr} < 15 AND {$paxExpr} IS NOT NULL THEN {$amountExpr} ELSE 0 END) as rev_lt_15"),
+                DB::raw("SUM(CASE WHEN {$paxExpr} IS NOT NULL AND {$paxExpr} < 16 THEN {$amountExpr} ELSE 0 END) as rev_lt_15"),
             ])
             ->groupBy('sales_user_id', 'segment_1')
             ->get();
