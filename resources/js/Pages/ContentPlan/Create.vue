@@ -3,8 +3,8 @@
     <div class="w-full max-w-3xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-5">
         <div>
-          <h1 class="text-xl font-bold text-gray-900">Buat Content Plan</h1>
-          <p class="text-sm text-gray-500 mt-0.5">Isi detail konten dan approval flow.</p>
+          <h1 class="text-xl font-bold text-gray-900">Buat Tasking Plan</h1>
+          <p class="text-sm text-gray-500 mt-0.5">Flow 1 — input pemberi tugas.</p>
         </div>
         <Link
           :href="route('content-plans.index')"
@@ -23,7 +23,8 @@
           :funnels="funnels"
           :pillars="pillars"
           :formats="formats"
-          :job-statuses="jobStatuses"
+          :priorities="priorities"
+          :meta="meta"
         />
 
         <div class="mt-5 flex justify-end gap-2.5 sticky bottom-0 z-10 py-3 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
@@ -59,13 +60,15 @@ defineProps({
   funnels: { type: Array, default: () => [] },
   pillars: { type: Array, default: () => [] },
   formats: { type: Array, default: () => [] },
-  jobStatuses: { type: Object, default: () => ({}) },
+  priorities: { type: Object, default: () => ({}) },
+  meta: { type: Object, default: () => ({}) },
 });
 
 const form = useForm({
   brand_id: '',
   pic_user_id: '',
   platform: '',
+  deadline_content: '',
   date_post: '',
   funnel: '',
   pillar: '',
@@ -73,11 +76,10 @@ const form = useForm({
   objective: '',
   brief: '',
   reference: '',
+  reference_images: [],
+  existing_reference_images: [],
   caption: '',
-  job_status: 'on_crafting',
-  final_output_links: [''],
-  actual_post_date: '',
-  actual_post_links: [''],
+  priority: 'medium',
   remarks: '',
   approvers: [],
 });
@@ -87,9 +89,9 @@ const submit = () => {
     .transform((data) => ({
       ...data,
       approvers: data.approvers.map((a) => a.id),
-      final_output_links: (data.final_output_links || []).filter((l) => String(l).trim() !== ''),
-      actual_post_links: (data.actual_post_links || []).filter((l) => String(l).trim() !== ''),
     }))
-    .post(route('content-plans.store'));
+    .post(route('content-plans.store'), {
+      forceFormData: true,
+    });
 };
 </script>

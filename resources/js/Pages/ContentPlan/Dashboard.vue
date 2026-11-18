@@ -8,7 +8,7 @@
               <i class="fa-solid fa-chart-pie"></i>
             </span>
             <span>
-              Content Plan Dashboard
+              Tasking Plan Dashboard
               <span class="block text-sm font-medium text-violet-600 mt-0.5">Analisa & progress semua konten</span>
             </span>
           </h1>

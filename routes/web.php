@@ -1145,6 +1145,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/content-plans/dashboard', [\App\Http\Controllers\ContentPlanController::class, 'dashboard'])->name('content-plans.dashboard');
     Route::get('/content-plans/approvers', [\App\Http\Controllers\ContentPlanController::class, 'getApprovers'])->name('content-plans.approvers');
     Route::resource('content-plans', \App\Http\Controllers\ContentPlanController::class);
+    Route::post('/content-plans/{id}/pic-update', [\App\Http\Controllers\ContentPlanController::class, 'updatePic'])->name('content-plans.pic-update');
     Route::post('/content-plans/{id}/approve', [\App\Http\Controllers\ContentPlanController::class, 'approve'])->name('content-plans.approve');
     Route::post('/content-plans/{id}/reject', [\App\Http\Controllers\ContentPlanController::class, 'reject'])->name('content-plans.reject');
 

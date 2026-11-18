@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -21,7 +22,7 @@ class ContentPlanController extends Controller
         $search = trim((string) $request->get('search', ''));
         $brandId = $request->get('brand_id');
         $platform = trim((string) $request->get('platform', ''));
-        $jobStatus = trim((string) $request->get('job_status', ''));
+        $priority = trim((string) $request->get('priority', ''));
         $workflowStatus = trim((string) $request->get('workflow_status', ''));
 
         $user = auth()->user();
@@ -45,13 +46,14 @@ class ContentPlanController extends Controller
             })
             ->when($brandId, fn ($q) => $q->where('brand_id', (int) $brandId))
             ->when($platform !== '', fn ($q) => $q->where('platform', $platform))
-            ->when($jobStatus !== '', fn ($q) => $q->where('job_status', $jobStatus))
+            ->when($priority !== '', fn ($q) => $q->where('priority', $priority))
             ->when($workflowStatus !== '', fn ($q) => $q->where('workflow_status', $workflowStatus))
             ->orderByDesc('id')
             ->paginate(15)
             ->withQueryString()
             ->through(function (ContentPlan $row) use ($user) {
-                $row->setAttribute('can_edit', $this->canEdit($row, $user));
+                $row->setAttribute('can_edit', $this->canEditFlow1($row, $user));
+                $row->setAttribute('can_edit_pic', $this->canEditFlow2($row, $user));
                 $row->setAttribute('can_delete', $this->canDelete($row, $user));
 
                 return $row;
@@ -63,11 +65,12 @@ class ContentPlanController extends Controller
                 'search' => $search,
                 'brand_id' => $brandId ? (int) $brandId : '',
                 'platform' => $platform,
-                'job_status' => $jobStatus,
+                'priority' => $priority,
                 'workflow_status' => $workflowStatus,
             ],
             'brands' => $this->brands(),
             'platforms' => ContentPlan::PLATFORMS,
+            'priorities' => ContentPlan::PRIORITIES,
             'jobStatuses' => ContentPlan::JOB_STATUSES,
             'workflowStatuses' => ContentPlan::WORKFLOW_STATUSES,
         ]);
@@ -251,7 +254,15 @@ class ContentPlanController extends Controller
 
     public function create(): Response
     {
-        return Inertia::render('ContentPlan/Create', $this->formOptions());
+        $user = auth()->user();
+
+        return Inertia::render('ContentPlan/Create', array_merge($this->formOptions(), [
+            'meta' => [
+                'number_preview' => 'TP-'.now()->format('Ym').'-AUTO',
+                'created_at' => now()->toDateTimeString(),
+                'created_by_name' => $user?->nama_lengkap ?? '',
+            ],
+        ]));
     }
 
     public function show($id): Response
@@ -262,9 +273,11 @@ class ContentPlanController extends Controller
         return Inertia::render('ContentPlan/Show', [
             'record' => $record,
             'canApprove' => (bool) $this->resolveCurrentApprovalFlow($record, $user),
-            'canEdit' => $this->canEdit($record, $user),
+            'canEdit' => $this->canEditFlow1($record, $user),
+            'canEditPic' => $this->canEditFlow2($record, $user),
             'canDelete' => $this->canDelete($record, $user),
             'brands' => $this->brands(),
+            'priorities' => ContentPlan::PRIORITIES,
             'jobStatuses' => ContentPlan::JOB_STATUSES,
             'workflowStatuses' => ContentPlan::WORKFLOW_STATUSES,
         ]);
@@ -274,8 +287,8 @@ class ContentPlanController extends Controller
     {
         $record = $this->findVisible($id);
         $user = auth()->user();
-        if (! $this->canEdit($record, $user)) {
-            abort(403, 'Tidak dapat mengedit Content Plan ini.');
+        if (! $this->canEditFlow1($record, $user)) {
+            abort(403, 'Tidak dapat mengedit Tasking Plan ini.');
         }
 
         return Inertia::render('ContentPlan/Edit', array_merge($this->formOptions(), [
@@ -292,7 +305,9 @@ class ContentPlanController extends Controller
         DB::beginTransaction();
         try {
             $hasApprovers = $approverIds !== [];
-            $plan = ContentPlan::create($this->payloadFromValidated($validated, $user, $hasApprovers, true));
+            $payload = $this->payloadFromValidated($validated, $user, $hasApprovers, true);
+            $payload['reference_images'] = $this->storeReferenceImages($request);
+            $plan = ContentPlan::create($payload);
 
             foreach ($approverIds as $index => $approverId) {
                 ContentPlanApprovalFlow::create([
@@ -304,8 +319,13 @@ class ContentPlanController extends Controller
             }
 
             DB::commit();
-            $this->clearCaches($plan, $approverIds, [$user->id]);
-            $this->notifyPicAssigned($plan->fresh(['brand', 'pic']), null);
+            $fresh = $plan->fresh(['brand', 'pic', 'creator', 'approvalFlows.approver']);
+            $this->clearCaches($fresh, $approverIds, [$user->id]);
+            $this->notifyPicAssigned($fresh, null);
+            $this->notifyCreatorCreated($fresh);
+            if ($hasApprovers) {
+                $this->notifyCurrentApprover($fresh, 'Tasking Plan baru menunggu approval Anda.');
+            }
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -314,16 +334,16 @@ class ContentPlanController extends Controller
 
         return redirect()->route('content-plans.show', $plan->id)
             ->with('success', $hasApprovers
-                ? 'Content Plan disimpan dan Submitted.'
-                : 'Content Plan disimpan sebagai Draft.');
+                ? 'Tasking Plan disimpan dan Submitted.'
+                : 'Tasking Plan disimpan sebagai Draft.');
     }
 
     public function update(Request $request, $id)
     {
         $record = $this->findVisible($id);
         $user = auth()->user();
-        if (! $this->canEdit($record, $user)) {
-            abort(403, 'Tidak dapat mengedit Content Plan ini.');
+        if (! $this->canEditFlow1($record, $user)) {
+            abort(403, 'Tidak dapat mengedit Tasking Plan ini.');
         }
 
         $validated = $this->validatePayload($request);
@@ -345,7 +365,13 @@ class ContentPlanController extends Controller
                 unset($data['workflow_status'], $data['submitted_at']);
             }
 
+            $keptImages = $this->resolveExistingReferenceImages($request, $record);
+            $removedImages = array_values(array_diff($record->reference_images ?? [], $keptImages));
+            $newImages = $this->storeReferenceImages($request);
+            $data['reference_images'] = array_values(array_merge($keptImages, $newImages));
+
             $record->update($data);
+            $this->deleteReferenceImages($removedImages);
 
             if (in_array($record->fresh()->workflow_status, ['draft', 'submitted', 'rejected'], true)
                 && $record->approvalFlows()->where('status', '!=', 'PENDING')->doesntExist()) {
@@ -367,9 +393,12 @@ class ContentPlanController extends Controller
             }
 
             DB::commit();
-            $fresh = $record->fresh(['approvalFlows', 'brand', 'pic']);
+            $fresh = $record->fresh(['approvalFlows.approver', 'brand', 'pic', 'creator']);
             $this->clearCaches($fresh, $approverIds, [$user->id]);
             $this->notifyPicAssigned($fresh, $previousPicId);
+            if ($becomesSubmitted || ($hasApprovers && $fresh->workflow_status === 'submitted')) {
+                $this->notifyCurrentApprover($fresh, 'Tasking Plan menunggu approval Anda.');
+            }
         } catch (\Throwable $e) {
             DB::rollBack();
 
@@ -377,7 +406,41 @@ class ContentPlanController extends Controller
         }
 
         return redirect()->route('content-plans.show', $record->id)
-            ->with('success', 'Content Plan berhasil diupdate.');
+            ->with('success', 'Tasking Plan berhasil diupdate.');
+    }
+
+    public function updatePic(Request $request, $id)
+    {
+        $record = $this->findVisible($id);
+        $user = auth()->user();
+        if (! $this->canEditFlow2($record, $user)) {
+            abort(403, 'Hanya PIC yang ditugaskan yang dapat mengisi Flow 2.');
+        }
+
+        $validated = $request->validate([
+            'pic_submit_date' => 'nullable|date',
+            'task' => 'nullable|string|max:10000',
+            'final_output_links' => 'nullable|array',
+            'final_output_links.*' => 'nullable|string|max:2000',
+            'actual_post_links' => 'nullable|array',
+            'actual_post_links.*' => 'nullable|string|max:2000',
+            'pic_remarks' => 'nullable|string|max:5000',
+        ]);
+
+        $record->update([
+            'pic_submit_date' => $validated['pic_submit_date'] ?? null,
+            'task' => $validated['task'] ?? null,
+            'final_output_links' => $this->normalizeLinks($validated['final_output_links'] ?? []),
+            'actual_post_links' => $this->normalizeLinks($validated['actual_post_links'] ?? []),
+            'pic_remarks' => $validated['pic_remarks'] ?? null,
+        ]);
+
+        $fresh = $record->fresh(['brand', 'pic', 'creator', 'approvalFlows.approver']);
+        $this->clearCaches($fresh, [], [$user->id]);
+        $this->notifyPicFlowUpdated($fresh);
+
+        return redirect()->route('content-plans.show', $record->id)
+            ->with('success', 'Input PIC (Flow 2) berhasil disimpan. Notifikasi dikirim ke creator & approver.');
     }
 
     public function destroy($id)
@@ -390,10 +453,12 @@ class ContentPlanController extends Controller
 
         $approverIds = $record->approvalFlows()->pluck('approver_id')->all();
         $createdBy = $record->created_by;
+        $images = $record->reference_images ?? [];
         $record->delete();
+        $this->deleteReferenceImages($images);
         $this->clearCaches(null, $approverIds, [$user->id, $createdBy]);
 
-        return redirect()->route('content-plans.index')->with('success', 'Content Plan dihapus.');
+        return redirect()->route('content-plans.index')->with('success', 'Tasking Plan dihapus.');
     }
 
     public function getApprovers(Request $request)
@@ -441,6 +506,8 @@ class ContentPlanController extends Controller
                 }
             })
             ->with([
+                'brand:id,brand',
+                'pic:id,nama_lengkap',
                 'creator:id,nama_lengkap',
                 'approvalFlows.approver:id,nama_lengkap',
             ])
@@ -461,6 +528,8 @@ class ContentPlanController extends Controller
             $item->approver_name = $next?->approver?->nama_lengkap;
             $item->approval_level = $next?->approval_level;
             $item->job_status_label = $item->jobStatusLabel();
+            $item->priority_label = $item->priorityLabel();
+            $item->workflow_status_label = $item->workflowStatusLabel();
 
             return $item;
         });
@@ -475,6 +544,8 @@ class ContentPlanController extends Controller
     {
         $user = auth()->user();
         $record = ContentPlan::with([
+            'brand:id,brand',
+            'pic:id,nama_lengkap',
             'creator:id,nama_lengkap',
             'approvalFlows.approver:id,nama_lengkap',
         ])->findOrFail($id);
@@ -485,6 +556,8 @@ class ContentPlanController extends Controller
         }
         $record->setAttribute('can_approve', $canApprove);
         $record->setAttribute('job_status_label', $record->jobStatusLabel());
+        $record->setAttribute('priority_label', $record->priorityLabel());
+        $record->setAttribute('workflow_status_label', $record->workflowStatusLabel());
 
         return response()->json([
             'success' => true,
@@ -529,13 +602,15 @@ class ContentPlanController extends Controller
             }
 
             DB::commit();
-            $this->clearCaches($plan->fresh('approvalFlows'), [], [$user->id]);
+            $fresh = $plan->fresh(['approvalFlows.approver', 'brand', 'pic', 'creator']);
+            $this->clearCaches($fresh, [], [$user->id]);
+            $this->notifyApprovalResult($fresh, true, $stillPending);
 
             return response()->json([
                 'success' => true,
                 'message' => $stillPending
                     ? 'Approval berhasil. Menunggu approver berikutnya.'
-                    : 'Content Plan fully Approved.',
+                    : 'Tasking Plan fully Approved.',
             ]);
         } catch (\RuntimeException $e) {
             DB::rollBack();
@@ -584,11 +659,13 @@ class ContentPlanController extends Controller
             $plan->update(['workflow_status' => 'rejected']);
 
             DB::commit();
-            $this->clearCaches($plan->fresh('approvalFlows'), [], [$user->id]);
+            $fresh = $plan->fresh(['approvalFlows.approver', 'brand', 'pic', 'creator']);
+            $this->clearCaches($fresh, [], [$user->id]);
+            $this->notifyApprovalResult($fresh, false, false);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Content Plan ditolak.',
+                'message' => 'Tasking Plan ditolak.',
             ]);
         } catch (\RuntimeException $e) {
             DB::rollBack();
@@ -610,6 +687,7 @@ class ContentPlanController extends Controller
             'funnels' => ContentPlan::FUNNELS,
             'pillars' => ContentPlan::PILLARS,
             'formats' => ContentPlan::FORMATS,
+            'priorities' => ContentPlan::PRIORITIES,
             'jobStatuses' => ContentPlan::JOB_STATUSES,
         ];
     }
@@ -645,21 +723,22 @@ class ContentPlanController extends Controller
                     }
                 },
             ],
-            'platform' => 'required|string|in:'.implode(',', ContentPlan::PLATFORMS),
+            'platform' => 'required|string|in:'.implode(',', ContentPlan::allowedPlatforms()),
+            'deadline_content' => 'nullable|date',
             'date_post' => 'nullable|date',
             'funnel' => 'nullable|string|in:'.implode(',', ContentPlan::FUNNELS),
             'pillar' => 'nullable|string|in:'.implode(',', ContentPlan::PILLARS),
-            'format' => 'nullable|string|in:'.implode(',', ContentPlan::FORMATS),
+            'format' => 'nullable|string|in:'.implode(',', ContentPlan::allowedFormats()),
             'objective' => 'nullable|string',
             'brief' => 'nullable|string',
             'reference' => 'nullable|string',
+            'reference_images' => 'nullable|array',
+            'reference_images.*' => 'nullable|image|max:5120',
+            'existing_reference_images' => 'nullable|array',
+            'existing_reference_images.*' => 'nullable|string|max:500',
+            'existing_reference_images_json' => 'nullable|string',
             'caption' => 'nullable|string',
-            'job_status' => 'required|string|in:'.implode(',', array_keys(ContentPlan::JOB_STATUSES)),
-            'final_output_links' => 'nullable|array',
-            'final_output_links.*' => 'nullable|string|max:2000',
-            'actual_post_date' => 'nullable|date',
-            'actual_post_links' => 'nullable|array',
-            'actual_post_links.*' => 'nullable|string|max:2000',
+            'priority' => 'required|string|in:'.implode(',', array_keys(ContentPlan::PRIORITIES)),
             'remarks' => 'nullable|string|max:5000',
             'approvers' => 'nullable|array',
             'approvers.*' => 'integer|exists:users,id',
@@ -678,6 +757,7 @@ class ContentPlanController extends Controller
             'brand_id' => $validated['brand_id'],
             'pic_user_id' => $validated['pic_user_id'],
             'platform' => $validated['platform'],
+            'deadline_content' => $validated['deadline_content'] ?? null,
             'date_post' => $datePost,
             'day_name' => $dayName,
             'funnel' => $validated['funnel'] ?? null,
@@ -687,21 +767,58 @@ class ContentPlanController extends Controller
             'brief' => $validated['brief'] ?? null,
             'reference' => $validated['reference'] ?? null,
             'caption' => $validated['caption'] ?? null,
-            'job_status' => $validated['job_status'],
-            'final_output_links' => $this->normalizeLinks($validated['final_output_links'] ?? []),
-            'actual_post_date' => $validated['actual_post_date'] ?? null,
-            'actual_post_links' => $this->normalizeLinks($validated['actual_post_links'] ?? []),
+            'priority' => $validated['priority'] ?? 'medium',
             'remarks' => $validated['remarks'] ?? null,
         ];
 
         if ($isCreate) {
             $payload['number'] = $this->generateNumber();
             $payload['created_by'] = $user->id;
+            $payload['job_status'] = 'on_crafting';
+            $payload['final_output_links'] = [];
+            $payload['actual_post_links'] = [];
             $payload['workflow_status'] = $hasApprovers ? 'submitted' : 'draft';
             $payload['submitted_at'] = $hasApprovers ? now() : null;
         }
 
         return $payload;
+    }
+
+    private function resolveExistingReferenceImages(Request $request, ContentPlan $record): array
+    {
+        if ($request->filled('existing_reference_images_json')) {
+            $decoded = json_decode((string) $request->input('existing_reference_images_json'), true);
+
+            return $this->normalizeLinks(is_array($decoded) ? $decoded : []);
+        }
+
+        if ($request->exists('existing_reference_images')) {
+            return $this->normalizeLinks($request->input('existing_reference_images', []));
+        }
+
+        return $this->normalizeLinks($record->reference_images ?? []);
+    }
+
+    private function storeReferenceImages(Request $request): array
+    {
+        $paths = [];
+        foreach ($request->file('reference_images', []) as $file) {
+            if (! $file) {
+                continue;
+            }
+            $paths[] = $file->store('content-plans/references', 'public');
+        }
+
+        return $paths;
+    }
+
+    private function deleteReferenceImages(array $paths): void
+    {
+        foreach ($paths as $path) {
+            if ($path && Storage::disk('public')->exists($path)) {
+                Storage::disk('public')->delete($path);
+            }
+        }
     }
 
     private function normalizeLinks(array $links): array
@@ -725,7 +842,7 @@ class ContentPlanController extends Controller
 
     private function generateNumber(): string
     {
-        $prefix = 'CP-'.now()->format('Ym').'-';
+        $prefix = 'TP-'.now()->format('Ym').'-';
         $last = ContentPlan::query()
             ->where('number', 'like', $prefix.'%')
             ->orderByDesc('id')
@@ -759,57 +876,185 @@ class ContentPlanController extends Controller
             ->firstOrFail();
     }
 
-    /**
-     * Notifikasi ke PIC saat di-assign / diganti (pola sama PR Ops / Ticket assign).
-     */
-    private function notifyPicAssigned(ContentPlan $plan, ?int $previousPicId = null): void
+    private function planUrl(ContentPlan $plan): string
     {
+        return rtrim((string) config('app.url'), '/').'/content-plans/'.$plan->id;
+    }
+
+    private function planSummary(ContentPlan $plan): string
+    {
+        $plan->loadMissing(['brand']);
+        $brandName = $plan->brand->brand ?? '-';
+        $deadline = $plan->deadline_content ? $plan->deadline_content->format('Y-m-d') : '-';
+
+        return "No: {$plan->number}\nBrand: {$brandName}\nPlatform: {$plan->platform}\nDeadline: {$deadline}\nPillar: ".($plan->pillar ?: '-');
+    }
+
+    private function notifyUser(?int $userId, ContentPlan $plan, string $type, string $message): void
+    {
+        if (! $userId) {
+            return;
+        }
+
         try {
-            $picId = $plan->pic_user_id ? (int) $plan->pic_user_id : null;
-            if (! $picId) {
-                return;
-            }
-
-            if ($previousPicId !== null && $previousPicId === $picId) {
-                return;
-            }
-
-            $actorId = auth()->id();
-            if ($actorId && (int) $actorId === $picId) {
-                return;
-            }
-
-            $plan->loadMissing(['brand', 'pic', 'creator']);
-            $assignerName = auth()->user()->nama_lengkap ?? 'System';
-            $brandName = $plan->brand->brand ?? '-';
-            $datePost = $plan->date_post ? $plan->date_post->format('Y-m-d') : '-';
-
-            $message = "Anda di-assign sebagai PIC Content Plan:\n\n";
-            $message .= "No: {$plan->number}\n";
-            $message .= "Brand: {$brandName}\n";
-            $message .= "Platform: {$plan->platform}\n";
-            $message .= "Date Post: {$datePost}\n";
-            $message .= 'Pillar: '.($plan->pillar ?: '-')."\n";
-            $message .= "Assigned by: {$assignerName}\n\n";
-            $message .= 'Silakan buka detail untuk meninjau content plan.';
-
             NotificationService::insert([
-                'user_id' => $picId,
+                'user_id' => $userId,
                 'task_id' => $plan->id,
-                'type' => 'content_plan_pic_assigned',
+                'type' => $type,
                 'message' => $message,
-                'url' => config('app.url').'/content-plans/'.$plan->id,
+                'url' => $this->planUrl($plan),
                 'is_read' => 0,
             ]);
         } catch (\Throwable $e) {
-            Log::error('Failed to send Content Plan PIC notification', [
+            Log::error('Failed to send Tasking Plan notification', [
                 'content_plan_id' => $plan->id ?? null,
+                'user_id' => $userId,
+                'type' => $type,
                 'error' => $e->getMessage(),
             ]);
         }
     }
 
-    private function canEdit(ContentPlan $record, $user): bool
+    /**
+     * Notifikasi ke PIC saat di-assign / diganti.
+     */
+    private function notifyPicAssigned(ContentPlan $plan, ?int $previousPicId = null): void
+    {
+        $picId = $plan->pic_user_id ? (int) $plan->pic_user_id : null;
+        if (! $picId) {
+            return;
+        }
+
+        if ($previousPicId !== null && $previousPicId === $picId) {
+            return;
+        }
+
+        $actorId = auth()->id();
+        if ($actorId && (int) $actorId === $picId) {
+            return;
+        }
+
+        $assignerName = auth()->user()->nama_lengkap ?? 'System';
+        $message = "Anda di-assign sebagai PIC Tasking Plan:\n\n";
+        $message .= $this->planSummary($plan)."\n";
+        $message .= "Assigned by: {$assignerName}\n\n";
+        $message .= 'Silakan isi Flow 2 (input PIC) di halaman detail.';
+
+        $this->notifyUser($picId, $plan, 'content_plan_pic_assigned', $message);
+    }
+
+    private function notifyCreatorCreated(ContentPlan $plan): void
+    {
+        $creatorId = $plan->created_by ? (int) $plan->created_by : null;
+        if (! $creatorId) {
+            return;
+        }
+
+        $status = strtoupper((string) ($plan->workflow_status ?: 'draft'));
+        $message = "Tasking Plan berhasil dibuat:\n\n";
+        $message .= $this->planSummary($plan)."\n";
+        $message .= "Status Approval: {$status}\n";
+        $message .= 'PIC: '.($plan->pic->nama_lengkap ?? '-');
+
+        $this->notifyUser($creatorId, $plan, 'content_plan_created', $message);
+    }
+
+    private function notifyCurrentApprover(ContentPlan $plan, string $intro): void
+    {
+        $plan->loadMissing(['approvalFlows.approver']);
+        $next = $plan->approvalFlows
+            ->where('status', 'PENDING')
+            ->sortBy('approval_level')
+            ->first();
+
+        if (! $next) {
+            return;
+        }
+
+        $actorId = auth()->id();
+        if ($actorId && (int) $actorId === (int) $next->approver_id) {
+            return;
+        }
+
+        $message = "{$intro}\n\n";
+        $message .= $this->planSummary($plan)."\n";
+        $message .= 'Level approval: '.$next->approval_level."\n";
+        $message .= 'PIC: '.($plan->pic->nama_lengkap ?? '-');
+
+        $this->notifyUser((int) $next->approver_id, $plan, 'content_plan_approval_request', $message);
+    }
+
+    private function notifyPicFlowUpdated(ContentPlan $plan): void
+    {
+        $actorName = auth()->user()->nama_lengkap ?? 'PIC';
+        $summary = $this->planSummary($plan);
+        $submitDate = $plan->pic_submit_date ? $plan->pic_submit_date->format('Y-m-d') : '-';
+
+        $base = "Update Flow 2 (input PIC) Tasking Plan:\n\n{$summary}\nSubmit Date: {$submitDate}\nUpdated by: {$actorName}";
+
+        // Creator
+        $creatorId = $plan->created_by ? (int) $plan->created_by : null;
+        if ($creatorId && $creatorId !== (int) auth()->id()) {
+            $this->notifyUser($creatorId, $plan, 'content_plan_pic_updated', $base."\n\nMohon ditinjau.");
+        }
+
+        // Approvers (pending + all in chain)
+        $plan->loadMissing(['approvalFlows']);
+        $approverIds = $plan->approvalFlows->pluck('approver_id')->map(fn ($id) => (int) $id)->unique()->all();
+        foreach ($approverIds as $approverId) {
+            if (! $approverId || $approverId === (int) auth()->id()) {
+                continue;
+            }
+            $this->notifyUser($approverId, $plan, 'content_plan_pic_updated', $base."\n\nSilakan cek progress PIC.");
+        }
+
+        // PIC confirmation (self)
+        $picId = $plan->pic_user_id ? (int) $plan->pic_user_id : null;
+        if ($picId) {
+            $this->notifyUser($picId, $plan, 'content_plan_pic_updated', "Input PIC Anda untuk Tasking Plan {$plan->number} sudah tersimpan.\n\n{$summary}");
+        }
+    }
+
+    private function notifyApprovalResult(ContentPlan $plan, bool $approved, bool $stillPending): void
+    {
+        $actorName = auth()->user()->nama_lengkap ?? 'Approver';
+        $summary = $this->planSummary($plan);
+
+        if ($approved && $stillPending) {
+            $this->notifyCurrentApprover($plan, 'Tasking Plan menunggu approval Anda (level berikutnya).');
+            $statusText = 'Approval bertingkat berhasil. Menunggu approver berikutnya.';
+        } elseif ($approved) {
+            $statusText = 'Tasking Plan telah APPROVED.';
+        } else {
+            $statusText = 'Tasking Plan telah DITOLAK.';
+        }
+
+        $message = "{$statusText}\n\n{$summary}\nOleh: {$actorName}";
+
+        $creatorId = $plan->created_by ? (int) $plan->created_by : null;
+        if ($creatorId && $creatorId !== (int) auth()->id()) {
+            $this->notifyUser($creatorId, $plan, $approved ? 'content_plan_approved' : 'content_plan_rejected', $message);
+        }
+
+        $picId = $plan->pic_user_id ? (int) $plan->pic_user_id : null;
+        if ($picId && $picId !== (int) auth()->id()) {
+            $this->notifyUser($picId, $plan, $approved ? 'content_plan_approved' : 'content_plan_rejected', $message);
+        }
+
+        // Saat fully approved/rejected, kabari juga seluruh approver di chain
+        if (! $stillPending) {
+            $plan->loadMissing(['approvalFlows']);
+            foreach ($plan->approvalFlows as $flow) {
+                $approverId = (int) $flow->approver_id;
+                if (! $approverId || $approverId === (int) auth()->id()) {
+                    continue;
+                }
+                $this->notifyUser($approverId, $plan, $approved ? 'content_plan_approved' : 'content_plan_rejected', $message);
+            }
+        }
+    }
+
+    private function canEditFlow1(ContentPlan $record, $user): bool
     {
         if (! $user) {
             return false;
@@ -818,11 +1063,20 @@ class ContentPlanController extends Controller
             return true;
         }
 
-        // Creator atau PIC yang di-assign boleh edit.
-        if ((int) $record->created_by === (int) $user->id) {
+        // Flow 1: pemberi tugas (creator)
+        return (int) $record->created_by === (int) $user->id;
+    }
+
+    private function canEditFlow2(ContentPlan $record, $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+        if ($this->isSuperadmin($user)) {
             return true;
         }
 
+        // Flow 2: PIC yang ditugaskan
         return $record->pic_user_id
             && (int) $record->pic_user_id === (int) $user->id;
     }

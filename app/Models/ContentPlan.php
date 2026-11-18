@@ -8,7 +8,16 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ContentPlan extends Model
 {
-    public const PLATFORMS = ['Instagram', 'TikTok', 'Threads', 'LinkedIn'];
+    public const PLATFORMS = [
+        'Instagram',
+        'TVC',
+        'Threads',
+        'Website',
+        'LinkedIn',
+        'Tiktok',
+        'Member Apps',
+        'Printing Media Promo',
+    ];
 
     public const FUNNELS = ['Purchase', 'Awareness', 'Consideration', 'Retention'];
 
@@ -24,12 +33,31 @@ class ContentPlan extends Model
     ];
 
     public const FORMATS = [
-        'Carousel - Design',
-        'Carousel - Video',
+        'Carousel Design',
+        'Carousel Video',
         'Still Image',
         'Reels',
         'Motion',
         'Story',
+        'Video TVC',
+        'Banner Digital',
+        'Print Media',
+        'Menu',
+    ];
+
+    /** Legacy values kept so existing records remain editable. */
+    public const LEGACY_PLATFORMS = ['TikTok'];
+
+    public const LEGACY_FORMATS = [
+        'Carousel - Design',
+        'Carousel - Video',
+    ];
+
+    public const PRIORITIES = [
+        'low' => 'Low',
+        'medium' => 'Medium',
+        'high' => 'High',
+        'urgent' => 'Urgent',
     ];
 
     public const JOB_STATUSES = [
@@ -51,6 +79,7 @@ class ContentPlan extends Model
         'brand_id',
         'pic_user_id',
         'platform',
+        'deadline_content',
         'date_post',
         'day_name',
         'funnel',
@@ -59,12 +88,17 @@ class ContentPlan extends Model
         'objective',
         'brief',
         'reference',
+        'reference_images',
         'caption',
+        'priority',
+        'pic_submit_date',
+        'task',
         'job_status',
         'final_output_links',
         'actual_post_date',
         'actual_post_links',
         'remarks',
+        'pic_remarks',
         'workflow_status',
         'created_by',
         'submitted_at',
@@ -72,8 +106,11 @@ class ContentPlan extends Model
     ];
 
     protected $casts = [
+        'deadline_content' => 'date',
         'date_post' => 'date',
+        'pic_submit_date' => 'date',
         'actual_post_date' => 'date',
+        'reference_images' => 'array',
         'final_output_links' => 'array',
         'actual_post_links' => 'array',
         'submitted_at' => 'datetime',
@@ -108,5 +145,20 @@ class ContentPlan extends Model
     public function workflowStatusLabel(): string
     {
         return self::WORKFLOW_STATUSES[$this->workflow_status] ?? $this->workflow_status;
+    }
+
+    public function priorityLabel(): string
+    {
+        return self::PRIORITIES[$this->priority] ?? ($this->priority ?: '-');
+    }
+
+    public static function allowedPlatforms(): array
+    {
+        return array_values(array_unique(array_merge(self::PLATFORMS, self::LEGACY_PLATFORMS)));
+    }
+
+    public static function allowedFormats(): array
+    {
+        return array_values(array_unique(array_merge(self::FORMATS, self::LEGACY_FORMATS)));
     }
 }

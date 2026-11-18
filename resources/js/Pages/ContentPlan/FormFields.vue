@@ -2,18 +2,26 @@
   <div class="space-y-5">
     <div class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
-        <h2 class="text-sm font-semibold text-gray-800">Content Info</h2>
+        <h2 class="text-sm font-semibold text-gray-800">Flow 1 · Input Pemberi Tugas</h2>
+        <p class="text-xs text-gray-500 mt-0.5">Field PIC (penerima tugas) menyusul di flow berikutnya.</p>
       </div>
       <div class="p-5 space-y-5">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-x-5 gap-y-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Brand <span class="text-red-500">*</span></label>
-            <select v-model="form.brand_id" required :class="inputClass">
-              <option value="" disabled>Pilih brand</option>
-              <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.brand }}</option>
-            </select>
-            <p v-if="form.errors?.brand_id" class="text-sm text-red-600 mt-1">{{ form.errors.brand_id }}</p>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Nomor TP</label>
+            <input :value="meta.number || meta.number_preview || 'Auto'" type="text" readonly :class="inputClass + ' bg-gray-50 text-gray-600'" />
           </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Created Date</label>
+            <input :value="meta.created_at || '-'" type="text" readonly :class="inputClass + ' bg-gray-50 text-gray-600'" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Created By</label>
+            <input :value="meta.created_by_name || '-'" type="text" readonly :class="inputClass + ' bg-gray-50 text-gray-600'" />
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">PIC <span class="text-red-500">*</span></label>
             <select v-model="form.pic_user_id" required :class="inputClass">
@@ -23,19 +31,28 @@
             <p v-if="form.errors?.pic_user_id" class="text-sm text-red-600 mt-1">{{ form.errors.pic_user_id }}</p>
           </div>
           <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Brand <span class="text-red-500">*</span></label>
+            <select v-model="form.brand_id" required :class="inputClass">
+              <option value="" disabled>Pilih brand</option>
+              <option v-for="b in brands" :key="b.id" :value="b.id">{{ b.brand }}</option>
+            </select>
+            <p v-if="form.errors?.brand_id" class="text-sm text-red-600 mt-1">{{ form.errors.brand_id }}</p>
+          </div>
+          <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Platform <span class="text-red-500">*</span></label>
             <select v-model="form.platform" required :class="inputClass">
               <option value="" disabled>Pilih platform</option>
               <option v-for="p in platforms" :key="p" :value="p">{{ p }}</option>
             </select>
+            <p v-if="form.errors?.platform" class="text-sm text-red-600 mt-1">{{ form.errors.platform }}</p>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1.5">Deadline Content</label>
+            <input v-model="form.deadline_content" type="date" :class="inputClass" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Date Post</label>
-            <input v-model="form.date_post" type="date" :class="inputClass" @change="syncDay" />
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Day</label>
-            <input :value="dayLabel" type="text" readonly :class="inputClass + ' bg-gray-50 text-gray-600'" placeholder="Otomatis dari Date Post" />
+            <input v-model="form.date_post" type="date" :class="inputClass" />
           </div>
           <div>
             <label class="block text-sm font-medium text-gray-700 mb-1.5">Funnel</label>
@@ -58,73 +75,90 @@
               <option v-for="f in formats" :key="f" :value="f">{{ f }}</option>
             </select>
           </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Status <span class="text-red-500">*</span></label>
-            <select v-model="form.job_status" required :class="inputClass">
-              <option v-for="(label, key) in jobStatuses" :key="key" :value="key">{{ label }}</option>
-            </select>
-            <p class="text-xs text-gray-500 mt-1">Submitted / Approved otomatis dari approval flow.</p>
-          </div>
-          <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1.5">Actual Post Date</label>
-            <input v-model="form.actual_post_date" type="date" :class="inputClass" />
-          </div>
         </div>
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Objective</label>
-          <RichTextEditor v-model="form.objective" min-height="120px" placeholder="Objective..." />
+          <textarea v-model="form.objective" rows="3" :class="inputClass" placeholder="Objective..."></textarea>
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Brief</label>
-          <RichTextEditor v-model="form.brief" min-height="120px" placeholder="Brief..." />
+          <textarea v-model="form.brief" rows="4" :class="inputClass" placeholder="Brief..."></textarea>
         </div>
+
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-1.5">Reference</label>
-          <RichTextEditor v-model="form.reference" min-height="120px" placeholder="Reference..." />
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Reference Link</label>
+          <input v-model="form.reference" type="text" :class="inputClass" placeholder="https://... atau catatan referensi" />
         </div>
+
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1.5">Reference Image</label>
+          <div v-if="existingImages.length" class="flex flex-wrap gap-3 mb-3">
+            <div
+              v-for="(img, idx) in existingImages"
+              :key="'ref-img-'+idx"
+              class="relative w-24 h-24 rounded-lg overflow-hidden border border-gray-200 bg-gray-50"
+            >
+              <img :src="storageUrl(img)" :alt="'Reference '+ (idx + 1)" class="w-full h-full object-cover" />
+              <button
+                type="button"
+                class="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-600 text-white text-xs hover:bg-red-700"
+                title="Hapus"
+                @click="removeExistingImage(idx)"
+              >
+                <i class="fa-solid fa-times"></i>
+              </button>
+            </div>
+          </div>
+          <input
+            type="file"
+            accept="image/*"
+            multiple
+            class="block w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-3 file:rounded-lg file:border-0 file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100"
+            @change="onReferenceImagesChange"
+          />
+          <p v-if="pendingImageNames.length" class="text-xs text-gray-500 mt-1">
+            File baru: {{ pendingImageNames.join(', ') }}
+          </p>
+          <p v-if="form.errors?.reference_images" class="text-sm text-red-600 mt-1">{{ form.errors.reference_images }}</p>
+        </div>
+
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Caption</label>
           <textarea v-model="form.caption" rows="4" :class="inputClass" placeholder="Caption..."></textarea>
         </div>
 
         <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-sm font-medium text-gray-700">Final Output</label>
-            <button type="button" class="inline-flex items-center gap-1 text-sm font-medium text-violet-600 hover:text-violet-700" @click="addLink('final_output_links')">
-              <i class="fa-solid fa-plus text-xs"></i> Tambah
+          <label class="block text-sm font-medium text-gray-700 mb-2">Prioritas <span class="text-red-500">*</span></label>
+          <div class="flex flex-wrap gap-2">
+            <button
+              v-for="(label, key) in priorities"
+              :key="key"
+              type="button"
+              class="px-3.5 py-2 rounded-lg text-sm font-medium border transition"
+              :class="form.priority === key ? priorityActiveClass(key) : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'"
+              @click="form.priority = key"
+            >
+              {{ label }}
             </button>
           </div>
-          <div class="space-y-2">
-            <div v-for="(_, idx) in form.final_output_links" :key="'fo-'+idx" class="flex gap-2 items-center">
-              <input v-model="form.final_output_links[idx]" type="url" placeholder="https://..." :class="inputClass" />
-              <button type="button" class="shrink-0 w-10 h-10 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50" @click="removeLink('final_output_links', idx)">
-                <i class="fa-solid fa-trash text-sm"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <div class="flex items-center justify-between mb-1.5">
-            <label class="block text-sm font-medium text-gray-700">Actual Post Link</label>
-            <button type="button" class="inline-flex items-center gap-1 text-sm font-medium text-violet-600 hover:text-violet-700" @click="addLink('actual_post_links')">
-              <i class="fa-solid fa-plus text-xs"></i> Tambah
-            </button>
-          </div>
-          <div class="space-y-2">
-            <div v-for="(_, idx) in form.actual_post_links" :key="'ap-'+idx" class="flex gap-2 items-center">
-              <input v-model="form.actual_post_links[idx]" type="url" placeholder="https://..." :class="inputClass" />
-              <button type="button" class="shrink-0 w-10 h-10 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50" @click="removeLink('actual_post_links', idx)">
-                <i class="fa-solid fa-trash text-sm"></i>
-              </button>
-            </div>
-          </div>
+          <p v-if="form.errors?.priority" class="text-sm text-red-600 mt-1">{{ form.errors.priority }}</p>
         </div>
 
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-1.5">Remarks</label>
           <textarea v-model="form.remarks" rows="3" :class="inputClass" placeholder="Catatan umum..."></textarea>
+        </div>
+
+        <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <div class="font-medium mb-1">Approval</div>
+          <p class="text-xs text-slate-500 mb-2">
+            Status otomatis: tanpa approver = Draft · ada approver = <span class="font-semibold">SUBMITTED</span> · semua approve = <span class="font-semibold">APPROVED</span>.
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">SUBMITTED</span>
+            <span class="inline-flex px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">APPROVED</span>
+          </div>
         </div>
       </div>
     </div>
@@ -182,7 +216,6 @@
 </template>
 
 <script setup>
-import RichTextEditor from '@/Components/RichTextEditor.vue';
 import axios from 'axios';
 import { computed, ref } from 'vue';
 
@@ -194,35 +227,46 @@ const props = defineProps({
   funnels: { type: Array, default: () => [] },
   pillars: { type: Array, default: () => [] },
   formats: { type: Array, default: () => [] },
-  jobStatuses: { type: Object, default: () => ({}) },
+  priorities: { type: Object, default: () => ({}) },
+  meta: { type: Object, default: () => ({}) },
 });
 
 const inputClass =
   'w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm text-gray-800 shadow-sm focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-violet-500';
 
-const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const dayLabel = computed(() => {
-  if (!props.form.date_post) return '';
-  const d = new Date(`${props.form.date_post}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return '';
-  return dayNames[d.getDay()];
-});
+const existingImages = computed(() => props.form.existing_reference_images || []);
+const pendingImageNames = computed(() =>
+  (props.form.reference_images || []).map((f) => f?.name || 'image').filter(Boolean)
+);
 
-const syncDay = () => {
-  // day is computed server-side on save; UI shows via dayLabel
+const storageUrl = (path) => {
+  if (!path) return '';
+  if (String(path).startsWith('http') || String(path).startsWith('/')) return path;
+  return `/storage/${path}`;
+};
+
+const onReferenceImagesChange = (event) => {
+  const files = Array.from(event.target.files || []);
+  props.form.reference_images = files;
+};
+
+const removeExistingImage = (idx) => {
+  props.form.existing_reference_images.splice(idx, 1);
+};
+
+const priorityActiveClass = (key) => {
+  const map = {
+    low: 'bg-slate-700 border-slate-700 text-white',
+    medium: 'bg-blue-600 border-blue-600 text-white',
+    high: 'bg-amber-500 border-amber-500 text-white',
+    urgent: 'bg-red-600 border-red-600 text-white',
+  };
+  return map[key] || 'bg-violet-600 border-violet-600 text-white';
 };
 
 const approverSearch = ref('');
 const approverResults = ref([]);
 let searchTimer = null;
-
-const addLink = (field) => {
-  props.form[field].push('');
-};
-
-const removeLink = (field, idx) => {
-  props.form[field].splice(idx, 1);
-};
 
 const searchApprovers = () => {
   clearTimeout(searchTimer);

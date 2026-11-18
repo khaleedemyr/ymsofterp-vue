@@ -293,7 +293,7 @@ export default {
     "promo": "Promo",
     "marketing_visit_checklist": "Checklist Kunjungan Marketing",
     "marcomm_tracker": "Marcomm Tracker",
-    "content_plan": "Content Plan",
+    "content_plan": "Tasking Plan",
     "sales_leads": "Sales Leads",
     "reservasi": "Reservasi",
     "data_roulette": "Data Roulette",

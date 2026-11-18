@@ -5,9 +5,9 @@
         <div>
           <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
             <i class="fa-solid fa-calendar-days text-violet-600"></i>
-            Content Plan
+            Tasking Plan
           </h1>
-          <p class="text-sm text-gray-500 mt-1">Planning konten sosial media — list & detail lengkap.</p>
+          <p class="text-sm text-gray-500 mt-1">Penugasan konten — Flow 1 pemberi tugas, Flow 2 PIC menyusul.</p>
         </div>
         <div class="flex flex-wrap gap-2">
           <Link
@@ -22,7 +22,7 @@
             class="inline-flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg shadow hover:bg-violet-700 transition"
           >
             <i class="fa-solid fa-plus"></i>
-            Buat Content Plan
+            Buat Tasking Plan
           </Link>
         </div>
       </div>
@@ -43,13 +43,13 @@
             <option value="">Semua Platform</option>
             <option v-for="p in platforms" :key="p" :value="p">{{ p }}</option>
           </select>
-          <select v-model="filterForm.job_status" class="rounded-lg border-gray-300">
-            <option value="">Semua Status</option>
-            <option v-for="(label, key) in jobStatuses" :key="key" :value="key">{{ label }}</option>
+          <select v-model="filterForm.priority" class="rounded-lg border-gray-300">
+            <option value="">Semua Prioritas</option>
+            <option v-for="(label, key) in priorities" :key="key" :value="key">{{ label }}</option>
           </select>
           <div class="flex gap-2">
             <select v-model="filterForm.workflow_status" class="flex-1 rounded-lg border-gray-300">
-              <option value="">Semua Workflow</option>
+              <option value="">Semua Approval</option>
               <option v-for="(label, key) in workflowStatuses" :key="key" :value="key">{{ label }}</option>
             </select>
             <button type="submit" class="px-4 py-2 rounded-lg bg-violet-600 text-white hover:bg-violet-700">Cari</button>
@@ -61,37 +61,41 @@
         <table class="min-w-full text-sm">
           <thead class="bg-gray-50 border-b">
             <tr>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Nomor</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Brand</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">PIC</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Platform</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Date Post</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Day</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Pillar</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Status</th>
-              <th class="px-4 py-3 text-left font-semibold text-gray-700">Workflow</th>
-              <th class="px-4 py-3 text-right font-semibold text-gray-700">Aksi</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Nomor TP</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Created Date</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Created By</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">PIC</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Brand</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Platform</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Deadline Content</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Date Post</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Pillar</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Prioritas</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Status Approval</th>
+              <th class="px-4 py-3 text-right font-semibold text-gray-700 whitespace-nowrap">Aksi</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!records.data?.length">
-              <td colspan="10" class="px-4 py-8 text-center text-gray-500">Belum ada Content Plan.</td>
+              <td colspan="12" class="px-4 py-8 text-center text-gray-500">Belum ada Tasking Plan.</td>
             </tr>
             <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-violet-50/40 align-top">
-              <td class="px-4 py-3 font-medium">{{ row.number }}</td>
-              <td class="px-4 py-3">{{ row.brand?.brand || '-' }}</td>
-              <td class="px-4 py-3">{{ row.pic?.nama_lengkap || '-' }}</td>
-              <td class="px-4 py-3">{{ row.platform }}</td>
-              <td class="px-4 py-3">{{ formatDate(row.date_post) }}</td>
-              <td class="px-4 py-3">{{ row.day_name || '-' }}</td>
-              <td class="px-4 py-3">{{ row.pillar || '-' }}</td>
+              <td class="px-4 py-3 font-medium whitespace-nowrap">{{ row.number }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ formatDateTime(row.created_at) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ row.creator?.nama_lengkap || '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ row.pic?.nama_lengkap || '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ row.brand?.brand || '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ row.platform || '-' }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ formatDate(row.deadline_content) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ formatDate(row.date_post) }}</td>
+              <td class="px-4 py-3 whitespace-nowrap">{{ row.pillar || '-' }}</td>
               <td class="px-4 py-3">
-                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-100 text-blue-800">
-                  {{ jobStatuses[row.job_status] || row.job_status }}
+                <span class="inline-flex px-2.5 py-1 rounded-md text-xs font-semibold border" :class="priorityClass(row.priority)">
+                  {{ priorities[row.priority] || row.priority || '-' }}
                 </span>
               </td>
               <td class="px-4 py-3">
-                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="workflowClass(row.workflow_status)">
+                <span class="inline-flex px-2.5 py-1 rounded-md text-xs font-semibold" :class="workflowClass(row.workflow_status)">
                   {{ workflowStatuses[row.workflow_status] || row.workflow_status }}
                 </span>
               </td>
@@ -103,9 +107,17 @@
                   v-if="row.can_edit"
                   :href="route('content-plans.edit', row.id)"
                   class="text-indigo-600 hover:text-indigo-800 mr-3"
-                  title="Edit"
+                  title="Edit Flow 1"
                 >
                   <i class="fa-solid fa-pen"></i>
+                </Link>
+                <Link
+                  v-if="row.can_edit_pic"
+                  :href="route('content-plans.show', row.id)"
+                  class="text-emerald-600 hover:text-emerald-800 mr-3"
+                  title="Isi Flow 2 (PIC)"
+                >
+                  <i class="fa-solid fa-user-pen"></i>
                 </Link>
                 <button
                   v-if="row.can_delete"
@@ -147,6 +159,7 @@ const props = defineProps({
   filters: { type: Object, default: () => ({}) },
   brands: { type: Array, default: () => [] },
   platforms: { type: Array, default: () => [] },
+  priorities: { type: Object, default: () => ({}) },
   jobStatuses: { type: Object, default: () => ({}) },
   workflowStatuses: { type: Object, default: () => ({}) },
 });
@@ -155,7 +168,7 @@ const filterForm = reactive({
   search: props.filters.search || '',
   brand_id: props.filters.brand_id || '',
   platform: props.filters.platform || '',
-  job_status: props.filters.job_status || '',
+  priority: props.filters.priority || '',
   workflow_status: props.filters.workflow_status || '',
 });
 
@@ -165,6 +178,11 @@ const applyFilters = () => {
 
 const formatDate = (d) => (d ? String(d).substring(0, 10) : '-');
 
+const formatDateTime = (d) => {
+  if (!d) return '-';
+  return String(d).replace('T', ' ').substring(0, 19);
+};
+
 const workflowClass = (s) => {
   if (s === 'approved') return 'bg-green-100 text-green-800';
   if (s === 'submitted') return 'bg-amber-100 text-amber-800';
@@ -172,9 +190,16 @@ const workflowClass = (s) => {
   return 'bg-gray-100 text-gray-700';
 };
 
+const priorityClass = (s) => {
+  if (s === 'urgent') return 'bg-red-50 text-red-700 border-red-200';
+  if (s === 'high') return 'bg-amber-50 text-amber-700 border-amber-200';
+  if (s === 'medium') return 'bg-blue-50 text-blue-700 border-blue-200';
+  return 'bg-slate-50 text-slate-700 border-slate-200';
+};
+
 const confirmDelete = async (row) => {
   const result = await Swal.fire({
-    title: 'Hapus Content Plan?',
+    title: 'Hapus Tasking Plan?',
     text: row.number,
     icon: 'warning',
     showCancelButton: true,
