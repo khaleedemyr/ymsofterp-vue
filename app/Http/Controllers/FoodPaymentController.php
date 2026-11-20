@@ -1853,50 +1853,70 @@ class FoodPaymentController extends Controller
             'gmFinance',
             'contraBons.purchaseOrder',
             'contraBons.retailFood.outlet',
+            'contraBons.retailNonFood.outlet',
             'contraBons.warehouseRetailFood.warehouse',
+            'paymentOutlets.outlet',
+            'paymentOutlets.warehouse',
             'paymentOutlets.coa',
             'paymentOutlets.bank',
         ])->findOrFail($id);
         
-        // Transform contra bons to include source type and outlet information (same as show)
-        $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function($contraBon) {
+        // Transform contra bons to include source type and location (same fields as unpaid API)
+        $payment->contra_bons = $payment->contraBons ? $payment->contraBons->map(function ($contraBon) {
             $sourceTypeDisplay = 'Unknown';
             $outletNames = [];
-            
+            $warehouseNames = [];
+            $warehouseIds = [];
+
             if ($contraBon->source_type === 'purchase_order' && $contraBon->purchaseOrder) {
                 if ($contraBon->purchaseOrder->source_type === 'pr_foods') {
                     $sourceTypeDisplay = 'PR Foods';
-                    // PR Foods tidak punya outlet (global)
-                    $outletNames = [];
+                    $warehouseRows = DB::table('purchase_order_food_items as poi')
+                        ->leftJoin('pr_food_items as pri', 'poi.pr_food_item_id', '=', 'pri.id')
+                        ->leftJoin('pr_foods as prf', 'pri.pr_food_id', '=', 'prf.id')
+                        ->leftJoin('warehouses as w', 'w.id', '=', 'prf.warehouse_id')
+                        ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
+                        ->whereNotNull('w.id')
+                        ->select('w.id as warehouse_id', 'w.name as warehouse_name')
+                        ->distinct()
+                        ->get();
+                    $warehouseNames = $warehouseRows->pluck('warehouse_name')->filter()->unique()->values()->all();
+                    $warehouseIds = $warehouseRows->pluck('warehouse_id')->filter()->unique()->values()->all();
                 } elseif ($contraBon->purchaseOrder->source_type === 'ro_supplier') {
                     $sourceTypeDisplay = 'RO Supplier';
-                    // Get outlet names for RO Supplier
-                    $outletData = \DB::table('food_floor_orders as fo')
+                    $outletData = DB::table('food_floor_orders as fo')
                         ->join('purchase_order_food_items as poi', 'fo.id', '=', 'poi.ro_id')
                         ->leftJoin('tbl_data_outlet as o', 'fo.id_outlet', '=', 'o.id_outlet')
                         ->where('poi.purchase_order_food_id', $contraBon->purchaseOrder->id)
                         ->select('o.nama_outlet')
                         ->distinct()
                         ->get();
-                    
-                    $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->toArray();
+                    $outletNames = $outletData->pluck('nama_outlet')->filter()->unique()->values()->all();
                 }
             } elseif ($contraBon->source_type === 'retail_food') {
                 $sourceTypeDisplay = 'Retail Food';
-                // Get outlet name for Retail Food from outlet relationship
                 if ($contraBon->retailFood && $contraBon->retailFood->outlet && $contraBon->retailFood->outlet->nama_outlet) {
                     $outletNames = [$contraBon->retailFood->outlet->nama_outlet];
                 }
+            } elseif ($contraBon->source_type === 'retail_non_food') {
+                $sourceTypeDisplay = 'Retail Non Food';
+                if ($contraBon->retailNonFood && $contraBon->retailNonFood->outlet && $contraBon->retailNonFood->outlet->nama_outlet) {
+                    $outletNames = [$contraBon->retailNonFood->outlet->nama_outlet];
+                }
             } elseif ($contraBon->source_type === 'warehouse_retail_food' && $contraBon->warehouseRetailFood) {
                 $sourceTypeDisplay = 'Warehouse Retail Food';
-                // Warehouse Retail Food tidak punya outlet langsung (hanya punya warehouse)
-                // Jika perlu outlet name, bisa diambil dari warehouse jika warehouse punya outlet
-                $outletNames = [];
+                if ($contraBon->warehouseRetailFood->warehouse && $contraBon->warehouseRetailFood->warehouse->name) {
+                    $warehouseNames = [$contraBon->warehouseRetailFood->warehouse->name];
+                    $warehouseIds = [$contraBon->warehouseRetailFood->warehouse->id];
+                }
             }
-            
+
             $contraBon->source_type_display = $sourceTypeDisplay;
             $contraBon->outlet_names = $outletNames;
-            
+            $contraBon->warehouse_names = $warehouseNames;
+            $contraBon->warehouse_ids = $warehouseIds;
+            $contraBon->location_names = array_values(array_filter(array_merge($outletNames, $warehouseNames)));
+
             return $contraBon;
         }) : collect();
         

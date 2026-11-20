@@ -779,36 +779,33 @@ const selectedContraBonsByOutlet = computed(() => {
   const grouped = {};
   
   selected.forEach(cb => {
-    // Handle location_names (outlet + warehouse): bisa array, string, atau null/undefined
-    let locationNames = [];
-    if (cb.location_names) {
-      if (Array.isArray(cb.location_names)) {
-        locationNames = cb.location_names.filter(name => name && name.trim() !== '');
-      } else if (typeof cb.location_names === 'string') {
-        locationNames = [cb.location_names].filter(name => name && name.trim() !== '');
-      }
+    // location_names, fallback ke outlet_names / warehouse_names (penting saat edit)
+    const toNameList = (val) => {
+      if (!val) return [];
+      if (Array.isArray(val)) return val.filter((name) => name && String(name).trim() !== '');
+      if (typeof val === 'string') return [val].filter((name) => name && name.trim() !== '');
+      return [];
+    };
+
+    let locationNames = toNameList(cb.location_names);
+    if (locationNames.length === 0) {
+      locationNames = [...toNameList(cb.outlet_names), ...toNameList(cb.warehouse_names)];
     }
-    
-    // Determine location type (outlet or warehouse)
+
     const getLocationType = () => {
-      // Check dari source_type_display
       if (cb.source_type_display === 'PR Foods') return 'warehouse';
       if (cb.source_type_display === 'Warehouse Retail Food') return 'warehouse';
       if (cb.source_type_display === 'RO Supplier') return 'outlet';
       if (cb.source_type_display === 'Retail Food') return 'outlet';
       if (cb.source_type_display === 'Retail Non Food') return 'outlet';
-      
-      // Fallback: check warehouse_names vs outlet_names
-      if (cb.warehouse_names && cb.warehouse_names.length > 0) return 'warehouse';
-      if (cb.outlet_names && cb.outlet_names.length > 0) return 'outlet';
-      
+      if (toNameList(cb.warehouse_names).length > 0) return 'warehouse';
+      if (toNameList(cb.outlet_names).length > 0) return 'outlet';
       return 'global';
     };
-    
+
     const locationType = getLocationType();
-    
+
     if (locationNames.length === 0) {
-      // No location, group as "Global"
       const key = 'global';
       if (!grouped[key]) {
         grouped[key] = {
@@ -824,8 +821,7 @@ const selectedContraBonsByOutlet = computed(() => {
       grouped[key].total_amount += parseFloat(cb.total_amount) || 0;
       grouped[key].contra_bon_count += 1;
     } else {
-      // Group by each location (outlet or warehouse)
-      locationNames.forEach(locationName => {
+      locationNames.forEach((locationName) => {
         const key = `${locationType}_${locationName}`;
         if (!grouped[key]) {
           grouped[key] = {
@@ -838,7 +834,6 @@ const selectedContraBonsByOutlet = computed(() => {
           };
         }
         grouped[key].contra_bons.push(cb);
-        // Distribute amount equally if contra bon has multiple locations
         const amountPerLocation = (parseFloat(cb.total_amount) || 0) / locationNames.length;
         grouped[key].total_amount += amountPerLocation;
         grouped[key].contra_bon_count += 1;
@@ -1132,14 +1127,23 @@ async function onSupplierChange(supplier) {
     
     // Jika edit mode, tambahkan contra bon yang sudah dipilih meskipun sudah paid
     if (isEditMode.value && props.payment?.contra_bons) {
-      const selectedIds = props.payment.contra_bons.map(cb => cb.id);
-      const selectedContraBons = props.payment.contra_bons.map(cb => ({
-        ...cb,
-        total_amount: parseFloat(cb.total_amount || cb.pivot?.total_amount || 0)
-      }));
+      const selectedContraBons = props.payment.contra_bons.map((cb) => {
+        const outletNames = Array.isArray(cb.outlet_names) ? cb.outlet_names : [];
+        const warehouseNames = Array.isArray(cb.warehouse_names) ? cb.warehouse_names : [];
+        const locationNames = (Array.isArray(cb.location_names) && cb.location_names.length > 0)
+          ? cb.location_names
+          : [...outletNames, ...warehouseNames];
+        return {
+          ...cb,
+          outlet_names: outletNames,
+          warehouse_names: warehouseNames,
+          location_names: locationNames,
+          total_amount: parseFloat(cb.total_amount || cb.pivot?.total_amount || 0),
+        };
+      });
       // Gabungkan dengan yang available, pastikan tidak duplikat
-      const existingIds = availableContraBons.map(cb => cb.id);
-      selectedContraBons.forEach(cb => {
+      const existingIds = availableContraBons.map((cb) => cb.id);
+      selectedContraBons.forEach((cb) => {
         if (!existingIds.includes(cb.id)) {
           availableContraBons.push(cb);
         }
