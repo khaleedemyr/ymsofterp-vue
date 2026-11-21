@@ -1414,9 +1414,9 @@ class OutletInternalUseWasteController extends Controller
             // Ambil semua detail untuk header ini
             $details = DB::table('outlet_internal_use_waste_details')->where('header_id', $id)->get();
 
-            // Proses rollback stok HANYA jika status bukan DRAFT
-            // Karena DRAFT tidak pernah memotong stock, jadi tidak perlu rollback
-            $shouldRollbackStock = $header->status !== 'DRAFT';
+            // Rollback stok HANYA jika PROCESSED (stok benar-benar sudah dipotong + ada kartu OUT).
+            // SUBMITTED/REJECTED/DRAFT belum potong stok — rollback di sini = phantom IN tanpa kartu.
+            $shouldRollbackStock = $header->status === 'PROCESSED';
             
             \Log::info('OutletInternalUseWaste destroy - Starting delete', [
                 'header_id' => $id,
