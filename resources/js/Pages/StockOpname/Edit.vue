@@ -379,6 +379,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch } from 'vue';
 import axios from 'axios';
+import { todayYmdJakarta } from '@/utils/dateOnly';
 
 const props = defineProps({
   stockOpname: Object,
@@ -440,7 +441,7 @@ const transformItems = (items) => {
 const form = useForm({
   outlet_id: props.stockOpname?.outlet_id || '',
   warehouse_outlet_id: props.stockOpname?.warehouse_outlet_id || '',
-  opname_date: props.stockOpname?.opname_date || new Date().toISOString().split('T')[0],
+  opname_date: props.stockOpname?.opname_date || todayYmdJakarta(),
   notes: props.stockOpname?.notes || '',
   items: transformItems(props.items),
   approvers: props.approvers || [],

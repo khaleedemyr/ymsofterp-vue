@@ -1,6 +1,17 @@
 /**
- * Tanggal kalender (tanpa jam) — hindari new Date() agar tidak bergeser karena timezone.
+ * Tanggal kalender (tanpa jam) — hindari new Date() / toISOString() agar tidak bergeser karena timezone.
+ * toISOString() = UTC; sebelum jam 07:00 WIB tanggal bisa H-1.
  */
+
+/** YYYY-MM-DD di zona Asia/Jakarta (sama dengan Bangkok UTC+7). */
+export function todayYmdJakarta(date = new Date()) {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
 
 export function toDateInputValue(value) {
   if (value == null || value === '') return ''

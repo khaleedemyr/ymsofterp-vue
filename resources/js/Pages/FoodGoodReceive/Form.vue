@@ -167,6 +167,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import axios from 'axios';
 import Swal from 'sweetalert2';
 import Modal from '@/Components/Modal.vue';
+import { todayYmdJakarta } from '@/utils/dateOnly';
 
 const emit = defineEmits(['close']);
 
@@ -270,7 +271,7 @@ const submit = async () => {
     await axios.post(route('food-good-receive.store'), {
       po_id: po.value.id,
       supplier_id: po.value.supplier_id,
-      receive_date: new Date().toISOString().slice(0, 10),
+      receive_date: todayYmdJakarta(),
       items: items.value.map(item => ({
         po_item_id: item.id,
         item_id: item.item_id,

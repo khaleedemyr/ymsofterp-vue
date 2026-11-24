@@ -178,6 +178,7 @@ import AppLayout from '@/Layouts/AppLayout.vue';
 import { useForm, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import Swal from 'sweetalert2';
+import { todayYmdJakarta } from '@/utils/dateOnly';
 const props = defineProps({ warehouses: Array });
 const loading = ref(false);
 
@@ -196,7 +197,7 @@ watch(serialMode, (on) => {
 const form = useForm({
   source_warehouse_id: '',
   target_warehouse_id: '',
-  date: new Date().toISOString().split('T')[0],
+  date: todayYmdJakarta(),
   items: [getEmptyItem()],
   note: ''
 });

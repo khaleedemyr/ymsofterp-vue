@@ -293,6 +293,7 @@ import AppLayout from '@/Layouts/AppLayout.vue'
 import { Head } from '@inertiajs/vue3'
 import Swal from 'sweetalert2'
 import axios from 'axios'
+import { todayYmdJakarta } from '@/utils/dateOnly'
 
 const props = defineProps({
   warehouses: Array,
@@ -318,7 +319,7 @@ function newItem() {
 }
 
 const form = useForm({
-  date: props.editData?.date || new Date().toISOString().slice(0, 10),
+  date: props.editData?.date || todayYmdJakarta(),
   warehouse_id: props.editData?.warehouse_id || '',
   type: props.editData?.type || '',
   items: props.editData?.items?.length ? JSON.parse(JSON.stringify(props.editData.items)) : [newItem()],

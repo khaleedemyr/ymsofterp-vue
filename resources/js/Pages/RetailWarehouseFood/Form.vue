@@ -234,6 +234,7 @@ import { ref, computed, watch } from 'vue'
 import { router, usePage } from '@inertiajs/vue3'
 import axios from 'axios'
 import Swal from 'sweetalert2'
+import { todayYmdJakarta } from '@/utils/dateOnly'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 
@@ -262,7 +263,7 @@ function newItem() {
 }
 
 const form = ref({
-  transaction_date: new Date().toISOString().split('T')[0],
+  transaction_date: todayYmdJakarta(),
   warehouse_id: '',
   warehouse_division_id: '',
   notes: '',

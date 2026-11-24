@@ -534,6 +534,7 @@ import { ref, reactive, watch, computed, nextTick } from 'vue'
 import { Link, router, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import Swal from 'sweetalert2'
+import { todayYmdJakarta } from '@/utils/dateOnly'
 
 const props = defineProps({
   outlets: Array,
@@ -589,7 +590,7 @@ const filteredDeliveryOrders = computed(() => {
 })
 
 const form = useForm({
-  rejection_date: new Date().toISOString().split('T')[0],
+  rejection_date: todayYmdJakarta(),
   outlet_id: '',
   warehouse_id: '',
   delivery_order_id: '',

@@ -423,6 +423,7 @@ import Modal from '@/Components/Modal.vue';
 import { Link, router, useForm } from '@inertiajs/vue3';
 import { ref, computed, watch, nextTick } from 'vue';
 import axios from 'axios';
+import { todayYmdJakarta } from '@/utils/dateOnly';
 
 const props = defineProps({
   outlets: Array,
@@ -444,7 +445,7 @@ const getInitialOutletId = () => {
 const form = useForm({
   outlet_id: getInitialOutletId(),
   warehouse_outlet_id: props.selectedWarehouseOutletId || '',
-  opname_date: new Date().toISOString().split('T')[0],
+  opname_date: todayYmdJakarta(),
   notes: '',
   items: props.items || [],
   approvers: [],
@@ -580,7 +581,7 @@ function downloadTemplate() {
   const q = new URLSearchParams({
     outlet_id: form.outlet_id,
     warehouse_outlet_id: form.warehouse_outlet_id,
-    opname_date: form.opname_date || new Date().toISOString().split('T')[0],
+    opname_date: form.opname_date || todayYmdJakarta(),
     notes: form.notes || '',
   });
   window.location.href = route('stock-opnames.download-template') + '?' + q.toString();
@@ -963,7 +964,7 @@ async function loadImportToForm() {
       importJustApplied.value = true;
       form.outlet_id = String(res.data.outlet_id ?? '');
       form.warehouse_outlet_id = String(res.data.warehouse_outlet_id ?? '');
-      form.opname_date = res.data.opname_date || new Date().toISOString().split('T')[0];
+      form.opname_date = res.data.opname_date || todayYmdJakarta();
       form.notes = res.data.notes || '';
       form.items = (res.data.items || []).map(it => ({
         ...it,

@@ -4,6 +4,7 @@ import { router } from '@inertiajs/vue3';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import Swal from 'sweetalert2';
 import CustomerModal from './CustomerModal.vue';
+import { todayYmdJakarta } from '@/utils/dateOnly';
 
 const props = defineProps({
   warehouses: Array,
@@ -11,14 +12,8 @@ const props = defineProps({
   customers: Array,
 });
 
-// Pakai tanggal lokal (WIB), bukan toISOString() yang UTC — sebelum jam 07:00 UTC masih "kemarin"
-const formatLocalDate = (d = new Date()) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-};
-const todayDate = formatLocalDate();
+// Pakai tanggal Asia/Jakarta, bukan toISOString() (UTC) — sebelum jam 07:00 WIB bisa H-1
+const todayDate = todayYmdJakarta();
 
 const form = ref({
   customer_id: '',

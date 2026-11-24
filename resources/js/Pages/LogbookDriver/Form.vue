@@ -193,6 +193,7 @@ import { computed, ref } from 'vue'
 import { Link, useForm } from '@inertiajs/vue3'
 import AppLayout from '@/Layouts/AppLayout.vue'
 import CameraModal from '@/Components/CameraModal.vue'
+import { todayYmdJakarta } from '@/utils/dateOnly'
 
 const props = defineProps({
   record: Object,
@@ -250,7 +251,7 @@ function normalizeTime(value) {
 const form = useForm({
   log_date: props.record?.log_date
     ? String(props.record.log_date).slice(0, 10)
-    : new Date().toISOString().slice(0, 10),
+    : todayYmdJakarta(),
   outlet_id: props.record?.outlet_id || '',
   notes: props.record?.notes || '',
   items: mapExistingItems(),

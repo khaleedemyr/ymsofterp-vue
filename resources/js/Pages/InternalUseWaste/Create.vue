@@ -164,6 +164,7 @@ import Swal from 'sweetalert2'
 import Multiselect from 'vue-multiselect'
 import 'vue-multiselect/dist/vue-multiselect.min.css'
 import { ref, watch, nextTick } from 'vue'
+import { todayYmdJakarta } from '@/utils/dateOnly'
 
 const props = defineProps({
   warehouses: Array,
@@ -186,7 +187,7 @@ function newLine() {
 
 const form = ref({
   type: '',
-  date: new Date().toISOString().slice(0, 10),
+  date: todayYmdJakarta(),
   warehouse_id: '',
   ruko_id: '',
   notes: '',
