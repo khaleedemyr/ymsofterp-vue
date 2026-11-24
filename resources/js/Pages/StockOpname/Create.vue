@@ -337,12 +337,14 @@
                         <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
                       </td>
                       <td class="px-3 py-3 text-center text-sm">
-                        <div v-if="hasDifference(item)">
+                        <div v-if="hasDifference(item)" class="inline-flex flex-col items-end gap-0.5">
                           <span
+                            v-for="(diff, diffIdx) in getDifferenceArray(item)"
+                            :key="diffIdx"
                             :class="getDifferenceClass(item)"
-                            class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
+                            class="px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap tabular-nums"
                           >
-                            {{ getDifferenceSign(item) }}
+                            {{ diff }}
                           </span>
                         </div>
                         <span v-else class="text-gray-400 text-xs">-</span>
