@@ -289,15 +289,22 @@ class OutletPaymentController extends Controller
             // Fill item fields (unit, price, item_name) as in Form.vue
             if ($goodReceive->items) {
                 foreach ($goodReceive->items as $item) {
-                    $foi = \DB::table('delivery_orders as do')
-                        ->join('food_floor_order_items as foi', function($join) use ($item) {
-                            $join->on('do.floor_order_id', '=', 'foi.floor_order_id')
-                                ->where('foi.item_id', '=', $item->item_id);
-                        })
-                        ->where('do.id', $goodReceive->delivery_order_id)
-                        ->select('foi.price')
-                        ->first();
-                    $item->price = $foi ? floatval($foi->price) : 0;
+                    $stored = isset($item->unit_price) && $item->unit_price !== null
+                        ? (float) $item->unit_price
+                        : null;
+                    if ($stored !== null && $stored > 0) {
+                        $item->price = $stored;
+                    } else {
+                        $foi = \DB::table('delivery_orders as do')
+                            ->join('food_floor_order_items as foi', function ($join) use ($item) {
+                                $join->on('do.floor_order_id', '=', 'foi.floor_order_id')
+                                    ->where('foi.item_id', '=', $item->item_id);
+                            })
+                            ->where('do.id', $goodReceive->delivery_order_id)
+                            ->select('foi.price')
+                            ->first();
+                        $item->price = $foi ? floatval($foi->price) : 0;
+                    }
                     $unit = \DB::table('units')->where('id', $item->unit_id)->first();
                     $item->unit = $unit ? $unit->name : '';
                     $itemMaster = \DB::table('items')->where('id', $item->item_id)->first();
@@ -426,6 +433,7 @@ class OutletPaymentController extends Controller
                 $gr = OutletFoodGoodReceive::findOrFail($grId);
                 
                 // Calculate individual GR total amount (from outlet_food_good_receives only, same as Rekap FJ)
+                $foodPrice = $this->rekapFjFoodGrEffectivePriceSql('gri', 'foi');
                 $totalAmount = DB::table('outlet_food_good_receive_items as gri')
                     ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                     ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -435,7 +443,7 @@ class OutletPaymentController extends Controller
                     })
                     ->where('gri.outlet_food_good_receive_id', $grId)
                     ->whereNull('gr.deleted_at')
-                    ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
+                    ->sum(DB::raw("gri.received_qty * ({$foodPrice})"));
                 
                 // Handle receiver_bank_ids (multiple) - simpan sebagai JSON atau gunakan yang pertama untuk backward compatibility
                 $receiverBankId = null;
@@ -1311,14 +1319,14 @@ class OutletPaymentController extends Controller
                     'gri.item_id as item_master_id',
                     'gri.unit_id',
                     'gri.received_qty',
-                    'foi.price as item_price',
+                    DB::raw("({$this->rekapFjFoodGrEffectivePriceSql('gri', 'foi')}) as item_price"),
                     'i.name as item_name',
                     'sc.name as sub_category_name',
                     'coa.id as coa_id',
                     'coa.code as coa_code',
                     'coa.name as coa_name',
                     'u.name as unit_name',
-                    DB::raw('COALESCE(gri.received_qty * foi.price, 0) as subtotal')
+                    DB::raw("gri.received_qty * ({$this->rekapFjFoodGrEffectivePriceSql('gri', 'foi')}) as subtotal")
                 )
                 ->get();
 
@@ -1401,7 +1409,7 @@ class OutletPaymentController extends Controller
                 'gr.created_by',
                 'gr.notes',
                 'o.nama_outlet as outlet_name',
-                DB::raw('SUM(COALESCE(gri.received_qty * foi.price, 0)) as total_amount')
+                DB::raw("SUM(gri.received_qty * ({$this->rekapFjFoodGrEffectivePriceSql('gri', 'foi')})) as total_amount")
             )
             ->groupBy('gr.id', 'gr.number', 'gr.receive_date', 'gr.outlet_id', 'gr.delivery_order_id', 'gr.created_by', 'gr.notes', 'o.nama_outlet');
 
@@ -1683,8 +1691,8 @@ class OutletPaymentController extends Controller
                     'i.name as item_name',
                     'gri.received_qty as qty',
                     'u.name as unit_name',
-                    DB::raw('COALESCE(ffoi.price, 0) as price'),
-                    DB::raw('(gri.received_qty * COALESCE(ffoi.price, 0)) as subtotal')
+                    DB::raw("({$this->rekapFjFoodGrEffectivePriceSql('gri', 'ffoi')}) as price"),
+                    DB::raw("(gri.received_qty * ({$this->rekapFjFoodGrEffectivePriceSql('gri', 'ffoi')})) as subtotal")
                 )
                 ->get();
             $grItemRows = $this->applySerialBasedPricesToInvoiceGrItems($grItemRows);
@@ -1719,6 +1727,7 @@ class OutletPaymentController extends Controller
                 if (isset($details[$detailKey]) && count($details[$detailKey]) > 0) {
                     $rowData['payment_total'] = collect($details[$detailKey])->sum('subtotal');
                 } else {
+                    $foodPrice = $this->rekapFjFoodGrEffectivePriceSql('gri', 'ffoi');
                     $grTotal = DB::table('outlet_food_good_receive_items as gri')
                         ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
                         ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -1727,7 +1736,7 @@ class OutletPaymentController extends Controller
                         })
                         ->where('gri.outlet_food_good_receive_id', $rowData['gr_id'])
                         ->whereNull('gr.deleted_at')
-                        ->sum(DB::raw('gri.received_qty * ffoi.price'));
+                        ->sum(DB::raw("gri.received_qty * ({$foodPrice})"));
                     $rowData['payment_total'] = $grTotal ?: 0;
                 }
             }
@@ -1928,8 +1937,8 @@ class OutletPaymentController extends Controller
                     'i.name as item_name',
                     'gri.received_qty as qty',
                     'u.name as unit_name',
-                    'ffoi.price as price',
-                    DB::raw('(gri.received_qty * ffoi.price) as subtotal')
+                    DB::raw("({$this->rekapFjFoodGrEffectivePriceSql('gri', 'ffoi')}) as price"),
+                    DB::raw("(gri.received_qty * ({$this->rekapFjFoodGrEffectivePriceSql('gri', 'ffoi')})) as subtotal")
                 )
                 ->get();
             $grItemRows = $this->applySerialBasedPricesToInvoiceGrItems($grItemRows);
@@ -2015,7 +2024,7 @@ class OutletPaymentController extends Controller
                 ->groupBy('sc.coa_id')
                 ->select(
                     'sc.coa_id',
-                    DB::raw('SUM(COALESCE(gri.received_qty * foi.price, 0)) as total_amount')
+                    DB::raw("SUM(gri.received_qty * ({$this->rekapFjFoodGrEffectivePriceSql('gri', 'foi')})) as total_amount")
                 )
                 ->get();
         } elseif ($payment->retail_sales_id) {
@@ -2186,9 +2195,14 @@ class OutletPaymentController extends Controller
             return $rows;
         }
 
+        $doSelect = ['delivery_order_id', 'item_id', 'serial_numbers'];
+        if (Schema::hasColumn('delivery_order_items', 'unit_price')) {
+            $doSelect[] = 'unit_price';
+        }
+
         $doItems = DB::table('delivery_order_items')
             ->whereIn('delivery_order_id', $doIds)
-            ->get(['delivery_order_id', 'item_id', 'serial_numbers'])
+            ->get($doSelect)
             ->groupBy(function ($row) {
                 return (int) $row->delivery_order_id . ':' . (int) $row->item_id;
             });
@@ -2205,6 +2219,18 @@ class OutletPaymentController extends Controller
             $key = $doId . ':' . $itemId;
             $doItem = optional($doItems->get($key))->first();
             if (! $doItem) {
+                return $row;
+            }
+
+            // Prefer harga bill DO yang sudah dikunci; jangan override lagi dengan rumus live.
+            $lockedDoPrice = isset($doItem->unit_price) && $doItem->unit_price !== null
+                ? (float) $doItem->unit_price
+                : null;
+            if ($lockedDoPrice !== null && $lockedDoPrice > 0) {
+                $qty = (float) ($row->qty ?? 0);
+                $row->price = $lockedDoPrice;
+                $row->subtotal = round($qty * $lockedDoPrice, 2);
+
                 return $row;
             }
 
@@ -2478,7 +2504,7 @@ class OutletPaymentController extends Controller
             ->groupBy('gri.outlet_food_good_receive_id')
             ->select(
                 'gri.outlet_food_good_receive_id as gr_id',
-                DB::raw('SUM(COALESCE(gri.received_qty * foi.price, 0)) as total_amount')
+                DB::raw("SUM(gri.received_qty * ({$this->rekapFjFoodGrEffectivePriceSql('gri', 'foi')})) as total_amount")
             )
             ->get()
             ->mapWithKeys(fn ($row) => [(int) $row->gr_id => (float) $row->total_amount])
@@ -2558,6 +2584,8 @@ class OutletPaymentController extends Controller
 
     protected function sumFoodGrTotalAmount(int $grId): float
     {
+        $foodPrice = $this->rekapFjFoodGrEffectivePriceSql('gri', 'foi');
+
         return (float) DB::table('outlet_food_good_receive_items as gri')
             ->join('outlet_food_good_receives as gr', 'gri.outlet_food_good_receive_id', '=', 'gr.id')
             ->join('delivery_orders as do', 'gr.delivery_order_id', '=', 'do.id')
@@ -2567,7 +2595,7 @@ class OutletPaymentController extends Controller
             })
             ->where('gri.outlet_food_good_receive_id', $grId)
             ->whereNull('gr.deleted_at')
-            ->sum(DB::raw('COALESCE(gri.received_qty * foi.price, 0)'));
+            ->sum(DB::raw("gri.received_qty * ({$foodPrice})"));
     }
 
     /**

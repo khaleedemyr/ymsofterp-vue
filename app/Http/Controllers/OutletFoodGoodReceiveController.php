@@ -411,6 +411,17 @@ class OutletFoodGoodReceiveController extends Controller
                     $costs[$itemId] = $ffoi->price ?? 0;
                 }
             }
+
+            // Harga jual FO untuk snapshot unit_price (selaras Rekap/DO bill) — terpisah dari cost inventory
+            $foSellPrices = [];
+            if (! empty($do->floor_order_id)) {
+                $foSellPrices = DB::table('food_floor_order_items')
+                    ->where('floor_order_id', $do->floor_order_id)
+                    ->whereIn('item_id', $itemIds)
+                    ->pluck('price', 'item_id')
+                    ->map(fn ($p) => (float) $p)
+                    ->all();
+            }
             
             // 5. Load last cost histories
             $lastCostHistories = [];
@@ -442,8 +453,8 @@ class OutletFoodGoodReceiveController extends Controller
                     continue;
                 }
 
-                // Prepare GR item insert
-                $grItemsToInsert[] = [
+                // Prepare GR item insert (unit_price = harga FO/bill saat GR — dikunci)
+                $grItemRow = [
                     'outlet_food_good_receive_id' => $grId,
                     'item_id' => $item['item_id'],
                     'unit_id' => $item['unit_id'],
@@ -454,6 +465,25 @@ class OutletFoodGoodReceiveController extends Controller
                     'created_at' => now(),
                     'updated_at' => now(),
                 ];
+                $sellUnitPrice = round((float) ($foSellPrices[$item['item_id']] ?? $costs[$item['item_id']] ?? 0), 4);
+                if (\Illuminate\Support\Facades\Schema::hasColumn('outlet_food_good_receive_items', 'unit_price')) {
+                    $grItemRow['unit_price'] = $sellUnitPrice;
+                }
+                $grItemsToInsert[] = $grItemRow;
+
+                if (
+                    \Illuminate\Support\Facades\Schema::hasColumn('delivery_order_items', 'unit_price')
+                    && $sellUnitPrice > 0
+                ) {
+                    DB::table('delivery_order_items')
+                        ->where('delivery_order_id', $validated['delivery_order_id'])
+                        ->where('item_id', $item['item_id'])
+                        ->whereNull('unit_price')
+                        ->update([
+                            'unit_price' => $sellUnitPrice,
+                            'updated_at' => now(),
+                        ]);
+                }
                 
                 // Jika received_qty = 0, skip proses inventory
                 if ($item['received_qty'] <= 0) {

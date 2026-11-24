@@ -278,16 +278,21 @@ trait ReportHelperTrait
     }
 
     /**
-     * Harga satuan GR Food di Rekap FJ: selalu dari food_floor_order_items (sama GR outlet & Cost Official).
+     * Harga satuan GR Food di Rekap FJ / Invoice Outlet.
+     * Prefer unit_price terkunci di baris GR; fallback FO (data lama sebelum migrasi).
      */
-    protected function rekapFjFoodGrEffectivePriceSql(): string
+    protected function rekapFjFoodGrEffectivePriceSql(string $grItemAlias = 'i', string $foAlias = 'fo'): string
     {
-        return 'COALESCE(fo.price, 0)';
+        if (Schema::hasColumn('outlet_food_good_receive_items', 'unit_price')) {
+            return "COALESCE({$grItemAlias}.unit_price, {$foAlias}.price, 0)";
+        }
+
+        return "COALESCE({$foAlias}.price, 0)";
     }
 
     /**
      * Harga satuan GR Serial di Rekap FJ per unit baris (si.unit_id).
-     * cost_small disimpan saat GR; qty si juga dalam unit tersebut — konversi ke harga/unit tampilan.
+     * Prefer unit_price terkunci saat GR; fallback konversi live dari cost_small (data lama).
      */
     protected function rekapFjSerialGrEffectivePriceSql(string $itemAlias = 'it'): string
     {
@@ -295,11 +300,17 @@ trait ReportHelperTrait
         $smallConv = "COALESCE({$itemAlias}.small_conversion_qty, 1)";
         $mediumConv = "COALESCE({$itemAlias}.medium_conversion_qty, 1)";
 
-        return "(CASE
+        $live = "(CASE
             WHEN si.unit_id = {$itemAlias}.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
             WHEN si.unit_id = {$itemAlias}.medium_unit_id THEN {$costSmall} * {$smallConv}
             ELSE {$costSmall}
         END)";
+
+        if (Schema::hasColumn('outlet_serial_receive_items', 'unit_price')) {
+            return "COALESCE(si.unit_price, {$live})";
+        }
+
+        return $live;
     }
 
     /**

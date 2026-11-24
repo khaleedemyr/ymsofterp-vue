@@ -1098,11 +1098,14 @@ class OpexOutletDashboardController extends Controller
             $gsrTotals = [];
             $gsrItemsByHeader = collect();
             if ($gsrIds !== []) {
-                $priceSql = "(CASE
+                $livePriceSql = "(CASE
                     WHEN si.unit_id = it.large_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1) * COALESCE(it.medium_conversion_qty, 1)
                     WHEN si.unit_id = it.medium_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1)
                     ELSE COALESCE(si.cost_small, 0)
                 END)";
+                $priceSql = \Illuminate\Support\Facades\Schema::hasColumn('outlet_serial_receive_items', 'unit_price')
+                    ? "COALESCE(si.unit_price, {$livePriceSql})"
+                    : $livePriceSql;
                 $gsrTotals = DB::table('outlet_serial_receive_items as si')
                     ->join('items as it', 'si.item_id', '=', 'it.id')
                     ->whereIn('si.header_id', $gsrIds)

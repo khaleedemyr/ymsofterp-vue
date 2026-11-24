@@ -1673,23 +1673,29 @@ class DeliveryOrderController extends Controller
             ->first();
         if (!$order) return response()->json(['message' => 'Data tidak ditemukan'], 404);
 
+        $doItemSelect = [
+            'doi.id',
+            'doi.item_id',
+            'i.name',
+            'doi.qty_scan',
+            'doi.unit',
+            'doi.serial_numbers',
+            'u.code as unit_code',
+        ];
+        if (\Illuminate\Support\Facades\Schema::hasColumn('delivery_order_items', 'unit_price')) {
+            $doItemSelect[] = 'doi.unit_price';
+        }
+
         $items = DB::table('delivery_order_items as doi')
             ->leftJoin('items as i', 'doi.item_id', '=', 'i.id')
             ->leftJoin('units as u', 'doi.unit', '=', 'u.name')
-            ->select(
-                'doi.id',
-                'doi.item_id',
-                'i.name',
-                'doi.qty_scan',
-                'doi.unit',
-                'doi.serial_numbers',
-                'u.code as unit_code'
-            )
+            ->select($doItemSelect)
             ->where('doi.delivery_order_id', $id)
             ->get();
 
         // Harga default: food_floor_order_items (sama Report Invoice Outlet).
         // Override: jika item mode auto + ada nomor seri → harga jual = cost serial + 12%.
+        // Setelah migrasi: prefer doi.unit_price terkunci (snapshot print pertama / sync dari GSR).
         $foPricesByItem = collect();
         $floorOrderId = (int) ($order->floorOrderId ?? 0);
         if ($floorOrderId > 0 && $items->isNotEmpty()) {
@@ -1710,26 +1716,47 @@ class DeliveryOrderController extends Controller
             : null;
         $regionId = $regionId ? (int) $regionId : null;
 
-        $items = $items->map(function ($item) use ($foPricesByItem, $regionId, $outletId) {
-            $unitPrice = 0.0;
-            $rows = $foPricesByItem->get($item->item_id);
-            if ($rows && $rows->isNotEmpty()) {
-                $unitName = trim((string) ($item->unit ?? ''));
-                $matched = $unitName !== ''
-                    ? $rows->first(function ($row) use ($unitName) {
-                        return strcasecmp(trim((string) ($row->unit ?? '')), $unitName) === 0;
-                    })
-                    : null;
-                $unitPrice = (float) (($matched ?? $rows->first())->price ?? 0);
-            }
+        $hasStoredUnitPrice = \Illuminate\Support\Facades\Schema::hasColumn('delivery_order_items', 'unit_price');
 
-            $serialPrice = \App\Support\DoSerialSellPriceResolver::resolveFromDoItem(
-                $item,
-                $regionId,
-                $outletId
-            );
-            if ($serialPrice !== null && $serialPrice > 0) {
-                $unitPrice = $serialPrice;
+        $items = $items->map(function ($item) use ($foPricesByItem, $regionId, $outletId, $hasStoredUnitPrice) {
+            $stored = $hasStoredUnitPrice && isset($item->unit_price) && $item->unit_price !== null
+                ? (float) $item->unit_price
+                : null;
+
+            if ($stored !== null && $stored > 0) {
+                $unitPrice = $stored;
+            } else {
+                $unitPrice = 0.0;
+                $rows = $foPricesByItem->get($item->item_id);
+                if ($rows && $rows->isNotEmpty()) {
+                    $unitName = trim((string) ($item->unit ?? ''));
+                    $matched = $unitName !== ''
+                        ? $rows->first(function ($row) use ($unitName) {
+                            return strcasecmp(trim((string) ($row->unit ?? '')), $unitName) === 0;
+                        })
+                        : null;
+                    $unitPrice = (float) (($matched ?? $rows->first())->price ?? 0);
+                }
+
+                $serialPrice = \App\Support\DoSerialSellPriceResolver::resolveFromDoItem(
+                    $item,
+                    $regionId,
+                    $outletId
+                );
+                if ($serialPrice !== null && $serialPrice > 0) {
+                    $unitPrice = $serialPrice;
+                }
+
+                // Lazy snapshot: kunci harga bill pada print pertama setelah migrasi
+                if ($hasStoredUnitPrice && $unitPrice > 0 && ! empty($item->id)) {
+                    DB::table('delivery_order_items')
+                        ->where('id', $item->id)
+                        ->whereNull('unit_price')
+                        ->update([
+                            'unit_price' => round($unitPrice, 4),
+                            'updated_at' => now(),
+                        ]);
+                }
             }
 
             $qty = (float) ($item->qty_scan ?? 0);

@@ -316,9 +316,10 @@ class OutletSerialReceiveController extends Controller
                         $serial,
                         $outletId,
                     );
+                    $unitPrice = ItemUnitCost::priceForUnit($costSmall, $itemMaster, $unitId);
 
                     try {
-                        DB::table('outlet_serial_receive_items')->insert([
+                        $insertRow = [
                             'header_id' => $headerId,
                             'serial_id' => $serial->id,
                             'serial_number' => $serial->serial_number,
@@ -333,7 +334,11 @@ class OutletSerialReceiveController extends Controller
                             'cost_source' => $costSourceDb,
                             'created_at' => now(),
                             'updated_at' => now(),
-                        ]);
+                        ];
+                        if (Schema::hasColumn('outlet_serial_receive_items', 'unit_price')) {
+                            $insertRow['unit_price'] = $unitPrice;
+                        }
+                        DB::table('outlet_serial_receive_items')->insert($insertRow);
                     } catch (QueryException $e) {
                         if ($this->isDuplicateSerialReceiveItemInsert($e)) {
                             return back()->withErrors(['serials' => "Serial {$serial->serial_number} terdeteksi duplikat pada GR yang sama."]);
@@ -341,6 +346,8 @@ class OutletSerialReceiveController extends Controller
 
                         throw $e;
                     }
+
+                    $this->syncDoItemUnitPrice((int) $doId, (int) $serial->item_id, $unitPrice);
 
                     $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $serialOutletId, $warehouseOutletId, $headerId);
 
@@ -743,9 +750,10 @@ class OutletSerialReceiveController extends Controller
                         $serial,
                         $outletId,
                     );
+                    $unitPrice = ItemUnitCost::priceForUnit($costSmall, $itemMaster, $unitId);
 
                     try {
-                        DB::table('outlet_serial_receive_items')->insert([
+                        $insertRow = [
                             'header_id' => $headerId,
                             'serial_id' => $serial->id,
                             'serial_number' => $serial->serial_number,
@@ -760,7 +768,11 @@ class OutletSerialReceiveController extends Controller
                             'cost_source' => $costSourceDb,
                             'created_at' => now(),
                             'updated_at' => now(),
-                        ]);
+                        ];
+                        if (Schema::hasColumn('outlet_serial_receive_items', 'unit_price')) {
+                            $insertRow['unit_price'] = $unitPrice;
+                        }
+                        DB::table('outlet_serial_receive_items')->insert($insertRow);
                     } catch (QueryException $e) {
                         if ($this->isDuplicateSerialReceiveItemInsert($e)) {
                             return ['success' => false, 'message' => "Serial {$serial->serial_number} terdeteksi duplikat pada GR yang sama."];
@@ -768,6 +780,8 @@ class OutletSerialReceiveController extends Controller
 
                         throw $e;
                     }
+
+                    $this->syncDoItemUnitPrice((int) $doId, (int) $serial->item_id, $unitPrice);
 
                     $this->processInventory($serial, $itemMaster, $costSmall, $effectiveQty, $serialOutletId, $warehouseOutletId, $headerId);
 
@@ -1028,10 +1042,37 @@ class OutletSerialReceiveController extends Controller
 
         $costSmall = (float) ($row->cost_small ?? 0);
         $qty = (float) ($row->qty ?? 0);
-        $row->unit_price = ItemUnitCost::priceForUnit($costSmall, $itemMaster, $row->unit_id);
-        $row->line_subtotal = ItemUnitCost::lineSubtotal($costSmall, $itemMaster, $row->unit_id, $qty);
+        $storedUnitPrice = isset($row->unit_price) && $row->unit_price !== null
+            ? (float) $row->unit_price
+            : null;
+        $row->unit_price = $storedUnitPrice !== null && $storedUnitPrice > 0
+            ? round($storedUnitPrice, 4)
+            : ItemUnitCost::priceForUnit($costSmall, $itemMaster, $row->unit_id);
+        $row->line_subtotal = round($qty * (float) $row->unit_price, 4);
 
         return $row;
+    }
+
+    /**
+     * Samakan harga bill DO dengan harga GSR terkunci (hanya jika belum pernah di-snapshot).
+     */
+    private function syncDoItemUnitPrice(int $doId, int $itemId, float $unitPrice): void
+    {
+        if ($doId <= 0 || $itemId <= 0 || $unitPrice <= 0) {
+            return;
+        }
+        if (! Schema::hasColumn('delivery_order_items', 'unit_price')) {
+            return;
+        }
+
+        DB::table('delivery_order_items')
+            ->where('delivery_order_id', $doId)
+            ->where('item_id', $itemId)
+            ->whereNull('unit_price')
+            ->update([
+                'unit_price' => round($unitPrice, 4),
+                'updated_at' => now(),
+            ]);
     }
 
     private function determineCost(object $serial, ?string $receiveOutletId = null): float

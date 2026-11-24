@@ -3108,11 +3108,17 @@ class OpexOutletDashboardService
         $smallConv = "COALESCE({$itemAlias}.small_conversion_qty, 1)";
         $mediumConv = "COALESCE({$itemAlias}.medium_conversion_qty, 1)";
 
-        return "(CASE
+        $live = "(CASE
             WHEN si.unit_id = {$itemAlias}.large_unit_id THEN {$costSmall} * {$smallConv} * {$mediumConv}
             WHEN si.unit_id = {$itemAlias}.medium_unit_id THEN {$costSmall} * {$smallConv}
             ELSE {$costSmall}
         END)";
+
+        if (\Illuminate\Support\Facades\Schema::hasColumn('outlet_serial_receive_items', 'unit_price')) {
+            return "COALESCE(si.unit_price, {$live})";
+        }
+
+        return $live;
     }
 
     /**

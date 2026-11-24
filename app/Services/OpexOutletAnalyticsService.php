@@ -265,11 +265,14 @@ class OpexOutletAnalyticsService
 
         if (Schema::hasTable('outlet_serial_receive_headers') && Schema::hasTable('outlet_serial_receive_items')) {
             // Same unit conversion as OpexOutletDashboardService::serialGrPriceSql
-            $priceSql = '(CASE
+            $livePriceSql = '(CASE
                 WHEN si.unit_id = it.large_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1) * COALESCE(it.medium_conversion_qty, 1)
                 WHEN si.unit_id = it.medium_unit_id THEN COALESCE(si.cost_small, 0) * COALESCE(it.small_conversion_qty, 1)
                 ELSE COALESCE(si.cost_small, 0)
             END)';
+            $priceSql = Schema::hasColumn('outlet_serial_receive_items', 'unit_price')
+                ? "COALESCE(si.unit_price, {$livePriceSql})"
+                : $livePriceSql;
 
             [$gsrSelects, $gsrBindings, $gsrFrom, $gsrTo] = $this->windowCaseSelects(
                 $windows,
