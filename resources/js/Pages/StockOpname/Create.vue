@@ -170,7 +170,7 @@
 
         <!-- Items Table -->
         <div v-if="form.items.length > 0" class="mb-6">
-          <div class="flex flex-col gap-3 mb-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="sticky top-16 z-10 -mx-1 mb-4 flex flex-col gap-3 rounded-lg border border-gray-200 bg-white/95 px-3 py-3 shadow-sm backdrop-blur-md sm:flex-row sm:items-center sm:justify-between">
             <h3 class="text-lg font-semibold text-gray-800">
               Items ({{ filteredItems.length }}<span v-if="itemSearch.trim()" class="text-gray-500 font-normal"> / {{ form.items.length }}</span>)
             </h3>
@@ -180,7 +180,7 @@
                 v-model="itemSearch"
                 type="text"
                 placeholder="Cari produk atau kategori..."
-                class="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-9 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
+                class="w-full rounded-lg border border-gray-300 bg-white py-2 pl-9 pr-9 text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500"
               />
               <button
                 v-if="itemSearch"
