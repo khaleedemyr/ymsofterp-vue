@@ -36,11 +36,11 @@ class RetailSheet implements FromCollection, WithHeadings, WithMapping, WithStyl
             foreach ($data as $row) {
                 $retailData[] = [
                     'customer' => $row->customer,
-                    'main_kitchen' => $row->main_kitchen,
                     'main_store' => $row->main_store,
                     'chemical' => $row->chemical,
                     'stationary' => $row->stationary,
                     'marketing' => $row->marketing,
+                    'main_kitchen' => $row->main_kitchen,
                     'line_total' => $row->line_total,
                     'type' => 'retail'
                 ];
@@ -50,11 +50,11 @@ class RetailSheet implements FromCollection, WithHeadings, WithMapping, WithStyl
             if ($data->isNotEmpty()) {
                 $retailData[] = [
                     'customer' => 'TOTAL RETAIL',
-                    'main_kitchen' => $data->sum('main_kitchen'),
                     'main_store' => $data->sum('main_store'),
                     'chemical' => $data->sum('chemical'),
                     'stationary' => $data->sum('stationary'),
                     'marketing' => $data->sum('marketing'),
+                    'main_kitchen' => $data->sum('main_kitchen'),
                     'line_total' => $data->sum('line_total'),
                     'type' => 'total'
                 ];
@@ -71,12 +71,12 @@ class RetailSheet implements FromCollection, WithHeadings, WithMapping, WithStyl
     {
         return [
             'Customer',
-            'Main Kitchen',
             'Main Store',
             'Chemical',
             'Stationary',
             'Marketing',
-            'Total'
+            'Main Kitchen',
+            'Total',
         ];
     }
 
@@ -84,11 +84,11 @@ class RetailSheet implements FromCollection, WithHeadings, WithMapping, WithStyl
     {
         return [
             $row['customer'],
-            $row['main_kitchen'],
             $row['main_store'],
             $row['chemical'],
             $row['stationary'],
             $row['marketing'],
+            $row['main_kitchen'],
             $row['line_total'],
         ];
     }
@@ -139,12 +139,12 @@ class RetailSheet implements FromCollection, WithHeadings, WithMapping, WithStyl
     public function columnWidths(): array
     {
         return [
-            'A' => 30, // Customer name
-            'B' => 20, // Main Kitchen
-            'C' => 20, // Main Store
-            'D' => 20, // Chemical
-            'E' => 20, // Stationary
-            'F' => 20, // Marketing
+            'A' => 30, // Customer
+            'B' => 20, // Main Store
+            'C' => 20, // Chemical
+            'D' => 20, // Stationary
+            'E' => 20, // Marketing
+            'F' => 20, // Main Kitchen
             'G' => 20, // Total
         ];
     }
