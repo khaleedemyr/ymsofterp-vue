@@ -342,7 +342,7 @@
                       <td class="px-3 py-3 text-sm text-right text-gray-700">
                         <div class="font-semibold">{{ formatNumber(getTotalMAC(item)) }}</div>
                       </td>
-                      <td class="px-3 py-3 text-center text-sm">
+                      <td class="px-3 py-3 text-right text-sm">
                         <div v-if="hasDifference(item)" class="inline-flex flex-col items-end gap-0.5">
                           <span
                             v-for="(diff, diffIdx) in getDifferenceArray(item)"
@@ -351,6 +351,12 @@
                             class="px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap tabular-nums"
                           >
                             {{ diff }}
+                          </span>
+                          <span
+                            :class="getDifferenceClass(item)"
+                            class="px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap tabular-nums"
+                          >
+                            {{ formatSelisihNilai(item) }}
                           </span>
                         </div>
                         <span v-else class="text-gray-400 text-xs">-</span>
@@ -937,57 +943,62 @@ function calculateDifference(item) {
   // Di frontend hanya untuk display
 }
 
-function hasDifference(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  return diffSmall !== 0 || diffMedium !== 0 || diffLarge !== 0;
+function getDiffSmall(item) {
+  return (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
 }
 
-function formatDifference(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  
-  const parts = [];
-  if (diffSmall !== 0) parts.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name}`);
-  if (diffMedium !== 0) parts.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name}`);
-  if (diffLarge !== 0) parts.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name}`);
-  
-  return parts.join(', ') || '0';
+function getDiffMedium(item) {
+  return (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
+}
+
+function getDiffLarge(item) {
+  return (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
+}
+
+function hasMeaningfulDiff(value) {
+  return Math.abs(Number(value) || 0) >= 0.005;
+}
+
+function hasDifference(item) {
+  return hasMeaningfulDiff(getDiffSmall(item))
+    || hasMeaningfulDiff(getDiffMedium(item))
+    || hasMeaningfulDiff(getDiffLarge(item));
 }
 
 function getDifferenceArray(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  
   const diffs = [];
-  if (diffSmall !== 0) {
-    diffs.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name}`);
+  const diffSmall = getDiffSmall(item);
+  const diffMedium = getDiffMedium(item);
+  const diffLarge = getDiffLarge(item);
+
+  if (hasMeaningfulDiff(diffSmall)) {
+    diffs.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name || ''}`.trim());
   }
-  if (diffMedium !== 0) {
-    diffs.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name}`);
+  if (hasMeaningfulDiff(diffMedium)) {
+    diffs.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name || ''}`.trim());
   }
-  if (diffLarge !== 0) {
-    diffs.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name}`);
+  if (hasMeaningfulDiff(diffLarge)) {
+    diffs.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name || ''}`.trim());
   }
-  
+
   return diffs.length > 0 ? diffs : ['0'];
 }
 
-function getDifferenceClass(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  if (diffSmall > 0) return 'bg-green-100 text-green-800';
-  if (diffSmall < 0) return 'bg-red-100 text-red-800';
-  return 'bg-gray-100 text-gray-800';
+function getSelisihNilai(item) {
+  return getDiffSmall(item) * (parseFloat(item.mac) || 0);
 }
 
-function getDifferenceSign(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  if (diffSmall > 0) return '+';
-  if (diffSmall < 0) return '-';
-  return '0';
+function formatSelisihNilai(item) {
+  const nilai = getSelisihNilai(item);
+  const prefix = nilai > 0 ? '+' : '';
+  return prefix + formatCurrency(nilai);
+}
+
+function getDifferenceClass(item) {
+  const diffSmall = getDiffSmall(item);
+  if (diffSmall > 0.005) return 'bg-green-100 text-green-800';
+  if (diffSmall < -0.005) return 'bg-red-100 text-red-800';
+  return 'bg-gray-100 text-gray-800';
 }
 
 function formatNumber(val) {

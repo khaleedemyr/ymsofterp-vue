@@ -2,9 +2,32 @@
   <AppLayout>
     <div class="w-full py-8 px-4">
       <div class="flex justify-between items-center mb-6">
-        <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
-          <i class="fa-solid fa-clipboard-check text-blue-500"></i> Buat Stock Opname Baru
-        </h1>
+        <div class="flex items-center gap-4">
+          <h1 class="text-2xl font-bold text-gray-800 flex items-center gap-2">
+            <i class="fa-solid fa-clipboard-check text-blue-500"></i> Buat Stock Opname Baru
+          </h1>
+          <div v-if="autosaveStatus !== 'idle'" class="flex items-center gap-2 text-sm">
+            <span v-if="autosaveStatus === 'saving'" class="text-yellow-600 flex items-center gap-1">
+              <i class="fa fa-spinner fa-spin"></i>
+              Menyimpan draft...
+            </span>
+            <span v-else-if="autosaveStatus === 'saved'" class="text-green-600 flex items-center gap-1">
+              <i class="fa fa-check-circle"></i>
+              Draft tersimpan
+              <span v-if="lastSavedAt" class="text-xs text-gray-500">
+                ({{ new Date(lastSavedAt).toLocaleTimeString('id-ID') }})
+              </span>
+            </span>
+            <span v-else-if="autosaveStatus === 'local'" class="text-blue-600 flex items-center gap-1">
+              <i class="fa fa-save"></i>
+              Draft lokal tersimpan
+            </span>
+            <span v-else-if="autosaveStatus === 'error'" class="text-red-600 flex items-center gap-1">
+              <i class="fa fa-exclamation-circle"></i>
+              Gagal simpan server (lokal aman)
+            </span>
+          </div>
+        </div>
         <div class="flex items-center gap-2">
           <button
             type="button"
@@ -336,7 +359,7 @@
                       <td class="px-3 py-3 text-sm text-right text-gray-700">
                         <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
                       </td>
-                      <td class="px-3 py-3 text-center text-sm">
+                      <td class="px-3 py-3 text-right text-sm">
                         <div v-if="hasDifference(item)" class="inline-flex flex-col items-end gap-0.5">
                           <span
                             v-for="(diff, diffIdx) in getDifferenceArray(item)"
@@ -345,6 +368,12 @@
                             class="px-2 py-0.5 rounded text-[11px] font-semibold whitespace-nowrap tabular-nums"
                           >
                             {{ diff }}
+                          </span>
+                          <span
+                            :class="getDifferenceClass(item)"
+                            class="px-2 py-0.5 rounded text-[11px] font-bold whitespace-nowrap tabular-nums"
+                          >
+                            {{ formatSelisihNilai(item) }}
                           </span>
                         </div>
                         <span v-else class="text-gray-400 text-xs">-</span>
@@ -355,6 +384,7 @@
                           v-model="item.reason"
                           type="text"
                           placeholder="Alasan selisih..."
+                          @input="triggerAutosave"
                           class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                         />
                         <span v-else class="text-gray-400 text-xs">-</span>
@@ -558,6 +588,13 @@ const approverResults = ref([]);
 const showApproverDropdown = ref(false);
 const approverSearchTimeout = ref(null);
 
+// Draft autosave (localStorage + server DRAFT)
+const draftId = ref(null);
+const autosaveStatus = ref('idle'); // idle | saving | saved | local | error
+const lastSavedAt = ref(null);
+const autosaveTimeout = ref(null);
+const restoringDraft = ref(false);
+
 // Import modal
 const showImportModal = ref(false);
 const selectedImportFile = ref(null);
@@ -727,6 +764,8 @@ async function loadItems() {
       qty_parts_unit: 'small',
       qty_parts: [],
     }));
+
+    restoreLocalDraftOntoItems();
   } catch (error) {
     console.error('Error loading items:', error);
     if (error.response) {
@@ -805,6 +844,198 @@ function applyQtyPartsSum(item) {
   }
   item[`qty_physical_${unit}`] = Math.round(qtyPartsSum(item) * 100) / 100;
   onQtyPhysicalChange(item, unit);
+}
+
+function draftStorageKey() {
+  const outlet = form.outlet_id || 'x';
+  const wh = form.warehouse_outlet_id || 'x';
+  return `stock_opname_create_draft_${outlet}_${wh}`;
+}
+
+function buildDraftPayload() {
+  const itemsToSave = form.items.map((item) => {
+    const itemData = {
+      inventory_item_id: item.inventory_item_id,
+      reason: item.reason || '',
+    };
+    if (item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '') {
+      itemData.qty_physical_small = parseFloat(item.qty_physical_small);
+    }
+    if (item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '') {
+      itemData.qty_physical_medium = parseFloat(item.qty_physical_medium);
+    }
+    if (item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '') {
+      itemData.qty_physical_large = parseFloat(item.qty_physical_large);
+    }
+    if (Array.isArray(item.qty_parts) && item.qty_parts.length) {
+      itemData.qty_parts = item.qty_parts;
+      itemData.qty_parts_unit = item.qty_parts_unit || 'small';
+      itemData.show_qty_parts = !!item.show_qty_parts;
+    }
+    return itemData;
+  });
+
+  const approversIds = form.approvers
+    .filter((approver) => approver && approver.id)
+    .map((approver) => approver.id);
+
+  return {
+    draftId: draftId.value,
+    outlet_id: form.outlet_id,
+    warehouse_outlet_id: form.warehouse_outlet_id,
+    opname_date: form.opname_date,
+    notes: form.notes,
+    items: itemsToSave,
+    approvers: approversIds,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function saveLocalDraft() {
+  if (!form.outlet_id || !form.warehouse_outlet_id || restoringDraft.value) {
+    return;
+  }
+  try {
+    localStorage.setItem(draftStorageKey(), JSON.stringify(buildDraftPayload()));
+    if (autosaveStatus.value === 'idle') {
+      autosaveStatus.value = 'local';
+      setTimeout(() => {
+        if (autosaveStatus.value === 'local') autosaveStatus.value = 'idle';
+      }, 1500);
+    }
+  } catch (e) {
+    console.warn('Gagal simpan draft lokal', e);
+  }
+}
+
+function readLocalDraft() {
+  if (!form.outlet_id || !form.warehouse_outlet_id) return null;
+  try {
+    const raw = localStorage.getItem(draftStorageKey());
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function clearLocalDraft() {
+  try {
+    if (form.outlet_id && form.warehouse_outlet_id) {
+      localStorage.removeItem(draftStorageKey());
+    }
+  } catch (e) {
+    // ignore
+  }
+  draftId.value = null;
+}
+
+function restoreLocalDraftOntoItems() {
+  const draft = readLocalDraft();
+  if (!draft || !Array.isArray(draft.items) || !form.items.length) {
+    if (draft?.draftId) draftId.value = draft.draftId;
+    if (draft?.notes) form.notes = draft.notes;
+    if (draft?.opname_date) form.opname_date = draft.opname_date;
+    return;
+  }
+
+  restoringDraft.value = true;
+  try {
+    if (draft.draftId) draftId.value = draft.draftId;
+    if (draft.notes != null) form.notes = draft.notes;
+    if (draft.opname_date) form.opname_date = draft.opname_date;
+
+    const byId = new Map(draft.items.map((row) => [Number(row.inventory_item_id), row]));
+    form.items.forEach((item) => {
+      const saved = byId.get(Number(item.inventory_item_id));
+      if (!saved) return;
+      if (saved.qty_physical_small !== undefined && saved.qty_physical_small !== null && saved.qty_physical_small !== '') {
+        item.qty_physical_small = parseFloat(saved.qty_physical_small);
+      }
+      if (saved.qty_physical_medium !== undefined && saved.qty_physical_medium !== null && saved.qty_physical_medium !== '') {
+        item.qty_physical_medium = parseFloat(saved.qty_physical_medium);
+      }
+      if (saved.qty_physical_large !== undefined && saved.qty_physical_large !== null && saved.qty_physical_large !== '') {
+        item.qty_physical_large = parseFloat(saved.qty_physical_large);
+      }
+      if (saved.reason) item.reason = saved.reason;
+      if (Array.isArray(saved.qty_parts) && saved.qty_parts.length) {
+        item.qty_parts = saved.qty_parts;
+        item.qty_parts_unit = saved.qty_parts_unit || 'small';
+        item.show_qty_parts = !!saved.show_qty_parts;
+      }
+    });
+  } finally {
+    restoringDraft.value = false;
+  }
+}
+
+async function autosave() {
+  if (!form.outlet_id || !form.warehouse_outlet_id || submitting.value || restoringDraft.value) {
+    return;
+  }
+
+  saveLocalDraft();
+
+  const payload = buildDraftPayload();
+  const hasFilled = payload.items.some((item) =>
+    item.qty_physical_small !== undefined
+    || item.qty_physical_medium !== undefined
+    || item.qty_physical_large !== undefined
+    || (item.reason && String(item.reason).trim() !== '')
+  );
+
+  // Belum ada isian: cukup local draft header saja
+  if (!hasFilled && !draftId.value) {
+    return;
+  }
+
+  autosaveStatus.value = 'saving';
+  try {
+    const formData = {
+      outlet_id: payload.outlet_id,
+      warehouse_outlet_id: payload.warehouse_outlet_id,
+      opname_date: payload.opname_date,
+      notes: payload.notes,
+      items: payload.items,
+      approvers: payload.approvers,
+      autosave: true,
+    };
+
+    let response;
+    if (draftId.value) {
+      response = await axios.put(route('stock-opnames.update', draftId.value), formData);
+    } else {
+      response = await axios.post(route('stock-opnames.store'), formData);
+    }
+
+    if (response.data?.success) {
+      if (response.data.id) {
+        draftId.value = response.data.id;
+      }
+      saveLocalDraft();
+      autosaveStatus.value = 'saved';
+      lastSavedAt.value = new Date();
+      setTimeout(() => {
+        if (autosaveStatus.value === 'saved') autosaveStatus.value = 'idle';
+      }, 3000);
+    }
+  } catch (error) {
+    console.error('Autosave error:', error);
+    autosaveStatus.value = 'error';
+    setTimeout(() => {
+      if (autosaveStatus.value === 'error') autosaveStatus.value = 'idle';
+    }, 5000);
+  }
+}
+
+function triggerAutosave() {
+  if (restoringDraft.value) return;
+  saveLocalDraft();
+  if (autosaveTimeout.value) clearTimeout(autosaveTimeout.value);
+  autosaveTimeout.value = setTimeout(() => {
+    autosave();
+  }, 2000);
 }
 
 function onQtyPhysicalChange(item, changedUnit) {
@@ -889,6 +1120,7 @@ function onQtyPhysicalChange(item, changedUnit) {
   }
 
   calculateDifference(item);
+  triggerAutosave();
 }
 
 function calculateDifference(item) {
@@ -896,56 +1128,62 @@ function calculateDifference(item) {
   // Di frontend hanya untuk display
 }
 
-function hasDifference(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  return diffSmall !== 0 || diffMedium !== 0 || diffLarge !== 0;
+function getDiffSmall(item) {
+  return (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
 }
 
-function formatDifference(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  
-  const parts = [];
-  if (diffSmall !== 0) parts.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name}`);
-  if (diffMedium !== 0) parts.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name}`);
-  if (diffLarge !== 0) parts.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name}`);
-  
-  return parts.join(', ') || '0';
+function getDiffMedium(item) {
+  return (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
+}
+
+function getDiffLarge(item) {
+  return (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
+}
+
+function hasMeaningfulDiff(value) {
+  return Math.abs(Number(value) || 0) >= 0.005;
+}
+
+function hasDifference(item) {
+  return hasMeaningfulDiff(getDiffSmall(item))
+    || hasMeaningfulDiff(getDiffMedium(item))
+    || hasMeaningfulDiff(getDiffLarge(item));
 }
 
 function getDifferenceArray(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  const diffMedium = (item.qty_physical_medium ?? item.qty_system_medium) - item.qty_system_medium;
-  const diffLarge = (item.qty_physical_large ?? item.qty_system_large) - item.qty_system_large;
-  
   const diffs = [];
-  if (diffSmall !== 0) {
-    diffs.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name}`);
+  const diffSmall = getDiffSmall(item);
+  const diffMedium = getDiffMedium(item);
+  const diffLarge = getDiffLarge(item);
+
+  if (hasMeaningfulDiff(diffSmall)) {
+    diffs.push(`${diffSmall > 0 ? '+' : ''}${formatNumber(diffSmall)} ${item.small_unit_name || ''}`.trim());
   }
-  if (diffMedium !== 0) {
-    diffs.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name}`);
+  if (hasMeaningfulDiff(diffMedium)) {
+    diffs.push(`${diffMedium > 0 ? '+' : ''}${formatNumber(diffMedium)} ${item.medium_unit_name || ''}`.trim());
   }
-  if (diffLarge !== 0) {
-    diffs.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name}`);
+  if (hasMeaningfulDiff(diffLarge)) {
+    diffs.push(`${diffLarge > 0 ? '+' : ''}${formatNumber(diffLarge)} ${item.large_unit_name || ''}`.trim());
   }
-  
+
   return diffs.length > 0 ? diffs : ['0'];
 }
 
-function getDifferenceSign(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  if (diffSmall > 0) return '+';
-  if (diffSmall < 0) return '-';
-  return '0';
+/** Nilai Rupiah selisih = selisih qty small × last cost small */
+function getSelisihNilai(item) {
+  return getDiffSmall(item) * (parseFloat(item.mac) || 0);
+}
+
+function formatSelisihNilai(item) {
+  const nilai = getSelisihNilai(item);
+  const prefix = nilai > 0 ? '+' : '';
+  return prefix + formatCurrency(nilai);
 }
 
 function getDifferenceClass(item) {
-  const diffSmall = (item.qty_physical_small ?? item.qty_system_small) - item.qty_system_small;
-  if (diffSmall > 0) return 'bg-green-100 text-green-800';
-  if (diffSmall < 0) return 'bg-red-100 text-red-800';
+  const diffSmall = getDiffSmall(item);
+  if (diffSmall > 0.005) return 'bg-green-100 text-green-800';
+  if (diffSmall < -0.005) return 'bg-red-100 text-red-800';
   return 'bg-gray-100 text-gray-800';
 }
 
@@ -1040,49 +1278,27 @@ function submitForm() {
     return;
   }
 
-  // Ensure all items have correct data structure
-  const itemsToSubmit = form.items.map(item => {
-    const processedItem = {
-      inventory_item_id: item.inventory_item_id,
-      qty_physical_small: item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== '' 
-        ? parseFloat(item.qty_physical_small) 
-        : null,
-      qty_physical_medium: item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== '' 
-        ? parseFloat(item.qty_physical_medium) 
-        : null,
-      qty_physical_large: item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== '' 
-        ? parseFloat(item.qty_physical_large) 
-        : null,
-      reason: item.reason || '',
-    };
-    
-    // Log for debugging
-    console.log('Item before processing:', {
-      inventory_item_id: item.inventory_item_id,
-      qty_physical_small_raw: item.qty_physical_small,
-      qty_physical_medium_raw: item.qty_physical_medium,
-      qty_physical_large_raw: item.qty_physical_large,
-      qty_system_small: item.qty_system_small,
-      qty_system_medium: item.qty_system_medium,
-      qty_system_large: item.qty_system_large,
-    });
-    console.log('Item after processing:', processedItem);
-    
-    return processedItem;
-  });
-
-  // Log for debugging
-  console.log('All items to submit:', itemsToSubmit);
+  const itemsToSubmit = form.items.map(item => ({
+    inventory_item_id: item.inventory_item_id,
+    qty_physical_small: item.qty_physical_small !== null && item.qty_physical_small !== undefined && item.qty_physical_small !== ''
+      ? parseFloat(item.qty_physical_small)
+      : null,
+    qty_physical_medium: item.qty_physical_medium !== null && item.qty_physical_medium !== undefined && item.qty_physical_medium !== ''
+      ? parseFloat(item.qty_physical_medium)
+      : null,
+    qty_physical_large: item.qty_physical_large !== null && item.qty_physical_large !== undefined && item.qty_physical_large !== ''
+      ? parseFloat(item.qty_physical_large)
+      : null,
+    reason: item.reason || '',
+  }));
 
   submitting.value = true;
-  
-  // Prepare approvers array (only IDs)
+
   const approversIds = form.approvers
     .filter(approver => approver && approver.id)
     .map(approver => approver.id);
 
-  // Create a new form with the processed items
-  const submitForm = useForm({
+  const submitPayload = useForm({
     outlet_id: form.outlet_id,
     warehouse_outlet_id: form.warehouse_outlet_id,
     opname_date: form.opname_date,
@@ -1090,10 +1306,11 @@ function submitForm() {
     items: itemsToSubmit,
     approvers: approversIds,
   });
-  
-  submitForm.post(route('stock-opnames.store'), {
+
+  const onDone = {
     preserveScroll: true,
     onSuccess: () => {
+      clearLocalDraft();
       submitting.value = false;
     },
     onError: (errors) => {
@@ -1106,7 +1323,14 @@ function submitForm() {
         confirmButtonColor: '#3085d6'
       });
     },
-  });
+  };
+
+  // Pakai draft yang sudah ada supaya tidak dobel nomor opname
+  if (draftId.value) {
+    submitPayload.put(route('stock-opnames.update', draftId.value), onDone);
+  } else {
+    submitPayload.post(route('stock-opnames.store'), onDone);
+  }
 }
 
 function onImportFileChange(e) {
@@ -1139,6 +1363,7 @@ async function loadImportToForm() {
       closeImportModal();
       await nextTick();
       importJustApplied.value = false;
+      triggerAutosave();
       const errs = res.data.errors || [];
       if (errs.length) {
         const msg = `${res.data.items?.length || 0} item dimuat. ${errs.length} baris error: ${errs[0]?.error || ''}`;
@@ -1166,14 +1391,19 @@ function closeImportModal() {
 
 // Load items when warehouse outlet changes (kecuali baru selesai import, agar form.items tidak tertimpa get-items)
 watch(() => form.warehouse_outlet_id, () => {
+  draftId.value = null;
   if (form.warehouse_outlet_id) {
     if (importJustApplied.value) {
       importJustApplied.value = false;
+      restoreLocalDraftOntoItems();
       return;
     }
     loadItems();
   }
 });
+
+watch(() => form.notes, () => triggerAutosave());
+watch(() => form.opname_date, () => triggerAutosave());
 
 // Auto-set outlet_id on mount if user is not superadmin
 if (props.user_outlet_id && String(props.user_outlet_id) !== '1') {
@@ -1183,6 +1413,8 @@ if (props.user_outlet_id && String(props.user_outlet_id) !== '1') {
 // Auto load items if already selected
 if (form.outlet_id && form.warehouse_outlet_id && form.items.length === 0) {
   loadItems();
+} else if (form.items.length > 0) {
+  restoreLocalDraftOntoItems();
 }
 </script>
 
