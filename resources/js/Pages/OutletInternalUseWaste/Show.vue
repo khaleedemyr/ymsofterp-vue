@@ -23,6 +23,7 @@
           <table class="w-full mt-2 border text-sm">
             <thead>
               <tr class="bg-gray-100">
+                <th class="px-2 py-1 border">Mode</th>
                 <th class="px-2 py-1 border">Item</th>
                 <th v-if="isUsageType" class="px-2 py-1 border">Stock On Hand</th>
                 <th v-if="isUsageType" class="px-2 py-1 border">Stock Fisik</th>
@@ -32,14 +33,38 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="item in details" :key="item.id">
-                <td class="px-2 py-1 border">{{ item.item_name }}</td>
-                <td v-if="isUsageType" class="px-2 py-1 border">{{ formatNumber(item.stock_on_hand) }}</td>
-                <td v-if="isUsageType" class="px-2 py-1 border">{{ formatNumber(item.physical_qty) }}</td>
-                <td class="px-2 py-1 border">{{ formatNumber(item.qty) }}</td>
-                <td class="px-2 py-1 border">{{ item.unit_name }}</td>
-                <td class="px-2 py-1 border">{{ item.note || '-' }}</td>
-              </tr>
+              <template v-for="item in details" :key="item.id">
+                <tr>
+                  <td class="px-2 py-1 border">
+                    <span
+                      class="inline-flex px-2 py-0.5 rounded text-xs font-semibold"
+                      :class="item.line_mode === 'menu' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'"
+                    >
+                      {{ item.line_mode === 'menu' ? 'Menu' : 'Bahan' }}
+                    </span>
+                  </td>
+                  <td class="px-2 py-1 border">{{ item.item_name }}</td>
+                  <td v-if="isUsageType" class="px-2 py-1 border">{{ formatNumber(item.stock_on_hand) }}</td>
+                  <td v-if="isUsageType" class="px-2 py-1 border">{{ formatNumber(item.physical_qty) }}</td>
+                  <td class="px-2 py-1 border">{{ formatNumber(item.qty) }}</td>
+                  <td class="px-2 py-1 border">{{ item.unit_name }}</td>
+                  <td class="px-2 py-1 border">{{ item.note || '-' }}</td>
+                </tr>
+                <tr v-if="item.line_mode === 'menu' && item.bom_preview?.length">
+                  <td :colspan="isUsageType ? 7 : 5" class="px-3 py-2 border bg-emerald-50/60">
+                    <div class="text-xs font-semibold text-emerald-800 mb-1">
+                      BOM yang dipotong (stock_cut=1) × {{ formatNumber(item.qty) }} porsi
+                    </div>
+                    <ul class="text-xs text-emerald-900 space-y-0.5">
+                      <li v-for="bom in item.bom_preview" :key="bom.material_item_id">
+                        {{ bom.material_name }}:
+                        {{ formatNumber(bom.qty_total) }} {{ bom.unit_name || '' }}
+                        <span class="text-emerald-700/80">({{ formatNumber(bom.qty_per_portion) }} / porsi)</span>
+                      </li>
+                    </ul>
+                  </td>
+                </tr>
+              </template>
             </tbody>
           </table>
         </div>
@@ -68,29 +93,29 @@ const isUsageType = computed(() => {
 })
 
 function typeLabel(type) {
-  if (type === 'internal_use') return 'Internal Use';
-  if (type === 'spoil') return 'Spoil';
-  if (type === 'waste') return 'Waste';
-  if (type === 'usage') return 'Usage';
-  if (type === 'stock_cut') return 'Usage'; /* legacy */
-  if (type === 'r_and_d') return 'R & D';
-  if (type === 'marketing') return 'Marketing';
-  if (type === 'non_commodity') return 'Non Commodity';
-  if (type === 'guest_supplies') return 'Guest Supplies';
-  if (type === 'wrong_maker') return 'Wrong Maker';
-  if (type === 'training') return 'Training';
+  if (type === 'internal_use') return 'Internal Use'
+  if (type === 'spoil') return 'Spoil'
+  if (type === 'waste') return 'Waste'
+  if (type === 'usage') return 'Usage'
+  if (type === 'stock_cut') return 'Usage' /* legacy */
+  if (type === 'r_and_d') return 'R & D'
+  if (type === 'marketing') return 'Marketing'
+  if (type === 'non_commodity') return 'Non Commodity'
+  if (type === 'guest_supplies') return 'Guest Supplies'
+  if (type === 'wrong_maker') return 'Wrong Maker'
+  if (type === 'training') return 'Training'
   return type;
 }
 function formatDate(date) {
-  if (!date) return '-';
+  if (!date) return '-'
   return new Date(date).toLocaleDateString('id-ID')
 }
 function formatNumber(val) {
-  if (val == null) return '-';
+  if (val == null) return '-'
   if (Number(val) % 1 === 0) return Number(val);
   return Number(val).toLocaleString('id-ID', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
 function goBack() {
   router.visit(route('outlet-internal-use-waste.index'))
 }
-</script> 
+</script>

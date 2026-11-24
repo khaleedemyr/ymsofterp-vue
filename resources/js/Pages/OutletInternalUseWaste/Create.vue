@@ -57,7 +57,9 @@
             </div>
 
             <div v-if="!isUsageAutoBomType" class="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-2">
-              Ketik minimal 2 huruf untuk mencari item yang punya stok di outlet. Item <span class="font-semibold text-purple-700">WIP</span> bisa dipilih jika sudah ada stok hasil produksi WIP — stok dipotong dari WIP itu sendiri (bukan bahan baku).
+              Per baris pilih mode <strong>Bahan</strong> atau <strong>Menu</strong>.
+              Bahan: cari item yang punya stok di outlet (termasuk <span class="font-semibold text-purple-700">WIP</span>).
+              Menu: pilih menu POS (`show_pos=1`) yang available di outlet — saat submit/approve yang dipotong adalah BOM-nya.
             </div>
 
             <div v-if="isUsageAutoBomType && !loadingStockCutItems" class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
@@ -186,25 +188,50 @@
             </template>
 
             <div v-else v-for="(item, idx) in form.items" :key="item.id || idx" class="bg-white border rounded-lg p-4 space-y-4 relative">
-              <div class="flex justify-between items-start mb-2">
+              <div class="flex justify-between items-start mb-2 gap-3 flex-wrap">
                 <h4 class="font-medium text-gray-800">Item #{{ idx + 1 }}</h4>
-                <button 
-                  v-if="!isUsageAutoBomType"
-                  type="button" 
-                  @click="removeItem(idx)" 
-                  class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
-                  :disabled="form.items.length === 1"
-                  :class="form.items.length === 1 ? 'opacity-50 cursor-not-allowed' : ''"
-                  title="Hapus Item"
-                >
-                  <i class="fa fa-trash mr-1"></i> Hapus
-                </button>
+                <div class="flex items-center gap-2">
+                  <div
+                    v-if="!isUsageAutoBomType"
+                    class="inline-flex rounded-lg border border-gray-200 overflow-hidden text-xs font-semibold"
+                  >
+                    <button
+                      type="button"
+                      class="px-3 py-1.5 transition-colors"
+                      :class="item.line_mode !== 'menu' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                      @click="setLineMode(idx, 'material')"
+                    >
+                      Bahan
+                    </button>
+                    <button
+                      type="button"
+                      class="px-3 py-1.5 transition-colors border-l border-gray-200"
+                      :class="item.line_mode === 'menu' ? 'bg-emerald-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
+                      @click="setLineMode(idx, 'menu')"
+                    >
+                      Menu
+                    </button>
+                  </div>
+                  <button 
+                    v-if="!isUsageAutoBomType"
+                    type="button" 
+                    @click="removeItem(idx)" 
+                    class="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition-colors text-sm font-medium"
+                    :disabled="form.items.length === 1"
+                    :class="form.items.length === 1 ? 'opacity-50 cursor-not-allowed' : ''"
+                    title="Hapus Item"
+                  >
+                    <i class="fa fa-trash mr-1"></i> Hapus
+                  </button>
+                </div>
               </div>
 
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Item Selection -->
                 <div class="md:col-span-2">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Item</label>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    {{ item.line_mode === 'menu' ? 'Menu (POS)' : 'Item Bahan / WIP' }}
+                  </label>
                   <multiselect
                     v-model="item.selectedItem"
                     :options="item.itemOptions || []"
@@ -213,10 +240,10 @@
                     :loading="item.loadingItemSearch"
                     :close-on-select="true"
                     :show-labels="false"
-                    placeholder="Ketik nama item (min. 2 huruf)..."
+                    :placeholder="item.line_mode === 'menu' ? 'Ketik nama menu (min. 2 huruf)...' : 'Ketik nama item (min. 2 huruf)...'"
                     label="name"
                     track-by="id"
-                    :disabled="!form.warehouse_outlet_id || !form.outlet_id || isUsageAutoBomType"
+                    :disabled="!form.outlet_id || isUsageAutoBomType || (item.line_mode !== 'menu' && !form.warehouse_outlet_id)"
                     @search-change="(q) => searchCategoryCostItems(q, idx)"
                     @select="(selectedItem) => onItemSelect(selectedItem, idx)"
                     @remove="() => onItemRemove(idx)"
@@ -231,9 +258,16 @@
                               v-if="option.is_wip || option.type === 'WIP'"
                               class="ml-1 text-xs font-semibold text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded"
                             >WIP</span>
+                            <span
+                              v-if="item.line_mode === 'menu'"
+                              class="ml-1 text-xs font-semibold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded"
+                            >MENU</span>
                           </div>
                           <div class="text-sm text-gray-500">
-                            <span v-if="option.stock?.qty_small != null">
+                            <span v-if="item.line_mode === 'menu' && option.small_unit_name">
+                              Unit porsi: {{ option.small_unit_name }}
+                            </span>
+                            <span v-else-if="option.stock?.qty_small != null">
                               Stok: {{ formatNumber(option.stock.qty_small) }} {{ option.stock.unit_small || option.small_unit_name || '' }}
                             </span>
                             <span v-else-if="option.small_unit_name">Small: {{ option.small_unit_name }}</span>
@@ -254,13 +288,16 @@
                       </div>
                     </template>
                   </multiselect>
-                  <div v-if="!form.warehouse_outlet_id" class="text-xs text-yellow-600 mt-1">
+                  <div v-if="item.line_mode !== 'menu' && !form.warehouse_outlet_id" class="text-xs text-yellow-600 mt-1">
                     Pilih warehouse outlet terlebih dahulu untuk melihat stok.
+                  </div>
+                  <div v-if="item.line_mode === 'menu'" class="text-xs text-emerald-700 mt-1">
+                    Qty = porsi menu. Saat submit/approve, stok dipotong dari BOM (`stock_cut=1`), bukan dari menu.
                   </div>
                   <div v-if="item.selectedItem?.is_wip || item.selectedItem?.type === 'WIP'" class="text-xs text-purple-700 mt-1">
                     Pemotongan stok: langsung dari stok WIP hasil produksi (bukan bahan baku).
                   </div>
-                  <div v-if="item.stock" class="text-xs mt-1" :class="Number(item.stock.qty_small || 0) <= 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
+                  <div v-if="item.line_mode !== 'menu' && item.stock" class="text-xs mt-1" :class="Number(item.stock.qty_small || 0) <= 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
                     Stok: {{ formatStockDisplay(item) }}
                     <span v-if="Number(item.stock.qty_small || 0) <= 0" class="ml-1">⚠️ Stock tidak tersedia</span>
                   </div>
@@ -473,6 +510,7 @@ const isEdit = computed(() => props.isEdit || false)
 function newItem() {
   return {
     id: Date.now() + Math.random(), // Unique ID for each item
+    line_mode: 'material',
     item_id: '',
     item_name: '',
     selectedItem: null,
@@ -512,6 +550,7 @@ const form = ref({
             : null
         return {
           id: Date.now() + Math.random(), // Unique ID for each item
+          line_mode: detail.line_mode === 'menu' ? 'menu' : 'material',
           item_id: detail.item_id,
           item_name: detail.item_name || '',
           selectedItem: editSelected,
@@ -611,6 +650,7 @@ function syncUsagePhysicalFromSavedQty(item) {
 function mapItemToPayload(item) {
   const payload = {
     item_id: item.item_id,
+    line_mode: isUsageAutoBomType.value ? 'material' : (item.line_mode === 'menu' ? 'menu' : 'material'),
     qty: isUsageAutoBomType.value ? getUsageQty(item) : item.qty,
     unit_id: item.unit_id,
     note: item.note || null,
@@ -849,13 +889,21 @@ async function searchCategoryCostItems(query, idx) {
 
   row.loadingItemSearch = true
   try {
-    const res = await axios.get(route('outlet-internal-use-waste.search-items-with-stock'), {
-      params: {
-        outlet_id: form.value.outlet_id,
-        warehouse_outlet_id: form.value.warehouse_outlet_id,
-        q,
-      },
-    })
+    const isMenu = row.line_mode === 'menu'
+    const res = await axios.get(
+      route(isMenu
+        ? 'outlet-internal-use-waste.search-pos-menus'
+        : 'outlet-internal-use-waste.search-items-with-stock'),
+      {
+        params: isMenu
+          ? { outlet_id: form.value.outlet_id, q }
+          : {
+              outlet_id: form.value.outlet_id,
+              warehouse_outlet_id: form.value.warehouse_outlet_id,
+              q,
+            },
+      }
+    )
     const found = Array.isArray(res.data?.items) ? res.data.items : []
     if (row.selectedItem && !found.some((it) => it.id === row.selectedItem.id)) {
       row.itemOptions = [row.selectedItem, ...found]
@@ -870,22 +918,30 @@ async function searchCategoryCostItems(query, idx) {
   }
 }
 
+function setLineMode(idx, mode) {
+  const row = form.value.items[idx]
+  if (!row || row.line_mode === mode) return
+  row.line_mode = mode === 'menu' ? 'menu' : 'material'
+  onItemRemove(idx)
+}
+
 function onItemSelect(item, idx) {
   if (!item || !item.id) return
-  
-  form.value.items[idx].item_id = item.id
-  form.value.items[idx].item_name = item.name
-  form.value.items[idx].selectedItem = item
-  if (!form.value.items[idx].itemOptions?.length) {
-    form.value.items[idx].itemOptions = [item]
+
+  const row = form.value.items[idx]
+  row.item_id = item.id
+  row.item_name = item.name
+  row.selectedItem = item
+  if (!row.itemOptions?.length) {
+    row.itemOptions = [item]
   }
   if (item.stock) {
-    form.value.items[idx].stock = item.stock
+    row.stock = item.stock
+  } else {
+    row.stock = null
   }
-  // Set small unit directly
   setSmallUnit(idx, item.id)
-  // Fetch stock untuk item yang dipilih
-  if (form.value.warehouse_outlet_id && form.value.outlet_id && !item.stock) {
+  if (row.line_mode !== 'menu' && form.value.warehouse_outlet_id && form.value.outlet_id && !item.stock) {
     fetchStock(idx)
   }
 }
@@ -950,6 +1006,11 @@ async function validateStockBeforeSave() {
         }
       }
     } else if (!item.qty || item.qty <= 0) {
+      continue
+    }
+
+    // Mode menu: potong BOM saat submit — skip validasi stok inventory menu
+    if (item.line_mode === 'menu') {
       continue
     }
     
@@ -1717,7 +1778,10 @@ watch(() => page.props.flash, (flash) => {
 
 // Tambahkan fungsi fetchStock untuk mengambil stok dari warehouse outlet
 async function fetchStock(idx) {
-  const item = form.value.items[idx];
+  const item = form.value.items[idx]
+  if (!item || item.line_mode === 'menu') {
+    return
+  }
   if (!item.item_id || !form.value.warehouse_outlet_id || !form.value.outlet_id) return;
   try {
     const res = await axios.get('/api/outlet-inventory/stock', {

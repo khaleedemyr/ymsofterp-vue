@@ -196,6 +196,7 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.qty' => 'required_with:items|numeric|min:0',
                 'items.*.unit_id' => 'required_with:items|exists:units,id',
                 'items.*.note' => 'nullable|string',
+                'items.*.line_mode' => 'nullable|in:material,menu',
                 'items.*.stock_on_hand' => 'nullable|numeric|min:0',
                 'items.*.physical_qty' => 'nullable|numeric|min:0',
             ]);
@@ -387,96 +388,70 @@ class OutletInternalUseWasteController extends Controller
             
             foreach ($itemsToProcess as $itemIndex => $item) {
                 try {
-                    // Validasi item data
                     if (empty($item['item_id'])) {
-                        throw new \Exception("Item ID tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                        throw new \Exception('Item ID tidak boleh kosong untuk item ke-'.($itemIndex + 1));
                     }
                     if (empty($item['qty']) || $item['qty'] <= 0) {
-                        throw new \Exception("Quantity harus lebih dari 0 untuk item ke-" . ($itemIndex + 1));
+                        throw new \Exception('Quantity harus lebih dari 0 untuk item ke-'.($itemIndex + 1));
                     }
                     if (empty($item['unit_id'])) {
-                        throw new \Exception("Unit ID tidak boleh kosong untuk item ke-" . ($itemIndex + 1));
+                        throw new \Exception('Unit ID tidak boleh kosong untuk item ke-'.($itemIndex + 1));
                     }
-                    
-                    // Cek inventory item (table outlet_food_inventory_items tidak punya warehouse_outlet_id)
-                    $inventoryItem = DB::table('outlet_food_inventory_items')
-                        ->where('item_id', $item['item_id'])
-                        ->first();
-                    if (!$inventoryItem) {
-                        $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
-                        throw new \Exception("Item '{$itemName}' tidak ditemukan di inventory untuk item ke-" . ($itemIndex + 1));
-                    }
-                    
-                    // Cek item master
+
                     $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
                     if (!$itemMaster) {
-                        throw new \Exception("Item master tidak ditemukan untuk item ke-" . ($itemIndex + 1));
+                        throw new \Exception('Item master tidak ditemukan untuk item ke-'.($itemIndex + 1));
                     }
-                    
-                    // Cek unit
+
                     $unit = DB::table('units')->where('id', $item['unit_id'])->value('name');
                     if (!$unit) {
-                        throw new \Exception("Unit tidak ditemukan untuk item ke-" . ($itemIndex + 1));
+                        throw new \Exception('Unit tidak ditemukan untuk item ke-'.($itemIndex + 1));
                     }
-                    
-                    $qty_input = floatval($item['qty']);
-                    $qty_small = 0;
-                    $qty_medium = 0;
-                    $qty_large = 0;
-                    $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                    $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                    $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                    $smallConv = floatval($itemMaster->small_conversion_qty ?: 1);
-                    $mediumConv = floatval($itemMaster->medium_conversion_qty ?: 1);
-                    
-                    if ($unit === $unitSmall) {
-                        $qty_small = $qty_input;
-                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                    } elseif ($unit === $unitMedium) {
-                        $qty_medium = $qty_input;
-                        $qty_small = $qty_medium * $smallConv;
-                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    } elseif ($unit === $unitLarge) {
-                        $qty_large = $qty_input;
-                        $qty_medium = $qty_large * $mediumConv;
-                        $qty_small = $qty_medium * $smallConv;
+
+                    $lineMode = $this->normalizeLineMode($item['line_mode'] ?? null, $request->type);
+
+                    if ($lineMode === 'menu') {
+                        $bomCount = DB::table('item_bom')
+                            ->where('item_id', $item['item_id'])
+                            ->where('stock_cut', 1)
+                            ->count();
+                        if ($bomCount === 0) {
+                            $itemName = $itemMaster->name ?? 'Unknown';
+                            throw new \Exception("Menu \"{$itemName}\" tidak punya BOM stock_cut untuk item ke-".($itemIndex + 1));
+                        }
                     } else {
-                        $qty_small = $qty_input;
+                        $inventoryItem = DB::table('outlet_food_inventory_items')
+                            ->where('item_id', $item['item_id'])
+                            ->first();
+                        if (!$inventoryItem) {
+                            $itemName = $itemMaster->name ?? 'Unknown';
+                            throw new \Exception("Item \"{$itemName}\" tidak ditemukan di inventory untuk item ke-".($itemIndex + 1));
+                        }
+
+                        $stock = DB::table('outlet_food_inventory_stocks')
+                            ->where('inventory_item_id', $inventoryItem->id)
+                            ->where('id_outlet', $request->outlet_id)
+                            ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
+                            ->first();
+                        if (!$stock) {
+                            $itemName = $itemMaster->name ?? 'Unknown';
+                            throw new \Exception("Stok item \"{$itemName}\" tidak ditemukan di outlet dan warehouse outlet yang dipilih untuk item ke-".($itemIndex + 1));
+                        }
+                        if ($stock->qty_small <= 0) {
+                            $itemName = $itemMaster->name ?? 'Unknown';
+                            throw new \Exception("Stok item \"{$itemName}\" tidak tersedia (stock: 0). Tidak dapat menyimpan draft untuk item ke-".($itemIndex + 1));
+                        }
                     }
-                    
-                    // Cek stock
-                    $stock = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('id_outlet', $request->outlet_id)
-                        ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
-                        ->first();
-                    if (!$stock) {
-                        $itemName = $itemMaster->name ?? 'Unknown';
-                        throw new \Exception("Stok item '{$itemName}' tidak ditemukan di outlet dan warehouse outlet yang dipilih untuk item ke-" . ($itemIndex + 1));
-                    }
-                    
-                    // Validasi stock tidak boleh 0 untuk draft
-                    if ($stock->qty_small <= 0) {
-                        $itemName = $itemMaster->name ?? 'Unknown';
-                        throw new \Exception("Stok item '{$itemName}' tidak tersedia (stock: 0). Tidak dapat menyimpan draft untuk item ke-" . ($itemIndex + 1));
-                    }
-                    
-                    // Validasi stock cukup (hanya untuk informasi, tidak dipotong saat draft)
-                    // Stock validation will be done again on submit
-                    
+
                     $detailInserted = DB::table('outlet_internal_use_waste_details')->insert(
                         $this->buildDetailInsertRow($headerId, $item, $request->type)
                     );
-                    
+
                     if (!$detailInserted) {
-                        throw new \Exception("Gagal menyimpan detail item ke-" . ($itemIndex + 1));
+                        throw new \Exception('Gagal menyimpan detail item ke-'.($itemIndex + 1));
                     }
-                    
-                    // NO STOCK PROCESSING FOR DRAFT - will be done on submit
                 } catch (\Exception $itemError) {
-                    // Re-throw dengan informasi item index
-                    throw new \Exception("Error pada item ke-" . ($itemIndex + 1) . ": " . $itemError->getMessage());
+                    throw new \Exception('Error pada item ke-'.($itemIndex + 1).': '.$itemError->getMessage());
                 }
             }
             
@@ -686,130 +661,15 @@ class OutletInternalUseWasteController extends Controller
                 throw new \Exception('Tidak ada item yang dapat di-submit. Silakan tambahkan item terlebih dahulu.');
             }
             
-            $subtotalMac = 0;
-
-            // Process stock for each detail
-            foreach ($details as $item) {
-                $inventoryItem = DB::table('outlet_food_inventory_items')
-                    ->where('item_id', $item->item_id)
-                    ->first();
-                if (!$inventoryItem) {
-                    $itemName = DB::table('items')->where('id', $item->item_id)->value('name') ?? 'Unknown';
-                    throw new \Exception("Item '{$itemName}' tidak ditemukan di inventory");
-                }
-                
-                $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-                if (!$itemMaster) {
-                    throw new \Exception("Item master tidak ditemukan");
-                }
-                
-                $unit = DB::table('units')->where('id', $item->unit_id)->value('name');
-                $qty_input = floatval($item->qty);
-                $qty_small = 0;
-                $qty_medium = 0;
-                $qty_large = 0;
-                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                $smallConv = floatval($itemMaster->small_conversion_qty ?: 1);
-                $mediumConv = floatval($itemMaster->medium_conversion_qty ?: 1);
-                
-                if ($unit === $unitSmall) {
-                    $qty_small = $qty_input;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                } elseif ($unit === $unitMedium) {
-                    $qty_medium = $qty_input;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                } elseif ($unit === $unitLarge) {
-                    $qty_large = $qty_input;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } else {
-                    $qty_small = $qty_input;
-                }
-                
-                // Check stock
-                $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $inventoryItem->id)
-                    ->where('id_outlet', $header->outlet_id)
-                    ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                    ->first();
-                if (!$stock) {
-                    $itemName = $itemMaster->name ?? 'Unknown';
-                    throw new \Exception("Stok item '{$itemName}' tidak ditemukan di outlet dan warehouse outlet yang dipilih");
-                }
-                
-                // Validate stock availability
-                if ($qty_small > $stock->qty_small) {
-                    $itemName = $itemMaster->name ?? 'Unknown';
-                    throw new \Exception("Quantity item '{$itemName}' melebihi stok yang tersedia. Stok tersedia: " . number_format($stock->qty_small, 2) . " {$unitSmall}");
-                }
-
-                $macPerSmall = $this->resolveCategoryCostMacPerSmall(
-                    $itemMaster,
-                    (int) $inventoryItem->id,
-                    (int) $header->outlet_id,
-                    (int) $header->warehouse_outlet_id,
-                    (string) $header->date,
-                    $stock
-                );
-                [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
-                    $itemMaster,
-                    $macPerSmall,
-                    $stock
-                );
-                $subtotalMac += $qty_small * $macPerSmall;
-                
-                // Only process stock if status will be PROCESSED (no approval needed)
-                if ($newStatus === 'PROCESSED') {
-                    // Update stok di outlet (kurangi) — item WIP: potong stok WIP itu sendiri
-                    $stockUpdated = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('id_outlet', $header->outlet_id)
-                        ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                        ->update($this->buildCategoryCostStockRowUpdate(
-                            $itemMaster,
-                            $stock,
-                            $qty_small,
-                            $qty_medium,
-                            $qty_large,
-                            $costPerSmall
-                        ));
-                    
-                    if ($stockUpdated === false) {
-                        throw new \Exception("Gagal mengupdate stok untuk item '{$itemMaster->name}'");
-                    }
-                    
-                    // Insert kartu stok OUT
-                    $cardInserted = DB::table('outlet_food_inventory_cards')->insert([
-                        'inventory_item_id' => $inventoryItem->id,
-                        'id_outlet' => $header->outlet_id,
-                        'warehouse_outlet_id' => $header->warehouse_outlet_id,
-                        'date' => $header->date,
-                        'reference_type' => 'outlet_internal_use_waste',
-                        'reference_id' => $id,
-                        'out_qty_small' => $qty_small,
-                        'out_qty_medium' => $qty_medium,
-                        'out_qty_large' => $qty_large,
-                        'cost_per_small' => $costPerSmall,
-                        'cost_per_medium' => $costPerMedium,
-                        'cost_per_large' => $costPerLarge,
-                        'value_out' => $qty_small * $costPerSmall,
-                        'saldo_qty_small' => $stock->qty_small - $qty_small,
-                        'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                        'saldo_qty_large' => $stock->qty_large - $qty_large,
-                        'saldo_value' => ($stock->qty_small - $qty_small) * $costPerSmall,
-                        'description' => 'Stock Out - ' . $header->type,
-                        'created_at' => now(),
-                    ]);
-                    
-                    if (!$cardInserted) {
-                        throw new \Exception("Gagal menyimpan kartu stok untuk item '{$itemMaster->name}'");
-                    }
-                }
-            }
+            $cuts = $this->expandDetailsToMaterialCuts($header, $details);
+            // SUBMITTED: validasi stok BOM/material saja; PROCESSED: potong + kartu
+            $subtotalMac = $this->applyMaterialStockCuts(
+                $header,
+                (int) $id,
+                $cuts,
+                'Stock Out - '.$header->type,
+                $newStatus === 'PROCESSED'
+            );
             
             // Create approval flows if approvers provided and approval is required
             if ($requiresApproval && !empty($request->approvers)) {
@@ -1053,6 +913,7 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.qty' => 'required|numeric|min:0',
                 'items.*.unit_id' => 'required|exists:units,id',
                 'items.*.note' => 'nullable|string',
+                'items.*.line_mode' => 'nullable|in:material,menu',
                 'items.*.stock_on_hand' => 'nullable|numeric|min:0',
                 'items.*.physical_qty' => 'nullable|numeric|min:0',
                 'approvers' => 'nullable|array'
@@ -1088,132 +949,39 @@ class OutletInternalUseWasteController extends Controller
                 'updated_at' => now()
             ]);
             
-            $subtotalMac = 0;
-
-            // Insert details and process stock (same logic as submit method)
             foreach ($request->items as $itemIndex => $item) {
                 try {
+                    $lineMode = $this->normalizeLineMode($item['line_mode'] ?? null, $request->type);
+                    if ($lineMode === 'menu') {
+                        $bomCount = DB::table('item_bom')
+                            ->where('item_id', $item['item_id'])
+                            ->where('stock_cut', 1)
+                            ->count();
+                        if ($bomCount === 0) {
+                            $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
+                            throw new \Exception("Menu \"{$itemName}\" tidak punya BOM stock_cut");
+                        }
+                    }
+
                     DB::table('outlet_internal_use_waste_details')->insert(
                         $this->buildDetailInsertRow($headerId, $item, $request->type)
                     );
-                    
-                    // Process stock immediately (same logic as submit)
-                    $inventoryItem = DB::table('outlet_food_inventory_items')
-                        ->where('item_id', $item['item_id'])
-                        ->first();
-                    if (!$inventoryItem) {
-                        $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
-                        throw new \Exception("Item '{$itemName}' tidak ditemukan di inventory");
-                    }
-                    
-                    $itemMaster = DB::table('items')->where('id', $item['item_id'])->first();
-                    if (!$itemMaster) {
-                        throw new \Exception("Item master tidak ditemukan");
-                    }
-                    
-                    $unit = DB::table('units')->where('id', $item['unit_id'])->value('name');
-                    $qty_input = floatval($item['qty']);
-                    $qty_small = 0;
-                    $qty_medium = 0;
-                    $qty_large = 0;
-                    $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                    $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                    $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                    $smallConv = floatval($itemMaster->small_conversion_qty ?: 1);
-                    $mediumConv = floatval($itemMaster->medium_conversion_qty ?: 1);
-                    
-                    if ($unit === $unitSmall) {
-                        $qty_small = $qty_input;
-                        $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                        $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                    } elseif ($unit === $unitMedium) {
-                        $qty_medium = $qty_input;
-                        $qty_small = $qty_medium * $smallConv;
-                        $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                    } elseif ($unit === $unitLarge) {
-                        $qty_large = $qty_input;
-                        $qty_medium = $qty_large * $mediumConv;
-                        $qty_small = $qty_medium * $smallConv;
-                    } else {
-                        $qty_small = $qty_input;
-                    }
-                    
-                    // Check stock
-                    $stock = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $inventoryItem->id)
-                        ->where('id_outlet', $request->outlet_id)
-                        ->where('warehouse_outlet_id', $request->warehouse_outlet_id)
-                        ->first();
-                    
-                    if (!$stock) {
-                        $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
-                        throw new \Exception("Stok item '{$itemName}' tidak ditemukan");
-                    }
-                    
-                    if ($stock->qty_small < $qty_small) {
-                        $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
-                        throw new \Exception("Stok item '{$itemName}' tidak cukup. Stok tersedia: " . number_format($stock->qty_small, 2) . ", dibutuhkan: " . number_format($qty_small, 2));
-                    }
-
-                    $macPerSmall = $this->resolveCategoryCostMacPerSmall(
-                        $itemMaster,
-                        (int) $inventoryItem->id,
-                        (int) $request->outlet_id,
-                        (int) $request->warehouse_outlet_id,
-                        (string) $request->date,
-                        $stock
-                    );
-                    [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
-                        $itemMaster,
-                        $macPerSmall,
-                        $stock
-                    );
-                    $subtotalMac += $qty_small * $macPerSmall;
-                    
-                    // Update stock
-                    $saldo_qty_small = $stock->qty_small - $qty_small;
-                    $saldo_qty_medium = $stock->qty_medium - $qty_medium;
-                    $saldo_qty_large = $stock->qty_large - $qty_large;
-                    $saldo_value = $saldo_qty_small * $costPerSmall;
-                    
-                    DB::table('outlet_food_inventory_stocks')
-                        ->where('id', $stock->id)
-                        ->update($this->buildCategoryCostStockRowUpdate(
-                            $itemMaster,
-                            $stock,
-                            $qty_small,
-                            $qty_medium,
-                            $qty_large,
-                            $costPerSmall
-                        ));
-                    
-                    // Insert stock card
-                    DB::table('outlet_food_inventory_cards')->insert([
-                        'inventory_item_id' => $inventoryItem->id,
-                        'id_outlet' => $request->outlet_id,
-                        'warehouse_outlet_id' => $request->warehouse_outlet_id,
-                        'date' => $request->date,
-                        'reference_type' => 'outlet_internal_use_waste',
-                        'reference_id' => $headerId,
-                        'out_qty_small' => $qty_small,
-                        'out_qty_medium' => $qty_medium,
-                        'out_qty_large' => $qty_large,
-                        'cost_per_small' => $costPerSmall,
-                        'cost_per_medium' => $costPerMedium,
-                        'cost_per_large' => $costPerLarge,
-                        'value_out' => $qty_small * $costPerSmall,
-                        'saldo_qty_small' => $saldo_qty_small,
-                        'saldo_qty_medium' => $saldo_qty_medium,
-                        'saldo_qty_large' => $saldo_qty_large,
-                        'saldo_value' => $saldo_value,
-                        'description' => 'Stock Out - ' . ucfirst(str_replace('_', ' ', $request->type)),
-                        'created_at' => now()
-                    ]);
                 } catch (\Exception $itemError) {
-                    throw new \Exception("Error pada item ke-" . ($itemIndex + 1) . ": " . $itemError->getMessage());
+                    throw new \Exception('Error pada item ke-'.($itemIndex + 1).': '.$itemError->getMessage());
                 }
             }
-            
+
+            $header = DB::table('outlet_internal_use_waste_headers')->where('id', $headerId)->first();
+            $details = DB::table('outlet_internal_use_waste_details')->where('header_id', $headerId)->get();
+            $cuts = $this->expandDetailsToMaterialCuts($header, $details);
+            $subtotalMac = $this->applyMaterialStockCuts(
+                $header,
+                (int) $headerId,
+                $cuts,
+                'Stock Out - '.ucfirst(str_replace('_', ' ', $request->type)),
+                $newStatus === 'PROCESSED'
+            );
+
             DB::table('outlet_internal_use_waste_headers')
                 ->where('id', $headerId)
                 ->update([
@@ -1385,7 +1153,15 @@ class OutletInternalUseWasteController extends Controller
             ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
             ->where('d.header_id', $id)
-            ->get();
+            ->get()
+            ->map(function ($row) use ($header) {
+                $lineMode = $this->normalizeLineMode($row->line_mode ?? 'material', (string) $header->type);
+                $row->line_mode = $lineMode;
+                $row->bom_preview = $lineMode === 'menu'
+                    ? $this->previewMenuBomLines((int) $row->item_id, (float) $row->qty)
+                    : [];
+                return $row;
+            });
 
         if ($request->wantsJson() || $request->header('Accept') == 'application/json') {
             return response()->json([
@@ -1425,196 +1201,14 @@ class OutletInternalUseWasteController extends Controller
                 'details_count' => $details->count()
             ]);
 
-            // Proses rollback stok untuk setiap detail (hanya jika bukan DRAFT)
-            foreach ($details as $detail) {
-                // Cari inventory_item_id
-                $inventoryItem = DB::table('outlet_food_inventory_items')->where('item_id', $detail->item_id)->first();
-                if (!$inventoryItem) {
-                    throw new \Exception('Inventory item not found for item_id: ' . $detail->item_id);
-                }
-                $inventory_item_id = $inventoryItem->id;
-                
-                \Log::info('OutletInternalUseWaste destroy - Processing detail', [
+            // Rollback via kartu OUT (aman untuk baris material & menu/BOM)
+            if ($shouldRollbackStock) {
+                $this->rollbackStockFromCards($header, (int) $id);
+            } else {
+                \Log::info('OutletInternalUseWaste destroy - Skipping stock rollback', [
                     'header_id' => $id,
-                    'detail_id' => $detail->id ?? 'N/A',
-                    'item_id' => $detail->item_id,
-                    'inventory_item_id' => $inventory_item_id
+                    'status' => $header->status
                 ]);
-
-                // Ambil data konversi dari tabel items
-                $itemMaster = DB::table('items')->where('id', $detail->item_id)->first();
-                $unit = DB::table('units')->where('id', $detail->unit_id)->value('name');
-                $qty_input = $detail->qty;
-                $qty_small = 0;
-                $qty_medium = 0;
-                $qty_large = 0;
-
-                $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-                $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-                $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-                $smallConv = $itemMaster->small_conversion_qty ?: 1;
-                $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-
-                if ($unit === $unitSmall) {
-                    $qty_small = $qty_input;
-                    $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                    $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-                } elseif ($unit === $unitMedium) {
-                    $qty_medium = $qty_input;
-                    $qty_small = $qty_medium * $smallConv;
-                    $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-                } elseif ($unit === $unitLarge) {
-                    $qty_large = $qty_input;
-                    $qty_medium = $qty_large * $mediumConv;
-                    $qty_small = $qty_medium * $smallConv;
-                } else {
-                    $qty_small = $qty_input;
-                }
-
-                // Rollback stok di outlet_food_inventory_stocks (HANYA jika bukan DRAFT)
-                if ($shouldRollbackStock) {
-                    $stock = DB::table('outlet_food_inventory_stocks')
-                        ->where('inventory_item_id', $inventory_item_id)
-                        ->where('id_outlet', $header->outlet_id)
-                        ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                        ->first();
-                    
-                    if ($stock) {
-                        $oldQtySmall = $stock->qty_small;
-                        $oldQtyMedium = $stock->qty_medium;
-                        $oldQtyLarge = $stock->qty_large;
-                        
-                        $stockUpdated = DB::table('outlet_food_inventory_stocks')
-                            ->where('inventory_item_id', $inventory_item_id)
-                            ->where('id_outlet', $header->outlet_id)
-                            ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                            ->update([
-                                'qty_small' => DB::raw('qty_small + ' . $qty_small),
-                                'qty_medium' => DB::raw('qty_medium + ' . $qty_medium),
-                                'qty_large' => DB::raw('qty_large + ' . $qty_large),
-                                'updated_at' => now(),
-                            ]);
-                        
-                        if ($stockUpdated === false || $stockUpdated === 0) {
-                            \Log::error('OutletInternalUseWaste destroy - Failed to update stock', [
-                                'header_id' => $id,
-                                'item_id' => $detail->item_id,
-                                'inventory_item_id' => $inventory_item_id
-                            ]);
-                            throw new \Exception("Gagal mengupdate stok untuk item ID: {$detail->item_id}");
-                        }
-                        
-                        // Verify stock was updated
-                        $updatedStock = DB::table('outlet_food_inventory_stocks')
-                            ->where('inventory_item_id', $inventory_item_id)
-                            ->where('id_outlet', $header->outlet_id)
-                            ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                            ->first();
-                        
-                        \Log::info('OutletInternalUseWaste destroy - Stock rolled back successfully', [
-                            'header_id' => $id,
-                            'item_id' => $detail->item_id,
-                            'qty_small_added' => $qty_small,
-                            'qty_medium_added' => $qty_medium,
-                            'qty_large_added' => $qty_large,
-                            'old_qty_small' => $oldQtySmall,
-                            'new_qty_small' => $updatedStock->qty_small ?? 'N/A',
-                            'stock_updated' => $stockUpdated
-                        ]);
-                    } else {
-                        \Log::warning('OutletInternalUseWaste destroy - Stock not found for rollback', [
-                            'header_id' => $id,
-                            'item_id' => $detail->item_id,
-                            'inventory_item_id' => $inventory_item_id,
-                            'outlet_id' => $header->outlet_id,
-                            'warehouse_outlet_id' => $header->warehouse_outlet_id
-                        ]);
-                        // Don't throw error, just log warning - stock might have been deleted or moved
-                    }
-
-                    // Hapus kartu stok OUT terkait untuk header ini
-                    // Cari semua kartu stock yang terkait dengan header ini dan item ini
-                    $cardsToDelete = DB::table('outlet_food_inventory_cards')
-                        ->where('reference_type', 'outlet_internal_use_waste')
-                        ->where('reference_id', $id)
-                        ->where('inventory_item_id', $inventory_item_id)
-                        ->get();
-                    
-                    \Log::info('OutletInternalUseWaste destroy - Found stock cards to delete', [
-                        'header_id' => $id,
-                        'inventory_item_id' => $inventory_item_id,
-                        'cards_found' => $cardsToDelete->count(),
-                        'cards_reference_ids' => $cardsToDelete->pluck('reference_id')->toArray(),
-                        'cards_ids' => $cardsToDelete->pluck('id')->toArray()
-                    ]);
-                    
-                    // Hapus kartu stok OUT terkait untuk header ini dan item ini
-                    $cardsDeleted = DB::table('outlet_food_inventory_cards')
-                        ->where('reference_type', 'outlet_internal_use_waste')
-                        ->where('reference_id', $id)
-                        ->where('inventory_item_id', $inventory_item_id)
-                        ->delete();
-                    
-                    \Log::info('OutletInternalUseWaste destroy - Stock cards deleted', [
-                        'header_id' => $id,
-                        'inventory_item_id' => $inventory_item_id,
-                        'cards_deleted' => $cardsDeleted,
-                        'expected_cards' => $cardsToDelete->count()
-                    ]);
-                    
-                    // Jika tidak ada kartu stock yang dihapus, cek apakah ada kartu stock dengan reference_id yang berbeda
-                    // Mungkin kartu stock dibuat dengan reference_id yang salah
-                    if ($cardsDeleted === 0 && $shouldRollbackStock) {
-                        // Cari kartu stock dengan kriteria yang sama (item, outlet, warehouse, date) tapi reference_id berbeda
-                        $otherCards = DB::table('outlet_food_inventory_cards')
-                            ->where('reference_type', 'outlet_internal_use_waste')
-                            ->where('inventory_item_id', $inventory_item_id)
-                            ->where('id_outlet', $header->outlet_id)
-                            ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                            ->where('date', $header->date)
-                            ->get();
-                        
-                        if ($otherCards->count() > 0) {
-                            \Log::warning('OutletInternalUseWaste destroy - Found stock cards with different reference_id', [
-                                'header_id' => $id,
-                                'inventory_item_id' => $inventory_item_id,
-                                'other_cards_count' => $otherCards->count(),
-                                'other_cards_reference_ids' => $otherCards->pluck('reference_id')->toArray(),
-                                'other_cards_descriptions' => $otherCards->pluck('description')->toArray(),
-                                'other_cards_ids' => $otherCards->pluck('id')->toArray()
-                            ]);
-                            
-                            // Jika ditemukan kartu stock dengan reference_id yang berbeda, tapi sesuai dengan detail ini
-                            // Mungkin ada bug saat create kartu stock, jadi kita hapus juga
-                            // Tapi hanya jika qty dan date sesuai
-                            foreach ($otherCards as $otherCard) {
-                                // Cek apakah kartu stock ini sesuai dengan detail yang akan dihapus
-                                // Jika qty_small sesuai (dalam toleransi), hapus juga
-                                $qtyDiff = abs($otherCard->out_qty_small - $qty_small);
-                                if ($qtyDiff < 0.01) { // Toleransi 0.01
-                                    \Log::info('OutletInternalUseWaste destroy - Deleting matching stock card with different reference_id', [
-                                        'header_id' => $id,
-                                        'card_id' => $otherCard->id,
-                                        'card_reference_id' => $otherCard->reference_id,
-                                        'card_qty_small' => $otherCard->out_qty_small,
-                                        'expected_qty_small' => $qty_small
-                                    ]);
-                                    
-                                    DB::table('outlet_food_inventory_cards')
-                                        ->where('id', $otherCard->id)
-                                        ->delete();
-                                    
-                                    $cardsDeleted++;
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    \Log::info('OutletInternalUseWaste destroy - Skipping stock rollback (status is DRAFT)', [
-                        'header_id' => $id,
-                        'status' => $header->status
-                    ]);
-                }
             }
 
             // Hapus semua detail terlebih dahulu
@@ -1976,6 +1570,109 @@ class OutletInternalUseWasteController extends Controller
                     'unit_medium' => $row->medium_unit_name,
                     'unit_large' => $row->large_unit_name,
                 ],
+            ];
+        })->values();
+
+        return response()->json([
+            'success' => true,
+            'items' => $items,
+        ]);
+    }
+
+    /**
+     * Cari menu POS (categories.show_pos=1) yang available di outlet dan punya BOM stock_cut=1.
+     */
+    public function searchPosMenus(Request $request)
+    {
+        $request->validate([
+            'outlet_id' => 'required|integer|exists:tbl_data_outlet,id_outlet',
+            'q' => 'nullable|string|max:100',
+        ]);
+
+        $q = trim((string) $request->input('q', ''));
+        $outletId = (int) $request->outlet_id;
+        $regionId = DB::table('tbl_data_outlet')->where('id_outlet', $outletId)->value('region_id');
+
+        $availableItemIds = DB::table('item_availabilities')
+            ->where(function ($query) use ($outletId, $regionId) {
+                $query->where('availability_type', 'all');
+                if ($regionId) {
+                    $query->orWhere(function ($q2) use ($regionId) {
+                        $q2->where('availability_type', 'region')->where('region_id', $regionId);
+                    });
+                }
+                $query->orWhere(function ($q2) use ($outletId) {
+                    $q2->where('availability_type', 'outlet')->where('outlet_id', $outletId);
+                });
+            })
+            ->pluck('item_id')
+            ->unique()
+            ->filter()
+            ->values()
+            ->all();
+
+        if (empty($availableItemIds)) {
+            return response()->json(['success' => true, 'items' => []]);
+        }
+
+        $menuIdsWithBom = DB::table('item_bom')
+            ->where('stock_cut', 1)
+            ->whereIn('item_id', $availableItemIds)
+            ->pluck('item_id')
+            ->unique()
+            ->values()
+            ->all();
+
+        if (empty($menuIdsWithBom)) {
+            return response()->json(['success' => true, 'items' => []]);
+        }
+
+        $query = DB::table('items as i')
+            ->join('categories as c', 'c.id', '=', 'i.category_id')
+            ->leftJoin('units as us', 'us.id', '=', 'i.small_unit_id')
+            ->leftJoin('units as um', 'um.id', '=', 'i.medium_unit_id')
+            ->leftJoin('units as ul', 'ul.id', '=', 'i.large_unit_id')
+            ->whereIn('i.id', $menuIdsWithBom)
+            ->where('i.status', 'active')
+            ->where('c.show_pos', '1')
+            ->where('c.is_asset', '0');
+
+        if ($q !== '') {
+            $like = '%'.addcslashes($q, '%_\\').'%';
+            $query->where(function ($sub) use ($like) {
+                $sub->where('i.name', 'like', $like)
+                    ->orWhere('i.sku', 'like', $like);
+            });
+        }
+
+        $rows = $query
+            ->select(
+                'i.id',
+                'i.name',
+                'i.sku',
+                'i.small_unit_id',
+                'i.medium_unit_id',
+                'i.large_unit_id',
+                'us.name as small_unit_name',
+                'um.name as medium_unit_name',
+                'ul.name as large_unit_name'
+            )
+            ->orderBy('i.name')
+            ->limit(40)
+            ->get();
+
+        $items = $rows->map(function ($row) {
+            return [
+                'id' => (int) $row->id,
+                'name' => $row->name,
+                'sku' => $row->sku,
+                'line_mode' => 'menu',
+                'small_unit_id' => $row->small_unit_id,
+                'medium_unit_id' => $row->medium_unit_id,
+                'large_unit_id' => $row->large_unit_id,
+                'small_unit_name' => $row->small_unit_name,
+                'medium_unit_name' => $row->medium_unit_name,
+                'large_unit_name' => $row->large_unit_name,
             ];
         })->values();
 
@@ -2815,199 +2512,22 @@ class OutletInternalUseWasteController extends Controller
             'header_id' => $headerId,
             'type' => $header->type
         ]);
-        
-        // First pass: Check all stock availability
-        $insufficientStockItems = [];
-        
-        foreach ($details as $item) {
-            $inventoryItem = DB::table('outlet_food_inventory_items')
-                ->where('item_id', $item->item_id)
-                ->first();
-            if (!$inventoryItem) {
-                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Inventory item not found for item_id: {$item->item_id}, header_id: {$headerId}, type: {$header->type}");
-                continue;
-            }
-            
-            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-            if (!$itemMaster) {
-                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Item master not found for item_id: {$item->item_id}, header_id: {$headerId}");
-                continue;
-            }
-            
-            $unit = DB::table('units')->where('id', $item->unit_id)->value('name');
-            $qty_input = $item->qty;
-            $qty_small = 0;
-            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-            
-            if ($unit === $unitSmall) {
-                $qty_small = $qty_input;
-            } elseif ($unit === DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name')) {
-                $qty_small = $qty_input * $smallConv;
-            } elseif ($unit === DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name')) {
-                $qty_small = $qty_input * $smallConv * $mediumConv;
-            } else {
-                $qty_small = $qty_input;
-            }
-            
-            $stock = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItem->id)
-                ->where('id_outlet', $header->outlet_id)
-                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                ->first();
-            
-            if (!$stock) {
-                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Stock not found for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
-                continue;
-            }
-            
-            // Check stock availability
-            if ($qty_small > $stock->qty_small) {
-                $itemName = $itemMaster->name ?? "Item ID: {$item->item_id}";
-                $insufficientStockItems[] = [
-                    'name' => $itemName,
-                    'required' => $qty_small,
-                    'available' => $stock->qty_small,
-                    'unit' => $unitSmall
-                ];
-            }
-        }
-        
-        // If any items have insufficient stock, throw error with all details
-        if (!empty($insufficientStockItems)) {
-            $errorMessage = "Stock tidak mencukupi untuk item berikut:\n\n";
-            foreach ($insufficientStockItems as $stockItem) {
-                $errorMessage .= "• {$stockItem['name']}\n";
-                $errorMessage .= "  Dibutuhkan: {$stockItem['required']} {$stockItem['unit']}\n";
-                $errorMessage .= "  Tersedia: {$stockItem['available']} {$stockItem['unit']}\n\n";
-            }
-            throw new \Exception($errorMessage);
-        }
-        
-        // Second pass: Update all stocks (only if all checks passed)
-        foreach ($details as $item) {
-            $inventoryItem = DB::table('outlet_food_inventory_items')
-                ->where('item_id', $item->item_id)
-                ->first();
-            if (!$inventoryItem) {
-                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Inventory item not found for item_id: {$item->item_id}, header_id: {$headerId}, type: {$header->type}");
-                continue;
-            }
-            
-            $itemMaster = DB::table('items')->where('id', $item->item_id)->first();
-            if (!$itemMaster) {
-                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Item master not found for item_id: {$item->item_id}, header_id: {$headerId}");
-                continue;
-            }
-            
-            $unit = DB::table('units')->where('id', $item->unit_id)->value('name');
-            $qty_input = $item->qty;
-            $qty_small = 0;
-            $qty_medium = 0;
-            $qty_large = 0;
-            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
-            $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
-            $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
-            $smallConv = $itemMaster->small_conversion_qty ?: 1;
-            $mediumConv = $itemMaster->medium_conversion_qty ?: 1;
-            
-            if ($unit === $unitSmall) {
-                $qty_small = $qty_input;
-                $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
-                $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
-            } elseif ($unit === $unitMedium) {
-                $qty_medium = $qty_input;
-                $qty_small = $qty_medium * $smallConv;
-                $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
-            } elseif ($unit === $unitLarge) {
-                $qty_large = $qty_input;
-                $qty_medium = $qty_large * $mediumConv;
-                $qty_small = $qty_medium * $smallConv;
-            } else {
-                $qty_small = $qty_input;
-            }
-            
-            $stock = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItem->id)
-                ->where('id_outlet', $header->outlet_id)
-                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                ->first();
-            
-            if (!$stock) {
-                \Log::warning("OutletInternalUseWaste processStockAfterApproval: Stock not found for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
-                continue;
-            }
-            
-            $macPerSmall = $this->resolveCategoryCostMacPerSmall(
-                $itemMaster,
-                (int) $inventoryItem->id,
-                (int) $header->outlet_id,
-                (int) $header->warehouse_outlet_id,
-                (string) $header->date,
-                $stock
-            );
-            [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
-                $itemMaster,
-                $macPerSmall,
-                $stock
-            );
 
-            // Update stok di outlet (kurangi) - Stock check already done in first pass
-            $updated = DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventoryItem->id)
-                ->where('id_outlet', $header->outlet_id)
-                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
-                ->update($this->buildCategoryCostStockRowUpdate(
-                    $itemMaster,
-                    $stock,
-                    $qty_small,
-                    $qty_medium,
-                    $qty_large,
-                    $costPerSmall
-                ));
-            
-            if ($updated === 0) {
-                $itemName = $itemMaster->name ?? $item->item_id;
-                \Log::error("OutletInternalUseWaste processStockAfterApproval: Failed to update stock for inventory_item_id: {$inventoryItem->id}, outlet_id: {$header->outlet_id}, warehouse_outlet_id: {$header->warehouse_outlet_id}, header_id: {$headerId}, type: {$header->type}");
-                throw new \Exception("Gagal mengupdate stock untuk item: {$itemName}");
-            }
-            
-            \Log::info("OutletInternalUseWaste processStockAfterApproval: Stock updated successfully", [
-                'header_id' => $headerId,
-                'type' => $header->type,
-                'item_id' => $item->item_id,
-                'inventory_item_id' => $inventoryItem->id,
-                'outlet_id' => $header->outlet_id,
-                'warehouse_outlet_id' => $header->warehouse_outlet_id,
-                'qty_small_reduced' => $qty_small,
-                'old_qty_small' => $stock->qty_small,
-                'new_qty_small' => $stock->qty_small - $qty_small
-            ]);
+        $cuts = $this->expandDetailsToMaterialCuts($header, $details);
+        $subtotalMac = $this->applyMaterialStockCuts(
+            $header,
+            (int) $headerId,
+            $cuts,
+            'Stock Out - '.$header->type.' (After Approval)',
+            true
+        );
 
-            // Insert kartu stok OUT
-            DB::table('outlet_food_inventory_cards')->insert([
-                'inventory_item_id' => $inventoryItem->id,
-                'id_outlet' => $header->outlet_id,
-                'warehouse_outlet_id' => $header->warehouse_outlet_id,
-                'date' => $header->date,
-                'reference_type' => 'outlet_internal_use_waste',
-                'reference_id' => $headerId,
-                'out_qty_small' => $qty_small,
-                'out_qty_medium' => $qty_medium,
-                'out_qty_large' => $qty_large,
-                'cost_per_small' => $costPerSmall,
-                'cost_per_medium' => $costPerMedium,
-                'cost_per_large' => $costPerLarge,
-                'value_out' => $qty_small * $costPerSmall,
-                'saldo_qty_small' => $stock->qty_small - $qty_small,
-                'saldo_qty_medium' => $stock->qty_medium - $qty_medium,
-                'saldo_qty_large' => $stock->qty_large - $qty_large,
-                'saldo_value' => ($stock->qty_small - $qty_small) * $costPerSmall,
-                'description' => 'Stock Out - ' . $header->type . ' (After Approval)',
-                'created_at' => now(),
+        DB::table('outlet_internal_use_waste_headers')
+            ->where('id', $headerId)
+            ->update([
+                'subtotal_mac' => $subtotalMac,
+                'updated_at' => now(),
             ]);
-        }
         
         \Log::info("OutletInternalUseWaste processStockAfterApproval: Stock processing completed", [
             'header_id' => $headerId,
@@ -3213,6 +2733,7 @@ class OutletInternalUseWasteController extends Controller
         $row = [
             'header_id' => $headerId,
             'item_id' => $item['item_id'],
+            'line_mode' => $this->normalizeLineMode($item['line_mode'] ?? null, $type),
             'qty' => $item['qty'],
             'unit_id' => $item['unit_id'],
             'note' => $item['note'] ?? null,
@@ -3337,5 +2858,344 @@ class OutletInternalUseWasteController extends Controller
             $warehouseOutletId,
             $asOfDate
         );
+    }
+
+    private function normalizeLineMode(?string $mode, string $docType): string
+    {
+        if (in_array($docType, ['usage', 'stock_cut'], true)) {
+            return 'material';
+        }
+
+        return $mode === 'menu' ? 'menu' : 'material';
+    }
+
+    /**
+     * Konversi qty input ke triplet small/medium/large menurut master item.
+     *
+     * @return array{qty_small: float, qty_medium: float, qty_large: float}
+     */
+    private function convertQtyToUnitTriplet(object $itemMaster, $unitId, float $qtyInput): array
+    {
+        $unitName = is_numeric($unitId)
+            ? DB::table('units')->where('id', $unitId)->value('name')
+            : (string) $unitId;
+        $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name');
+        $unitMedium = DB::table('units')->where('id', $itemMaster->medium_unit_id)->value('name');
+        $unitLarge = DB::table('units')->where('id', $itemMaster->large_unit_id)->value('name');
+        $smallConv = (float) ($itemMaster->small_conversion_qty ?: 1);
+        $mediumConv = (float) ($itemMaster->medium_conversion_qty ?: 1);
+
+        $qty_small = 0.0;
+        $qty_medium = 0.0;
+        $qty_large = 0.0;
+
+        if ($unitName === $unitSmall) {
+            $qty_small = $qtyInput;
+            $qty_medium = $smallConv > 0 ? $qty_small / $smallConv : 0;
+            $qty_large = ($smallConv > 0 && $mediumConv > 0) ? $qty_small / ($smallConv * $mediumConv) : 0;
+        } elseif ($unitName === $unitMedium) {
+            $qty_medium = $qtyInput;
+            $qty_small = $qty_medium * $smallConv;
+            $qty_large = $mediumConv > 0 ? $qty_medium / $mediumConv : 0;
+        } elseif ($unitName === $unitLarge) {
+            $qty_large = $qtyInput;
+            $qty_medium = $qty_large * $mediumConv;
+            $qty_small = $qty_medium * $smallConv;
+        } else {
+            $qty_small = $qtyInput;
+        }
+
+        return [
+            'qty_small' => $qty_small,
+            'qty_medium' => $qty_medium,
+            'qty_large' => $qty_large,
+        ];
+    }
+
+    /**
+     * Expand detail lines → aggregated material cuts.
+     * material: potong item itu sendiri; menu: explode item_bom.stock_cut=1 × qty porsi.
+     *
+     * @return array<int, array{item_id:int,qty_small:float,qty_medium:float,qty_large:float,sources:array<int,string>}>
+     */
+    private function expandDetailsToMaterialCuts(object $header, $details): array
+    {
+        $cuts = [];
+
+        foreach ($details as $detail) {
+            $lineMode = $this->normalizeLineMode($detail->line_mode ?? 'material', (string) $header->type);
+            $menuQty = (float) $detail->qty;
+
+            if ($lineMode === 'menu') {
+                $menuName = DB::table('items')->where('id', $detail->item_id)->value('name') ?? ('Menu #'.$detail->item_id);
+                $bomRows = DB::table('item_bom')
+                    ->where('item_id', $detail->item_id)
+                    ->where('stock_cut', 1)
+                    ->get();
+
+                if ($bomRows->isEmpty()) {
+                    throw new \Exception("Menu \"{$menuName}\" tidak punya BOM stock_cut. Tidak dapat memotong stok.");
+                }
+
+                foreach ($bomRows as $bom) {
+                    $material = DB::table('items')->where('id', $bom->material_item_id)->first();
+                    if (!$material) {
+                        continue;
+                    }
+                    $needed = $this->convertQtyToUnitTriplet(
+                        $material,
+                        $bom->unit_id,
+                        (float) $bom->qty * $menuQty
+                    );
+                    $mid = (int) $bom->material_item_id;
+                    if (!isset($cuts[$mid])) {
+                        $cuts[$mid] = [
+                            'item_id' => $mid,
+                            'qty_small' => 0.0,
+                            'qty_medium' => 0.0,
+                            'qty_large' => 0.0,
+                            'sources' => [],
+                        ];
+                    }
+                    $cuts[$mid]['qty_small'] += $needed['qty_small'];
+                    $cuts[$mid]['qty_medium'] += $needed['qty_medium'];
+                    $cuts[$mid]['qty_large'] += $needed['qty_large'];
+                    $cuts[$mid]['sources'][] = $menuName.' × '.$menuQty;
+                }
+                continue;
+            }
+
+            $itemMaster = DB::table('items')->where('id', $detail->item_id)->first();
+            if (!$itemMaster) {
+                throw new \Exception('Item master tidak ditemukan untuk item_id: '.$detail->item_id);
+            }
+            $needed = $this->convertQtyToUnitTriplet($itemMaster, $detail->unit_id, $menuQty);
+            $mid = (int) $detail->item_id;
+            if (!isset($cuts[$mid])) {
+                $cuts[$mid] = [
+                    'item_id' => $mid,
+                    'qty_small' => 0.0,
+                    'qty_medium' => 0.0,
+                    'qty_large' => 0.0,
+                    'sources' => [],
+                ];
+            }
+            $cuts[$mid]['qty_small'] += $needed['qty_small'];
+            $cuts[$mid]['qty_medium'] += $needed['qty_medium'];
+            $cuts[$mid]['qty_large'] += $needed['qty_large'];
+            $cuts[$mid]['sources'][] = ($itemMaster->name ?? ('Item #'.$mid));
+        }
+
+        return $cuts;
+    }
+
+    /**
+     * Validasi + (opsional) potong stok & tulis kartu OUT dari aggregated cuts.
+     * Return subtotal MAC (qty_small × mac_per_small).
+     */
+    private function applyMaterialStockCuts(
+        object $header,
+        int $headerId,
+        array $cuts,
+        string $description,
+        bool $applyStock = true
+    ): float {
+        $subtotalMac = 0.0;
+        $insufficient = [];
+
+        foreach ($cuts as $cut) {
+            $itemMaster = DB::table('items')->where('id', $cut['item_id'])->first();
+            if (!$itemMaster) {
+                throw new \Exception('Item master tidak ditemukan untuk item_id: '.$cut['item_id']);
+            }
+
+            $inventoryItem = DB::table('outlet_food_inventory_items')
+                ->where('item_id', $cut['item_id'])
+                ->first();
+            if (!$inventoryItem) {
+                $name = $itemMaster->name ?? ('Item #'.$cut['item_id']);
+                throw new \Exception("Item \"{$name}\" tidak ditemukan di inventory outlet");
+            }
+
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventoryItem->id)
+                ->where('id_outlet', $header->outlet_id)
+                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                ->first();
+
+            $unitSmall = DB::table('units')->where('id', $itemMaster->small_unit_id)->value('name') ?? 'unit';
+            $available = $stock ? (float) $stock->qty_small : 0.0;
+            if (!$stock || $cut['qty_small'] > $available) {
+                $insufficient[] = [
+                    'name' => $itemMaster->name ?? ('Item #'.$cut['item_id']),
+                    'required' => $cut['qty_small'],
+                    'available' => $available,
+                    'unit' => $unitSmall,
+                    'sources' => $cut['sources'] ?? [],
+                ];
+                continue;
+            }
+
+            $macPerSmall = $this->resolveCategoryCostMacPerSmall(
+                $itemMaster,
+                (int) $inventoryItem->id,
+                (int) $header->outlet_id,
+                (int) $header->warehouse_outlet_id,
+                (string) $header->date,
+                $stock
+            );
+            $subtotalMac += $cut['qty_small'] * $macPerSmall;
+
+            if (!$applyStock) {
+                continue;
+            }
+
+            [$costPerSmall, $costPerMedium, $costPerLarge] = CategoryCostMacResolver::costRatesPerUnit(
+                $itemMaster,
+                $macPerSmall,
+                $stock
+            );
+
+            $updated = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $inventoryItem->id)
+                ->where('id_outlet', $header->outlet_id)
+                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                ->update($this->buildCategoryCostStockRowUpdate(
+                    $itemMaster,
+                    $stock,
+                    $cut['qty_small'],
+                    $cut['qty_medium'],
+                    $cut['qty_large'],
+                    $costPerSmall
+                ));
+
+            if ($updated === 0) {
+                throw new \Exception('Gagal mengupdate stock untuk item: '.($itemMaster->name ?? $cut['item_id']));
+            }
+
+            $sourceNote = !empty($cut['sources'])
+                ? ' ['.implode('; ', array_unique($cut['sources'])).']'
+                : '';
+
+            DB::table('outlet_food_inventory_cards')->insert([
+                'inventory_item_id' => $inventoryItem->id,
+                'id_outlet' => $header->outlet_id,
+                'warehouse_outlet_id' => $header->warehouse_outlet_id,
+                'date' => $header->date,
+                'reference_type' => 'outlet_internal_use_waste',
+                'reference_id' => $headerId,
+                'out_qty_small' => $cut['qty_small'],
+                'out_qty_medium' => $cut['qty_medium'],
+                'out_qty_large' => $cut['qty_large'],
+                'cost_per_small' => $costPerSmall,
+                'cost_per_medium' => $costPerMedium,
+                'cost_per_large' => $costPerLarge,
+                'value_out' => $cut['qty_small'] * $costPerSmall,
+                'saldo_qty_small' => $stock->qty_small - $cut['qty_small'],
+                'saldo_qty_medium' => $stock->qty_medium - $cut['qty_medium'],
+                'saldo_qty_large' => $stock->qty_large - $cut['qty_large'],
+                'saldo_value' => ($stock->qty_small - $cut['qty_small']) * $costPerSmall,
+                'description' => $description.$sourceNote,
+                'created_at' => now(),
+            ]);
+        }
+
+        if (!empty($insufficient)) {
+            $errorMessage = "Stock tidak mencukupi untuk item berikut:\n\n";
+            foreach ($insufficient as $row) {
+                $errorMessage .= "• {$row['name']}\n";
+                $errorMessage .= "  Dibutuhkan: {$row['required']} {$row['unit']}\n";
+                $errorMessage .= "  Tersedia: {$row['available']} {$row['unit']}\n";
+                if (!empty($row['sources'])) {
+                    $errorMessage .= '  Sumber: '.implode(', ', array_unique($row['sources']))."\n";
+                }
+                $errorMessage .= "\n";
+            }
+            throw new \Exception($errorMessage);
+        }
+
+        return $subtotalMac;
+    }
+
+    /**
+     * Preview BOM stock_cut untuk baris menu (Show page).
+     */
+    private function previewMenuBomLines(int $menuItemId, float $menuQty): array
+    {
+        $rows = DB::table('item_bom as ib')
+            ->join('items as i', 'i.id', '=', 'ib.material_item_id')
+            ->leftJoin('units as u', 'u.id', '=', 'ib.unit_id')
+            ->where('ib.item_id', $menuItemId)
+            ->where('ib.stock_cut', 1)
+            ->select('i.id as material_item_id', 'i.name as material_name', 'ib.qty', 'ib.unit_id', 'u.name as unit_name')
+            ->orderBy('i.name')
+            ->get();
+
+        return $rows->map(function ($row) use ($menuQty) {
+            return [
+                'material_item_id' => (int) $row->material_item_id,
+                'material_name' => $row->material_name,
+                'qty_per_portion' => (float) $row->qty,
+                'qty_total' => (float) $row->qty * $menuQty,
+                'unit_id' => $row->unit_id,
+                'unit_name' => $row->unit_name,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * Rollback stok PROCESSED dari kartu OUT header (aman untuk material & menu/BOM).
+     */
+    private function rollbackStockFromCards(object $header, int $headerId): void
+    {
+        $cards = DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_internal_use_waste')
+            ->where('reference_id', $headerId)
+            ->get();
+
+        $aggregated = [];
+        foreach ($cards as $card) {
+            $invId = (int) $card->inventory_item_id;
+            if (!isset($aggregated[$invId])) {
+                $aggregated[$invId] = [
+                    'qty_small' => 0.0,
+                    'qty_medium' => 0.0,
+                    'qty_large' => 0.0,
+                ];
+            }
+            $aggregated[$invId]['qty_small'] += (float) ($card->out_qty_small ?? 0);
+            $aggregated[$invId]['qty_medium'] += (float) ($card->out_qty_medium ?? 0);
+            $aggregated[$invId]['qty_large'] += (float) ($card->out_qty_large ?? 0);
+        }
+
+        foreach ($aggregated as $invId => $qty) {
+            $stock = DB::table('outlet_food_inventory_stocks')
+                ->where('inventory_item_id', $invId)
+                ->where('id_outlet', $header->outlet_id)
+                ->where('warehouse_outlet_id', $header->warehouse_outlet_id)
+                ->first();
+
+            if (!$stock) {
+                \Log::warning('OutletInternalUseWaste rollbackStockFromCards - stock row missing', [
+                    'header_id' => $headerId,
+                    'inventory_item_id' => $invId,
+                ]);
+                continue;
+            }
+
+            DB::table('outlet_food_inventory_stocks')
+                ->where('id', $stock->id)
+                ->update([
+                    'qty_small' => DB::raw('qty_small + '.$qty['qty_small']),
+                    'qty_medium' => DB::raw('qty_medium + '.$qty['qty_medium']),
+                    'qty_large' => DB::raw('qty_large + '.$qty['qty_large']),
+                    'updated_at' => now(),
+                ]);
+        }
+
+        DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_internal_use_waste')
+            ->where('reference_id', $headerId)
+            ->delete();
     }
 } 
