@@ -205,6 +205,9 @@
               <thead class="bg-gray-50">
                 <tr>
                   <th class="px-4 py-3 text-left text-xs font-bold text-gray-700 uppercase w-48">Item</th>
+                  <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-44">
+                    Last Stock<br/>(System)
+                  </th>
                   <th class="px-3 py-3 text-right text-xs font-bold text-gray-700 uppercase w-40">
                     Qty Physical<br/>Small
                   </th>
@@ -227,7 +230,7 @@
                     class="bg-blue-50 hover:bg-blue-100 cursor-pointer transition"
                     @click="toggleCategory(categoryName)"
                   >
-                    <td class="px-4 py-3 font-bold text-gray-800" colspan="8">
+                    <td class="px-4 py-3 font-bold text-gray-800" colspan="9">
                       <div class="flex items-center justify-between">
                         <div class="flex items-center gap-2">
                           <i 
@@ -248,88 +251,182 @@
                   </tr>
                   
                   <!-- Items in Category -->
-                  <tr
-                    v-for="item in category"
-                    :key="item.inventory_item_id"
-                    v-show="expandedCategories.has(categoryName)"
-                    :class="{ 'bg-yellow-50': hasDifference(item) }"
-                    class="hover:bg-gray-50 transition"
-                  >
-                    <td class="px-4 py-3 text-sm font-medium text-gray-900">
-                      <div class="font-semibold pl-6">{{ item.item_name }}</div>
-                    </td>
-                    <td class="px-3 py-3">
-                      <div class="flex items-center gap-2">
-                        <input
-                          v-model.number="item.qty_physical_small"
-                          type="number"
-                          step="any"
-                          min="0"
-                          @input="onQtyPhysicalChange(item, 'small')"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.small_unit_name || '-' }}</span>
-                      </div>
-                    </td>
-                    <td class="px-3 py-3">
-                      <div class="flex items-center gap-2">
-                        <input
-                          v-model.number="item.qty_physical_medium"
-                          type="number"
-                          step="any"
-                          min="0"
-                          @input="onQtyPhysicalChange(item, 'medium')"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.medium_unit_name || '-' }}</span>
-                      </div>
-                    </td>
-                    <td class="px-3 py-3">
-                      <div class="flex items-center gap-2">
-                        <input
-                          v-model.number="item.qty_physical_large"
-                          type="number"
-                          step="any"
-                          min="0"
-                          @input="onQtyPhysicalChange(item, 'large')"
-                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                        />
-                        <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.large_unit_name || '-' }}</span>
-                      </div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-medium">{{ formatCurrency(item.mac) }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-sm text-right text-gray-700">
-                      <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
-                    </td>
-                    <td class="px-3 py-3 text-center text-sm">
-                      <div v-if="hasDifference(item)">
-                        <span
-                          :class="getDifferenceClass(item)"
-                          class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
+                  <template v-for="item in category" :key="item.inventory_item_id">
+                    <tr
+                      v-show="expandedCategories.has(categoryName)"
+                      :class="{ 'bg-yellow-50': hasDifference(item) }"
+                      class="hover:bg-gray-50 transition"
+                    >
+                      <td class="px-4 py-3 text-sm font-medium text-gray-900">
+                        <div class="flex items-start gap-2 pl-6">
+                          <div class="font-semibold flex-1">{{ item.item_name }}</div>
+                          <button
+                            type="button"
+                            @click="toggleQtyParts(item)"
+                            class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-semibold border transition"
+                            :class="item.show_qty_parts
+                              ? 'bg-indigo-100 text-indigo-800 border-indigo-300'
+                              : 'bg-white text-indigo-700 border-indigo-200 hover:bg-indigo-50'"
+                            :title="'Input qty dari beberapa lokasi, otomatis dijumlah'"
+                          >
+                            <i class="fa-solid fa-layer-group"></i>
+                            Multi
+                          </button>
+                        </div>
+                        <div
+                          v-if="item.show_qty_parts && qtyPartsFilledCount(item) > 0"
+                          class="pl-6 mt-1 text-[11px] text-indigo-700"
                         >
-                          {{ getDifferenceSign(item) }}
-                        </span>
-                      </div>
-                      <span v-else class="text-gray-400 text-xs">-</span>
-                    </td>
-                    <td class="px-3 py-3">
-                      <input
-                        v-if="hasDifference(item)"
-                        v-model="item.reason"
-                        type="text"
-                        placeholder="Alasan selisih..."
-                        class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      />
-                      <span v-else class="text-gray-400 text-xs">-</span>
-                    </td>
-                  </tr>
+                          {{ qtyPartsFilledCount(item) }} lokasi → total {{ formatNumber(qtyPartsSum(item)) }} {{ unitLabel(item, item.qty_parts_unit || 'small') }}
+                        </div>
+                      </td>
+                      <td class="px-3 py-3 text-right text-xs text-gray-700 whitespace-nowrap">
+                        <div class="font-medium tabular-nums">{{ formatNumber(item.qty_system_small) }} <span class="text-gray-500">{{ item.small_unit_name || '' }}</span></div>
+                        <div class="font-medium tabular-nums mt-0.5">{{ formatNumber(item.qty_system_medium) }} <span class="text-gray-500">{{ item.medium_unit_name || '' }}</span></div>
+                        <div class="font-medium tabular-nums mt-0.5">{{ formatNumber(item.qty_system_large) }} <span class="text-gray-500">{{ item.large_unit_name || '' }}</span></div>
+                      </td>
+                      <td class="px-3 py-3">
+                        <div class="flex items-center gap-2">
+                          <input
+                            v-model.number="item.qty_physical_small"
+                            type="number"
+                            step="any"
+                            min="0"
+                            :readonly="item.show_qty_parts"
+                            @input="onQtyPhysicalChange(item, 'small')"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            :class="{ 'bg-gray-100 cursor-not-allowed': item.show_qty_parts }"
+                          />
+                          <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.small_unit_name || '-' }}</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-3">
+                        <div class="flex items-center gap-2">
+                          <input
+                            v-model.number="item.qty_physical_medium"
+                            type="number"
+                            step="any"
+                            min="0"
+                            :readonly="item.show_qty_parts"
+                            @input="onQtyPhysicalChange(item, 'medium')"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            :class="{ 'bg-gray-100 cursor-not-allowed': item.show_qty_parts }"
+                          />
+                          <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.medium_unit_name || '-' }}</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-3">
+                        <div class="flex items-center gap-2">
+                          <input
+                            v-model.number="item.qty_physical_large"
+                            type="number"
+                            step="any"
+                            min="0"
+                            :readonly="item.show_qty_parts"
+                            @input="onQtyPhysicalChange(item, 'large')"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md text-right text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                            :class="{ 'bg-gray-100 cursor-not-allowed': item.show_qty_parts }"
+                          />
+                          <span class="text-xs text-gray-600 font-medium whitespace-nowrap">{{ item.large_unit_name || '-' }}</span>
+                        </div>
+                      </td>
+                      <td class="px-3 py-3 text-sm text-right text-gray-700">
+                        <div class="font-medium">{{ formatCurrency(item.mac) }}</div>
+                      </td>
+                      <td class="px-3 py-3 text-sm text-right text-gray-700">
+                        <div class="font-semibold">{{ formatNumber(getSubtotal(item)) }}</div>
+                      </td>
+                      <td class="px-3 py-3 text-center text-sm">
+                        <div v-if="hasDifference(item)">
+                          <span
+                            :class="getDifferenceClass(item)"
+                            class="px-2 py-1 rounded text-xs font-semibold whitespace-nowrap"
+                          >
+                            {{ getDifferenceSign(item) }}
+                          </span>
+                        </div>
+                        <span v-else class="text-gray-400 text-xs">-</span>
+                      </td>
+                      <td class="px-3 py-3">
+                        <input
+                          v-if="hasDifference(item)"
+                          v-model="item.reason"
+                          type="text"
+                          placeholder="Alasan selisih..."
+                          class="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                        />
+                        <span v-else class="text-gray-400 text-xs">-</span>
+                      </td>
+                    </tr>
+                    <tr
+                      v-show="expandedCategories.has(categoryName) && item.show_qty_parts"
+                      class="bg-indigo-50/70"
+                    >
+                      <td colspan="9" class="px-4 py-3">
+                        <div class="ml-6 rounded-lg border border-indigo-200 bg-white p-3">
+                          <div class="flex flex-wrap items-center gap-3 mb-3">
+                            <span class="text-xs font-bold text-indigo-800 uppercase">Qty per lokasi</span>
+                            <label class="text-xs text-gray-600 flex items-center gap-1">
+                              Satuan
+                              <select
+                                v-model="item.qty_parts_unit"
+                                @change="applyQtyPartsSum(item)"
+                                class="ml-1 px-2 py-1 border border-gray-300 rounded text-sm"
+                              >
+                                <option value="small">{{ item.small_unit_name || 'Small' }}</option>
+                                <option value="medium">{{ item.medium_unit_name || 'Medium' }}</option>
+                                <option value="large">{{ item.large_unit_name || 'Large' }}</option>
+                              </select>
+                            </label>
+                            <span class="text-xs text-gray-500">Isi qty tiap tempat, total otomatis masuk Qty Physical</span>
+                          </div>
+                          <div class="flex flex-wrap gap-2 items-end">
+                            <div
+                              v-for="(part, partIndex) in item.qty_parts"
+                              :key="partIndex"
+                              class="flex items-center gap-1"
+                            >
+                              <span class="text-[11px] text-gray-500 w-5 text-right">{{ partIndex + 1 }}.</span>
+                              <input
+                                v-model.number="part.qty"
+                                type="number"
+                                step="any"
+                                min="0"
+                                placeholder="Qty"
+                                @input="applyQtyPartsSum(item)"
+                                class="w-24 px-2 py-1.5 border border-indigo-200 rounded-md text-right text-sm focus:ring-2 focus:ring-indigo-400 focus:border-indigo-400"
+                              />
+                              <button
+                                type="button"
+                                @click="removeQtyPart(item, partIndex)"
+                                class="px-1.5 py-1 text-red-500 hover:text-red-700 text-xs"
+                                title="Hapus"
+                              >
+                                <i class="fa-solid fa-xmark"></i>
+                              </button>
+                            </div>
+                            <button
+                              type="button"
+                              @click="addQtyPart(item)"
+                              class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-xs font-semibold bg-indigo-600 text-white hover:bg-indigo-700"
+                            >
+                              <i class="fa-solid fa-plus"></i>
+                              Tambah lokasi
+                            </button>
+                          </div>
+                          <div class="mt-2 text-sm font-semibold text-indigo-900">
+                            Total: {{ formatNumber(qtyPartsSum(item)) }}
+                            {{ unitLabel(item, item.qty_parts_unit || 'small') }}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  </template>
                 </template>
               </tbody>
               <tfoot class="bg-gray-100 border-t-2 border-gray-400">
                 <tr>
-                  <td class="px-4 py-4 text-right font-bold text-gray-900" colspan="5">
+                  <td class="px-4 py-4 text-right font-bold text-gray-900" colspan="6">
                     GRAND TOTAL
                   </td>
                   <td class="px-3 py-4 text-right font-bold text-gray-900 text-lg">
@@ -624,6 +721,9 @@ async function loadItems() {
       small_conversion_qty: parseFloat(item.small_conversion_qty) || 1,
       medium_conversion_qty: parseFloat(item.medium_conversion_qty) || 1,
       mac: parseFloat(item.mac) || 0,
+      show_qty_parts: false,
+      qty_parts_unit: 'small',
+      qty_parts: [],
     }));
   } catch (error) {
     console.error('Error loading items:', error);
@@ -641,6 +741,68 @@ async function loadItems() {
   } finally {
     loadingItems.value = false;
   }
+}
+
+function ensureQtyParts(item) {
+  if (!Array.isArray(item.qty_parts) || item.qty_parts.length === 0) {
+    item.qty_parts = [{ qty: null }, { qty: null }];
+  }
+  if (!item.qty_parts_unit) {
+    item.qty_parts_unit = 'small';
+  }
+}
+
+function toggleQtyParts(item) {
+  item.show_qty_parts = !item.show_qty_parts;
+  if (item.show_qty_parts) {
+    ensureQtyParts(item);
+  }
+}
+
+function addQtyPart(item) {
+  ensureQtyParts(item);
+  item.qty_parts.push({ qty: null });
+}
+
+function removeQtyPart(item, index) {
+  ensureQtyParts(item);
+  if (item.qty_parts.length <= 1) {
+    item.qty_parts = [{ qty: null }];
+  } else {
+    item.qty_parts.splice(index, 1);
+  }
+  applyQtyPartsSum(item);
+}
+
+function qtyPartsSum(item) {
+  if (!Array.isArray(item.qty_parts)) return 0;
+  return item.qty_parts.reduce((sum, part) => {
+    const n = parseFloat(part?.qty);
+    return sum + (Number.isFinite(n) ? n : 0);
+  }, 0);
+}
+
+function qtyPartsFilledCount(item) {
+  if (!Array.isArray(item.qty_parts)) return 0;
+  return item.qty_parts.filter((part) => {
+    const n = parseFloat(part?.qty);
+    return part?.qty !== null && part?.qty !== '' && Number.isFinite(n);
+  }).length;
+}
+
+function unitLabel(item, unit) {
+  if (unit === 'medium') return item.medium_unit_name || 'Medium';
+  if (unit === 'large') return item.large_unit_name || 'Large';
+  return item.small_unit_name || 'Small';
+}
+
+function applyQtyPartsSum(item) {
+  const unit = item.qty_parts_unit || 'small';
+  if (qtyPartsFilledCount(item) === 0) {
+    return;
+  }
+  item[`qty_physical_${unit}`] = Math.round(qtyPartsSum(item) * 100) / 100;
+  onQtyPhysicalChange(item, unit);
 }
 
 function onQtyPhysicalChange(item, changedUnit) {
