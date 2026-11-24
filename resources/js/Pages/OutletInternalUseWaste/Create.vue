@@ -321,20 +321,34 @@
                       class="bg-white border border-emerald-100 rounded-md p-3"
                     >
                       <div class="text-sm font-semibold text-gray-800 mb-2">{{ group.name }}</div>
-                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <label
+                      <div class="space-y-2">
+                        <div
                           v-for="opt in group.options"
                           :key="opt.id"
-                          class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer"
+                          class="flex flex-wrap items-center gap-2 text-sm text-gray-700"
                         >
-                          <input
-                            type="checkbox"
-                            class="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
-                            :value="opt.id"
-                            v-model="item.modifier_option_ids"
-                          />
-                          <span>{{ opt.name }}</span>
-                        </label>
+                          <label class="inline-flex items-center gap-2 min-w-[12rem] cursor-pointer flex-1">
+                            <input
+                              type="checkbox"
+                              class="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                              :checked="isModifierSelected(item, opt.id)"
+                              @change="toggleModifier(item, opt, $event.target.checked)"
+                            />
+                            <span>{{ opt.name }}</span>
+                          </label>
+                          <div class="flex items-center gap-1">
+                            <span class="text-xs text-gray-500">Qty</span>
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              class="input input-bordered input-sm w-24"
+                              :disabled="!isModifierSelected(item, opt.id)"
+                              :value="getModifierQty(item, opt.id)"
+                              @input="setModifierQty(item, opt.id, $event.target.value)"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -568,21 +582,69 @@ function newItem() {
   }
 }
 
-function parseModifierOptionIds(raw) {
-  if (Array.isArray(raw)) {
-    return raw.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
-  }
+function parseModifierSelections(raw) {
+  let list = raw
   if (typeof raw === 'string' && raw.trim() !== '') {
     try {
-      const parsed = JSON.parse(raw)
-      if (Array.isArray(parsed)) {
-        return parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
-      }
+      list = JSON.parse(raw)
     } catch (e) {
       return []
     }
   }
-  return []
+  if (!Array.isArray(list)) return []
+
+  const map = new Map()
+  list.forEach((entry) => {
+    let id = 0
+    let qty = 1
+    if (entry && typeof entry === 'object' && entry.id != null) {
+      id = Number(entry.id)
+      qty = Number(entry.qty ?? 1)
+    } else if (Number.isFinite(Number(entry))) {
+      id = Number(entry)
+      qty = 1
+    }
+    if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(qty) || qty <= 0) return
+    map.set(id, { id, qty })
+  })
+  return Array.from(map.values())
+}
+
+function isModifierSelected(item, optId) {
+  const id = Number(optId)
+  return parseModifierSelections(item?.modifier_option_ids).some((row) => row.id === id)
+}
+
+function getModifierQty(item, optId) {
+  const id = Number(optId)
+  const found = parseModifierSelections(item?.modifier_option_ids).find((row) => row.id === id)
+  return found ? found.qty : ''
+}
+
+function toggleModifier(item, opt, checked) {
+  const id = Number(opt.id)
+  const current = parseModifierSelections(item.modifier_option_ids)
+  if (checked) {
+    const defaultQty = Number(item.qty) > 0 ? Number(item.qty) : 1
+    if (!current.some((row) => row.id === id)) {
+      current.push({ id, qty: defaultQty })
+    }
+  } else {
+    item.modifier_option_ids = current.filter((row) => row.id !== id)
+    return
+  }
+  item.modifier_option_ids = current
+}
+
+function setModifierQty(item, optId, value) {
+  const id = Number(optId)
+  const qty = Number(value)
+  const current = parseModifierSelections(item.modifier_option_ids)
+  const idx = current.findIndex((row) => row.id === id)
+  if (idx === -1) return
+  if (!Number.isFinite(qty) || qty <= 0) return
+  current[idx] = { id, qty }
+  item.modifier_option_ids = current
 }
 
 // Legacy header type `stock_cut` is shown/edited as `usage` (single BOM flow)
@@ -622,7 +684,7 @@ const form = ref({
           unit_name: detail.unit_name || '',
           note: detail.note || '',
           stock: null,
-          modifier_option_ids: parseModifierOptionIds(detail.modifier_option_ids),
+          modifier_option_ids: parseModifierSelections(detail.modifier_option_ids),
           modifierGroups: [],
           loadingModifiers: false,
         }
@@ -718,7 +780,7 @@ function mapItemToPayload(item) {
     unit_id: item.unit_id,
     note: item.note || null,
     modifier_option_ids: lineMode === 'menu'
-      ? parseModifierOptionIds(item.modifier_option_ids)
+      ? parseModifierSelections(item.modifier_option_ids)
       : [],
   }
   if (isUsageAutoBomType.value) {
@@ -1015,8 +1077,8 @@ async function loadMenuModifiers(idx, { keepSelected = false } = {}) {
     const allowed = new Set(
       groups.flatMap((g) => (g.options || []).map((o) => Number(o.id)))
     )
-    const current = keepSelected ? parseModifierOptionIds(row.modifier_option_ids) : []
-    row.modifier_option_ids = current.filter((id) => allowed.has(Number(id)))
+    const current = keepSelected ? parseModifierSelections(row.modifier_option_ids) : []
+    row.modifier_option_ids = current.filter((rowSel) => allowed.has(Number(rowSel.id)))
   } catch (error) {
     console.error('Error loading menu modifiers:', error)
     row.modifierGroups = []

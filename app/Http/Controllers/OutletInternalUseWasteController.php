@@ -198,7 +198,8 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.note' => 'nullable|string',
                 'items.*.line_mode' => 'nullable|in:material,menu',
                 'items.*.modifier_option_ids' => 'nullable|array',
-                'items.*.modifier_option_ids.*' => 'integer|exists:modifier_options,id',
+                'items.*.modifier_option_ids.*.id' => 'required_with:items.*.modifier_option_ids|integer|exists:modifier_options,id',
+                'items.*.modifier_option_ids.*.qty' => 'required_with:items.*.modifier_option_ids|numeric|min:0.01',
                 'items.*.stock_on_hand' => 'nullable|numeric|min:0',
                 'items.*.physical_qty' => 'nullable|numeric|min:0',
             ]);
@@ -917,7 +918,8 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.note' => 'nullable|string',
                 'items.*.line_mode' => 'nullable|in:material,menu',
                 'items.*.modifier_option_ids' => 'nullable|array',
-                'items.*.modifier_option_ids.*' => 'integer|exists:modifier_options,id',
+                'items.*.modifier_option_ids.*.id' => 'required_with:items.*.modifier_option_ids|integer|exists:modifier_options,id',
+                'items.*.modifier_option_ids.*.qty' => 'required_with:items.*.modifier_option_ids|numeric|min:0.01',
                 'items.*.stock_on_hand' => 'nullable|numeric|min:0',
                 'items.*.physical_qty' => 'nullable|numeric|min:0',
                 'approvers' => 'nullable|array'
@@ -1089,7 +1091,7 @@ class OutletInternalUseWasteController extends Controller
             ->where('d.header_id', $id)
             ->get()
             ->map(function ($row) {
-                $row->modifier_option_ids = $this->parseModifierOptionIds($row->modifier_option_ids ?? null);
+                $row->modifier_option_ids = $this->parseModifierSelections($row->modifier_option_ids ?? null);
                 $row->modifier_labels = $this->resolveModifierOptionLabels($row->modifier_option_ids);
                 return $row;
             });
@@ -1166,11 +1168,11 @@ class OutletInternalUseWasteController extends Controller
             ->map(function ($row) use ($header) {
                 $lineMode = $this->normalizeLineMode($row->line_mode ?? 'material', (string) $header->type);
                 $row->line_mode = $lineMode;
-                $modifierOptionIds = $this->parseModifierOptionIds($row->modifier_option_ids ?? null);
-                $row->modifier_option_ids = $modifierOptionIds;
-                $row->modifier_labels = $this->resolveModifierOptionLabels($modifierOptionIds);
+                $modifierSelections = $this->parseModifierSelections($row->modifier_option_ids ?? null);
+                $row->modifier_option_ids = $modifierSelections;
+                $row->modifier_labels = $this->resolveModifierOptionLabels($modifierSelections);
                 $row->bom_preview = $lineMode === 'menu'
-                    ? $this->previewMenuBomLines((int) $row->item_id, (float) $row->qty, $modifierOptionIds)
+                    ? $this->previewMenuBomLines((int) $row->item_id, (float) $row->qty, $modifierSelections)
                     : [];
                 return $row;
             });
@@ -2826,8 +2828,8 @@ class OutletInternalUseWasteController extends Controller
     private function buildDetailInsertRow(int $headerId, array $item, string $type): array
     {
         $lineMode = $this->normalizeLineMode($item['line_mode'] ?? null, $type);
-        $modifierOptionIds = $lineMode === 'menu'
-            ? $this->sanitizeModifierOptionIdsForItem((int) $item['item_id'], $item['modifier_option_ids'] ?? [])
+        $modifierSelections = $lineMode === 'menu'
+            ? $this->sanitizeModifierSelectionsForItem((int) $item['item_id'], $item['modifier_option_ids'] ?? [])
             : [];
 
         $row = [
@@ -2837,7 +2839,7 @@ class OutletInternalUseWasteController extends Controller
             'qty' => $item['qty'],
             'unit_id' => $item['unit_id'],
             'note' => $item['note'] ?? null,
-            'modifier_option_ids' => !empty($modifierOptionIds) ? json_encode(array_values($modifierOptionIds)) : null,
+            'modifier_option_ids' => !empty($modifierSelections) ? json_encode(array_values($modifierSelections)) : null,
             'created_at' => now(),
             'updated_at' => now(),
         ];
@@ -3048,8 +3050,8 @@ class OutletInternalUseWasteController extends Controller
                     );
                 }
 
-                $modifierOptionIds = $this->parseModifierOptionIds($detail->modifier_option_ids ?? null);
-                foreach ($this->expandModifierOptionsToBomCuts($modifierOptionIds, $menuQty, $menuName) as $modCut) {
+                $modifierSelections = $this->parseModifierSelections($detail->modifier_option_ids ?? null);
+                foreach ($this->expandModifierOptionsToBomCuts($modifierSelections, $menuName) as $modCut) {
                     $this->accumulateMaterialCut(
                         $cuts,
                         (int) $modCut['item_id'],
@@ -3215,8 +3217,10 @@ class OutletInternalUseWasteController extends Controller
 
     /**
      * Preview BOM stock_cut untuk baris menu (Show page), termasuk modifier terpilih.
+     *
+     * @param  array<int, array{id:int,qty:float}>  $modifierSelections
      */
-    private function previewMenuBomLines(int $menuItemId, float $menuQty, array $modifierOptionIds = []): array
+    private function previewMenuBomLines(int $menuItemId, float $menuQty, array $modifierSelections = []): array
     {
         $rows = DB::table('item_bom as ib')
             ->join('items as i', 'i.id', '=', 'ib.material_item_id')
@@ -3240,14 +3244,14 @@ class OutletInternalUseWasteController extends Controller
         })->values()->all();
 
         $menuName = DB::table('items')->where('id', $menuItemId)->value('name') ?? ('Menu #'.$menuItemId);
-        foreach ($this->expandModifierOptionsToBomCuts($modifierOptionIds, $menuQty, $menuName) as $modCut) {
+        foreach ($this->expandModifierOptionsToBomCuts($modifierSelections, $menuName) as $modCut) {
             $material = DB::table('items')->where('id', $modCut['item_id'])->first();
             $unitName = $modCut['unit_id']
                 ? (DB::table('units')->where('id', $modCut['unit_id'])->value('name') ?? null)
                 : null;
             $preview[] = [
                 'material_item_id' => (int) $modCut['item_id'],
-                'material_name' => ($material->name ?? ('Item #'.$modCut['item_id'])).' ['.$modCut['option_name'].']',
+                'material_name' => ($material->name ?? ('Item #'.$modCut['item_id'])).' ['.$modCut['option_name'].' × '.$modCut['modifier_qty'].']',
                 'qty_per_portion' => (float) $modCut['qty_per_portion'],
                 'qty_total' => (float) $modCut['qty'],
                 'unit_id' => $modCut['unit_id'],
@@ -3259,51 +3263,93 @@ class OutletInternalUseWasteController extends Controller
         return $preview;
     }
 
-    private function parseModifierOptionIds($value): array
+    /**
+     * Normalize modifier payload to [{id, qty}].
+     * Backward compatible with old format [18, 20] (qty default 1).
+     *
+     * @return array<int, array{id:int,qty:float}>
+     */
+    private function parseModifierSelections($value): array
     {
-        if (is_array($value)) {
-            return array_values(array_unique(array_filter(array_map('intval', $value))));
-        }
         if (is_string($value) && trim($value) !== '') {
             $decoded = json_decode($value, true);
-            if (is_array($decoded)) {
-                return array_values(array_unique(array_filter(array_map('intval', $decoded))));
-            }
+            $value = is_array($decoded) ? $decoded : [];
         }
-
-        return [];
-    }
-
-    private function sanitizeModifierOptionIdsForItem(int $itemId, $rawIds): array
-    {
-        $ids = $this->parseModifierOptionIds($rawIds);
-        if ($itemId <= 0 || empty($ids)) {
+        if (!is_array($value)) {
             return [];
         }
 
-        return DB::table('item_modifier_options')
+        $normalized = [];
+        foreach ($value as $entry) {
+            if (is_array($entry) && isset($entry['id'])) {
+                $id = (int) $entry['id'];
+                $qty = (float) ($entry['qty'] ?? 1);
+            } elseif (is_numeric($entry)) {
+                $id = (int) $entry;
+                $qty = 1.0;
+            } else {
+                continue;
+            }
+            if ($id <= 0 || $qty <= 0) {
+                continue;
+            }
+            $normalized[$id] = [
+                'id' => $id,
+                'qty' => $qty,
+            ];
+        }
+
+        return array_values($normalized);
+    }
+
+    /**
+     * @return array<int, array{id:int,qty:float}>
+     */
+    private function sanitizeModifierSelectionsForItem(int $itemId, $raw): array
+    {
+        $selections = $this->parseModifierSelections($raw);
+        if ($itemId <= 0 || empty($selections)) {
+            return [];
+        }
+
+        $ids = array_column($selections, 'id');
+        $allowed = DB::table('item_modifier_options')
             ->where('item_id', $itemId)
             ->whereIn('modifier_option_id', $ids)
             ->pluck('modifier_option_id')
             ->map(fn ($id) => (int) $id)
-            ->unique()
-            ->values()
             ->all();
+        $allowedSet = array_flip($allowed);
+
+        return array_values(array_filter($selections, fn ($row) => isset($allowedSet[$row['id']])));
     }
 
-    private function resolveModifierOptionLabels(array $optionIds): array
+    /**
+     * @param  array<int, array{id:int,qty:float}>  $selections
+     */
+    private function resolveModifierOptionLabels(array $selections): array
     {
-        if (empty($optionIds)) {
+        if (empty($selections)) {
             return [];
         }
+
+        $qtyMap = [];
+        foreach ($selections as $row) {
+            $qtyMap[(int) $row['id']] = (float) $row['qty'];
+        }
+        $optionIds = array_keys($qtyMap);
 
         return DB::table('modifier_options as mo')
             ->join('modifiers as m', 'm.id', '=', 'mo.modifier_id')
             ->whereIn('mo.id', $optionIds)
             ->orderBy('m.name')
             ->orderBy('mo.name')
-            ->get(['m.name as modifier_name', 'mo.name as option_name'])
-            ->map(fn ($row) => trim(($row->modifier_name ? $row->modifier_name.': ' : '').$row->option_name))
+            ->get(['mo.id', 'm.name as modifier_name', 'mo.name as option_name'])
+            ->map(function ($row) use ($qtyMap) {
+                $qty = $qtyMap[(int) $row->id] ?? 1;
+                $label = trim(($row->modifier_name ? $row->modifier_name.': ' : '').$row->option_name);
+                return $label.' × '.$qty;
+            })
             ->values()
             ->all();
     }
@@ -3324,20 +3370,37 @@ class OutletInternalUseWasteController extends Controller
     }
 
     /**
-     * @return array<int, array{item_id:int,unit_id:mixed,qty:float,qty_per_portion:float,option_name:string,source:string}>
+     * @param  array<int, array{id:int,qty:float}>  $selections
+     * @return array<int, array{item_id:int,unit_id:mixed,qty:float,qty_per_portion:float,modifier_qty:float,option_name:string,source:string}>
      */
-    private function expandModifierOptionsToBomCuts(array $optionIds, float $menuQty, string $menuName): array
+    private function expandModifierOptionsToBomCuts(array $selections, string $menuName): array
     {
-        if (empty($optionIds) || $menuQty <= 0) {
+        if (empty($selections)) {
+            return [];
+        }
+
+        $qtyMap = [];
+        foreach ($selections as $row) {
+            $id = (int) ($row['id'] ?? 0);
+            $qty = (float) ($row['qty'] ?? 0);
+            if ($id > 0 && $qty > 0) {
+                $qtyMap[$id] = $qty;
+            }
+        }
+        if (empty($qtyMap)) {
             return [];
         }
 
         $options = DB::table('modifier_options')
-            ->whereIn('id', $optionIds)
+            ->whereIn('id', array_keys($qtyMap))
             ->get(['id', 'name', 'modifier_bom_json']);
 
         $cuts = [];
         foreach ($options as $option) {
+            $modifierQty = (float) ($qtyMap[(int) $option->id] ?? 0);
+            if ($modifierQty <= 0) {
+                continue;
+            }
             $bomRows = json_decode((string) ($option->modifier_bom_json ?? ''), true);
             if (!is_array($bomRows)) {
                 continue;
@@ -3360,10 +3423,11 @@ class OutletInternalUseWasteController extends Controller
                 $cuts[] = [
                     'item_id' => $materialItemId,
                     'unit_id' => $bomRow['unit_id'] ?? null,
-                    'qty' => $qtyPerPortion * $menuQty,
+                    'qty' => $qtyPerPortion * $modifierQty,
                     'qty_per_portion' => $qtyPerPortion,
+                    'modifier_qty' => $modifierQty,
                     'option_name' => $option->name,
-                    'source' => $menuName.' + '.$option->name.' × '.$menuQty,
+                    'source' => $menuName.' + '.$option->name.' × '.$modifierQty,
                 ];
             }
         }
