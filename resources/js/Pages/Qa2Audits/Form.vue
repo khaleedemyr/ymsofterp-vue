@@ -919,6 +919,15 @@ function formatUserLabel(user) {
             >
               Back to Index
             </button>
+            <a
+              v-if="!isCreate"
+              :href="route('qa2-audits.pdf', audit.id)"
+              target="_blank"
+              rel="noopener"
+              class="rounded-lg border border-teal-300 bg-teal-50 px-3 py-2 text-sm font-medium text-teal-800 hover:bg-teal-100"
+            >
+              Download PDF
+            </a>
 
             <div v-if="!isCreate" class="text-xs text-gray-500">
             <div>Audit Date: {{ audit.audit_datetime }}</div>

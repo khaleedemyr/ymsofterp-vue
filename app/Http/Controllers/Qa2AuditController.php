@@ -1265,6 +1265,226 @@ class Qa2AuditController extends Controller
         ]);
     }
 
+    /**
+     * Download PDF QA Audit (meta + summary + temuan + bukti foto).
+     */
+    public function downloadPdf(int $id)
+    {
+        $auditRow = $this->getAuditRow($id);
+        abort_if(!$auditRow, 404);
+
+        $user = auth()->user();
+        $isHo = (int) ($user->id_outlet ?? 0) === 1;
+        if (!$isHo && (int) $auditRow->outlet_id !== (int) $user->id_outlet) {
+            abort(403);
+        }
+
+        $payload = $this->auditPayload($id, false);
+        $scoringMode = $this->auditScoringMode($auditRow);
+
+        $findings = collect($payload['items'] ?? [])
+            ->filter(function ($item) {
+                $result = strtoupper(trim((string) ($item->result ?? '')));
+                if (in_array($result, ['NC', 'MN', 'MY'], true)) {
+                    return true;
+                }
+                if ($result === 'C' && trim((string) ($item->comment ?? '')) !== '') {
+                    return true;
+                }
+                $media = is_array($item->media ?? null) ? $item->media : [];
+                return count($media) > 0;
+            })
+            ->values()
+            ->all();
+
+        $findingIds = collect($findings)->pluck('id')->map(fn ($v) => (int) $v)->filter()->values()->all();
+        $itemMediaByItem = [];
+        if ($findingIds !== []) {
+            $itemMediaByItem = DB::table('qa2_audit_item_media')
+                ->whereIn('audit_item_id', $findingIds)
+                ->orderBy('id')
+                ->get(['id', 'audit_item_id', 'media_type', 'file_path'])
+                ->groupBy(fn ($m) => (int) $m->audit_item_id)
+                ->map(fn ($rows) => $rows->values()->all())
+                ->all();
+        }
+
+        $capIds = collect($findings)
+            ->map(fn ($item) => (int) (is_array($item->cap ?? null) ? ($item->cap['id'] ?? 0) : 0))
+            ->filter()
+            ->values()
+            ->all();
+        $capMediaByCap = [];
+        if ($capIds !== []) {
+            $capMediaByCap = DB::table('qa2_audit_cap_media')
+                ->whereIn('cap_id', $capIds)
+                ->orderBy('id')
+                ->get(['id', 'cap_id', 'media_type', 'file_path'])
+                ->groupBy(fn ($m) => (int) $m->cap_id)
+                ->map(fn ($rows) => $rows->values()->all())
+                ->all();
+        }
+
+        $pdfFindings = [];
+        foreach ($findings as $item) {
+            $itemId = (int) ($item->id ?? 0);
+            $cap = is_array($item->cap ?? null) ? $item->cap : null;
+            $capId = (int) ($cap['id'] ?? 0);
+
+            $itemPhotos = [];
+            $itemVideos = 0;
+            foreach ($itemMediaByItem[$itemId] ?? [] as $media) {
+                $type = (string) ($media->media_type ?? '');
+                if ($type === 'video') {
+                    $itemVideos++;
+                    continue;
+                }
+                $embedded = $this->embedPublicImageForPdf((string) ($media->file_path ?? ''));
+                if ($embedded['src'] !== null || $embedded['note'] !== null) {
+                    $itemPhotos[] = $embedded;
+                }
+            }
+
+            $capPhotos = [];
+            $capVideos = 0;
+            foreach ($capMediaByCap[$capId] ?? [] as $media) {
+                $type = (string) ($media->media_type ?? '');
+                if ($type === 'video') {
+                    $capVideos++;
+                    continue;
+                }
+                $embedded = $this->embedPublicImageForPdf((string) ($media->file_path ?? ''));
+                if ($embedded['src'] !== null || $embedded['note'] !== null) {
+                    $capPhotos[] = $embedded;
+                }
+            }
+
+            $pdfFindings[] = [
+                'parameter_code' => (string) ($item->parameter_code ?? ''),
+                'parameter_text' => (string) ($item->parameter_text ?? ''),
+                'category_name' => (string) ($item->category_name ?? ''),
+                'subcategory_name' => (string) ($item->subcategory_name ?? ''),
+                'result' => (string) ($item->result ?? ''),
+                'comment' => (string) ($item->comment ?? ''),
+                'due_date' => (string) ($item->due_date ?? ''),
+                'cap_action_plan' => (string) ($cap['action_plan'] ?? ''),
+                'cap_target_date' => (string) ($cap['target_date'] ?? ''),
+                'cap_status' => (string) ($cap['status'] ?? ''),
+                'item_photos' => $itemPhotos,
+                'item_videos' => $itemVideos,
+                'cap_photos' => $capPhotos,
+                'cap_videos' => $capVideos,
+            ];
+        }
+
+        $auditorNames = collect($payload['auditors'] ?? [])
+            ->map(function ($row) {
+                $name = (string) ($row['name'] ?? '');
+                $jabatan = trim((string) ($row['jabatan'] ?? ''));
+                return $jabatan !== '' ? "{$name} ({$jabatan})" : $name;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        $auditeeNames = collect($payload['auditees'] ?? [])
+            ->map(function ($row) {
+                $name = (string) ($row['name'] ?? '');
+                $jabatan = trim((string) ($row['jabatan'] ?? ''));
+                return $jabatan !== '' ? "{$name} ({$jabatan})" : $name;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        $pdf = \PDF::loadView('exports.qa2_audit_pdf', [
+            'audit' => $payload,
+            'scoringMode' => $scoringMode,
+            'auditorNames' => $auditorNames,
+            'auditeeNames' => $auditeeNames,
+            'findings' => $pdfFindings,
+            'generatedAt' => now('Asia/Jakarta')->format('Y-m-d H:i'),
+        ])->setPaper('a4', 'portrait');
+
+        $safeNumber = preg_replace('/[^A-Za-z0-9\-_.]/', '_', (string) ($payload['audit_number'] ?? $id));
+        $filename = 'qa2-audit-'.$safeNumber.'-'.now('Asia/Jakarta')->format('Ymd_His').'.pdf';
+
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Embed image from public disk as data URI for DomPDF.
+     *
+     * @return array{src: string|null, note: string|null, label: string}
+     */
+    private function embedPublicImageForPdf(string $path): array
+    {
+        $path = trim($path);
+        $label = $path !== '' ? basename($path) : 'image';
+        if ($path === '') {
+            return ['src' => null, 'note' => 'Path kosong.', 'label' => $label];
+        }
+
+        $maxBytes = 5 * 1024 * 1024;
+        $allowedMimes = [
+            'image/jpeg' => true,
+            'image/png' => true,
+            'image/gif' => true,
+            'image/webp' => true,
+        ];
+
+        $ext = strtolower((string) pathinfo($path, PATHINFO_EXTENSION));
+        $mime = match ($ext) {
+            'jpg', 'jpeg' => 'image/jpeg',
+            'png' => 'image/png',
+            'gif' => 'image/gif',
+            'webp' => 'image/webp',
+            default => '',
+        };
+
+        if ($mime === '' || !isset($allowedMimes[$mime])) {
+            return ['src' => null, 'note' => 'Format bukan gambar yang didukung PDF.', 'label' => $label];
+        }
+
+        if (!Storage::disk('public')->exists($path)) {
+            return ['src' => null, 'note' => 'Berkas tidak ditemukan di server.', 'label' => $label];
+        }
+
+        try {
+            $size = (int) Storage::disk('public')->size($path);
+        } catch (\Throwable) {
+            return ['src' => null, 'note' => 'Tidak dapat membaca ukuran berkas.', 'label' => $label];
+        }
+
+        if ($size <= 0) {
+            return ['src' => null, 'note' => 'Berkas kosong.', 'label' => $label];
+        }
+
+        if ($size > $maxBytes) {
+            return [
+                'src' => null,
+                'note' => 'Gambar terlalu besar untuk disematkan di PDF (maks. 5 MB).',
+                'label' => $label,
+            ];
+        }
+
+        try {
+            $binary = Storage::disk('public')->get($path);
+        } catch (\Throwable) {
+            $binary = false;
+        }
+
+        if ($binary === false || $binary === '') {
+            return ['src' => null, 'note' => 'Tidak dapat membaca berkas.', 'label' => $label];
+        }
+
+        return [
+            'src' => 'data:'.$mime.';base64,'.base64_encode($binary),
+            'note' => null,
+            'label' => $label,
+        ];
+    }
+
     public function saveDraft(Request $request, int $id)
     {
         $this->ensureHo();

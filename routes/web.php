@@ -2818,6 +2818,7 @@ Route::get('qa2-audits/report-nc-dashboard/export-detail', [\App\Http\Controller
 Route::get('qa2-audits/create', [\App\Http\Controllers\Qa2AuditController::class, 'create'])->name('qa2-audits.create');
 Route::post('qa2-audits', [\App\Http\Controllers\Qa2AuditController::class, 'store'])->name('qa2-audits.store');
 Route::get('qa2-audits/{id}/edit', [\App\Http\Controllers\Qa2AuditController::class, 'edit'])->name('qa2-audits.edit');
+Route::get('qa2-audits/{id}/pdf', [\App\Http\Controllers\Qa2AuditController::class, 'downloadPdf'])->name('qa2-audits.pdf');
 Route::post('qa2-audits/{id}/share-link', [\App\Http\Controllers\Qa2AuditController::class, 'generateShareLink'])->name('qa2-audits.share-link');
 Route::post('qa2-audits/{id}/save-draft', [\App\Http\Controllers\Qa2AuditController::class, 'saveDraft'])->name('qa2-audits.save-draft');
 Route::post('qa2-audits/{id}/update-auditees', [\App\Http\Controllers\Qa2AuditController::class, 'updateAuditees'])->name('qa2-audits.update-auditees');
