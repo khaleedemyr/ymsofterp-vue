@@ -303,6 +303,32 @@
                   </div>
                 </div>
 
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    {{ item.line_mode === 'menu' ? 'Qty Menu' : 'Qty' }}
+                  </label>
+                  <input 
+                    type="number" 
+                    min="0.01" 
+                    step="0.01" 
+                    v-model.number="item.qty" 
+                    class="input input-bordered w-full" 
+                    required 
+                    :disabled="!form.warehouse_outlet_id || !item.item_id"
+                  />
+                </div>
+
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
+                  <input 
+                    type="text" 
+                    :value="getItemUnitName(item)" 
+                    class="input input-bordered w-full bg-gray-50" 
+                    readonly 
+                    :disabled="!item.item_id"
+                  />
+                </div>
+
                 <div
                   v-if="item.line_mode === 'menu' && item.item_id"
                   class="md:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3"
@@ -352,30 +378,6 @@
                       </div>
                     </div>
                   </div>
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Qty</label>
-                  <input 
-                    type="number" 
-                    min="0.01" 
-                    step="0.01" 
-                    v-model.number="item.qty" 
-                    class="input input-bordered w-full" 
-                    required 
-                    :disabled="!form.warehouse_outlet_id || !item.item_id"
-                  />
-                </div>
-
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Unit</label>
-                  <input 
-                    type="text" 
-                    :value="getItemUnitName(item)" 
-                    class="input input-bordered w-full bg-gray-50" 
-                    readonly 
-                    :disabled="!item.item_id"
-                  />
                 </div>
 
                 <div class="md:col-span-2">
