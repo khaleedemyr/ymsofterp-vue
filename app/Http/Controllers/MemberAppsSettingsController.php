@@ -221,10 +221,10 @@ class MemberAppsSettingsController extends Controller
 
         try {
             $data = [
-                'title' => $request->title,
-                'description' => $request->description,
-                'sort_order' => $request->sort_order ?? 0,
-                'is_active' => $request->has('is_active')
+                'title' => $request->input('title'),
+                'description' => $request->input('description'),
+                'sort_order' => $request->input('sort_order', 0),
+                'is_active' => $request->boolean('is_active'),
             ];
 
             if ($request->hasFile('image')) {

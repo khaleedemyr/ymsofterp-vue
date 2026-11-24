@@ -962,6 +962,13 @@ function formatDate(dateString) {
                     <i class="fa-solid fa-phone text-gray-400 text-xs"></i>
                     <span>{{ member.telepon || '-' }}</span>
                   </div>
+                  <div
+                    v-if="member.last_point_outlet || member.last_spending_outlet"
+                    class="text-sm text-purple-700 flex items-center gap-1"
+                  >
+                    <i class="fa-solid fa-store text-purple-400 text-xs"></i>
+                    <span>{{ member.last_point_outlet || member.last_spending_outlet }}</span>
+                  </div>
                 </div>
               </td>
               <td class="px-4 py-2">
@@ -1185,7 +1192,9 @@ function formatDate(dateString) {
                             <div class="flex items-center gap-1">
                               <i class="fa-solid fa-store text-purple-500"></i>
                               <span class="font-medium">Outlet:</span>
-                              <span>{{ transaction.outlet_name }}</span>
+                              <span :class="transaction.outlet_name && transaction.outlet_name !== 'Outlet Tidak Diketahui' ? 'text-gray-800 font-medium' : 'text-gray-400'">
+                                {{ transaction.outlet_name || 'Outlet Tidak Diketahui' }}
+                              </span>
                             </div>
                             <div class="flex items-center gap-1" v-if="transaction.no_bill">
                               <i class="fa-solid fa-receipt text-blue-500"></i>

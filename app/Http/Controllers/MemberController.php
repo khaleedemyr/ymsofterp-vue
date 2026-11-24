@@ -13,6 +13,7 @@ use Inertia\Inertia;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Maatwebsite\Excel\Facades\Excel;
 
 class MemberController extends Controller
@@ -155,8 +156,34 @@ class MemberController extends Controller
             }
         }
         
+        // Latest outlet from point inject / point txn (member_apps_point_transactions.outlet_id)
+        $lastPointOutletByMemberPk = [];
+        $memberPkIds = $members->getCollection()->pluck('id')->filter()->values()->all();
+        if (!empty($memberPkIds) && Schema::hasColumn('member_apps_point_transactions', 'outlet_id')) {
+            $latestPointRows = DB::table('member_apps_point_transactions as t')
+                ->join(DB::raw('(
+                    SELECT member_id, MAX(id) AS max_id
+                    FROM member_apps_point_transactions
+                    WHERE outlet_id IS NOT NULL
+                      AND outlet_id > 0
+                      AND member_id IN ('.implode(',', array_map('intval', $memberPkIds)).')
+                    GROUP BY member_id
+                ) AS latest'), 't.id', '=', 'latest.max_id')
+                ->leftJoin('tbl_data_outlet as o', 't.outlet_id', '=', 'o.id_outlet')
+                ->select('t.member_id', 't.outlet_id', 'o.nama_outlet', 't.created_at')
+                ->get();
+
+            foreach ($latestPointRows as $row) {
+                $lastPointOutletByMemberPk[(int) $row->member_id] = [
+                    'outlet_id' => (int) $row->outlet_id,
+                    'outlet_name' => $row->nama_outlet,
+                    'created_at' => $row->created_at,
+                ];
+            }
+        }
+
         // Calculate point balance and spending for each member
-        $members->getCollection()->transform(function ($member) use ($spendingByMemberId, $totalSpendingByMemberId, $lastSpendingByMemberId) {
+        $members->getCollection()->transform(function ($member) use ($spendingByMemberId, $totalSpendingByMemberId, $lastSpendingByMemberId, $lastPointOutletByMemberPk) {
             // Use just_points from member_apps_members table
             $member->point_balance = $member->just_points ?? 0;
             $member->point_balance_formatted = number_format($member->point_balance, 0, ',', '.');
@@ -170,6 +197,10 @@ class MemberController extends Controller
             $totalSpending = $totalSpendingByMemberId[$member->member_id] ?? 0;
             $member->total_spending = $totalSpending;
             $member->total_spending_formatted = 'Rp ' . number_format($totalSpending, 0, ',', '.');
+
+            $lastPointOutlet = $lastPointOutletByMemberPk[(int) $member->id] ?? null;
+            $member->last_point_outlet = $lastPointOutlet['outlet_name'] ?? null;
+            $member->last_point_outlet_id = $lastPointOutlet['outlet_id'] ?? null;
             
             // Calculate last spending (most recent order details)
             $lastSpendingData = $lastSpendingByMemberId[$member->member_id] ?? null;
@@ -182,9 +213,12 @@ class MemberController extends Controller
             } else {
                 $member->last_spending = 0;
                 $member->last_spending_formatted = 'Rp 0';
-                $member->last_spending_outlet = null;
-                $member->last_spending_date = null;
-                $member->last_spending_date_formatted = '-';
+                // Fallback: tampilkan outlet dari inject point terakhir jika belum ada spending order
+                $member->last_spending_outlet = $lastPointOutlet['outlet_name'] ?? null;
+                $member->last_spending_date = $lastPointOutlet['created_at'] ?? null;
+                $member->last_spending_date_formatted = !empty($lastPointOutlet['created_at'])
+                    ? \Carbon\Carbon::parse($lastPointOutlet['created_at'])->format('d M Y, H:i')
+                    : '-';
             }
             
             // Get tier/member_level
@@ -837,12 +871,27 @@ class MemberController extends Controller
                 
                 $allOrderItems = $orderItemsData;
             }
+
+            // Batch load outlet names from point transaction.outlet_id (inject manual / POS backfill)
+            $pointOutletIds = $pointTransactions
+                ->pluck('outlet_id')
+                ->filter(fn ($id) => (int) $id > 0)
+                ->unique()
+                ->values()
+                ->all();
+            $pointOutletNames = [];
+            if (!empty($pointOutletIds)) {
+                $pointOutletNames = DB::table('tbl_data_outlet')
+                    ->whereIn('id_outlet', $pointOutletIds)
+                    ->pluck('nama_outlet', 'id_outlet')
+                    ->all();
+            }
             
             // Transform point transactions to display format (now without queries in loop)
-            $transactions = $pointTransactions->map(function ($pt) use ($memberIdString, $ordersData, $allOrderItems) {
+            $transactions = $pointTransactions->map(function ($pt) use ($memberIdString, $ordersData, $allOrderItems, $pointOutletNames) {
                 $orderDetails = collect([]);
                 $orderId = null;
-                $outletName = 'Outlet Tidak Diketahui';
+                $outletName = null;
                 $paidNumber = (isset($pt->reference_number) ? $pt->reference_number : null) ?? (isset($pt->serial_code) ? $pt->serial_code : null) ?? null;
                 
                 // Get order_id from metadata first
@@ -868,9 +917,14 @@ class MemberController extends Controller
                     }
                 }
                 
-                // Get outlet name from pre-loaded order
+                // Prefer outlet from order; fallback ke outlet_id inject manual
                 if ($order && isset($order->nama_outlet) && $order->nama_outlet) {
                     $outletName = $order->nama_outlet;
+                } elseif (!empty($pt->outlet_id) && isset($pointOutletNames[$pt->outlet_id])) {
+                    $outletName = $pointOutletNames[$pt->outlet_id];
+                }
+                if (!$outletName) {
+                    $outletName = 'Outlet Tidak Diketahui';
                 }
                 
                 // Get order items from pre-loaded collection
@@ -914,14 +968,22 @@ class MemberController extends Controller
                 // Get description based on transaction type
                 $description = $isEarned ? 'Top Up Point dari Transaksi' : 'Redeem Point untuk Transaksi';
                 $transactionType = isset($pt->transaction_type) ? $pt->transaction_type : null;
-                if ($transactionType === 'manual') {
-                    $description = 'Point Manual';
+                $rawDescription = (string) ($pt->description ?? '');
+                $isManualInject = $transactionType === 'manual'
+                    || str_contains($rawDescription, '[ERP manual inject');
+                if ($isManualInject) {
+                    $description = $isEarned ? 'Inject Point Manual' : 'Penyesuaian Point Manual';
+                    if ($rawDescription !== '') {
+                        $description .= ' — '.$rawDescription;
+                    }
                 } elseif ($transactionType === 'reward_redemption') {
                     $description = 'Redeem Reward';
                 } elseif ($transactionType === 'voucher_purchase') {
                     $description = 'Beli Voucher';
                 } elseif ($transactionType === 'order') {
                     $description = 'Top Up Point dari Transaksi';
+                } elseif ($rawDescription !== '' && !$order) {
+                    $description = $rawDescription;
                 }
                 
                 return [
@@ -931,8 +993,9 @@ class MemberController extends Controller
                     'jml_trans_formatted' => (isset($pt->transaction_amount) && $pt->transaction_amount) ? 'Rp ' . number_format($pt->transaction_amount, 0, ',', '.') : '-',
                     'type' => $type,
                     'type_text' => $typeText,
-                    'no_bill' => $paidNumber,
+                    'no_bill' => $paidNumber ?? ($pt->reference_id ?? null),
                     'transaction_id' => isset($pt->transaction_id) ? $pt->transaction_id : (isset($pt->reference_id) ? $pt->reference_id : null),
+                    'outlet_id' => $pt->outlet_id ?? null,
                     'outlet_name' => $outletName,
                     'created_at' => $pt->created_at ?? null,
                     'description' => $description,

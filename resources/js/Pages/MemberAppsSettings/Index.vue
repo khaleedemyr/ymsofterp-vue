@@ -4283,10 +4283,10 @@ const saveBanner = () => {
   savingBanner.value = true
   
   const formData = new FormData()
-  formData.append('title', bannerForm.value.title)
-  formData.append('description', bannerForm.value.description)
-  formData.append('sort_order', bannerForm.value.sort_order)
-  formData.append('is_active', bannerForm.value.is_active)
+  formData.append('title', bannerForm.value.title ?? '')
+  formData.append('description', bannerForm.value.description ?? '')
+  formData.append('sort_order', bannerForm.value.sort_order ?? 0)
+  formData.append('is_active', bannerForm.value.is_active ? '1' : '0')
   
   if (bannerForm.value.image) {
     formData.append('image', bannerForm.value.image)
@@ -4295,10 +4295,14 @@ const saveBanner = () => {
   const url = editingBanner.value 
     ? `/admin/member-apps-settings/banner/${editingBanner.value.id}`
     : '/admin/member-apps-settings/banner'
+
+  // PUT + multipart FormData tidak ter-parse PHP → title jadi null / "required".
+  // Pakai POST + _method PUT.
+  if (editingBanner.value) {
+    formData.append('_method', 'PUT')
+  }
   
-  const method = editingBanner.value ? 'put' : 'post'
-  
-  router[method](url, formData, {
+  router.post(url, formData, {
     forceFormData: true,
     onSuccess: () => {
       savingBanner.value = false
