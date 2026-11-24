@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\FoodPayment;
 use App\Models\FoodPaymentContraBon;
+use App\Models\FoodPaymentUserSelection;
 use App\Models\ContraBon;
 use App\Services\NotificationService;
 use App\Services\BankBookService;
@@ -40,7 +41,8 @@ class FoodPaymentController extends Controller
                     ['path' => $request->url(), 'query' => $request->query()]
                 ),
                 'filters' => $request->only(['search', 'status', 'payment_type', 'date_from', 'date_to', 'per_page']),
-                'dataLoaded' => false
+                'dataLoaded' => false,
+                'selectedIds' => $this->getPersistedSelectionIds(),
             ]);
         }
         
@@ -305,8 +307,86 @@ class FoodPaymentController extends Controller
         return inertia('FoodPayment/Index', [
             'payments' => $payments,
             'filters' => $request->only(['search', 'status', 'payment_type', 'date_from', 'date_to', 'per_page']),
-            'dataLoaded' => true
+            'dataLoaded' => true,
+            'selectedIds' => $this->getPersistedSelectionIds(),
         ]);
+    }
+
+    /**
+     * Persist checklist selection for current user (survives refresh / next day).
+     */
+    public function updateSelections(Request $request)
+    {
+        $validated = $request->validate([
+            'food_payment_ids' => 'required|array|min:1',
+            'food_payment_ids.*' => 'integer|exists:food_payments,id',
+            'selected' => 'required|boolean',
+        ]);
+
+        $userId = Auth::id();
+        if (!$userId) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        $ids = array_values(array_unique(array_map('intval', $validated['food_payment_ids'])));
+
+        if ($validated['selected']) {
+            $now = now();
+            $rows = array_map(fn ($id) => [
+                'user_id' => $userId,
+                'food_payment_id' => $id,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $ids);
+
+            FoodPaymentUserSelection::upsert(
+                $rows,
+                ['user_id', 'food_payment_id'],
+                ['updated_at']
+            );
+        } else {
+            FoodPaymentUserSelection::where('user_id', $userId)
+                ->whereIn('food_payment_id', $ids)
+                ->delete();
+        }
+
+        return response()->json([
+            'success' => true,
+            'selectedIds' => $this->getPersistedSelectionIds($userId),
+        ]);
+    }
+
+    /**
+     * Clear all checklist selections for current user.
+     */
+    public function clearSelections()
+    {
+        $userId = Auth::id();
+        if (!$userId) {
+            return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+        }
+
+        FoodPaymentUserSelection::where('user_id', $userId)->delete();
+
+        return response()->json([
+            'success' => true,
+            'selectedIds' => [],
+        ]);
+    }
+
+    private function getPersistedSelectionIds($userId = null): array
+    {
+        $userId = $userId ?? Auth::id();
+        if (!$userId) {
+            return [];
+        }
+
+        return FoodPaymentUserSelection::where('user_id', $userId)
+            ->orderBy('food_payment_id')
+            ->pluck('food_payment_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
     }
 
     // Show create form

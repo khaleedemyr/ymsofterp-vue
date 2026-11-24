@@ -59,7 +59,7 @@
             <div v-if="!isUsageAutoBomType" class="text-sm text-slate-700 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 mb-2">
               Per baris pilih mode <strong>Bahan</strong> atau <strong>Menu</strong>.
               Bahan: cari item yang punya stok di outlet (termasuk <span class="font-semibold text-purple-700">WIP</span>).
-              Menu: pilih menu POS (`show_pos=1`) yang available di outlet — saat submit/approve yang dipotong adalah BOM-nya.
+              Menu: pilih menu POS (`show_pos=1`) yang available di outlet — bisa pilih modifier jika ada, plus notes. Saat submit/approve yang dipotong adalah BOM menu + BOM modifier terpilih.
             </div>
 
             <div v-if="isUsageAutoBomType && !loadingStockCutItems" class="text-sm text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
@@ -292,7 +292,7 @@
                     Pilih warehouse outlet terlebih dahulu untuk melihat stok.
                   </div>
                   <div v-if="item.line_mode === 'menu'" class="text-xs text-emerald-700 mt-1">
-                    Qty = porsi menu. Saat submit/approve, stok dipotong dari BOM (`stock_cut=1`), bukan dari menu.
+                    Qty = porsi menu. Saat submit/approve, stok dipotong dari BOM menu (+ modifier terpilih jika ada).
                   </div>
                   <div v-if="item.selectedItem?.is_wip || item.selectedItem?.type === 'WIP'" class="text-xs text-purple-700 mt-1">
                     Pemotongan stok: langsung dari stok WIP hasil produksi (bukan bahan baku).
@@ -300,6 +300,43 @@
                   <div v-if="item.line_mode !== 'menu' && item.stock" class="text-xs mt-1" :class="Number(item.stock.qty_small || 0) <= 0 ? 'text-red-600 font-bold' : 'text-gray-500'">
                     Stok: {{ formatStockDisplay(item) }}
                     <span v-if="Number(item.stock.qty_small || 0) <= 0" class="ml-1">⚠️ Stock tidak tersedia</span>
+                  </div>
+                </div>
+
+                <div
+                  v-if="item.line_mode === 'menu' && item.item_id"
+                  class="md:col-span-2 rounded-lg border border-emerald-200 bg-emerald-50/50 p-3"
+                >
+                  <div class="flex items-center justify-between gap-2 mb-2">
+                    <label class="block text-sm font-medium text-emerald-900">Modifier</label>
+                    <span v-if="item.loadingModifiers" class="text-xs text-emerald-700">Memuat...</span>
+                  </div>
+                  <div v-if="!item.loadingModifiers && (!item.modifierGroups || item.modifierGroups.length === 0)" class="text-xs text-gray-500">
+                    Menu ini tidak memiliki modifier.
+                  </div>
+                  <div v-else class="space-y-3">
+                    <div
+                      v-for="group in item.modifierGroups"
+                      :key="group.id"
+                      class="bg-white border border-emerald-100 rounded-md p-3"
+                    >
+                      <div class="text-sm font-semibold text-gray-800 mb-2">{{ group.name }}</div>
+                      <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label
+                          v-for="opt in group.options"
+                          :key="opt.id"
+                          class="flex items-start gap-2 text-sm text-gray-700 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            class="mt-0.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                            :value="opt.id"
+                            v-model="item.modifier_option_ids"
+                          />
+                          <span>{{ opt.name }}</span>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -328,11 +365,13 @@
                 </div>
 
                 <div class="md:col-span-2">
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Note</label>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">
+                    Notes / Catatan Item
+                  </label>
                   <textarea 
                     v-model="item.note" 
                     class="input input-bordered w-full" 
-                    placeholder="Catatan item (opsional)"
+                    :placeholder="item.line_mode === 'menu' ? 'Notes untuk menu/modifier (opsional)' : 'Catatan item (opsional)'"
                     rows="3"
                     :disabled="isUsageAutoBomType"
                   ></textarea>
@@ -522,8 +561,28 @@ function newItem() {
     unit_id: '',
     unit_name: '',
     note: '',
-    stock: null
+    stock: null,
+    modifier_option_ids: [],
+    modifierGroups: [],
+    loadingModifiers: false,
   }
+}
+
+function parseModifierOptionIds(raw) {
+  if (Array.isArray(raw)) {
+    return raw.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+  }
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) {
+        return parsed.map((id) => Number(id)).filter((id) => Number.isFinite(id) && id > 0)
+      }
+    } catch (e) {
+      return []
+    }
+  }
+  return []
 }
 
 // Legacy header type `stock_cut` is shown/edited as `usage` (single BOM flow)
@@ -562,7 +621,10 @@ const form = ref({
           unit_id: detail.unit_id,
           unit_name: detail.unit_name || '',
           note: detail.note || '',
-          stock: null
+          stock: null,
+          modifier_option_ids: parseModifierOptionIds(detail.modifier_option_ids),
+          modifierGroups: [],
+          loadingModifiers: false,
         }
       })
     : [newItem()],
@@ -648,12 +710,16 @@ function syncUsagePhysicalFromSavedQty(item) {
 }
 
 function mapItemToPayload(item) {
+  const lineMode = isUsageAutoBomType.value ? 'material' : (item.line_mode === 'menu' ? 'menu' : 'material')
   const payload = {
     item_id: item.item_id,
-    line_mode: isUsageAutoBomType.value ? 'material' : (item.line_mode === 'menu' ? 'menu' : 'material'),
+    line_mode: lineMode,
     qty: isUsageAutoBomType.value ? getUsageQty(item) : item.qty,
     unit_id: item.unit_id,
     note: item.note || null,
+    modifier_option_ids: lineMode === 'menu'
+      ? parseModifierOptionIds(item.modifier_option_ids)
+      : [],
   }
   if (isUsageAutoBomType.value) {
     payload.stock_on_hand = getStockOnHandFromSystem(item)
@@ -750,6 +816,11 @@ onMounted(async () => {
         await fetchStock(idx)
         syncUsagePhysicalFromSavedQty(form.value.items[idx])
       }
+    }
+  }
+  for (let idx = 0; idx < form.value.items.length; idx++) {
+    if (form.value.items[idx].line_mode === 'menu' && form.value.items[idx].item_id) {
+      await loadMenuModifiers(idx, { keepSelected: true })
     }
   }
 })
@@ -925,7 +996,37 @@ function setLineMode(idx, mode) {
   onItemRemove(idx)
 }
 
-function onItemSelect(item, idx) {
+async function loadMenuModifiers(idx, { keepSelected = false } = {}) {
+  const row = form.value.items[idx]
+  if (!row) return
+
+  if (row.line_mode !== 'menu' || !row.item_id) {
+    row.modifierGroups = []
+    if (!keepSelected) row.modifier_option_ids = []
+    row.loadingModifiers = false
+    return
+  }
+
+  row.loadingModifiers = true
+  try {
+    const res = await axios.get(route('outlet-internal-use-waste.menu-modifiers', row.item_id))
+    const groups = Array.isArray(res.data?.groups) ? res.data.groups : []
+    row.modifierGroups = groups
+    const allowed = new Set(
+      groups.flatMap((g) => (g.options || []).map((o) => Number(o.id)))
+    )
+    const current = keepSelected ? parseModifierOptionIds(row.modifier_option_ids) : []
+    row.modifier_option_ids = current.filter((id) => allowed.has(Number(id)))
+  } catch (error) {
+    console.error('Error loading menu modifiers:', error)
+    row.modifierGroups = []
+    if (!keepSelected) row.modifier_option_ids = []
+  } finally {
+    row.loadingModifiers = false
+  }
+}
+
+async function onItemSelect(item, idx) {
   if (!item || !item.id) return
 
   const row = form.value.items[idx]
@@ -940,7 +1041,12 @@ function onItemSelect(item, idx) {
   } else {
     row.stock = null
   }
+  row.modifier_option_ids = []
+  row.modifierGroups = []
   setSmallUnit(idx, item.id)
+  if (row.line_mode === 'menu') {
+    await loadMenuModifiers(idx)
+  }
   if (row.line_mode !== 'menu' && form.value.warehouse_outlet_id && form.value.outlet_id && !item.stock) {
     fetchStock(idx)
   }
@@ -954,6 +1060,9 @@ function onItemRemove(idx) {
   form.value.items[idx].unit_id = ''
   form.value.items[idx].unit_name = ''
   form.value.items[idx].stock = null
+  form.value.items[idx].modifier_option_ids = []
+  form.value.items[idx].modifierGroups = []
+  form.value.items[idx].loadingModifiers = false
 }
 
 
@@ -1423,26 +1532,26 @@ async function submit() {
       approvers: form.value.approvers.map(a => a.id)
     }
 
-    // Simpan draft terlebih dahulu agar qty usage (hasil selisih) tersimpan sebelum submit
-    if (form.value.header_id) {
-      await axios.post(route('outlet-internal-use-waste.store'), {
-        ...formData,
-        autosave: false,
-      }, {
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-      })
+    // Selalu simpan draft dulu, lalu submit by id.
+    // Hindari store-and-submit (legacy path pernah potong stok saat SUBMITTED).
+    const draftResponse = await axios.post(route('outlet-internal-use-waste.store'), {
+      ...formData,
+      autosave: false,
+    }, {
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+    })
+    if (draftResponse.data?.header_id) {
+      form.value.header_id = draftResponse.data.header_id
     }
-    
-    const submitUrl = form.value.header_id 
-      ? route('outlet-internal-use-waste.submit', form.value.header_id)
-      : route('outlet-internal-use-waste.store-and-submit')
-    
-    const submitData = form.value.header_id 
-      ? { approvers: form.value.approvers.map(a => a.id) }
-      : formData
+    if (!form.value.header_id) {
+      throw new Error('Gagal menyimpan draft sebelum submit')
+    }
+
+    const submitUrl = route('outlet-internal-use-waste.submit', form.value.header_id)
+    const submitData = { approvers: form.value.approvers.map(a => a.id) }
     
     console.log('Calling submit endpoint:', submitUrl, submitData)
     const response = await axios.post(submitUrl, submitData, {

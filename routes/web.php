@@ -1047,6 +1047,8 @@ Route::delete('/api/retail-warehouse-food-items/{id}/serials', [RetailWarehouseF
     Route::get('/food-payments/create', [\App\Http\Controllers\FoodPaymentController::class, 'create'])->name('food-payments.create');
     Route::get('/food-payments/export-bulk-pdf', [\App\Http\Controllers\FoodPaymentController::class, 'exportBulkPdf'])->name('food-payments.export-bulk-pdf');
     Route::get('/food-payments/export-bulk-excel', [\App\Http\Controllers\FoodPaymentController::class, 'exportBulkExcel'])->name('food-payments.export-bulk-excel');
+    Route::post('/food-payments/selections', [\App\Http\Controllers\FoodPaymentController::class, 'updateSelections'])->name('food-payments.selections.update');
+    Route::post('/food-payments/selections/clear', [\App\Http\Controllers\FoodPaymentController::class, 'clearSelections'])->name('food-payments.selections.clear');
     Route::post('/food-payments', [\App\Http\Controllers\FoodPaymentController::class, 'store'])->name('food-payments.store');
     Route::get('/food-payments/{id}', [\App\Http\Controllers\FoodPaymentController::class, 'show'])->name('food-payments.show');
     Route::get('/food-payments/{id}/export-pdf', [\App\Http\Controllers\FoodPaymentController::class, 'exportPdf'])->name('food-payments.export-pdf');
@@ -1819,6 +1821,7 @@ Route::get('/outlet-internal-use-waste/get-item-units/{id}', [\App\Http\Controll
 Route::get('/outlet-internal-use-waste/stock-cut-items', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getStockCutItems'])->name('outlet-internal-use-waste.stock-cut-items');
 Route::get('/outlet-internal-use-waste/search-items-with-stock', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'searchItemsWithStock'])->name('outlet-internal-use-waste.search-items-with-stock');
 Route::get('/outlet-internal-use-waste/search-pos-menus', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'searchPosMenus'])->name('outlet-internal-use-waste.search-pos-menus');
+Route::get('/outlet-internal-use-waste/menu-modifiers/{itemId}', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getMenuModifiers'])->name('outlet-internal-use-waste.menu-modifiers');
 Route::get('/outlet-internal-use-waste/approvers', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovers'])->name('outlet-internal-use-waste.approvers')->middleware('auth');
 Route::get('/outlet-internal-use-waste/approvals/pending', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getPendingApprovals'])->name('outlet-internal-use-waste.pending-approvals');
 Route::get('/api/outlet-internal-use-waste/{id}/approval-details', [\App\Http\Controllers\OutletInternalUseWasteController::class, 'getApprovalDetails'])->name('outlet-internal-use-waste.approval-details');

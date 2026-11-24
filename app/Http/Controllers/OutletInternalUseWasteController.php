@@ -197,6 +197,8 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.unit_id' => 'required_with:items|exists:units,id',
                 'items.*.note' => 'nullable|string',
                 'items.*.line_mode' => 'nullable|in:material,menu',
+                'items.*.modifier_option_ids' => 'nullable|array',
+                'items.*.modifier_option_ids.*' => 'integer|exists:modifier_options,id',
                 'items.*.stock_on_hand' => 'nullable|numeric|min:0',
                 'items.*.physical_qty' => 'nullable|numeric|min:0',
             ]);
@@ -914,6 +916,8 @@ class OutletInternalUseWasteController extends Controller
                 'items.*.unit_id' => 'required|exists:units,id',
                 'items.*.note' => 'nullable|string',
                 'items.*.line_mode' => 'nullable|in:material,menu',
+                'items.*.modifier_option_ids' => 'nullable|array',
+                'items.*.modifier_option_ids.*' => 'integer|exists:modifier_options,id',
                 'items.*.stock_on_hand' => 'nullable|numeric|min:0',
                 'items.*.physical_qty' => 'nullable|numeric|min:0',
                 'approvers' => 'nullable|array'
@@ -1083,7 +1087,12 @@ class OutletInternalUseWasteController extends Controller
             ->leftJoin('units as u', 'd.unit_id', '=', 'u.id')
             ->select('d.*', 'i.name as item_name', 'u.name as unit_name')
             ->where('d.header_id', $id)
-            ->get();
+            ->get()
+            ->map(function ($row) {
+                $row->modifier_option_ids = $this->parseModifierOptionIds($row->modifier_option_ids ?? null);
+                $row->modifier_labels = $this->resolveModifierOptionLabels($row->modifier_option_ids);
+                return $row;
+            });
         
         // Get approval flows if any
         $approvalFlows = DB::table('outlet_internal_use_waste_approval_flows as af')
@@ -1157,8 +1166,11 @@ class OutletInternalUseWasteController extends Controller
             ->map(function ($row) use ($header) {
                 $lineMode = $this->normalizeLineMode($row->line_mode ?? 'material', (string) $header->type);
                 $row->line_mode = $lineMode;
+                $modifierOptionIds = $this->parseModifierOptionIds($row->modifier_option_ids ?? null);
+                $row->modifier_option_ids = $modifierOptionIds;
+                $row->modifier_labels = $this->resolveModifierOptionLabels($modifierOptionIds);
                 $row->bom_preview = $lineMode === 'menu'
-                    ? $this->previewMenuBomLines((int) $row->item_id, (float) $row->qty)
+                    ? $this->previewMenuBomLines((int) $row->item_id, (float) $row->qty, $modifierOptionIds)
                     : [];
                 return $row;
             });
@@ -1190,13 +1202,15 @@ class OutletInternalUseWasteController extends Controller
             // Ambil semua detail untuk header ini
             $details = DB::table('outlet_internal_use_waste_details')->where('header_id', $id)->get();
 
-            // Rollback stok HANYA jika PROCESSED (stok benar-benar sudah dipotong + ada kartu OUT).
-            // SUBMITTED/REJECTED/DRAFT belum potong stok — rollback di sini = phantom IN tanpa kartu.
-            $shouldRollbackStock = $header->status === 'PROCESSED';
+            // Rollback jika ada kartu OUT (PROCESSED/APPROVED, atau legacy bug SUBMITTED yang sudah motong).
+            // Tanpa kartu: jangan rollback — phantom IN.
+            $hasStockCards = $this->hasOutletInternalUseWasteStockCards((int) $id);
+            $shouldRollbackStock = $hasStockCards || $header->status === 'PROCESSED';
             
             \Log::info('OutletInternalUseWaste destroy - Starting delete', [
                 'header_id' => $id,
                 'status' => $header->status,
+                'has_stock_cards' => $hasStockCards,
                 'should_rollback_stock' => $shouldRollbackStock,
                 'details_count' => $details->count()
             ]);
@@ -1679,6 +1693,52 @@ class OutletInternalUseWasteController extends Controller
         return response()->json([
             'success' => true,
             'items' => $items,
+        ]);
+    }
+
+    /**
+     * Modifier groups + options yang terpasang ke menu item.
+     */
+    public function getMenuModifiers($itemId)
+    {
+        $itemId = (int) $itemId;
+        if ($itemId <= 0) {
+            return response()->json(['success' => false, 'message' => 'Item tidak valid'], 422);
+        }
+
+        $rows = DB::table('item_modifier_options as imo')
+            ->join('modifier_options as mo', 'mo.id', '=', 'imo.modifier_option_id')
+            ->join('modifiers as m', 'm.id', '=', 'mo.modifier_id')
+            ->where('imo.item_id', $itemId)
+            ->select(
+                'm.id as modifier_id',
+                'm.name as modifier_name',
+                'mo.id as option_id',
+                'mo.name as option_name'
+            )
+            ->orderBy('m.name')
+            ->orderBy('mo.name')
+            ->get();
+
+        $groups = [];
+        foreach ($rows as $row) {
+            $mid = (int) $row->modifier_id;
+            if (!isset($groups[$mid])) {
+                $groups[$mid] = [
+                    'id' => $mid,
+                    'name' => $row->modifier_name,
+                    'options' => [],
+                ];
+            }
+            $groups[$mid]['options'][] = [
+                'id' => (int) $row->option_id,
+                'name' => $row->option_name,
+            ];
+        }
+
+        return response()->json([
+            'success' => true,
+            'groups' => array_values($groups),
         ]);
     }
 
@@ -2432,6 +2492,17 @@ class OutletInternalUseWasteController extends Controller
                     'updated_at' => now(),
                 ]);
             
+            // Legacy bug: storeAndSubmit dulu bisa sudah potong stok saat SUBMITTED.
+            // Saat reject, kembalikan stok jika kartu OUT sudah ada.
+            if ($this->hasOutletInternalUseWasteStockCards((int) $id)) {
+                \Log::warning('OutletInternalUseWaste reject - Rolling back premature stock cards', [
+                    'header_id' => $id,
+                    'type' => $header->type,
+                    'status' => $header->status,
+                ]);
+                $this->rollbackStockFromCards($header, (int) $id);
+            }
+
             // Update header status to REJECTED
             DB::table('outlet_internal_use_waste_headers')
                 ->where('id', $id)
@@ -2514,13 +2585,29 @@ class OutletInternalUseWasteController extends Controller
         ]);
 
         $cuts = $this->expandDetailsToMaterialCuts($header, $details);
-        $subtotalMac = $this->applyMaterialStockCuts(
-            $header,
-            (int) $headerId,
-            $cuts,
-            'Stock Out - '.$header->type.' (After Approval)',
-            true
-        );
+
+        // Idempotent: legacy storeAndSubmit bisa sudah menulis kartu saat SUBMITTED.
+        // Jangan potong ulang — cukup sync subtotal_mac dari kartu yang ada.
+        if ($this->hasOutletInternalUseWasteStockCards((int) $headerId)) {
+            $subtotalMac = (float) DB::table('outlet_food_inventory_cards')
+                ->where('reference_type', 'outlet_internal_use_waste')
+                ->where('reference_id', $headerId)
+                ->sum('value_out');
+
+            \Log::warning('OutletInternalUseWaste processStockAfterApproval: Stock cards already exist, skipping re-cut', [
+                'header_id' => $headerId,
+                'type' => $header->type,
+                'subtotal_mac_from_cards' => $subtotalMac,
+            ]);
+        } else {
+            $subtotalMac = $this->applyMaterialStockCuts(
+                $header,
+                (int) $headerId,
+                $cuts,
+                'Stock Out - '.$header->type.' (After Approval)',
+                true
+            );
+        }
 
         DB::table('outlet_internal_use_waste_headers')
             ->where('id', $headerId)
@@ -2534,6 +2621,14 @@ class OutletInternalUseWasteController extends Controller
             'type' => $header->type,
             'total_details_processed' => $details->count()
         ]);
+    }
+
+    private function hasOutletInternalUseWasteStockCards(int $headerId): bool
+    {
+        return DB::table('outlet_food_inventory_cards')
+            ->where('reference_type', 'outlet_internal_use_waste')
+            ->where('reference_id', $headerId)
+            ->exists();
     }
 
     /**
@@ -2730,13 +2825,19 @@ class OutletInternalUseWasteController extends Controller
      */
     private function buildDetailInsertRow(int $headerId, array $item, string $type): array
     {
+        $lineMode = $this->normalizeLineMode($item['line_mode'] ?? null, $type);
+        $modifierOptionIds = $lineMode === 'menu'
+            ? $this->sanitizeModifierOptionIdsForItem((int) $item['item_id'], $item['modifier_option_ids'] ?? [])
+            : [];
+
         $row = [
             'header_id' => $headerId,
             'item_id' => $item['item_id'],
-            'line_mode' => $this->normalizeLineMode($item['line_mode'] ?? null, $type),
+            'line_mode' => $lineMode,
             'qty' => $item['qty'],
             'unit_id' => $item['unit_id'],
             'note' => $item['note'] ?? null,
+            'modifier_option_ids' => !empty($modifierOptionIds) ? json_encode(array_values($modifierOptionIds)) : null,
             'created_at' => now(),
             'updated_at' => now(),
         ];
@@ -2938,29 +3039,24 @@ class OutletInternalUseWasteController extends Controller
                 }
 
                 foreach ($bomRows as $bom) {
-                    $material = DB::table('items')->where('id', $bom->material_item_id)->first();
-                    if (!$material) {
-                        continue;
-                    }
-                    $needed = $this->convertQtyToUnitTriplet(
-                        $material,
+                    $this->accumulateMaterialCut(
+                        $cuts,
+                        (int) $bom->material_item_id,
                         $bom->unit_id,
-                        (float) $bom->qty * $menuQty
+                        (float) $bom->qty * $menuQty,
+                        $menuName.' × '.$menuQty
                     );
-                    $mid = (int) $bom->material_item_id;
-                    if (!isset($cuts[$mid])) {
-                        $cuts[$mid] = [
-                            'item_id' => $mid,
-                            'qty_small' => 0.0,
-                            'qty_medium' => 0.0,
-                            'qty_large' => 0.0,
-                            'sources' => [],
-                        ];
-                    }
-                    $cuts[$mid]['qty_small'] += $needed['qty_small'];
-                    $cuts[$mid]['qty_medium'] += $needed['qty_medium'];
-                    $cuts[$mid]['qty_large'] += $needed['qty_large'];
-                    $cuts[$mid]['sources'][] = $menuName.' × '.$menuQty;
+                }
+
+                $modifierOptionIds = $this->parseModifierOptionIds($detail->modifier_option_ids ?? null);
+                foreach ($this->expandModifierOptionsToBomCuts($modifierOptionIds, $menuQty, $menuName) as $modCut) {
+                    $this->accumulateMaterialCut(
+                        $cuts,
+                        (int) $modCut['item_id'],
+                        $modCut['unit_id'],
+                        (float) $modCut['qty'],
+                        $modCut['source']
+                    );
                 }
                 continue;
             }
@@ -3118,9 +3214,9 @@ class OutletInternalUseWasteController extends Controller
     }
 
     /**
-     * Preview BOM stock_cut untuk baris menu (Show page).
+     * Preview BOM stock_cut untuk baris menu (Show page), termasuk modifier terpilih.
      */
-    private function previewMenuBomLines(int $menuItemId, float $menuQty): array
+    private function previewMenuBomLines(int $menuItemId, float $menuQty, array $modifierOptionIds = []): array
     {
         $rows = DB::table('item_bom as ib')
             ->join('items as i', 'i.id', '=', 'ib.material_item_id')
@@ -3131,7 +3227,7 @@ class OutletInternalUseWasteController extends Controller
             ->orderBy('i.name')
             ->get();
 
-        return $rows->map(function ($row) use ($menuQty) {
+        $preview = $rows->map(function ($row) use ($menuQty) {
             return [
                 'material_item_id' => (int) $row->material_item_id,
                 'material_name' => $row->material_name,
@@ -3139,8 +3235,170 @@ class OutletInternalUseWasteController extends Controller
                 'qty_total' => (float) $row->qty * $menuQty,
                 'unit_id' => $row->unit_id,
                 'unit_name' => $row->unit_name,
+                'source' => 'menu',
             ];
         })->values()->all();
+
+        $menuName = DB::table('items')->where('id', $menuItemId)->value('name') ?? ('Menu #'.$menuItemId);
+        foreach ($this->expandModifierOptionsToBomCuts($modifierOptionIds, $menuQty, $menuName) as $modCut) {
+            $material = DB::table('items')->where('id', $modCut['item_id'])->first();
+            $unitName = $modCut['unit_id']
+                ? (DB::table('units')->where('id', $modCut['unit_id'])->value('name') ?? null)
+                : null;
+            $preview[] = [
+                'material_item_id' => (int) $modCut['item_id'],
+                'material_name' => ($material->name ?? ('Item #'.$modCut['item_id'])).' ['.$modCut['option_name'].']',
+                'qty_per_portion' => (float) $modCut['qty_per_portion'],
+                'qty_total' => (float) $modCut['qty'],
+                'unit_id' => $modCut['unit_id'],
+                'unit_name' => $unitName,
+                'source' => 'modifier',
+            ];
+        }
+
+        return $preview;
+    }
+
+    private function parseModifierOptionIds($value): array
+    {
+        if (is_array($value)) {
+            return array_values(array_unique(array_filter(array_map('intval', $value))));
+        }
+        if (is_string($value) && trim($value) !== '') {
+            $decoded = json_decode($value, true);
+            if (is_array($decoded)) {
+                return array_values(array_unique(array_filter(array_map('intval', $decoded))));
+            }
+        }
+
+        return [];
+    }
+
+    private function sanitizeModifierOptionIdsForItem(int $itemId, $rawIds): array
+    {
+        $ids = $this->parseModifierOptionIds($rawIds);
+        if ($itemId <= 0 || empty($ids)) {
+            return [];
+        }
+
+        return DB::table('item_modifier_options')
+            ->where('item_id', $itemId)
+            ->whereIn('modifier_option_id', $ids)
+            ->pluck('modifier_option_id')
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function resolveModifierOptionLabels(array $optionIds): array
+    {
+        if (empty($optionIds)) {
+            return [];
+        }
+
+        return DB::table('modifier_options as mo')
+            ->join('modifiers as m', 'm.id', '=', 'mo.modifier_id')
+            ->whereIn('mo.id', $optionIds)
+            ->orderBy('m.name')
+            ->orderBy('mo.name')
+            ->get(['m.name as modifier_name', 'mo.name as option_name'])
+            ->map(fn ($row) => trim(($row->modifier_name ? $row->modifier_name.': ' : '').$row->option_name))
+            ->values()
+            ->all();
+    }
+
+    /**
+     * Modifier BOM semantics (sama StockCut): stock_cut true/1 = skip; false/null = ikut potong.
+     */
+    private function isModifierBomLineCountedForStock($stockCut): bool
+    {
+        if ($stockCut === null || $stockCut === false || $stockCut === 0 || $stockCut === '0' || $stockCut === 'false' || $stockCut === '') {
+            return true;
+        }
+        if ($stockCut === true || $stockCut === 1 || $stockCut === '1' || $stockCut === 'true' || $stockCut === 'yes') {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * @return array<int, array{item_id:int,unit_id:mixed,qty:float,qty_per_portion:float,option_name:string,source:string}>
+     */
+    private function expandModifierOptionsToBomCuts(array $optionIds, float $menuQty, string $menuName): array
+    {
+        if (empty($optionIds) || $menuQty <= 0) {
+            return [];
+        }
+
+        $options = DB::table('modifier_options')
+            ->whereIn('id', $optionIds)
+            ->get(['id', 'name', 'modifier_bom_json']);
+
+        $cuts = [];
+        foreach ($options as $option) {
+            $bomRows = json_decode((string) ($option->modifier_bom_json ?? ''), true);
+            if (!is_array($bomRows)) {
+                continue;
+            }
+            foreach ($bomRows as $bomRow) {
+                if (!is_array($bomRow)) {
+                    continue;
+                }
+                if (!$this->isModifierBomLineCountedForStock($bomRow['stock_cut'] ?? null)) {
+                    continue;
+                }
+                $materialItemId = isset($bomRow['item_id']) ? (int) $bomRow['item_id'] : 0;
+                if ($materialItemId <= 0) {
+                    continue;
+                }
+                $qtyPerPortion = (float) ($bomRow['qty'] ?? 0);
+                if ($qtyPerPortion <= 0) {
+                    continue;
+                }
+                $cuts[] = [
+                    'item_id' => $materialItemId,
+                    'unit_id' => $bomRow['unit_id'] ?? null,
+                    'qty' => $qtyPerPortion * $menuQty,
+                    'qty_per_portion' => $qtyPerPortion,
+                    'option_name' => $option->name,
+                    'source' => $menuName.' + '.$option->name.' × '.$menuQty,
+                ];
+            }
+        }
+
+        return $cuts;
+    }
+
+    private function accumulateMaterialCut(
+        array &$cuts,
+        int $materialItemId,
+        $unitId,
+        float $qtyInput,
+        string $source
+    ): void {
+        if ($materialItemId <= 0 || $qtyInput <= 0) {
+            return;
+        }
+        $material = DB::table('items')->where('id', $materialItemId)->first();
+        if (!$material) {
+            return;
+        }
+        $needed = $this->convertQtyToUnitTriplet($material, $unitId, $qtyInput);
+        if (!isset($cuts[$materialItemId])) {
+            $cuts[$materialItemId] = [
+                'item_id' => $materialItemId,
+                'qty_small' => 0.0,
+                'qty_medium' => 0.0,
+                'qty_large' => 0.0,
+                'sources' => [],
+            ];
+        }
+        $cuts[$materialItemId]['qty_small'] += $needed['qty_small'];
+        $cuts[$materialItemId]['qty_medium'] += $needed['qty_medium'];
+        $cuts[$materialItemId]['qty_large'] += $needed['qty_large'];
+        $cuts[$materialItemId]['sources'][] = $source;
     }
 
     /**

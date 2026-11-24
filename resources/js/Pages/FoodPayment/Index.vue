@@ -237,6 +237,7 @@
 import { ref, watch, computed } from 'vue';
 import { router } from '@inertiajs/vue3';
 import { Link } from '@inertiajs/vue3';
+import axios from 'axios';
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { useLoading } from '@/Composables/useLoading';
 
@@ -246,6 +247,10 @@ const props = defineProps({
   dataLoaded: {
     type: Boolean,
     default: false
+  },
+  selectedIds: {
+    type: Array,
+    default: () => []
   }
 });
 
@@ -268,31 +273,71 @@ const filters = ref({
 
 const isDataLoaded = ref(props.dataLoaded || false);
 const isLoading = ref(false);
-const selectedIds = ref([]);
+const selectedIds = ref((props.selectedIds || []).map((id) => Number(id)));
+const selectionSyncing = ref(false);
 
 const pageIds = computed(() => (safePayments.value.data || []).map((p) => p.id));
 const isAllSelected = computed(() => pageIds.value.length > 0 && pageIds.value.every((id) => selectedIds.value.includes(id)));
 
-function toggleSelect(id) {
-  const idx = selectedIds.value.indexOf(id);
-  if (idx === -1) {
-    selectedIds.value.push(id);
+async function persistSelection(ids, selected) {
+  if (!ids.length) return;
+  selectionSyncing.value = true;
+  try {
+    const { data } = await axios.post(route('food-payments.selections.update'), {
+      food_payment_ids: ids,
+      selected: !!selected,
+    });
+    if (Array.isArray(data?.selectedIds)) {
+      selectedIds.value = data.selectedIds.map((id) => Number(id));
+    }
+  } catch (error) {
+    console.error('Failed to persist food payment selection', error);
+  } finally {
+    selectionSyncing.value = false;
+  }
+}
+
+async function toggleSelect(id) {
+  const numericId = Number(id);
+  const idx = selectedIds.value.indexOf(numericId);
+  const willSelect = idx === -1;
+  if (willSelect) {
+    selectedIds.value.push(numericId);
   } else {
     selectedIds.value.splice(idx, 1);
   }
+  await persistSelection([numericId], willSelect);
 }
 
-function toggleSelectAll(event) {
+async function toggleSelectAll(event) {
+  const ids = [...pageIds.value];
+  if (!ids.length) return;
+
   if (event.target.checked) {
-    const merged = new Set([...selectedIds.value, ...pageIds.value]);
+    const merged = new Set([...selectedIds.value, ...ids]);
     selectedIds.value = Array.from(merged);
+    await persistSelection(ids, true);
   } else {
-    selectedIds.value = selectedIds.value.filter((id) => !pageIds.value.includes(id));
+    selectedIds.value = selectedIds.value.filter((id) => !ids.includes(id));
+    await persistSelection(ids, false);
   }
 }
 
-function clearSelection() {
+async function clearSelection() {
+  const previous = [...selectedIds.value];
   selectedIds.value = [];
+  selectionSyncing.value = true;
+  try {
+    const { data } = await axios.post(route('food-payments.selections.clear'));
+    if (Array.isArray(data?.selectedIds)) {
+      selectedIds.value = data.selectedIds.map((id) => Number(id));
+    }
+  } catch (error) {
+    console.error('Failed to clear food payment selection', error);
+    selectedIds.value = previous;
+  } finally {
+    selectionSyncing.value = false;
+  }
 }
 
 function exportBulkPdf() {
@@ -369,6 +414,14 @@ watch(
     isDataLoaded.value = loaded || false;
   },
   { immediate: true }
+);
+
+watch(
+  () => props.selectedIds,
+  (ids) => {
+    if (selectionSyncing.value) return;
+    selectedIds.value = (ids || []).map((id) => Number(id));
+  }
 );
 
 function formatDate(date) {
