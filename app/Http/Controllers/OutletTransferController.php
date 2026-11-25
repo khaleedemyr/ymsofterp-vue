@@ -17,6 +17,9 @@ class OutletTransferController extends Controller
 {
     use WritesActivityLogTrait;
 
+    /** Item category yang boleh di Outlet Transfer: 7 Meat-Beef PCS, 14 Main Kitchen */
+    private const ALLOWED_CATEGORY_IDS = [7, 14];
+
     public function validateSerialForTransfer(Request $request)
     {
         $request->validate([
@@ -40,7 +43,7 @@ class OutletTransferController extends Controller
                 's.source_type', 's.source_qty', 's.generated_qty_unit',
                 's.is_out', 's.is_received', 's.is_transferred',
                 's.out_outlet_id', 's.out_warehouse_outlet_id',
-                'i.name as item_name', 'i.sku',
+                'i.name as item_name', 'i.sku', 'i.category_id',
                 'i.small_unit_id', 'i.medium_unit_id', 'i.large_unit_id',
                 'i.small_conversion_qty', 'i.medium_conversion_qty',
                 'u.name as unit_name',
@@ -50,6 +53,13 @@ class OutletTransferController extends Controller
 
         if (!$serial) {
             return response()->json(['valid' => false, 'message' => 'Nomor seri tidak ditemukan.']);
+        }
+
+        if (!in_array((int) ($serial->category_id ?? 0), self::ALLOWED_CATEGORY_IDS, true)) {
+            return response()->json([
+                'valid' => false,
+                'message' => 'Item serial ini tidak boleh di Outlet Transfer. Hanya kategori Meat - Beef PCS (7) atau Main Kitchen (14).',
+            ]);
         }
 
         if (!$serial->is_out) {
@@ -123,6 +133,15 @@ class OutletTransferController extends Controller
         $hasSerials = !empty($validated['serial_items']);
         if (!$hasItems && !$hasSerials) {
             return redirect()->back()->with('error', 'Minimal harus ada 1 item atau 1 serial.');
+        }
+
+        try {
+            $this->assertOutletTransferAllowedCategories(
+                array_column($validated['items'] ?? [], 'item_id'),
+                array_column($validated['serial_items'] ?? [], 'item_id')
+            );
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage())->withInput();
         }
 
         DB::beginTransaction();
@@ -1571,6 +1590,14 @@ class OutletTransferController extends Controller
             'items.*.note' => 'nullable|string',
         ]);
 
+        try {
+            $this->assertOutletTransferAllowedCategories(
+                array_column($validated['items'] ?? [], 'item_id')
+            );
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage())->withInput();
+        }
+
         DB::beginTransaction();
         try {
             $transfer = OutletTransfer::with(['items', 'warehouseOutletFrom', 'warehouseOutletTo'])->findOrFail($id);
@@ -2321,6 +2348,15 @@ class OutletTransferController extends Controller
             return response()->json(['success' => false, 'message' => 'Minimal harus ada 1 item atau 1 serial.'], 422);
         }
 
+        try {
+            $this->assertOutletTransferAllowedCategories(
+                array_column($validated['items'] ?? [], 'item_id'),
+                array_column($validated['serial_items'] ?? [], 'item_id')
+            );
+        } catch (\Exception $e) {
+            return response()->json(['success' => false, 'message' => $e->getMessage()], 422);
+        }
+
         DB::beginTransaction();
         try {
             $dateStr = date('Ymd', strtotime($validated['transfer_date']));
@@ -2648,5 +2684,44 @@ class OutletTransferController extends Controller
 
         // Fallback terakhir: unit kecil dari master item (bukan outlet_food_inventory_items)
         return $smallId;
+    }
+
+    /**
+     * Pastikan semua item/serial yang diinput masuk kategori yang diizinkan.
+     *
+     * @param  array<int, mixed>  $itemIds
+     * @param  array<int, mixed>  $serialItemIds
+     */
+    private function assertOutletTransferAllowedCategories(array $itemIds = [], array $serialItemIds = []): void
+    {
+        $ids = array_values(array_unique(array_filter(array_map(
+            'intval',
+            array_merge($itemIds, $serialItemIds)
+        ), fn ($id) => $id > 0)));
+
+        if ($ids === []) {
+            return;
+        }
+
+        $invalid = DB::table('items')
+            ->whereIn('id', $ids)
+            ->where(function ($q) {
+                $q->whereNull('category_id')
+                    ->orWhereNotIn('category_id', self::ALLOWED_CATEGORY_IDS);
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'category_id']);
+
+        if ($invalid->isEmpty()) {
+            return;
+        }
+
+        $names = $invalid->map(function ($row) {
+            return ($row->name ?? ('Item #'.$row->id)).' (category_id='.($row->category_id ?? 'null').')';
+        })->implode(', ');
+
+        throw new \Exception(
+            'Outlet Transfer hanya boleh item kategori Meat - Beef PCS (7) atau Main Kitchen (14). Item tidak valid: '.$names
+        );
     }
 } 
