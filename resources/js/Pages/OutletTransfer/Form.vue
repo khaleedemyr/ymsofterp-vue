@@ -415,7 +415,12 @@ async function fetchItemSuggestions(idx, q) {
   form.items[idx].loading = true;
   try {
     const res = await axios.get('/items/search-for-outlet-transfer', {
-      params: { q, warehouse_outlet_id: form.warehouse_outlet_from_id }
+      params: {
+        q,
+        warehouse_outlet_id: form.warehouse_outlet_from_id,
+        for: 'outlet_transfer',
+        restrict_categories: 1,
+      }
     });
     console.log('API response:', res.data);
     let items = Array.isArray(res.data) ? res.data : [];

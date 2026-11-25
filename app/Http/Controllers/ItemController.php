@@ -2148,16 +2148,17 @@ class ItemController extends Controller
                 ->value('region_id');
         }
 
-        // Outlet Transfer: hanya item kategori 7 (Meat - Beef PCS) & 14 (Main Kitchen)
-        $allowedCategoryIds = [7, 14];
+        // Filter kategori hanya jika diminta (Outlet Transfer). Endpoint ini dipakai bersama menu lain.
+        $restrictCategories = $request->boolean('restrict_categories')
+            || $request->input('for') === 'outlet_transfer';
+        $allowedCategoryIds = [7, 14]; // Meat - Beef PCS, Main Kitchen
 
-        $items = \DB::table('item_availabilities')
+        $itemsQuery = \DB::table('item_availabilities')
             ->join('items', 'item_availabilities.item_id', '=', 'items.id')
             ->leftJoin('units as u_small', 'items.small_unit_id', '=', 'u_small.id')
             ->leftJoin('units as u_medium', 'items.medium_unit_id', '=', 'u_medium.id')
             ->leftJoin('units as u_large', 'items.large_unit_id', '=', 'u_large.id')
             ->where('items.status', 'active')
-            ->whereIn('items.category_id', $allowedCategoryIds)
             ->where(function($query) use ($outlet_id, $region_id) {
                 $query->where('item_availabilities.availability_type', 'all')
                     ->orWhere(function($q) use ($region_id) {
@@ -2176,7 +2177,13 @@ class ItemController extends Controller
             ->where(function($query) use ($q) {
                 $query->where('items.name', 'like', "%$q%")
                       ->orWhere('items.sku', 'like', "%$q%");
-            })
+            });
+
+        if ($restrictCategories) {
+            $itemsQuery->whereIn('items.category_id', $allowedCategoryIds);
+        }
+
+        $items = $itemsQuery
             ->select(
                 'items.id',
                 'items.name',
@@ -2197,6 +2204,7 @@ class ItemController extends Controller
         //     'warehouse_outlet_id' => $warehouse_outlet_id,
         //     'outlet_id' => $outlet_id,
         //     'region_id' => $region_id,
+        //     'restrict_categories' => $restrictCategories,
         //     'result_count' => $items->count(),
         // ]);
 
