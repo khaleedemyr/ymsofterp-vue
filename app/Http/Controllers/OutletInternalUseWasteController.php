@@ -414,13 +414,16 @@ class OutletInternalUseWasteController extends Controller
                     $lineMode = $this->normalizeLineMode($item['line_mode'] ?? null, $request->type);
 
                     if ($lineMode === 'menu') {
+                        // Selaras Stock Cut: ikut potong jika stock_cut=0/null
                         $bomCount = DB::table('item_bom')
                             ->where('item_id', $item['item_id'])
-                            ->where('stock_cut', 1)
+                            ->where(function ($q) {
+                                $q->where('stock_cut', 0)->orWhereNull('stock_cut');
+                            })
                             ->count();
                         if ($bomCount === 0) {
                             $itemName = $itemMaster->name ?? 'Unknown';
-                            throw new \Exception("Menu \"{$itemName}\" tidak punya BOM stock_cut untuk item ke-".($itemIndex + 1));
+                            throw new \Exception("Menu \"{$itemName}\" tidak punya BOM yang ikut stock cut untuk item ke-".($itemIndex + 1));
                         }
                     } else {
                         $inventoryItem = DB::table('outlet_food_inventory_items')
@@ -959,13 +962,16 @@ class OutletInternalUseWasteController extends Controller
                 try {
                     $lineMode = $this->normalizeLineMode($item['line_mode'] ?? null, $request->type);
                     if ($lineMode === 'menu') {
+                        // Selaras Stock Cut: ikut potong jika stock_cut=0/null
                         $bomCount = DB::table('item_bom')
                             ->where('item_id', $item['item_id'])
-                            ->where('stock_cut', 1)
+                            ->where(function ($q) {
+                                $q->where('stock_cut', 0)->orWhereNull('stock_cut');
+                            })
                             ->count();
                         if ($bomCount === 0) {
                             $itemName = DB::table('items')->where('id', $item['item_id'])->value('name') ?? 'Unknown';
-                            throw new \Exception("Menu \"{$itemName}\" tidak punya BOM stock_cut");
+                            throw new \Exception("Menu \"{$itemName}\" tidak punya BOM yang ikut stock cut");
                         }
                     }
 
@@ -1596,7 +1602,7 @@ class OutletInternalUseWasteController extends Controller
     }
 
     /**
-     * Cari menu POS (categories.show_pos=1) yang available di outlet dan punya BOM stock_cut=1.
+     * Cari menu POS (categories.show_pos=1) yang available di outlet dan punya BOM ikut stock cut (0/null).
      */
     public function searchPosMenus(Request $request)
     {
@@ -1631,8 +1637,11 @@ class OutletInternalUseWasteController extends Controller
             return response()->json(['success' => true, 'items' => []]);
         }
 
+        // Selaras Stock Cut: baris BOM ikut potong jika stock_cut=0 / null
         $menuIdsWithBom = DB::table('item_bom')
-            ->where('stock_cut', 1)
+            ->where(function ($qBom) {
+                $qBom->where('stock_cut', 0)->orWhereNull('stock_cut');
+            })
             ->whereIn('item_id', $availableItemIds)
             ->pluck('item_id')
             ->unique()
@@ -3017,7 +3026,8 @@ class OutletInternalUseWasteController extends Controller
 
     /**
      * Expand detail lines → aggregated material cuts.
-     * material: potong item itu sendiri; menu: explode item_bom.stock_cut=1 × qty porsi.
+     * material: potong item itu sendiri; menu: explode item_bom seperti Stock Cut
+     * (stock_cut=0/null ikut potong; stock_cut=1 diabaikan) × qty porsi + modifier BOM.
      *
      * @return array<int, array{item_id:int,qty_small:float,qty_medium:float,qty_large:float,sources:array<int,string>}>
      */
@@ -3031,19 +3041,26 @@ class OutletInternalUseWasteController extends Controller
 
             if ($lineMode === 'menu') {
                 $menuName = DB::table('items')->where('id', $detail->item_id)->value('name') ?? ('Menu #'.$detail->item_id);
+                // Selaras StockCutController: stock_cut=0/null → ikut; stock_cut=1 → skip
                 $bomRows = DB::table('item_bom')
                     ->where('item_id', $detail->item_id)
-                    ->where('stock_cut', 1)
+                    ->where(function ($q) {
+                        $q->where('stock_cut', 0)->orWhereNull('stock_cut');
+                    })
                     ->get();
 
                 if ($bomRows->isEmpty()) {
-                    throw new \Exception("Menu \"{$menuName}\" tidak punya BOM stock_cut. Tidak dapat memotong stok.");
+                    throw new \Exception("Menu \"{$menuName}\" tidak punya BOM yang ikut stock cut. Tidak dapat memotong stok.");
                 }
 
                 foreach ($bomRows as $bom) {
+                    $materialItemId = (int) $bom->material_item_id;
+                    if ($this->isAssetMaterialItem($materialItemId)) {
+                        continue;
+                    }
                     $this->accumulateMaterialCut(
                         $cuts,
-                        (int) $bom->material_item_id,
+                        $materialItemId,
                         $bom->unit_id,
                         (float) $bom->qty * $menuQty,
                         $menuName.' × '.$menuQty
@@ -3052,9 +3069,13 @@ class OutletInternalUseWasteController extends Controller
 
                 $modifierSelections = $this->parseModifierSelections($detail->modifier_option_ids ?? null);
                 foreach ($this->expandModifierOptionsToBomCuts($modifierSelections, $menuName) as $modCut) {
+                    $materialItemId = (int) $modCut['item_id'];
+                    if ($this->isAssetMaterialItem($materialItemId)) {
+                        continue;
+                    }
                     $this->accumulateMaterialCut(
                         $cuts,
-                        (int) $modCut['item_id'],
+                        $materialItemId,
                         $modCut['unit_id'],
                         (float) $modCut['qty'],
                         $modCut['source']
@@ -3216,7 +3237,8 @@ class OutletInternalUseWasteController extends Controller
     }
 
     /**
-     * Preview BOM stock_cut untuk baris menu (Show page), termasuk modifier terpilih.
+     * Preview BOM ikut stock cut untuk baris menu (Show page), termasuk modifier terpilih.
+     * Selaras Stock Cut: stock_cut=0/null ikut; stock_cut=1 diabaikan.
      *
      * @param  array<int, array{id:int,qty:float}>  $modifierSelections
      */
@@ -3225,8 +3247,14 @@ class OutletInternalUseWasteController extends Controller
         $rows = DB::table('item_bom as ib')
             ->join('items as i', 'i.id', '=', 'ib.material_item_id')
             ->leftJoin('units as u', 'u.id', '=', 'ib.unit_id')
+            ->leftJoin('categories as c', 'c.id', '=', 'i.category_id')
             ->where('ib.item_id', $menuItemId)
-            ->where('ib.stock_cut', 1)
+            ->where(function ($q) {
+                $q->where('ib.stock_cut', 0)->orWhereNull('ib.stock_cut');
+            })
+            ->where(function ($q) {
+                $q->whereNull('c.is_asset')->orWhere('c.is_asset', '!=', '1');
+            })
             ->select('i.id as material_item_id', 'i.name as material_name', 'ib.qty', 'ib.unit_id', 'u.name as unit_name')
             ->orderBy('i.name')
             ->get();
@@ -3355,7 +3383,8 @@ class OutletInternalUseWasteController extends Controller
     }
 
     /**
-     * Modifier BOM semantics (sama StockCut): stock_cut true/1 = skip; false/null = ikut potong.
+     * BOM semantics (sama StockCut / Recipe Checker):
+     * stock_cut=0 / null → ikut potong; stock_cut=1 / true → diabaikan.
      */
     private function isModifierBomLineCountedForStock($stockCut): bool
     {
@@ -3367,6 +3396,31 @@ class OutletInternalUseWasteController extends Controller
         }
 
         return false;
+    }
+
+    /**
+     * Skip material kategori asset (selaras StockCutController::isStockCutAssetMaterial).
+     */
+    private function isAssetMaterialItem(int $itemId): bool
+    {
+        if ($itemId <= 0) {
+            return false;
+        }
+
+        static $lookup = null;
+        if ($lookup === null) {
+            $lookup = array_fill_keys(
+                DB::table('items')
+                    ->join('categories', 'items.category_id', '=', 'categories.id')
+                    ->where('categories.is_asset', '1')
+                    ->pluck('items.id')
+                    ->map(fn ($id) => (int) $id)
+                    ->all(),
+                true
+            );
+        }
+
+        return isset($lookup[$itemId]);
     }
 
     /**
