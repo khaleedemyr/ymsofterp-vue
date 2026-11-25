@@ -1240,6 +1240,11 @@ async function validateStockBeforeSubmit() {
     if (!isItemValidForSave(item)) {
       continue
     }
+
+    // Mode menu: potong BOM (+ modifier) di backend — jangan validasi stok item menu sendiri
+    if (item.line_mode === 'menu') {
+      continue
+    }
     
     if (!item.stock) {
       try {
