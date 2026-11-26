@@ -109,9 +109,15 @@
 
         <div class="mt-4">
           <div class="text-xs text-gray-500 mb-1">Foto Bill</div>
-          <a v-if="record.bill_photo_url" :href="record.bill_photo_url" target="_blank" rel="noopener">
-            <img :src="record.bill_photo_url" alt="Bill" class="w-40 h-40 object-cover rounded-lg border border-gray-200" />
-          </a>
+          <button
+            v-if="record.bill_photo_url"
+            type="button"
+            class="block rounded-lg overflow-hidden border border-gray-200 hover:ring-2 hover:ring-emerald-400"
+            title="Lihat foto bill"
+            @click="openBillPreview(record.bill_photo_url)"
+          >
+            <img :src="record.bill_photo_url" alt="Bill" class="w-40 h-40 object-cover" />
+          </button>
           <div v-else class="text-sm text-gray-400">-</div>
         </div>
 
@@ -125,12 +131,57 @@
         </div>
       </div>
     </div>
+
+    <div
+      v-if="billPreviewUrl"
+      class="fixed inset-0 z-[80] bg-black/80 flex flex-col"
+    >
+      <div class="flex items-center justify-between gap-3 px-4 py-3 text-white shrink-0">
+        <div class="text-sm font-medium">Foto Bill</div>
+        <div class="flex items-center gap-2">
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Zoom out" @click="zoomBill(-0.25)">
+            <i class="fa-solid fa-minus"></i>
+          </button>
+          <span class="text-xs w-12 text-center tabular-nums">{{ Math.round(billZoom * 100) }}%</span>
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Zoom in" @click="zoomBill(0.25)">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Reset" @click="resetBillZoom">
+            <i class="fa-solid fa-compress"></i>
+          </button>
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Tutup" @click="closeBillPreview">
+            <i class="fa-solid fa-times"></i>
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex-1 overflow-hidden cursor-grab active:cursor-grabbing select-none"
+        @wheel.prevent="onBillWheel"
+        @pointerdown="onBillPointerDown"
+        @pointermove="onBillPointerMove"
+        @pointerup="onBillPointerUp"
+        @pointercancel="onBillPointerUp"
+        @click.self="closeBillPreview"
+      >
+        <div class="w-full h-full flex items-center justify-center p-4">
+          <img
+            :src="billPreviewUrl"
+            alt="Bill preview"
+            class="max-w-full max-h-full object-contain transition-transform duration-75 will-change-transform shadow-2xl rounded"
+            :style="{ transform: `translate(${billOffset.x}px, ${billOffset.y}px) scale(${billZoom})` }"
+            draggable="false"
+            @click.stop
+          />
+        </div>
+      </div>
+    </div>
   </AppLayout>
 </template>
 
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, router } from '@inertiajs/vue3';
+import { reactive, ref } from 'vue';
 import Swal from 'sweetalert2';
 
 const props = defineProps({
@@ -172,6 +223,46 @@ const statusClass = (s) => {
   };
   return map[s] || 'bg-gray-100 text-gray-700';
 };
+
+const billPreviewUrl = ref(null);
+const billZoom = ref(1);
+const billOffset = reactive({ x: 0, y: 0 });
+const billDragging = ref(false);
+const billDragStart = reactive({ x: 0, y: 0, ox: 0, oy: 0 });
+
+const openBillPreview = (url) => {
+  if (!url) return;
+  billPreviewUrl.value = url;
+  resetBillZoom();
+};
+const closeBillPreview = () => {
+  billPreviewUrl.value = null;
+  resetBillZoom();
+};
+const resetBillZoom = () => {
+  billZoom.value = 1;
+  billOffset.x = 0;
+  billOffset.y = 0;
+};
+const zoomBill = (delta) => {
+  billZoom.value = Math.min(5, Math.max(0.5, Number((billZoom.value + delta).toFixed(2))));
+};
+const onBillWheel = (e) => zoomBill(e.deltaY < 0 ? 0.15 : -0.15);
+const onBillPointerDown = (e) => {
+  if (e.button !== 0) return;
+  billDragging.value = true;
+  billDragStart.x = e.clientX;
+  billDragStart.y = e.clientY;
+  billDragStart.ox = billOffset.x;
+  billDragStart.oy = billOffset.y;
+  e.currentTarget?.setPointerCapture?.(e.pointerId);
+};
+const onBillPointerMove = (e) => {
+  if (!billDragging.value) return;
+  billOffset.x = billDragStart.ox + (e.clientX - billDragStart.x);
+  billOffset.y = billDragStart.oy + (e.clientY - billDragStart.y);
+};
+const onBillPointerUp = () => { billDragging.value = false; };
 
 const confirmDelete = async () => {
   const result = await Swal.fire({

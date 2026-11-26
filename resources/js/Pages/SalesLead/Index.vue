@@ -168,18 +168,23 @@
               <td class="px-3 py-3">
                 <div class="flex flex-col gap-1.5">
                   <div v-if="actualForms[row.id].preview_url || row.bill_photo_url" class="relative w-16 h-16">
-                    <a :href="actualForms[row.id].preview_url || row.bill_photo_url" target="_blank" rel="noopener">
-                      <img
-                        :src="actualForms[row.id].preview_url || row.bill_photo_url"
-                        class="w-16 h-16 object-cover rounded-md border border-gray-200"
-                        alt="Bill"
-                      />
-                    </a>
                     <button
                       type="button"
-                      class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center"
+                      class="block w-16 h-16 rounded-md overflow-hidden border border-gray-200 hover:ring-2 hover:ring-emerald-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      title="Lihat foto bill"
+                      @click="openBillPreview(actualForms[row.id].preview_url || row.bill_photo_url)"
+                    >
+                      <img
+                        :src="actualForms[row.id].preview_url || row.bill_photo_url"
+                        class="w-16 h-16 object-cover"
+                        alt="Bill"
+                      />
+                    </button>
+                    <button
+                      type="button"
+                      class="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center z-10"
                       title="Hapus foto"
-                      @click="clearBillPhoto(row.id)"
+                      @click.stop="clearBillPhoto(row.id)"
                     >
                       <i class="fa-solid fa-times"></i>
                     </button>
@@ -273,6 +278,55 @@
         />
       </div>
     </div>
+
+    <!-- Bill Photo Preview Modal -->
+    <div
+      v-if="billPreviewUrl"
+      class="fixed inset-0 z-[80] bg-black/80 flex flex-col"
+      @keydown.esc.prevent="closeBillPreview"
+    >
+      <div class="flex items-center justify-between gap-3 px-4 py-3 text-white shrink-0">
+        <div class="text-sm font-medium">Foto Bill</div>
+        <div class="flex items-center gap-2">
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Zoom out" @click="zoomBill(-0.25)">
+            <i class="fa-solid fa-minus"></i>
+          </button>
+          <span class="text-xs w-12 text-center tabular-nums">{{ Math.round(billZoom * 100) }}%</span>
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Zoom in" @click="zoomBill(0.25)">
+            <i class="fa-solid fa-plus"></i>
+          </button>
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Reset" @click="resetBillZoom">
+            <i class="fa-solid fa-compress"></i>
+          </button>
+          <button type="button" class="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25" title="Tutup" @click="closeBillPreview">
+            <i class="fa-solid fa-times"></i>
+          </button>
+        </div>
+      </div>
+      <div
+        class="flex-1 overflow-hidden cursor-grab active:cursor-grabbing select-none"
+        @wheel.prevent="onBillWheel"
+        @pointerdown="onBillPointerDown"
+        @pointermove="onBillPointerMove"
+        @pointerup="onBillPointerUp"
+        @pointercancel="onBillPointerUp"
+        @click.self="closeBillPreview"
+      >
+        <div class="w-full h-full flex items-center justify-center p-4">
+          <img
+            :src="billPreviewUrl"
+            alt="Bill preview"
+            class="max-w-full max-h-full object-contain transition-transform duration-75 will-change-transform shadow-2xl rounded"
+            :style="{ transform: `translate(${billOffset.x}px, ${billOffset.y}px) scale(${billZoom})` }"
+            draggable="false"
+            @click.stop
+          />
+        </div>
+      </div>
+      <div class="px-4 py-2 text-center text-xs text-white/70 shrink-0">
+        Scroll untuk zoom · drag untuk geser · klik luar gambar untuk tutup
+      </div>
+    </div>
   </AppLayout>
 </template>
 
@@ -313,6 +367,57 @@ const filterForm = reactive({
 const actualForms = reactive({});
 const fileRefs = reactive({});
 const savingId = ref(null);
+
+const billPreviewUrl = ref(null);
+const billZoom = ref(1);
+const billOffset = reactive({ x: 0, y: 0 });
+const billDragging = ref(false);
+const billDragStart = reactive({ x: 0, y: 0, ox: 0, oy: 0 });
+
+const openBillPreview = (url) => {
+  if (!url) return;
+  billPreviewUrl.value = url;
+  resetBillZoom();
+};
+
+const closeBillPreview = () => {
+  billPreviewUrl.value = null;
+  resetBillZoom();
+};
+
+const resetBillZoom = () => {
+  billZoom.value = 1;
+  billOffset.x = 0;
+  billOffset.y = 0;
+};
+
+const zoomBill = (delta) => {
+  billZoom.value = Math.min(5, Math.max(0.5, Number((billZoom.value + delta).toFixed(2))));
+};
+
+const onBillWheel = (e) => {
+  zoomBill(e.deltaY < 0 ? 0.15 : -0.15);
+};
+
+const onBillPointerDown = (e) => {
+  if (e.button !== 0) return;
+  billDragging.value = true;
+  billDragStart.x = e.clientX;
+  billDragStart.y = e.clientY;
+  billDragStart.ox = billOffset.x;
+  billDragStart.oy = billOffset.y;
+  e.currentTarget?.setPointerCapture?.(e.pointerId);
+};
+
+const onBillPointerMove = (e) => {
+  if (!billDragging.value) return;
+  billOffset.x = billDragStart.ox + (e.clientX - billDragStart.x);
+  billOffset.y = billDragStart.oy + (e.clientY - billDragStart.y);
+};
+
+const onBillPointerUp = () => {
+  billDragging.value = false;
+};
 
 const initActualForms = () => {
   (props.records.data || []).forEach((row) => {
