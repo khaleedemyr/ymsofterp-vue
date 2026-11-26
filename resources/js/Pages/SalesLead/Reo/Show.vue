@@ -32,6 +32,15 @@
           >
             <i class="fa-solid fa-pen"></i> Edit
           </Link>
+          <button
+            v-if="canDelete"
+            type="button"
+            class="inline-flex items-center gap-2 px-3.5 py-2 rounded-lg text-sm bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            :disabled="deleting"
+            @click="deleteReo"
+          >
+            <i class="fa-solid fa-trash"></i> Hapus
+          </button>
         </div>
       </div>
 
@@ -178,6 +187,7 @@ const props = defineProps({
   reo: { type: Object, required: true },
   lead: { type: Object, default: null },
   canEdit: { type: Boolean, default: false },
+  canDelete: { type: Boolean, default: false },
   canApprove: { type: Boolean, default: false },
   statuses: { type: Object, default: () => ({}) },
 });
@@ -187,6 +197,7 @@ const approverOptions = ref([]);
 const approverSearch = ref('');
 const submitting = ref(false);
 const acting = ref(false);
+const deleting = ref(false);
 let searchTimer = null;
 
 const formatMoney = (v) => {
@@ -273,6 +284,23 @@ const rejectReo = async () => {
   acting.value = true;
   router.post(route('sales-leads.reo.reject', props.reo.id), { notes }, {
     onFinish: () => { acting.value = false; },
+  });
+};
+
+const deleteReo = async () => {
+  const result = await Swal.fire({
+    title: 'Hapus REO?',
+    html: `REO <b>${props.reo.number}</b> akan dihapus permanen beserta approval flow-nya.`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Ya, Hapus',
+    cancelButtonText: 'Batal',
+    confirmButtonColor: '#dc2626',
+  });
+  if (!result.isConfirmed) return;
+  deleting.value = true;
+  router.delete(route('sales-leads.reo.destroy', props.reo.id), {
+    onFinish: () => { deleting.value = false; },
   });
 };
 </script>

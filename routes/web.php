@@ -1164,6 +1164,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('/sales-lead-reos/{id}', [\App\Http\Controllers\SalesLeadReoController::class, 'show'])->name('sales-leads.reo.show');
     Route::get('/sales-lead-reos/{id}/edit', [\App\Http\Controllers\SalesLeadReoController::class, 'edit'])->name('sales-leads.reo.edit');
     Route::put('/sales-lead-reos/{id}', [\App\Http\Controllers\SalesLeadReoController::class, 'update'])->name('sales-leads.reo.update');
+    Route::delete('/sales-lead-reos/{id}', [\App\Http\Controllers\SalesLeadReoController::class, 'destroy'])->name('sales-leads.reo.destroy');
     Route::post('/sales-lead-reos/{id}/submit', [\App\Http\Controllers\SalesLeadReoController::class, 'submit'])->name('sales-leads.reo.submit');
     Route::post('/sales-lead-reos/{id}/approve', [\App\Http\Controllers\SalesLeadReoController::class, 'approve'])->name('sales-leads.reo.approve');
     Route::post('/sales-lead-reos/{id}/reject', [\App\Http\Controllers\SalesLeadReoController::class, 'reject'])->name('sales-leads.reo.reject');

@@ -41,6 +41,7 @@ class SalesLeadReoController extends Controller
             'reo' => $reo,
             'lead' => $reo->salesLead,
             'canEdit' => $this->canEdit($reo, $user),
+            'canDelete' => $this->canDelete($reo, $user),
             'canApprove' => $this->canApprove($reo, $user),
             'canExport' => true,
             'statuses' => SalesLeadReo::STATUSES,
@@ -129,6 +130,27 @@ class SalesLeadReoController extends Controller
 
         return redirect()->route('sales-leads.reo.show', $reo->id)
             ->with('success', 'REO berhasil diupdate.');
+    }
+
+    public function destroy($id)
+    {
+        $reo = $this->findVisibleReo($id);
+        $user = auth()->user();
+        if (! $this->canDelete($reo, $user)) {
+            abort(403, 'REO tidak dapat dihapus.');
+        }
+
+        $approverIds = $reo->approvals()->pluck('approver_id')->all();
+
+        DB::transaction(function () use ($reo) {
+            $reo->approvals()->delete();
+            $reo->delete();
+        });
+
+        PendingApprovalCache::forgetForUsers(array_merge($approverIds, [$user->id]));
+
+        return redirect()->route('sales-leads.index')
+            ->with('success', 'REO berhasil dihapus.');
     }
 
     public function submit(Request $request, $id)
@@ -653,6 +675,27 @@ class SalesLeadReoController extends Controller
             return true;
         }
 
+        return $this->ownsReo($reo, $user);
+    }
+
+    private function canDelete(SalesLeadReo $reo, $user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+        if ($this->isSuperadmin($user)) {
+            return true;
+        }
+        // Draft/rejected/submitted boleh dihapus pemilik; approved tidak (kecuali superadmin).
+        if (! in_array($reo->status, ['DRAFT', 'REJECTED', 'SUBMITTED'], true)) {
+            return false;
+        }
+
+        return $this->ownsReo($reo, $user);
+    }
+
+    private function ownsReo(SalesLeadReo $reo, $user): bool
+    {
         return (int) $reo->created_by === (int) $user->id
             || (int) $reo->sales_person_user_id === (int) $user->id
             || (int) ($reo->salesLead?->created_by) === (int) $user->id

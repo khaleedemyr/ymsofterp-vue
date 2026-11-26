@@ -206,16 +206,16 @@
           </div>
         </section>
 
-        <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-          <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
+        <section class="bg-white rounded-xl border border-gray-200 shadow-sm">
+          <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80 rounded-t-xl">
             <h2 class="text-sm font-semibold text-gray-800">Approval Flow</h2>
           </div>
-          <div class="p-5 space-y-4">
+          <div class="p-5 space-y-4 overflow-visible">
             <p class="text-sm text-gray-600">
               Tambahkan approver dari level terendah ke tertinggi (seperti Purchase Requisition Ops).
               Saat approve, sistem memakai e-signature approver untuk TTD di PDF.
             </p>
-            <div class="relative">
+            <div class="relative z-30">
               <input
                 v-model="approverSearch"
                 type="text"
@@ -225,7 +225,7 @@
               />
               <div
                 v-if="showApproverDropdown && approverResults.length"
-                class="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto"
+                class="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto"
               >
                 <button
                   v-for="user in approverResults"
