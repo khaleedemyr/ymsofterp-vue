@@ -102,6 +102,7 @@
               <th class="px-3 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Nomor</th>
               <th class="px-3 py-3 text-left font-semibold text-gray-700">Company</th>
               <th class="px-3 py-3 text-left font-semibold text-gray-700">Event / Date</th>
+              <th class="px-3 py-3 text-left font-semibold text-gray-700 whitespace-nowrap">Room</th>
               <th class="px-3 py-3 text-left font-semibold text-gray-700">Status</th>
               <th class="px-3 py-3 text-left font-semibold text-gray-700">Sales</th>
               <th class="px-3 py-3 text-right font-semibold text-gray-700 whitespace-nowrap">Plan Rev</th>
@@ -114,7 +115,7 @@
           </thead>
           <tbody>
             <tr v-if="!records.data?.length">
-              <td colspan="11" class="px-4 py-8 text-center text-gray-500">Belum ada Sales Lead.</td>
+              <td colspan="12" class="px-4 py-8 text-center text-gray-500">Belum ada Sales Lead.</td>
             </tr>
             <tr v-for="row in records.data" :key="row.id" class="border-b hover:bg-emerald-50/30 align-top">
               <td class="px-3 py-3 font-medium whitespace-nowrap">{{ row.number }}</td>
@@ -126,6 +127,16 @@
               <td class="px-3 py-3">
                 <div>{{ row.type_of_event || '-' }}</div>
                 <div class="text-xs text-gray-500">{{ formatDate(row.event_date) }}</div>
+              </td>
+              <td class="px-3 py-3 whitespace-nowrap">
+                <span
+                  v-if="row.room_requirement"
+                  class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold"
+                  :class="roomRequirementClass(row.room_requirement)"
+                >
+                  {{ row.room_requirement }}
+                </span>
+                <span v-else class="text-gray-400">-</span>
               </td>
               <td class="px-3 py-3">
                 <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-semibold" :class="statusClass(row.status)">
@@ -219,13 +230,22 @@
               <td class="px-3 py-3 text-right whitespace-nowrap">
                 <button
                   type="button"
-                  class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 mr-2"
+                  class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-emerald-600 text-white text-xs font-medium hover:bg-emerald-700 disabled:opacity-50 mr-1.5"
                   :disabled="savingId === row.id"
                   @click="saveActual(row)"
                 >
                   <i class="fa-solid fa-spinner fa-spin" v-if="savingId === row.id"></i>
                   <i class="fa-solid fa-save" v-else></i>
                   Simpan
+                </button>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-amber-500 text-white text-xs font-medium hover:bg-amber-600 mr-1.5"
+                  title="REO"
+                  @click="openReo(row)"
+                >
+                  <i class="fa-solid fa-file-signature"></i>
+                  REO
                 </button>
                 <Link :href="route('sales-leads.show', row.id)" class="text-emerald-600 hover:text-emerald-800 mr-2" title="Detail">
                   <i class="fa-solid fa-eye"></i>
@@ -416,6 +436,26 @@ const statusClass = (s) => {
     cancelled: 'bg-red-100 text-red-800',
   };
   return map[s] || 'bg-gray-100 text-gray-700';
+};
+
+const roomRequirementClass = (value) => {
+  const map = {
+    Smoking: 'bg-rose-100 text-rose-800',
+    'Non Smoking': 'bg-sky-100 text-sky-800',
+    VIP: 'bg-violet-100 text-violet-800',
+  };
+  return map[value] || 'bg-gray-100 text-gray-700';
+};
+
+/** Placeholder — isi form/flow REO menyusul sesuai penjelasan berikutnya */
+const openReo = (row) => {
+  Swal.fire({
+    icon: 'info',
+    title: 'REO',
+    text: `Tombol REO untuk ${row.number} sudah tersedia. Detail isi form/flow menyusul.`,
+    confirmButtonText: 'OK',
+    confirmButtonColor: '#f59e0b',
+  });
 };
 
 const confirmDelete = async (row) => {
