@@ -78,6 +78,7 @@ class PendingApprovalController extends Controller
                 'wfh_requests' => [],
                 'marcomm_trackers' => [],
                 'content_plans' => [],
+                'sales_lead_reos' => [],
             ];
 
             // Panggil method yang sudah ada dari controller lain
@@ -573,6 +574,21 @@ class PendingApprovalController extends Controller
                 }
             } catch (\Exception $e) {
                 Log::error('Error loading Content Plan approvals: ' . $e->getMessage());
+            }
+
+            // 31. Sales Lead REO
+            try {
+                $reoController = app(\App\Http\Controllers\SalesLeadReoController::class);
+                $reoResponse = $reoController->getPendingApprovals();
+                if ($reoResponse->getStatusCode() === 200) {
+                    $reoData = json_decode($reoResponse->getContent(), true);
+                    $data['sales_lead_reos'] = $reoData['reos'] ?? [];
+                    if ($limit > 0 && count($data['sales_lead_reos']) > $limit) {
+                        $data['sales_lead_reos'] = array_slice($data['sales_lead_reos'], 0, $limit);
+                    }
+                }
+            } catch (\Exception $e) {
+                Log::error('Error loading Sales Lead REO approvals: ' . $e->getMessage());
             }
 
                 return $data;

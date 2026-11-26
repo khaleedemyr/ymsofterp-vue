@@ -43,6 +43,7 @@ class SalesLeadReo extends Model
         'time_of_event',
         'menu_items',
         'kitchen_maintenance',
+        'maintenance',
         'marcom',
         'billing_instruction',
         'prepared_by_name',

@@ -17,7 +17,7 @@
         </Link>
       </div>
 
-      <form class="space-y-5" @submit.prevent="submit">
+      <form class="space-y-5" @submit.prevent="saveDraft">
         <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
             <h2 class="text-sm font-semibold text-gray-800">Header</h2>
@@ -81,25 +81,27 @@
             <table class="min-w-full text-xs">
               <thead>
                 <tr class="bg-gray-50 text-left">
-                  <th class="px-2 py-2">Date Arrangement</th>
+                  <th class="px-2 py-2 w-36">Date</th>
+                  <th class="px-2 py-2">Arrangement</th>
                   <th class="px-2 py-2 w-16">Qty</th>
                   <th class="px-2 py-2 w-16">Day(s)</th>
                   <th class="px-2 py-2 w-28">Rate ++</th>
                   <th class="px-2 py-2 w-28">Rate Nett</th>
-                  <th class="px-2 py-2 w-28">Breakdown ++</th>
-                  <th class="px-2 py-2 w-28">Breakdown Nett</th>
+                  <th class="px-2 py-2 w-28">Total Amount ++</th>
+                  <th class="px-2 py-2 w-28">Total Amount Nett</th>
                   <th class="px-2 py-2 w-10"></th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="(row, idx) in form.revenue_items" :key="idx" class="border-b">
-                  <td class="px-2 py-1.5"><input v-model="row.date_arrangement" type="text" class="w-full rounded border-gray-300 text-xs" /></td>
+                  <td class="px-2 py-1.5"><input v-model="row.date" type="date" class="w-full rounded border-gray-300 text-xs" /></td>
+                  <td class="px-2 py-1.5"><input v-model="row.arrangement" type="text" class="w-full rounded border-gray-300 text-xs" placeholder="Arrangement" /></td>
                   <td class="px-2 py-1.5"><input v-model.number="row.qty" type="number" min="0" class="w-full rounded border-gray-300 text-xs" @input="recalcRow(idx)" /></td>
                   <td class="px-2 py-1.5"><input v-model.number="row.days" type="number" min="0" class="w-full rounded border-gray-300 text-xs" @input="recalcRow(idx)" /></td>
                   <td class="px-2 py-1.5"><input v-model.number="row.rate" type="number" min="0" class="w-full rounded border-gray-300 text-xs" @input="recalcRow(idx)" /></td>
                   <td class="px-2 py-1.5"><input v-model.number="row.rate_nett" type="number" min="0" class="w-full rounded border-gray-300 text-xs" @input="recalcRow(idx)" /></td>
-                  <td class="px-2 py-1.5"><input v-model.number="row.breakdown" type="number" min="0" class="w-full rounded border-gray-300 text-xs" /></td>
-                  <td class="px-2 py-1.5"><input v-model.number="row.breakdown_nett" type="number" min="0" class="w-full rounded border-gray-300 text-xs" /></td>
+                  <td class="px-2 py-1.5"><input v-model.number="row.total_amount" type="number" min="0" class="w-full rounded border-gray-300 text-xs" /></td>
+                  <td class="px-2 py-1.5"><input v-model.number="row.total_amount_nett" type="number" min="0" class="w-full rounded border-gray-300 text-xs" /></td>
                   <td class="px-2 py-1.5 text-center">
                     <button type="button" class="text-red-500 hover:text-red-700" @click="removeRevenueRow(idx)"><i class="fa-solid fa-trash"></i></button>
                   </td>
@@ -153,7 +155,9 @@
                   <tr class="bg-gray-50 text-left">
                     <th class="px-2 py-2">Time</th>
                     <th class="px-2 py-2">Meals</th>
-                    <th class="px-2 py-2">Venue Set Up</th>
+                    <th class="px-2 py-2">Venue</th>
+                    <th class="px-2 py-2 w-20">Pax</th>
+                    <th class="px-2 py-2">Set Up</th>
                     <th class="px-2 py-2 w-10"></th>
                   </tr>
                 </thead>
@@ -161,7 +165,9 @@
                   <tr v-for="(row, idx) in form.time_of_event" :key="idx" class="border-b">
                     <td class="px-2 py-1.5"><input v-model="row.time" type="text" class="w-full rounded border-gray-300 text-xs" placeholder="15:30" /></td>
                     <td class="px-2 py-1.5"><input v-model="row.meals" type="text" class="w-full rounded border-gray-300 text-xs" /></td>
-                    <td class="px-2 py-1.5"><input v-model="row.venue_setup" type="text" class="w-full rounded border-gray-300 text-xs" /></td>
+                    <td class="px-2 py-1.5"><input v-model="row.venue" type="text" class="w-full rounded border-gray-300 text-xs" placeholder="Venue" /></td>
+                    <td class="px-2 py-1.5"><input v-model.number="row.pax" type="number" min="0" class="w-full rounded border-gray-300 text-xs" placeholder="0" /></td>
+                    <td class="px-2 py-1.5"><input v-model="row.set_up" type="text" class="w-full rounded border-gray-300 text-xs" placeholder="Set up" /></td>
                     <td class="px-2 py-1.5 text-center">
                       <button type="button" class="text-red-500" @click="form.time_of_event.splice(idx, 1)"><i class="fa-solid fa-trash"></i></button>
                     </td>
@@ -171,54 +177,104 @@
             </div>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label class="block text-sm font-medium text-gray-700 mb-1">Menu</label>
-                <textarea v-model="form.menu_items" rows="6" class="w-full rounded-lg border-gray-300 text-sm" placeholder="Satu menu per baris..."></textarea>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Kitchen</label>
+                <textarea
+                  v-model="form.kitchen_maintenance"
+                  rows="5"
+                  class="w-full rounded-lg border-gray-300 text-sm"
+                  placeholder="All Main course are served with&#10;Potato : ...&#10;Vegetables : ...&#10;Sauce : ..."
+                ></textarea>
               </div>
-              <div class="space-y-3">
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Kitchen Maintenance</label>
-                  <textarea v-model="form.kitchen_maintenance" rows="3" class="w-full rounded-lg border-gray-300 text-sm"></textarea>
-                </div>
-                <div>
-                  <label class="block text-sm font-medium text-gray-700 mb-1">Marcom</label>
-                  <textarea v-model="form.marcom" rows="3" class="w-full rounded-lg border-gray-300 text-sm"></textarea>
-                </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Maintenance</label>
+                <textarea
+                  v-model="form.maintenance"
+                  rows="5"
+                  class="w-full rounded-lg border-gray-300 text-sm"
+                  placeholder="Kindly to support all the preparation for Kitchen Equipment"
+                ></textarea>
               </div>
-            </div>
-            <div>
-              <label class="block text-sm font-medium text-gray-700 mb-1">Billing Instruction / Accounting</label>
-              <textarea v-model="form.billing_instruction" rows="4" class="w-full rounded-lg border-gray-300 text-sm"></textarea>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Billing Instruction / Accounting</label>
+                <textarea v-model="form.billing_instruction" rows="5" class="w-full rounded-lg border-gray-300 text-sm"></textarea>
+              </div>
+              <div>
+                <label class="block text-sm font-medium text-gray-700 mb-1">Marcom</label>
+                <textarea v-model="form.marcom" rows="5" class="w-full rounded-lg border-gray-300 text-sm"></textarea>
+              </div>
             </div>
           </div>
         </section>
 
         <section class="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
           <div class="px-5 py-3 border-b border-gray-100 bg-gray-50/80">
-            <h2 class="text-sm font-semibold text-gray-800">Signatures (nama & jabatan)</h2>
+            <h2 class="text-sm font-semibold text-gray-800">Approval Flow</h2>
           </div>
-          <div class="p-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div>
-              <div class="text-xs font-semibold text-gray-500 mb-2">Prepared by</div>
-              <input v-model="form.prepared_by_name" type="text" class="w-full rounded-lg border-gray-300 text-sm mb-2" placeholder="Nama" />
-              <input v-model="form.prepared_by_title" type="text" class="w-full rounded-lg border-gray-300 text-sm" placeholder="Jabatan" />
+          <div class="p-5 space-y-4">
+            <p class="text-sm text-gray-600">
+              Tambahkan approver dari level terendah ke tertinggi (seperti Purchase Requisition Ops).
+              Saat approve, sistem memakai e-signature approver untuk TTD di PDF.
+            </p>
+            <div class="relative">
+              <input
+                v-model="approverSearch"
+                type="text"
+                placeholder="Cari user by nama, email, atau jabatan..."
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                @focus="approverSearch.length >= 2 && loadApprovers(approverSearch)"
+              />
+              <div
+                v-if="showApproverDropdown && approverResults.length"
+                class="absolute z-20 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto"
+              >
+                <button
+                  v-for="user in approverResults"
+                  :key="user.id"
+                  type="button"
+                  class="w-full text-left px-3 py-2 hover:bg-gray-100 border-b border-gray-200 last:border-b-0"
+                  @click="addApprover(user)"
+                >
+                  <div class="font-medium text-sm">{{ user.nama_lengkap || user.name }}</div>
+                  <div class="text-xs text-gray-600">{{ user.email }}</div>
+                  <div v-if="user.jabatan" class="text-xs text-emerald-700 font-medium">{{ user.jabatan }}</div>
+                </button>
+              </div>
             </div>
-            <div>
-              <div class="text-xs font-semibold text-gray-500 mb-2">Acknowledge by (1)</div>
-              <input v-model="form.acknowledge_by_1_name" type="text" class="w-full rounded-lg border-gray-300 text-sm mb-2" placeholder="Nama" />
-              <input v-model="form.acknowledge_by_1_title" type="text" class="w-full rounded-lg border-gray-300 text-sm" placeholder="Jabatan" />
+
+            <div v-if="approvers.length" class="space-y-2">
+              <h4 class="font-medium text-gray-700 text-sm">Approval Order (Lowest → Highest)</h4>
+              <div
+                v-for="(approver, index) in approvers"
+                :key="approver.id"
+                class="flex items-center justify-between p-3 rounded-md bg-gray-50 border border-gray-200"
+              >
+                <div class="flex items-center gap-3">
+                  <div class="flex items-center gap-1">
+                    <button v-if="index > 0" type="button" class="p-1 text-gray-500 hover:text-gray-700" title="Move Up" @click="reorderApprover(index, index - 1)">
+                      <i class="fa fa-arrow-up"></i>
+                    </button>
+                    <button v-if="index < approvers.length - 1" type="button" class="p-1 text-gray-500 hover:text-gray-700" title="Move Down" @click="reorderApprover(index, index + 1)">
+                      <i class="fa fa-arrow-down"></i>
+                    </button>
+                  </div>
+                  <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                    Level {{ index + 1 }}
+                  </span>
+                  <div>
+                    <div class="font-medium text-sm">{{ approver.nama_lengkap || approver.name }}</div>
+                    <div class="text-xs text-gray-600">{{ approver.email }}</div>
+                    <div v-if="approver.jabatan" class="text-xs text-emerald-700 font-medium">{{ approver.jabatan }}</div>
+                  </div>
+                </div>
+                <button type="button" class="p-1 text-red-500 hover:text-red-700" title="Remove" @click="removeApprover(index)">
+                  <i class="fa fa-trash"></i>
+                </button>
+              </div>
             </div>
-            <div>
-              <div class="text-xs font-semibold text-gray-500 mb-2">Acknowledge by (2)</div>
-              <input v-model="form.acknowledge_by_2_name" type="text" class="w-full rounded-lg border-gray-300 text-sm mb-2" placeholder="Nama" />
-              <input v-model="form.acknowledge_by_2_title" type="text" class="w-full rounded-lg border-gray-300 text-sm" placeholder="Jabatan" />
-            </div>
-            <div>
-              <div class="text-xs font-semibold text-gray-500 mb-2">Approved by</div>
-              <input v-model="form.approved_by_name" type="text" class="w-full rounded-lg border-gray-300 text-sm mb-2" placeholder="Nama" />
-              <input v-model="form.approved_by_title" type="text" class="w-full rounded-lg border-gray-300 text-sm" placeholder="Jabatan" />
-            </div>
+            <p v-else class="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-3 py-2">
+              Untuk Submit, minimal 1 approver. Draft boleh tanpa approver.
+            </p>
           </div>
-          <p class="px-5 pb-4 text-xs text-gray-500">Gambar TTD muncul di PDF setelah approval memakai e-signature approver.</p>
         </section>
 
         <div class="flex justify-end gap-2 sticky bottom-0 z-10 py-3 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
@@ -228,9 +284,23 @@
           >
             Batal
           </Link>
-          <button type="submit" class="px-5 py-2.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50" :disabled="form.processing">
+          <button
+            type="button"
+            class="px-5 py-2.5 rounded-lg text-sm font-medium bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+            :disabled="form.processing"
+            @click="saveDraft"
+          >
             <i class="fa-solid fa-save mr-1.5"></i>
-            {{ form.processing ? 'Menyimpan...' : 'Simpan Draft' }}
+            {{ form.processing && !submitNow ? 'Menyimpan...' : 'Simpan Draft' }}
+          </button>
+          <button
+            type="button"
+            class="px-5 py-2.5 rounded-lg text-sm font-medium bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+            :disabled="form.processing"
+            @click="submitForApproval"
+          >
+            <i class="fa-solid fa-paper-plane mr-1.5"></i>
+            {{ form.processing && submitNow ? 'Submitting...' : 'Submit' }}
           </button>
         </div>
       </form>
@@ -241,7 +311,9 @@
 <script setup>
 import AppLayout from '@/Layouts/AppLayout.vue';
 import { Link, useForm } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import axios from 'axios';
+import Swal from 'sweetalert2';
 
 const props = defineProps({
   lead: { type: Object, required: true },
@@ -251,16 +323,47 @@ const props = defineProps({
 
 const isEdit = computed(() => !!props.reo?.id);
 const source = props.reo || props.defaults || {};
+const submitNow = ref(false);
+const approvers = ref([]);
+const approverSearch = ref('');
+const approverResults = ref([]);
+const showApproverDropdown = ref(false);
+let approverTimer = null;
 
 const emptyRevenueRow = () => ({
-  date_arrangement: '',
+  date: '',
+  arrangement: '',
   qty: '',
   days: 1,
   rate: '',
   rate_nett: '',
-  breakdown: '',
-  breakdown_nett: '',
+  total_amount: '',
+  total_amount_nett: '',
 });
+
+const normalizeRevenueRow = (r = {}) => {
+  // Backward compatible with old date_arrangement / breakdown fields
+  let date = r.date || '';
+  let arrangement = r.arrangement || '';
+  if (!date && !arrangement && r.date_arrangement) {
+    const s = String(r.date_arrangement);
+    const m = s.match(/^(\d{4}-\d{2}-\d{2})\s*(.*)$/);
+    if (m) {
+      date = m[1];
+      arrangement = m[2] || '';
+    } else {
+      arrangement = s;
+    }
+  }
+  return {
+    ...emptyRevenueRow(),
+    ...r,
+    date,
+    arrangement,
+    total_amount: r.total_amount ?? r.breakdown ?? '',
+    total_amount_nett: r.total_amount_nett ?? r.breakdown_nett ?? '',
+  };
+};
 
 const form = useForm({
   address: source.address || '',
@@ -271,30 +374,30 @@ const form = useForm({
   venue_setup: source.venue_setup || '',
   sales_person_name: source.sales_person_name || props.lead.sales?.nama_lengkap || '',
   sign_board: source.sign_board || '',
-  revenue_items: (source.revenue_items?.length ? source.revenue_items : [emptyRevenueRow()]).map((r) => ({ ...emptyRevenueRow(), ...r })),
+  revenue_items: (source.revenue_items?.length ? source.revenue_items : [emptyRevenueRow()]).map(normalizeRevenueRow),
   catering_fee_percent: source.catering_fee_percent ?? 30,
   total_restaurant_revenue: source.total_restaurant_revenue ?? '',
   total_transaction: source.total_transaction ?? '',
   total_amount: source.total_amount ?? '',
   pax: source.pax ?? props.lead.pax ?? '',
   date_of_event: toDateInput(source.date_of_event),
-  time_of_event: (source.time_of_event?.length ? source.time_of_event : [{ time: '', meals: '', venue_setup: '' }]).map((r) => ({
+  time_of_event: (source.time_of_event?.length
+    ? source.time_of_event
+    : [{ time: '', meals: '', venue: '', pax: '', set_up: '' }]
+  ).map((r) => ({
     time: r.time || '',
     meals: r.meals || '',
-    venue_setup: r.venue_setup || '',
+    // backward compatible with old venue_setup field
+    venue: r.venue || r.venue_setup || '',
+    pax: r.pax ?? '',
+    set_up: r.set_up || '',
   })),
-  menu_items: source.menu_items || '',
   kitchen_maintenance: source.kitchen_maintenance || '',
+  maintenance: source.maintenance || '',
   marcom: source.marcom || '',
   billing_instruction: source.billing_instruction || '',
-  prepared_by_name: source.prepared_by_name || '',
-  prepared_by_title: source.prepared_by_title || '',
-  acknowledge_by_1_name: source.acknowledge_by_1_name || '',
-  acknowledge_by_1_title: source.acknowledge_by_1_title || '',
-  acknowledge_by_2_name: source.acknowledge_by_2_name || '',
-  acknowledge_by_2_title: source.acknowledge_by_2_title || '',
-  approved_by_name: source.approved_by_name || '',
-  approved_by_title: source.approved_by_title || '',
+  approvers: [],
+  submit_now: false,
 });
 
 function toDateInput(d) {
@@ -311,7 +414,7 @@ function toDateInput(d) {
 }
 
 const computedSubtotalNett = computed(() =>
-  form.revenue_items.reduce((sum, r) => sum + (Number(r.breakdown_nett) || 0), 0)
+  form.revenue_items.reduce((sum, r) => sum + (Number(r.total_amount_nett) || 0), 0)
 );
 const computedFee = computed(() =>
   Math.round(computedSubtotalNett.value * ((Number(form.catering_fee_percent) || 0) / 100))
@@ -326,7 +429,7 @@ const removeRevenueRow = (idx) => {
   form.revenue_items.splice(idx, 1);
   if (!form.revenue_items.length) addRevenueRow();
 };
-const addTimeRow = () => form.time_of_event.push({ time: '', meals: '', venue_setup: '' });
+const addTimeRow = () => form.time_of_event.push({ time: '', meals: '', venue: '', pax: '', set_up: '' });
 
 const recalcRow = (idx) => {
   const row = form.revenue_items[idx];
@@ -335,15 +438,66 @@ const recalcRow = (idx) => {
   const days = Number(row.days) || 0;
   const rate = Number(row.rate) || 0;
   const rateNett = Number(row.rate_nett) || 0;
-  row.breakdown = qty * days * rate;
-  row.breakdown_nett = qty * days * rateNett;
+  row.total_amount = qty * days * rate;
+  row.total_amount_nett = qty * days * rateNett;
 };
 
-const submit = () => {
+const loadApprovers = async (search = '') => {
+  try {
+    const { data } = await axios.get(route('sales-leads.reo.approvers'), { params: { search } });
+    approverResults.value = (data.users || []).filter((u) => !approvers.value.find((a) => a.id === u.id));
+    showApproverDropdown.value = true;
+  } catch (e) {
+    console.error(e);
+  }
+};
+
+watch(approverSearch, (val) => {
+  clearTimeout(approverTimer);
+  if (!val || val.length < 2) {
+    approverResults.value = [];
+    showApproverDropdown.value = false;
+    return;
+  }
+  approverTimer = setTimeout(() => loadApprovers(val), 250);
+});
+
+const addApprover = (user) => {
+  if (!approvers.value.find((a) => a.id === user.id)) {
+    approvers.value.push(user);
+  }
+  approverSearch.value = '';
+  approverResults.value = [];
+  showApproverDropdown.value = false;
+};
+
+const removeApprover = (index) => {
+  approvers.value.splice(index, 1);
+};
+
+const reorderApprover = (fromIndex, toIndex) => {
+  if (toIndex < 0 || toIndex >= approvers.value.length) return;
+  const item = approvers.value.splice(fromIndex, 1)[0];
+  approvers.value.splice(toIndex, 0, item);
+};
+
+const persist = (asSubmit) => {
+  submitNow.value = !!asSubmit;
+  form.submit_now = asSubmit ? 1 : 0;
+  form.approvers = approvers.value.map((a) => a.id);
+
+  if (asSubmit && !approvers.value.length) {
+    Swal.fire('Warning', 'Pilih minimal 1 approver sebelum submit.', 'warning');
+    return;
+  }
+
   if (isEdit.value) {
     form.put(route('sales-leads.reo.update', props.reo.id));
   } else {
     form.post(route('sales-leads.reo.store', props.lead.id));
   }
 };
+
+const saveDraft = () => persist(false);
+const submitForApproval = () => persist(true);
 </script>

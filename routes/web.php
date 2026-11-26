@@ -1157,6 +1157,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/sales-leads/{id}/actual', [\App\Http\Controllers\SalesLeadController::class, 'updateActual'])->name('sales-leads.actual');
 
     Route::get('/sales-leads/reo/approvers', [\App\Http\Controllers\SalesLeadReoController::class, 'getApprovers'])->name('sales-leads.reo.approvers');
+    Route::get('/api/sales-lead-reos/pending-approvals', [\App\Http\Controllers\SalesLeadReoController::class, 'getPendingApprovals'])->name('sales-leads.reo.pending-approvals');
+    Route::get('/api/sales-lead-reos/{id}/approval-details', [\App\Http\Controllers\SalesLeadReoController::class, 'getApprovalDetails'])->name('sales-leads.reo.approval-details');
     Route::get('/sales-leads/{salesLeadId}/reo', [\App\Http\Controllers\SalesLeadReoController::class, 'createOrShow'])->name('sales-leads.reo.open');
     Route::post('/sales-leads/{salesLeadId}/reo', [\App\Http\Controllers\SalesLeadReoController::class, 'store'])->name('sales-leads.reo.store');
     Route::get('/sales-lead-reos/{id}', [\App\Http\Controllers\SalesLeadReoController::class, 'show'])->name('sales-leads.reo.show');

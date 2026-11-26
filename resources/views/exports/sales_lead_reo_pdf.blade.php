@@ -66,11 +66,12 @@
     <table class="rev">
         <thead>
             <tr>
-                <th rowspan="2" style="width:28%">DATE ARRANGEMENT</th>
-                <th rowspan="2" style="width:8%">QTY</th>
-                <th rowspan="2" style="width:8%">DAY(S)</th>
+                <th rowspan="2" style="width:12%">DATE</th>
+                <th rowspan="2" style="width:20%">ARRANGEMENT</th>
+                <th rowspan="2" style="width:7%">QTY</th>
+                <th rowspan="2" style="width:7%">DAY(S)</th>
                 <th colspan="2">RATE</th>
-                <th colspan="2">BREAKDOWN</th>
+                <th colspan="2">TOTAL AMOUNT</th>
             </tr>
             <tr>
                 <th>++</th>
@@ -81,20 +82,30 @@
         </thead>
         <tbody>
             @forelse(($reo->revenue_items ?? []) as $item)
+                @php
+                    $date = $item['date'] ?? null;
+                    $arrangement = $item['arrangement'] ?? null;
+                    if (!$date && !$arrangement && !empty($item['date_arrangement'])) {
+                        $arrangement = $item['date_arrangement'];
+                    }
+                    $totalAmount = $item['total_amount'] ?? ($item['breakdown'] ?? 0);
+                    $totalAmountNett = $item['total_amount_nett'] ?? ($item['breakdown_nett'] ?? 0);
+                @endphp
                 <tr>
-                    <td>{{ $item['date_arrangement'] ?? '' }}</td>
+                    <td class="ctr">{{ $date ?: '' }}</td>
+                    <td>{{ $arrangement ?: '' }}</td>
                     <td class="ctr">{{ $item['qty'] ?? '' }}</td>
                     <td class="ctr">{{ $item['days'] ?? '' }}</td>
                     <td class="num">{{ number_format((float)($item['rate'] ?? 0), 0, ',', '.') }}</td>
                     <td class="num">{{ number_format((float)($item['rate_nett'] ?? 0), 0, ',', '.') }}</td>
-                    <td class="num">{{ number_format((float)($item['breakdown'] ?? 0), 0, ',', '.') }}</td>
-                    <td class="num">{{ number_format((float)($item['breakdown_nett'] ?? 0), 0, ',', '.') }}</td>
+                    <td class="num">{{ number_format((float)$totalAmount, 0, ',', '.') }}</td>
+                    <td class="num">{{ number_format((float)$totalAmountNett, 0, ',', '.') }}</td>
                 </tr>
             @empty
-                <tr><td colspan="7" class="ctr muted">No revenue items</td></tr>
+                <tr><td colspan="8" class="ctr muted">No revenue items</td></tr>
             @endforelse
             <tr>
-                <td colspan="5" class="num label" style="font-weight:bold">Subtotal</td>
+                <td colspan="6" class="num label" style="font-weight:bold">Subtotal</td>
                 <td class="num" style="font-weight:bold">{{ number_format((float)$reo->subtotal_rate, 0, ',', '.') }}</td>
                 <td class="num" style="font-weight:bold">{{ number_format((float)$reo->subtotal_nett, 0, ',', '.') }}</td>
             </tr>
@@ -130,9 +141,11 @@
     <table class="rev">
         <thead>
             <tr>
-                <th style="width:20%">TIME</th>
-                <th style="width:40%">MEALS</th>
-                <th style="width:40%">VENUE SET UP</th>
+                <th style="width:12%">TIME</th>
+                <th style="width:28%">MEALS</th>
+                <th style="width:22%">VENUE</th>
+                <th style="width:10%">PAX</th>
+                <th style="width:28%">SET UP</th>
             </tr>
         </thead>
         <tbody>
@@ -140,31 +153,38 @@
                 <tr>
                     <td>{{ $row['time'] ?? '' }}</td>
                     <td>{{ $row['meals'] ?? '' }}</td>
-                    <td>{{ $row['venue_setup'] ?? '' }}</td>
+                    <td class="ctr">{{ $row['venue'] ?? ($row['venue_setup'] ?? '') }}</td>
+                    <td class="ctr">{{ $row['pax'] ?? '' }}</td>
+                    <td class="ctr">{{ $row['set_up'] ?? '' }}</td>
                 </tr>
             @empty
-                <tr><td colspan="3" class="ctr muted">-</td></tr>
+                <tr><td colspan="5" class="ctr muted">-</td></tr>
             @endforelse
         </tbody>
     </table>
 
-    <table class="two-col" style="margin-top:8px">
+    <table class="two-col" style="margin-top:8px; width:100%">
         <tr>
-            <td>
-                <div class="section-title">MENU</div>
-                <div class="box">{{ $reo->menu_items ?: '-' }}</div>
-            </td>
-            <td>
-                <div class="section-title">KITCHEN MAINTENANCE</div>
+            <td style="width:50%; padding-right:4px; vertical-align:top">
+                <div class="section-title">KITCHEN</div>
                 <div class="box">{{ $reo->kitchen_maintenance ?: '-' }}</div>
+            </td>
+            <td style="width:50%; padding-left:4px; vertical-align:top">
+                <div class="section-title">MAINTENANCE</div>
+                <div class="box">{{ $reo->maintenance ?: '-' }}</div>
+            </td>
+        </tr>
+        <tr>
+            <td style="width:50%; padding-right:4px; padding-top:6px; vertical-align:top">
+                <div class="section-title">BILLING INSTRUCTION / ACCOUNTING</div>
+                <div class="box">{{ $reo->billing_instruction ?: '-' }}</div>
+            </td>
+            <td style="width:50%; padding-left:4px; padding-top:6px; vertical-align:top">
                 <div class="section-title">MARCOM</div>
                 <div class="box">{{ $reo->marcom ?: '-' }}</div>
             </td>
         </tr>
     </table>
-
-    <div class="section-title">BILLING INSTRUCTION / ACCOUNTING</div>
-    <div class="box">{{ $reo->billing_instruction ?: '-' }}</div>
 
     <table class="sig-table" style="margin-top:14px; width:100%">
         <tr>

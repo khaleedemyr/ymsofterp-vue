@@ -92,6 +92,11 @@ const showMarcommApprovalModal = ref(false);
 const selectedMarcommApproval = ref(null);
 const showAllMarcommModal = ref(false);
 const pendingContentPlanApprovals = ref([]);
+const pendingSalesLeadReoApprovals = ref([]);
+const loadingSalesLeadReoApprovals = ref(false);
+const selectedSalesLeadReoApproval = ref(null);
+const showSalesLeadReoApprovalModal = ref(false);
+const showAllSalesLeadReoModal = ref(false);
 const loadingContentPlanApprovals = ref(false);
 const showContentPlanApprovalModal = ref(false);
 const selectedContentPlanApproval = ref(null);
@@ -894,6 +899,7 @@ const prApprovalCount = computed(() => {
 
 const marcommApprovalCount = computed(() => pendingMarcommApprovals.value.length);
 const contentPlanApprovalCount = computed(() => pendingContentPlanApprovals.value.length);
+const salesLeadReoApprovalCount = computed(() => pendingSalesLeadReoApprovals.value.length);
 
 const wfhApprovalCount = computed(() => {
     const count = pendingWfhApprovals.value.length;
@@ -1208,6 +1214,7 @@ async function loadAllPendingApprovalsOptimized() {
     loadingWfhApprovals.value = true;
     loadingMarcommApprovals.value = true;
     loadingContentPlanApprovals.value = true;
+    loadingSalesLeadReoApprovals.value = true;
     
     try {
         const response = await axios.get('/api/pending-approvals/all', {
@@ -1222,6 +1229,7 @@ async function loadAllPendingApprovalsOptimized() {
             pendingWfhApprovals.value = data.wfh_requests || [];
             pendingMarcommApprovals.value = data.marcomm_trackers || [];
             pendingContentPlanApprovals.value = data.content_plans || [];
+            pendingSalesLeadReoApprovals.value = data.sales_lead_reos || [];
             pendingPoOpsApprovals.value = (data.purchase_order_ops || []).filter(po => isPoOpsVisibleToCurrentUser(po));
             pendingContraBonApprovals.value = [];
             pendingCategoryCostApprovals.value = data.outlet_internal_use_waste || [];
@@ -1250,6 +1258,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingWfhApprovals.value = false;
             loadingMarcommApprovals.value = false;
             loadingContentPlanApprovals.value = false;
+            loadingSalesLeadReoApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1278,6 +1287,7 @@ async function loadAllPendingApprovalsOptimized() {
             loadingWfhApprovals.value = false;
             loadingMarcommApprovals.value = false;
             loadingContentPlanApprovals.value = false;
+            loadingSalesLeadReoApprovals.value = false;
             loadingPoOpsApprovals.value = false;
             loadingContraBonApprovals.value = false;
             loadingCategoryCostApprovals.value = false;
@@ -1304,6 +1314,7 @@ async function loadAllPendingApprovalsOptimized() {
         loadingWfhApprovals.value = false;
         loadingMarcommApprovals.value = false;
         loadingContentPlanApprovals.value = false;
+        loadingSalesLeadReoApprovals.value = false;
         loadingPoOpsApprovals.value = false;
         loadingContraBonApprovals.value = false;
         loadingCategoryCostApprovals.value = false;
@@ -6783,6 +6794,80 @@ function openAllContentPlanModal() {
     showAllContentPlanModal.value = true;
 }
 
+function formatReoMoney(value) {
+    if (value === null || value === undefined || value === '') return '-';
+    return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(Number(value));
+}
+
+async function showSalesLeadReoApprovalDetails(reoId) {
+    try {
+        if (showAllSalesLeadReoModal.value) {
+            showAllSalesLeadReoModal.value = false;
+        }
+        const response = await axios.get(`/api/sales-lead-reos/${reoId}/approval-details`);
+        if (response.data.success) {
+            selectedSalesLeadReoApproval.value = response.data.reo;
+            showSalesLeadReoApprovalModal.value = true;
+        } else {
+            Swal.fire('Error', response.data.message || 'Gagal memuat detail REO', 'error');
+        }
+    } catch (error) {
+        console.error('Error loading REO approval details:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal memuat detail REO', 'error');
+    }
+}
+
+async function approveSalesLeadReo(reoId) {
+    try {
+        const response = await axios.post(`/sales-lead-reos/${reoId}/approve`, { notes: '' });
+        if (response.data?.success) {
+            Swal.fire('Success', response.data.message || 'REO berhasil di-approve', 'success');
+            showSalesLeadReoApprovalModal.value = false;
+            await loadAllPendingApprovalsOptimized();
+        } else {
+            Swal.fire('Error', response.data?.message || 'Gagal approve REO', 'error');
+        }
+    } catch (error) {
+        console.error('Error approving REO:', error);
+        Swal.fire('Error', error.response?.data?.message || 'Gagal approve REO. Pastikan e-signature sudah disimpan.', 'error');
+    }
+}
+
+function showRejectSalesLeadReoModal(reoId) {
+    Swal.fire({
+        title: 'Tolak REO',
+        input: 'textarea',
+        inputLabel: 'Alasan Penolakan',
+        inputPlaceholder: 'Masukkan alasan penolakan...',
+        showCancelButton: true,
+        confirmButtonText: 'Tolak',
+        cancelButtonText: 'Batal',
+        confirmButtonColor: '#EF4444',
+        cancelButtonColor: '#6B7280',
+    }).then(async (result) => {
+        if (!result.isConfirmed) return;
+        try {
+            const response = await axios.post(`/sales-lead-reos/${reoId}/reject`, {
+                notes: result.value || '',
+            });
+            if (response.data?.success) {
+                Swal.fire('Success', response.data.message || 'REO ditolak', 'success');
+                showSalesLeadReoApprovalModal.value = false;
+                await loadAllPendingApprovalsOptimized();
+            } else {
+                Swal.fire('Error', response.data?.message || 'Gagal menolak REO', 'error');
+            }
+        } catch (error) {
+            console.error('Error rejecting REO:', error);
+            Swal.fire('Error', error.response?.data?.message || 'Gagal menolak REO', 'error');
+        }
+    });
+}
+
+function openAllSalesLeadReoModal() {
+    showAllSalesLeadReoModal.value = true;
+}
+
 onMounted(async () => {
     updateGreeting();
     setInterval(updateTime, 1000);
@@ -7738,6 +7823,64 @@ watch(locale, () => {
                             <div v-if="pendingWfhApprovals.length > 3" class="text-center pt-2">
                                 <button @click="openAllWfhModal" class="text-sm text-teal-500 hover:text-teal-700 font-medium">
                                     Lihat {{ pendingWfhApprovals.length - 3 }} WFH lainnya...
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Restaurant Event Order (REO) Approval Section -->
+                <div v-if="salesLeadReoApprovalCount > 0" class="flex-shrink-0 mb-4">
+                    <div class="backdrop-blur-md rounded-2xl shadow-2xl border p-4 transition-all duration-500 animate-fade-in hover:shadow-3xl"
+                        :class="isNight ? 'bg-slate-800/90 border-slate-600/50' : 'bg-white/90 border-white/20'">
+                        <div class="flex items-center justify-between mb-3">
+                            <div class="flex items-center gap-2">
+                                <div class="w-3 h-3 rounded-full bg-amber-500 animate-pulse"></div>
+                                <h3 class="text-lg font-bold" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                    <i class="fa-solid fa-file-signature mr-2 text-amber-500"></i>
+                                    Restaurant Event Order Approval
+                                </h3>
+                            </div>
+                            <div class="bg-amber-500 text-white text-xs font-bold px-2 py-1 rounded-full">
+                                {{ salesLeadReoApprovalCount }}
+                            </div>
+                        </div>
+
+                        <div v-if="loadingSalesLeadReoApprovals" class="text-center py-4">
+                            <div class="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-amber-500"></div>
+                            <p class="text-sm mt-2" :class="isNight ? 'text-slate-300' : 'text-slate-600'">Memuat data...</p>
+                        </div>
+
+                        <div v-else class="space-y-2">
+                            <div
+                                v-for="reo in pendingSalesLeadReoApprovals.slice(0, 3)"
+                                :key="'sales-lead-reo-approval-' + reo.id"
+                                @click="showSalesLeadReoApprovalDetails(reo.id)"
+                                class="p-3 rounded-lg transition-all duration-200 cursor-pointer hover:scale-105"
+                                :class="isNight ? 'bg-slate-700/50 hover:bg-slate-600/50' : 'bg-amber-50 hover:bg-amber-100'"
+                            >
+                                <div class="flex items-center justify-between gap-3">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="font-semibold text-sm" :class="isNight ? 'text-white' : 'text-slate-800'">
+                                            {{ reo.number }}
+                                        </div>
+                                        <div class="text-xs truncate" :class="isNight ? 'text-slate-300' : 'text-slate-600'">
+                                            {{ reo.company_name }} · {{ reo.sales_lead?.type_of_event || '-' }}
+                                        </div>
+                                        <div class="text-xs" :class="isNight ? 'text-slate-400' : 'text-slate-500'">
+                                            <i class="fa fa-user mr-1 text-amber-500"></i>{{ reo.sales_person_name || reo.sales_person?.nama_lengkap || '-' }}
+                                            · <i class="fa fa-map-marker-alt mr-1 text-amber-500"></i>{{ reo.sales_lead?.outlet?.nama_outlet || reo.venue_setup || '-' }}
+                                        </div>
+                                    </div>
+                                    <div class="text-xs text-amber-600 font-medium whitespace-nowrap">
+                                        <i class="fa fa-user-check mr-1"></i>{{ reo.approver_name || `Level ${reo.approval_level || 1}` }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div v-if="pendingSalesLeadReoApprovals.length > 3" class="text-center pt-2">
+                                <button @click="openAllSalesLeadReoModal" class="text-sm text-amber-600 hover:text-amber-800 font-medium">
+                                    Lihat {{ pendingSalesLeadReoApprovals.length - 3 }} REO lainnya...
                                 </button>
                             </div>
                         </div>
@@ -10267,6 +10410,238 @@ watch(locale, () => {
                         <div class="font-semibold text-sm">{{ mt.number }}</div>
                         <div class="text-xs text-gray-500">
                             {{ mt.job_category }} · {{ mt.pic?.nama_lengkap || '-' }} · {{ mt.approver_name || `Level ${mt.approval_level || 1}` }}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Restaurant Event Order Approval Detail Modal -->
+        <div v-if="showSalesLeadReoApprovalModal && selectedSalesLeadReoApproval" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showSalesLeadReoApprovalModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-5xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">
+                        <i class="fa-solid fa-file-signature mr-2 text-amber-500"></i>
+                        Detail Restaurant Event Order
+                    </h3>
+                    <button @click="showSalesLeadReoApprovalModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="space-y-4">
+                    <div class="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div>
+                            <div class="text-xs text-gray-500">REO No</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.number }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Sales Lead</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.sales_lead?.number || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Company</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.company_name }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Type of Event</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.sales_lead?.type_of_event || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Sales Person</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.sales_person_name || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Venue / Set Up</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.venue_setup || '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">PAX</div>
+                            <div class="font-semibold">{{ selectedSalesLeadReoApproval.pax ?? '-' }}</div>
+                        </div>
+                        <div>
+                            <div class="text-xs text-gray-500">Total Amount</div>
+                            <div class="font-semibold">{{ formatReoMoney(selectedSalesLeadReoApproval.total_amount) }}</div>
+                        </div>
+                        <div class="md:col-span-2" v-if="selectedSalesLeadReoApproval.sign_board">
+                            <div class="text-xs text-gray-500">Sign Board</div>
+                            <div class="font-semibold whitespace-pre-wrap">{{ selectedSalesLeadReoApproval.sign_board }}</div>
+                        </div>
+                    </div>
+
+                    <div class="border rounded-lg overflow-hidden">
+                        <div class="px-4 py-2 bg-gray-50 dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white">Revenue Breakdown</div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-xs">
+                                <thead class="bg-gray-50 dark:bg-gray-700/80">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left">Date</th>
+                                        <th class="px-3 py-2 text-left">Arrangement</th>
+                                        <th class="px-3 py-2 text-center">Qty</th>
+                                        <th class="px-3 py-2 text-center">Days</th>
+                                        <th class="px-3 py-2 text-right">Rate ++</th>
+                                        <th class="px-3 py-2 text-right">Rate Nett</th>
+                                        <th class="px-3 py-2 text-right">Total Amount ++</th>
+                                        <th class="px-3 py-2 text-right">Total Amount Nett</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="(row, i) in (selectedSalesLeadReoApproval.revenue_items || [])"
+                                        :key="'reo-rev-' + i"
+                                        class="border-t"
+                                    >
+                                        <td class="px-3 py-2">{{ row.date || (row.date_arrangement || '').split(' ')[0] || '-' }}</td>
+                                        <td class="px-3 py-2">{{ row.arrangement || row.date_arrangement || '-' }}</td>
+                                        <td class="px-3 py-2 text-center">{{ row.qty ?? '-' }}</td>
+                                        <td class="px-3 py-2 text-center">{{ row.days ?? '-' }}</td>
+                                        <td class="px-3 py-2 text-right">{{ formatReoMoney(row.rate) }}</td>
+                                        <td class="px-3 py-2 text-right">{{ formatReoMoney(row.rate_nett) }}</td>
+                                        <td class="px-3 py-2 text-right">{{ formatReoMoney(row.total_amount ?? row.breakdown) }}</td>
+                                        <td class="px-3 py-2 text-right">{{ formatReoMoney(row.total_amount_nett ?? row.breakdown_nett) }}</td>
+                                    </tr>
+                                    <tr v-if="!(selectedSalesLeadReoApproval.revenue_items || []).length">
+                                        <td colspan="8" class="px-3 py-3 text-center text-gray-400">Tidak ada revenue item</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="px-4 py-3 text-xs grid grid-cols-2 md:grid-cols-4 gap-2 border-t bg-gray-50 dark:bg-gray-700/50">
+                            <div>Fee {{ selectedSalesLeadReoApproval.catering_fee_percent }}%: <b>{{ formatReoMoney(selectedSalesLeadReoApproval.catering_fee_amount) }}</b></div>
+                            <div>Restaurant Rev: <b>{{ formatReoMoney(selectedSalesLeadReoApproval.total_restaurant_revenue) }}</b></div>
+                            <div>Transaction: <b>{{ formatReoMoney(selectedSalesLeadReoApproval.total_transaction) }}</b></div>
+                            <div>Total Amount: <b>{{ formatReoMoney(selectedSalesLeadReoApproval.total_amount) }}</b></div>
+                        </div>
+                    </div>
+
+                    <div class="border rounded-lg overflow-hidden">
+                        <div class="px-4 py-2 bg-gray-50 dark:bg-gray-700 text-sm font-semibold text-gray-900 dark:text-white">
+                            Event Detail
+                            <span class="font-normal text-gray-500 ml-2">Date of Event: {{ selectedSalesLeadReoApproval.date_of_event || '-' }}</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="min-w-full text-xs">
+                                <thead class="bg-gray-50 dark:bg-gray-700/80">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left">Time</th>
+                                        <th class="px-3 py-2 text-left">Meals</th>
+                                        <th class="px-3 py-2 text-left">Venue</th>
+                                        <th class="px-3 py-2 text-center">Pax</th>
+                                        <th class="px-3 py-2 text-left">Set Up</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr
+                                        v-for="(row, i) in (selectedSalesLeadReoApproval.time_of_event || [])"
+                                        :key="'reo-evt-' + i"
+                                        class="border-t"
+                                    >
+                                        <td class="px-3 py-2">{{ row.time || '-' }}</td>
+                                        <td class="px-3 py-2">{{ row.meals || '-' }}</td>
+                                        <td class="px-3 py-2">{{ row.venue || row.venue_setup || '-' }}</td>
+                                        <td class="px-3 py-2 text-center">{{ row.pax ?? '-' }}</td>
+                                        <td class="px-3 py-2">{{ row.set_up || '-' }}</td>
+                                    </tr>
+                                    <tr v-if="!(selectedSalesLeadReoApproval.time_of_event || []).length">
+                                        <td colspan="5" class="px-3 py-3 text-center text-gray-400">Tidak ada event detail</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                        <div class="border rounded-lg p-3">
+                            <div class="text-xs font-semibold text-gray-500 mb-1">Kitchen</div>
+                            <div class="whitespace-pre-wrap text-gray-900 dark:text-gray-100">{{ selectedSalesLeadReoApproval.kitchen_maintenance || '-' }}</div>
+                        </div>
+                        <div class="border rounded-lg p-3">
+                            <div class="text-xs font-semibold text-gray-500 mb-1">Maintenance</div>
+                            <div class="whitespace-pre-wrap text-gray-900 dark:text-gray-100">{{ selectedSalesLeadReoApproval.maintenance || '-' }}</div>
+                        </div>
+                        <div class="border rounded-lg p-3">
+                            <div class="text-xs font-semibold text-gray-500 mb-1">Billing Instruction / Accounting</div>
+                            <div class="whitespace-pre-wrap text-gray-900 dark:text-gray-100">{{ selectedSalesLeadReoApproval.billing_instruction || '-' }}</div>
+                        </div>
+                        <div class="border rounded-lg p-3">
+                            <div class="text-xs font-semibold text-gray-500 mb-1">Marcom</div>
+                            <div class="whitespace-pre-wrap text-gray-900 dark:text-gray-100">{{ selectedSalesLeadReoApproval.marcom || '-' }}</div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <h4 class="font-medium text-gray-900 dark:text-white mb-2">Approval Flow</h4>
+                        <div class="space-y-2">
+                            <div
+                                v-for="flow in (selectedSalesLeadReoApproval.approvals || [])"
+                                :key="'reo-flow-' + flow.id"
+                                class="flex items-center justify-between p-3 rounded-lg border bg-gray-50"
+                            >
+                                <div>
+                                    <div class="text-xs font-semibold text-amber-600">Level {{ flow.approval_level }}</div>
+                                    <div class="font-medium text-gray-900">{{ flow.approver?.nama_lengkap || '-' }}</div>
+                                </div>
+                                <span
+                                    class="px-2 py-1 rounded text-xs font-medium text-white"
+                                    :class="flow.status === 'APPROVED' ? 'bg-green-500' : flow.status === 'REJECTED' ? 'bg-red-500' : 'bg-amber-500'"
+                                >
+                                    {{ flow.status }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t border-gray-200 dark:border-gray-600">
+                    <a
+                        :href="`/sales-lead-reos/${selectedSalesLeadReoApproval.id}`"
+                        class="px-4 py-2 text-amber-700 border border-amber-300 rounded-md hover:bg-amber-50 transition-colors"
+                    >
+                        Buka Detail
+                    </a>
+                    <button
+                        @click="showSalesLeadReoApprovalModal = false"
+                        class="px-4 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        Tutup
+                    </button>
+                    <button
+                        v-if="selectedSalesLeadReoApproval.can_approve"
+                        @click="approveSalesLeadReo(selectedSalesLeadReoApproval.id)"
+                        class="px-4 py-2 bg-amber-500 text-white rounded-md hover:bg-amber-600 transition-colors"
+                    >
+                        <i class="fa fa-signature mr-2"></i>Approve (E-Signature)
+                    </button>
+                    <button
+                        v-if="selectedSalesLeadReoApproval.can_approve"
+                        @click="showRejectSalesLeadReoModal(selectedSalesLeadReoApproval.id)"
+                        class="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                    >
+                        <i class="fa fa-times mr-2"></i>Reject
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- All Sales Lead REO Modal -->
+        <div v-if="showAllSalesLeadReoModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" @click="showAllSalesLeadReoModal = false">
+            <div class="bg-white dark:bg-gray-800 rounded-lg p-6 w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto" @click.stop>
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-lg font-medium text-gray-900 dark:text-white">Semua REO Pending</h3>
+                    <button @click="showAllSalesLeadReoModal = false" class="text-gray-400 hover:text-gray-600">
+                        <i class="fa fa-times text-xl"></i>
+                    </button>
+                </div>
+                <div class="space-y-2">
+                    <div
+                        v-for="reo in pendingSalesLeadReoApprovals"
+                        :key="'all-reo-' + reo.id"
+                        @click="showSalesLeadReoApprovalDetails(reo.id)"
+                        class="p-3 rounded-lg cursor-pointer border hover:border-amber-400 bg-gray-50 hover:bg-amber-50"
+                    >
+                        <div class="font-semibold text-sm">{{ reo.number }}</div>
+                        <div class="text-xs text-gray-500">
+                            {{ reo.company_name }} · {{ reo.approver_name || `Level ${reo.approval_level || 1}` }}
                         </div>
                     </div>
                 </div>

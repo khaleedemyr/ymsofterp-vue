@@ -59,24 +59,26 @@
           <table class="min-w-full text-xs">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-3 py-2 text-left">Date Arrangement</th>
+                <th class="px-3 py-2 text-left">Date</th>
+                <th class="px-3 py-2 text-left">Arrangement</th>
                 <th class="px-3 py-2 text-center">Qty</th>
                 <th class="px-3 py-2 text-center">Days</th>
                 <th class="px-3 py-2 text-right">Rate ++</th>
                 <th class="px-3 py-2 text-right">Rate Nett</th>
-                <th class="px-3 py-2 text-right">Breakdown ++</th>
-                <th class="px-3 py-2 text-right">Breakdown Nett</th>
+                <th class="px-3 py-2 text-right">Total Amount ++</th>
+                <th class="px-3 py-2 text-right">Total Amount Nett</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(row, i) in (reo.revenue_items || [])" :key="i" class="border-b">
-                <td class="px-3 py-2">{{ row.date_arrangement }}</td>
+                <td class="px-3 py-2">{{ row.date || (row.date_arrangement || '').split(' ')[0] || '-' }}</td>
+                <td class="px-3 py-2">{{ row.arrangement || row.date_arrangement || '-' }}</td>
                 <td class="px-3 py-2 text-center">{{ row.qty }}</td>
                 <td class="px-3 py-2 text-center">{{ row.days }}</td>
                 <td class="px-3 py-2 text-right">{{ formatMoney(row.rate) }}</td>
                 <td class="px-3 py-2 text-right">{{ formatMoney(row.rate_nett) }}</td>
-                <td class="px-3 py-2 text-right">{{ formatMoney(row.breakdown) }}</td>
-                <td class="px-3 py-2 text-right">{{ formatMoney(row.breakdown_nett) }}</td>
+                <td class="px-3 py-2 text-right">{{ formatMoney(row.total_amount ?? row.breakdown) }}</td>
+                <td class="px-3 py-2 text-right">{{ formatMoney(row.total_amount_nett ?? row.breakdown_nett) }}</td>
               </tr>
             </tbody>
           </table>

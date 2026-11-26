@@ -6,6 +6,7 @@ use App\Models\SalesLead;
 use App\Models\SalesLeadReo;
 use App\Models\SalesLeadReoApproval;
 use App\Models\User;
+use App\Support\PendingApprovalCache;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -69,16 +70,27 @@ class SalesLeadReoController extends Controller
         $totals = $this->computeTotals($validated);
         $user = auth()->user();
 
+        $salesName = $lead->sales?->nama_lengkap ?? ($validated['sales_person_name'] ?? null);
+
         $reo = SalesLeadReo::create(array_merge($validated, $totals, [
             'sales_lead_id' => $lead->id,
             'number' => $this->generateNumber(),
             'company_name' => $lead->company_name,
             'sales_person_user_id' => $lead->sales_user_id,
-            'sales_person_name' => $lead->sales?->nama_lengkap ?? $validated['sales_person_name'] ?? null,
+            'sales_person_name' => $salesName,
+            'prepared_by_name' => $salesName,
+            'prepared_by_title' => 'Corporate Sales Executive',
             'status' => 'DRAFT',
             'created_by' => $user->id,
             'updated_by' => $user->id,
         ]));
+
+        if ($request->boolean('submit_now')) {
+            $this->applyApproversAndSubmit($reo, $request->input('approvers', []), $user);
+
+            return redirect()->route('sales-leads.reo.show', $reo->id)
+                ->with('success', 'REO berhasil di-submit untuk approval.');
+        }
 
         return redirect()->route('sales-leads.reo.show', $reo->id)
             ->with('success', 'REO berhasil disimpan sebagai draft.');
@@ -95,13 +107,25 @@ class SalesLeadReoController extends Controller
         $validated = $this->validatePayload($request);
         $totals = $this->computeTotals($validated);
 
+        $salesName = $reo->salesLead?->sales?->nama_lengkap
+            ?? ($validated['sales_person_name'] ?? $reo->sales_person_name);
+
         $reo->update(array_merge($validated, $totals, [
             'company_name' => $reo->salesLead?->company_name ?? $reo->company_name,
             'sales_person_user_id' => $reo->salesLead?->sales_user_id ?? $reo->sales_person_user_id,
-            'sales_person_name' => $reo->salesLead?->sales?->nama_lengkap ?? ($validated['sales_person_name'] ?? $reo->sales_person_name),
+            'sales_person_name' => $salesName,
+            'prepared_by_name' => $salesName,
+            'prepared_by_title' => $reo->prepared_by_title ?: 'Corporate Sales Executive',
             'updated_by' => $user->id,
             'status' => in_array($reo->status, ['REJECTED'], true) ? 'DRAFT' : $reo->status,
         ]));
+
+        if ($request->boolean('submit_now')) {
+            $this->applyApproversAndSubmit($reo->fresh(), $request->input('approvers', []), $user);
+
+            return redirect()->route('sales-leads.reo.show', $reo->id)
+                ->with('success', 'REO berhasil di-submit untuk approval.');
+        }
 
         return redirect()->route('sales-leads.reo.show', $reo->id)
             ->with('success', 'REO berhasil diupdate.');
@@ -120,24 +144,7 @@ class SalesLeadReoController extends Controller
             'approvers.*' => 'required|integer|exists:users,id',
         ]);
 
-        DB::transaction(function () use ($request, $reo, $user) {
-            $reo->approvals()->delete();
-            foreach (array_values($request->approvers) as $index => $approverId) {
-                SalesLeadReoApproval::create([
-                    'reo_id' => $reo->id,
-                    'approver_id' => $approverId,
-                    'approval_level' => $index + 1,
-                    'status' => 'PENDING',
-                ]);
-            }
-
-            $reo->update([
-                'status' => 'SUBMITTED',
-                'submitted_at' => now(),
-                'approved_at' => null,
-                'updated_by' => $user->id,
-            ]);
-        });
+        $this->applyApproversAndSubmit($reo, $request->input('approvers', []), $user);
 
         return redirect()->route('sales-leads.reo.show', $reo->id)
             ->with('success', 'REO berhasil di-submit untuk approval.');
@@ -148,17 +155,27 @@ class SalesLeadReoController extends Controller
         $reo = $this->findVisibleReo($id);
         $user = auth()->user();
 
+        $wantsJson = $request->expectsJson() || $request->ajax() || $request->wantsJson();
+
         if ($reo->status !== 'SUBMITTED') {
-            return back()->with('error', 'REO tidak dalam status Submitted.');
+            return $wantsJson
+                ? response()->json(['success' => false, 'message' => 'REO tidak dalam status Submitted.'], 422)
+                : back()->with('error', 'REO tidak dalam status Submitted.');
         }
 
         if (! $user->signature_path || ! Storage::disk('public')->exists($user->signature_path)) {
-            return back()->with('error', 'Anda belum punya e-signature. Simpan tanda tangan di menu E-Signature terlebih dahulu.');
+            $msg = 'Anda belum punya e-signature. Simpan tanda tangan di menu E-Signature terlebih dahulu.';
+
+            return $wantsJson
+                ? response()->json(['success' => false, 'message' => $msg], 422)
+                : back()->with('error', $msg);
         }
 
         $flow = $this->resolveCurrentApprovalFlow($reo, $user);
         if (! $flow) {
-            return back()->with('error', 'Anda bukan approver berikutnya untuk REO ini.');
+            return $wantsJson
+                ? response()->json(['success' => false, 'message' => 'Anda bukan approver berikutnya untuk REO ini.'], 403)
+                : back()->with('error', 'Anda bukan approver berikutnya untuk REO ini.');
         }
 
         $notes = $request->input('notes');
@@ -173,6 +190,8 @@ class SalesLeadReoController extends Controller
 
             $stillPending = $reo->approvals()->where('status', 'PENDING')->exists();
             if (! $stillPending) {
+                $fresh = $reo->fresh(['approvals.approver.jabatan']);
+                $this->syncSignatureLabelsFromApprovals($fresh);
                 $reo->update([
                     'status' => 'APPROVED',
                     'approved_at' => now(),
@@ -180,6 +199,15 @@ class SalesLeadReoController extends Controller
                 ]);
             }
         });
+
+        PendingApprovalCache::forgetForUsers([$user->id]);
+
+        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'REO berhasil di-approve (tanda tangan tersimpan).',
+            ]);
+        }
 
         return redirect()->route('sales-leads.reo.show', $reo->id)
             ->with('success', 'REO berhasil di-approve (tanda tangan tersimpan).');
@@ -213,8 +241,83 @@ class SalesLeadReoController extends Controller
             ]);
         });
 
+        PendingApprovalCache::forgetForUsers([$user->id]);
+
+        if ($request->expectsJson() || $request->ajax() || $request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'message' => 'REO ditolak.',
+            ]);
+        }
+
         return redirect()->route('sales-leads.reo.show', $reo->id)
             ->with('success', 'REO ditolak.');
+    }
+
+    public function getPendingApprovals()
+    {
+        $currentUser = auth()->user();
+        if (! $currentUser) {
+            return response()->json(['success' => false, 'reos' => []], 401);
+        }
+
+        $isSuperadmin = $this->isSuperadmin($currentUser);
+
+        $query = SalesLeadReo::query()
+            ->where('status', 'SUBMITTED')
+            ->whereHas('approvals', function ($q) use ($currentUser, $isSuperadmin) {
+                $q->where('status', 'PENDING');
+                if (! $isSuperadmin) {
+                    $q->where('approver_id', $currentUser->id);
+                }
+            })
+            ->with([
+                'salesLead:id,number,company_name,type_of_event,outlet_id',
+                'salesLead.outlet:id_outlet,nama_outlet',
+                'salesPerson:id,nama_lengkap',
+                'creator:id,nama_lengkap',
+                'approvals.approver:id,nama_lengkap',
+            ])
+            ->orderByDesc('submitted_at')
+            ->orderByDesc('id');
+
+        $pending = $query->get();
+
+        if (! $isSuperadmin) {
+            $pending = $pending->filter(function (SalesLeadReo $item) use ($currentUser) {
+                $next = $item->approvals->where('status', 'PENDING')->sortBy('approval_level')->first();
+
+                return $next && (int) $next->approver_id === (int) $currentUser->id;
+            })->values();
+        }
+
+        $pending = $pending->map(function (SalesLeadReo $item) {
+            $next = $item->approvals->where('status', 'PENDING')->sortBy('approval_level')->first();
+            $item->setAttribute('approver_name', $next?->approver?->nama_lengkap);
+            $item->setAttribute('approval_level', $next?->approval_level);
+            $item->setAttribute('status_label', $item->statusLabel());
+            $item->setAttribute('can_approve', true);
+
+            return $item;
+        });
+
+        return response()->json([
+            'success' => true,
+            'reos' => $pending->values(),
+        ]);
+    }
+
+    public function getApprovalDetails($id)
+    {
+        $reo = $this->findVisibleReo($id);
+        $user = auth()->user();
+        $reo->setAttribute('can_approve', $this->canApprove($reo, $user));
+        $reo->setAttribute('status_label', $reo->statusLabel());
+
+        return response()->json([
+            'success' => true,
+            'reo' => $reo,
+        ]);
     }
 
     public function exportPdf($id)
@@ -311,22 +414,29 @@ class SalesLeadReoController extends Controller
             'sales_person_name' => 'nullable|string|max:255',
             'sign_board' => 'nullable|string|max:5000',
             'revenue_items' => 'nullable|array',
-            'revenue_items.*.date_arrangement' => 'nullable|string|max:500',
+            'revenue_items.*.date' => 'nullable|date',
+            'revenue_items.*.arrangement' => 'nullable|string|max:500',
+            'revenue_items.*.date_arrangement' => 'nullable|string|max:500', // legacy
             'revenue_items.*.qty' => 'nullable|numeric|min:0',
             'revenue_items.*.days' => 'nullable|numeric|min:0',
             'revenue_items.*.rate' => 'nullable|numeric|min:0',
             'revenue_items.*.rate_nett' => 'nullable|numeric|min:0',
-            'revenue_items.*.breakdown' => 'nullable|numeric|min:0',
-            'revenue_items.*.breakdown_nett' => 'nullable|numeric|min:0',
+            'revenue_items.*.total_amount' => 'nullable|numeric|min:0',
+            'revenue_items.*.total_amount_nett' => 'nullable|numeric|min:0',
+            'revenue_items.*.breakdown' => 'nullable|numeric|min:0', // legacy
+            'revenue_items.*.breakdown_nett' => 'nullable|numeric|min:0', // legacy
             'catering_fee_percent' => 'nullable|numeric|min:0|max:100',
             'pax' => 'nullable|integer|min:0',
             'date_of_event' => 'nullable|date',
             'time_of_event' => 'nullable|array',
             'time_of_event.*.time' => 'nullable|string|max:100',
             'time_of_event.*.meals' => 'nullable|string|max:255',
-            'time_of_event.*.venue_setup' => 'nullable|string|max:255',
-            'menu_items' => 'nullable|string|max:10000',
+            'time_of_event.*.venue' => 'nullable|string|max:255',
+            'time_of_event.*.pax' => 'nullable|numeric|min:0',
+            'time_of_event.*.set_up' => 'nullable|string|max:255',
+            'time_of_event.*.venue_setup' => 'nullable|string|max:255', // legacy
             'kitchen_maintenance' => 'nullable|string|max:5000',
+            'maintenance' => 'nullable|string|max:5000',
             'marcom' => 'nullable|string|max:5000',
             'billing_instruction' => 'nullable|string|max:5000',
             'prepared_by_name' => 'nullable|string|max:255',
@@ -340,21 +450,58 @@ class SalesLeadReoController extends Controller
             'total_restaurant_revenue' => 'nullable|numeric|min:0',
             'total_transaction' => 'nullable|numeric|min:0',
             'total_amount' => 'nullable|numeric|min:0',
+            'approvers' => 'nullable|array',
+            'approvers.*' => 'integer|exists:users,id',
+            'submit_now' => 'nullable|boolean',
         ]);
+
+        // Fields di atas tidak ikut ke fillable create/update mass-assign via validated merge
+        unset($validated['approvers'], $validated['submit_now']);
 
         $validated['date_of_issue'] = $this->normalizeDate($validated['date_of_issue'] ?? null);
         $validated['date_of_event'] = $this->normalizeDate($validated['date_of_event'] ?? null);
         $validated['revenue_items'] = array_values(array_filter(
-            $validated['revenue_items'] ?? [],
-            fn ($row) => filled($row['date_arrangement'] ?? null)
+            array_map(function ($row) {
+                $date = $row['date'] ?? null;
+                $arrangement = $row['arrangement'] ?? null;
+                if (! $date && ! $arrangement && ! empty($row['date_arrangement'])) {
+                    $arrangement = $row['date_arrangement'];
+                }
+
+                return [
+                    'date' => $date ? $this->normalizeDate($date) : null,
+                    'arrangement' => $arrangement,
+                    'qty' => $row['qty'] ?? null,
+                    'days' => $row['days'] ?? null,
+                    'rate' => $row['rate'] ?? null,
+                    'rate_nett' => $row['rate_nett'] ?? null,
+                    'total_amount' => $row['total_amount'] ?? ($row['breakdown'] ?? null),
+                    'total_amount_nett' => $row['total_amount_nett'] ?? ($row['breakdown_nett'] ?? null),
+                ];
+            }, $validated['revenue_items'] ?? []),
+            fn ($row) => filled($row['date'] ?? null)
+                || filled($row['arrangement'] ?? null)
                 || (float) ($row['qty'] ?? 0) > 0
                 || (float) ($row['rate'] ?? 0) > 0
+                || (float) ($row['total_amount'] ?? 0) > 0
         ));
         $validated['time_of_event'] = array_values(array_filter(
-            $validated['time_of_event'] ?? [],
+            array_map(function ($row) {
+                $venue = $row['venue'] ?? $row['venue_setup'] ?? null;
+
+                return [
+                    'time' => $row['time'] ?? null,
+                    'meals' => $row['meals'] ?? null,
+                    'venue' => $venue,
+                    'pax' => isset($row['pax']) && $row['pax'] !== '' ? (float) $row['pax'] : null,
+                    'set_up' => $row['set_up'] ?? null,
+                ];
+            }, $validated['time_of_event'] ?? []),
             fn ($row) => filled($row['time'] ?? null)
                 || filled($row['meals'] ?? null)
-                || filled($row['venue_setup'] ?? null)
+                || filled($row['venue'] ?? null)
+                || filled($row['set_up'] ?? null)
+                || (($row['pax'] ?? null) !== null && (float) $row['pax'] > 0)
         ));
         $validated['catering_fee_percent'] = $validated['catering_fee_percent'] ?? 30;
 
@@ -366,8 +513,8 @@ class SalesLeadReoController extends Controller
         $subtotalRate = 0.0;
         $subtotalNett = 0.0;
         foreach ($validated['revenue_items'] ?? [] as $row) {
-            $subtotalRate += (float) ($row['breakdown'] ?? 0);
-            $subtotalNett += (float) ($row['breakdown_nett'] ?? 0);
+            $subtotalRate += (float) ($row['total_amount'] ?? ($row['breakdown'] ?? 0));
+            $subtotalNett += (float) ($row['total_amount_nett'] ?? ($row['breakdown_nett'] ?? 0));
         }
 
         $feePercent = (float) ($validated['catering_fee_percent'] ?? 30);
@@ -519,6 +666,75 @@ class SalesLeadReoController extends Controller
         }
 
         return (bool) $this->resolveCurrentApprovalFlow($reo, $user);
+    }
+
+    private function applyApproversAndSubmit(SalesLeadReo $reo, array $approvers, $user): void
+    {
+        $approverIds = array_values(array_filter(array_map('intval', $approvers)));
+        if (count($approverIds) < 1) {
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'approvers' => 'Minimal 1 approver diperlukan untuk submit REO.',
+            ]);
+        }
+
+        DB::transaction(function () use ($reo, $approverIds, $user) {
+            $reo->approvals()->delete();
+            foreach ($approverIds as $index => $approverId) {
+                SalesLeadReoApproval::create([
+                    'reo_id' => $reo->id,
+                    'approver_id' => $approverId,
+                    'approval_level' => $index + 1,
+                    'status' => 'PENDING',
+                ]);
+            }
+
+            $reo->update([
+                'status' => 'SUBMITTED',
+                'submitted_at' => now(),
+                'approved_at' => null,
+                'updated_by' => $user->id,
+            ]);
+        });
+
+        PendingApprovalCache::forgetForUsers(array_merge($approverIds, [$user->id]));
+    }
+
+    /**
+     * Isi label signature PDF dari sales person + approver flow (bukan input manual).
+     */
+    private function syncSignatureLabelsFromApprovals(SalesLeadReo $reo): void
+    {
+        $approved = $reo->approvals
+            ->where('status', 'APPROVED')
+            ->sortBy('approval_level')
+            ->values();
+
+        $data = [
+            'prepared_by_name' => $reo->sales_person_name ?: $reo->prepared_by_name,
+            'prepared_by_title' => $reo->prepared_by_title ?: 'Corporate Sales Executive',
+        ];
+
+        if ($approved->count() === 1) {
+            $data['approved_by_name'] = $approved[0]->approver?->nama_lengkap;
+            $data['approved_by_title'] = $approved[0]->approver?->jabatan?->nama_jabatan
+                ?? $reo->approved_by_title
+                ?? 'Approved by';
+        } elseif ($approved->count() === 2) {
+            $data['acknowledge_by_1_name'] = $approved[0]->approver?->nama_lengkap;
+            $data['acknowledge_by_1_title'] = $approved[0]->approver?->jabatan?->nama_jabatan ?? 'Acknowledge by';
+            $data['approved_by_name'] = $approved[1]->approver?->nama_lengkap;
+            $data['approved_by_title'] = $approved[1]->approver?->jabatan?->nama_jabatan ?? 'Approved by';
+        } elseif ($approved->count() >= 3) {
+            $data['acknowledge_by_1_name'] = $approved[0]->approver?->nama_lengkap;
+            $data['acknowledge_by_1_title'] = $approved[0]->approver?->jabatan?->nama_jabatan ?? 'Acknowledge by';
+            $data['acknowledge_by_2_name'] = $approved[1]->approver?->nama_lengkap;
+            $data['acknowledge_by_2_title'] = $approved[1]->approver?->jabatan?->nama_jabatan ?? 'Acknowledge by';
+            $last = $approved->last();
+            $data['approved_by_name'] = $last->approver?->nama_lengkap;
+            $data['approved_by_title'] = $last->approver?->jabatan?->nama_jabatan ?? 'Approved by';
+        }
+
+        $reo->update($data);
     }
 
     private function canViewAll($user): bool
