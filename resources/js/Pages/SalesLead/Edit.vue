@@ -97,8 +97,15 @@ const form = useForm({
 });
 
 const submit = () => {
-  form.put(route('sales-leads.update', props.record.id), {
-    forceFormData: true,
-  });
+  // PHP tidak parse multipart body pada PUT — spoof lewat POST + _method.
+  form
+    .transform((data) => ({
+      ...data,
+      _method: 'put',
+      remove_attachment: data.remove_attachment ? 1 : 0,
+    }))
+    .post(route('sales-leads.update', props.record.id), {
+      forceFormData: true,
+    });
 };
 </script>
