@@ -20,6 +20,7 @@
           :segment1-options="segment1Options"
           :segment2-options="segment2Options"
           :type-of-events="typeOfEvents"
+          :room-requirements="roomRequirements"
           :statuses="statuses"
           :outlets="outlets"
           :sales-user="salesUser"
@@ -55,6 +56,7 @@ defineProps({
   segment1Options: { type: Array, default: () => [] },
   segment2Options: { type: Array, default: () => [] },
   typeOfEvents: { type: Array, default: () => [] },
+  roomRequirements: { type: Array, default: () => [] },
   statuses: { type: Object, default: () => ({}) },
   outlets: { type: Array, default: () => [] },
   salesUser: { type: Object, default: () => ({}) },
@@ -68,12 +70,15 @@ const form = useForm({
   event_date: '',
   pax: '',
   outlet_id: '',
+  room_requirement: '',
   status: 'new_leads',
   revenue: '',
   remarks: '',
+  attachment: null,
+  remove_attachment: false,
 });
 
 const submit = () => {
-  form.post(route('sales-leads.store'));
+  form.post(route('sales-leads.store'), { forceFormData: true });
 };
 </script>

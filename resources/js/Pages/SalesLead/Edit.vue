@@ -20,9 +20,12 @@
           :segment1-options="segment1Options"
           :segment2-options="segment2Options"
           :type-of-events="typeOfEvents"
+          :room-requirements="roomRequirements"
           :statuses="statuses"
           :outlets="outlets"
           :sales-user="salesUser"
+          :existing-attachment-url="record.attachment_url"
+          :existing-attachment-name="record.attachment_original_name"
         />
 
         <div class="mt-5 flex justify-end gap-2.5 sticky bottom-0 z-10 py-3 bg-gradient-to-t from-gray-50 via-gray-50 to-transparent">
@@ -56,6 +59,7 @@ const props = defineProps({
   segment1Options: { type: Array, default: () => [] },
   segment2Options: { type: Array, default: () => [] },
   typeOfEvents: { type: Array, default: () => [] },
+  roomRequirements: { type: Array, default: () => [] },
   statuses: { type: Object, default: () => ({}) },
   outlets: { type: Array, default: () => [] },
   salesUser: { type: Object, default: () => ({}) },
@@ -84,12 +88,17 @@ const form = useForm({
   })(),
   pax: props.record.pax ?? '',
   outlet_id: props.record.outlet_id || '',
+  room_requirement: props.record.room_requirement || '',
   status: props.record.status || 'new_leads',
   revenue: props.record.revenue ?? '',
   remarks: props.record.remarks || '',
+  attachment: null,
+  remove_attachment: false,
 });
 
 const submit = () => {
-  form.put(route('sales-leads.update', props.record.id));
+  form.put(route('sales-leads.update', props.record.id), {
+    forceFormData: true,
+  });
 };
 </script>

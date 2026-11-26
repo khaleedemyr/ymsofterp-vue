@@ -75,6 +75,10 @@
             <div class="font-medium">{{ record.outlet?.nama_outlet || '-' }}</div>
           </div>
           <div>
+            <div class="text-xs text-gray-500">Room Requirement</div>
+            <div class="font-medium">{{ record.room_requirement || '-' }}</div>
+          </div>
+          <div>
             <div class="text-xs text-gray-500">Revenue (Plan)</div>
             <div class="font-medium">{{ formatMoney(record.revenue) }}</div>
           </div>
@@ -86,6 +90,21 @@
             <div class="text-xs text-gray-500">Sales</div>
             <div class="font-medium">{{ record.sales?.nama_lengkap || '-' }}</div>
           </div>
+        </div>
+
+        <div class="mt-4">
+          <div class="text-xs text-gray-500 mb-1">Attachment</div>
+          <a
+            v-if="record.attachment_url"
+            :href="record.attachment_url"
+            target="_blank"
+            rel="noopener"
+            class="inline-flex items-center gap-2 text-sm text-emerald-700 hover:text-emerald-900"
+          >
+            <i class="fa-solid fa-paperclip"></i>
+            {{ record.attachment_original_name || 'Download file' }}
+          </a>
+          <div v-else class="text-sm text-gray-400">-</div>
         </div>
 
         <div class="mt-4">

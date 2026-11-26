@@ -406,6 +406,8 @@ class SalesLeadController extends Controller
         $validated = $this->validatePayload($request);
         $user = auth()->user();
 
+        $attachmentData = $this->storeAttachmentFile($request);
+
         $lead = SalesLead::create([
             'number' => $this->generateNumber(),
             'company_name' => $validated['company_name'],
@@ -415,10 +417,13 @@ class SalesLeadController extends Controller
             'event_date' => $this->normalizeEventDate($validated['event_date'] ?? null),
             'pax' => $validated['pax'] ?? null,
             'outlet_id' => $validated['outlet_id'] ?? null,
+            'room_requirement' => $validated['room_requirement'] ?? null,
             'status' => $validated['status'],
             'revenue' => $validated['revenue'] ?? null,
             'sales_user_id' => $user->id,
             'remarks' => $validated['remarks'] ?? null,
+            'attachment' => $attachmentData['path'] ?? null,
+            'attachment_original_name' => $attachmentData['original_name'] ?? null,
             'created_by' => $user->id,
         ]);
 
@@ -436,7 +441,7 @@ class SalesLeadController extends Controller
 
         $validated = $this->validatePayload($request);
 
-        $record->update([
+        $data = [
             'company_name' => $validated['company_name'],
             'segment_1' => $validated['segment_1'] ?? null,
             'segment_2' => $validated['segment_2'] ?? null,
@@ -444,11 +449,29 @@ class SalesLeadController extends Controller
             'event_date' => $this->normalizeEventDate($validated['event_date'] ?? null),
             'pax' => $validated['pax'] ?? null,
             'outlet_id' => $validated['outlet_id'] ?? null,
+            'room_requirement' => $validated['room_requirement'] ?? null,
             'status' => $validated['status'],
             'revenue' => $validated['revenue'] ?? null,
             'remarks' => $validated['remarks'] ?? null,
             'updated_by' => $user->id,
-        ]);
+        ];
+
+        if ($request->boolean('remove_attachment') && $record->attachment) {
+            Storage::disk('public')->delete($record->attachment);
+            $data['attachment'] = null;
+            $data['attachment_original_name'] = null;
+        }
+
+        if ($request->hasFile('attachment')) {
+            if ($record->attachment) {
+                Storage::disk('public')->delete($record->attachment);
+            }
+            $attachmentData = $this->storeAttachmentFile($request);
+            $data['attachment'] = $attachmentData['path'] ?? null;
+            $data['attachment_original_name'] = $attachmentData['original_name'] ?? null;
+        }
+
+        $record->update($data);
 
         return redirect()->route('sales-leads.show', $record->id)
             ->with('success', 'Sales Lead berhasil diupdate.');
@@ -460,6 +483,13 @@ class SalesLeadController extends Controller
         $user = auth()->user();
         if (! $this->canDelete($record, $user)) {
             abort(403);
+        }
+
+        if ($record->attachment) {
+            Storage::disk('public')->delete($record->attachment);
+        }
+        if ($record->bill_photo) {
+            Storage::disk('public')->delete($record->bill_photo);
         }
 
         $record->delete();
@@ -758,6 +788,7 @@ class SalesLeadController extends Controller
             'segment1Options' => SalesLead::SEGMENT_1,
             'segment2Options' => SalesLead::SEGMENT_2,
             'typeOfEvents' => SalesLead::TYPE_OF_EVENTS,
+            'roomRequirements' => SalesLead::ROOM_REQUIREMENTS,
             'statuses' => SalesLead::STATUSES,
             'outlets' => $this->outletOptions(),
         ];
@@ -782,10 +813,30 @@ class SalesLeadController extends Controller
             'event_date' => 'nullable|date',
             'pax' => 'nullable|integer|min:0',
             'outlet_id' => 'nullable|integer|exists:tbl_data_outlet,id_outlet',
+            'room_requirement' => 'nullable|string|in:'.implode(',', SalesLead::ROOM_REQUIREMENTS),
             'status' => 'required|string|in:'.implode(',', array_keys(SalesLead::STATUSES)),
             'revenue' => 'nullable|numeric|min:0',
             'remarks' => 'nullable|string|max:5000',
+            'attachment' => 'nullable|file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,jpg,jpeg,png,webp,zip|max:10240',
+            'remove_attachment' => 'nullable|boolean',
         ]);
+    }
+
+    /**
+     * @return array{path:?string,original_name:?string}
+     */
+    private function storeAttachmentFile(Request $request): array
+    {
+        if (! $request->hasFile('attachment')) {
+            return ['path' => null, 'original_name' => null];
+        }
+
+        $file = $request->file('attachment');
+
+        return [
+            'path' => $file->store('sales-leads/attachments', 'public'),
+            'original_name' => $file->getClientOriginalName(),
+        ];
     }
 
     /**

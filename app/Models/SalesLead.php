@@ -50,6 +50,12 @@ class SalesLead extends Model
         'cancelled' => 'Cancelled',
     ];
 
+    public const ROOM_REQUIREMENTS = [
+        'Smoking',
+        'Non Smoking',
+        'VIP',
+    ];
+
     protected $fillable = [
         'number',
         'company_name',
@@ -60,6 +66,7 @@ class SalesLead extends Model
         'pax',
         'real_pax',
         'outlet_id',
+        'room_requirement',
         'status',
         'revenue',
         'real_revenue',
@@ -67,11 +74,13 @@ class SalesLead extends Model
         'sales_user_id',
         'remarks',
         'closing_remarks',
+        'attachment',
+        'attachment_original_name',
         'created_by',
         'updated_by',
     ];
 
-    protected $appends = ['bill_photo_url'];
+    protected $appends = ['bill_photo_url', 'attachment_url'];
 
     protected $casts = [
         'revenue' => 'decimal:2',
@@ -115,6 +124,15 @@ class SalesLead extends Model
         }
 
         return asset('storage/'.$this->bill_photo);
+    }
+
+    public function getAttachmentUrlAttribute(): ?string
+    {
+        if (! $this->attachment) {
+            return null;
+        }
+
+        return asset('storage/'.$this->attachment);
     }
 
     public function outlet(): BelongsTo
