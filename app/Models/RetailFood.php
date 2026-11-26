@@ -26,7 +26,7 @@ class RetailFood extends Model
 
     protected $casts = [
         'transaction_date' => 'date',
-        'total_amount' => 'decimal:2'
+        'total_amount' => 'decimal:3'
     ];
 
     public function outlet()

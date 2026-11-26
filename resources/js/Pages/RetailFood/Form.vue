@@ -239,7 +239,7 @@
                     </td>
                     <td class="px-3 py-2 min-w-[150px]">
                       <div class="relative">
-                        <input type="number" min="0" step="0.01" v-model.number="item.price" @input="onPriceInput(idx)" class="input input-bordered w-full" :class="priceViolationFor(idx) ? 'border-red-500 ring-1 ring-red-300' : ''" required />
+                        <input type="number" min="0" step="0.001" v-model.number="item.price" @input="onPriceInput(idx)" class="input input-bordered w-full" :class="priceViolationFor(idx) ? 'border-red-500 ring-1 ring-red-300' : ''" required />
                         <div v-if="form.payment_method === 'contra_bon' && item.price > 0" 
                              class="absolute -top-1 -right-1 bg-green-500 text-white text-xs px-1 rounded-full">
                           Auto

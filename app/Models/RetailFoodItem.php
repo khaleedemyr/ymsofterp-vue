@@ -19,8 +19,8 @@ class RetailFoodItem extends Model
 
     protected $casts = [
         'qty' => 'decimal:3',
-        'price' => 'decimal:2',
-        'subtotal' => 'decimal:2'
+        'price' => 'decimal:3',
+        'subtotal' => 'decimal:3'
     ];
 
     public function retailFood()
