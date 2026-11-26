@@ -237,7 +237,7 @@
           <h3 class="font-bold text-gray-800 mb-3">Pembayaran Per Location (Outlet/Warehouse)</h3>
           <p class="text-sm text-gray-600 mb-4">
             <i class="fa fa-info-circle mr-1"></i>
-            Input jumlah pembayaran untuk setiap location. Default diisi dari total contra bon per location, namun dapat diubah sesuai kebutuhan.
+            Jumlah pembayaran per location otomatis mengikuti total contra bon yang di-checklist. Bisa diubah manual, lalu pakai Reset ke Default jika ingin kembali ke total terpilih.
             <span v-if="form.payment_type === 'Transfer' || form.payment_type === 'Giro'" class="block mt-2 text-blue-600">
               <i class="fa fa-university mr-1"></i>
               <strong>Penting:</strong> Pilih bank untuk setiap location dengan metode pembayaran <strong>{{ form.payment_type }}</strong>.
@@ -859,12 +859,15 @@ const selectedContraBons = computed(() => {
 // Watch selectedContraBonsByOutlet untuk initialize outletPayments
 watch(selectedContraBonsByOutlet, (newVal) => {
   if (newVal && Object.keys(newVal).length > 0) {
-    initializeOutletPayments();
+    initializeOutletPayments({ syncAmount: true });
+  } else {
+    outletPayments.value = {};
   }
 }, { immediate: true });
 
 // Function untuk initialize outlet payments
-function initializeOutletPayments() {
+// syncAmount=true: jumlah bayar ikut total CB terpilih (check/uncheck)
+function initializeOutletPayments({ syncAmount = true } = {}) {
   const previous = { ...outletPayments.value };
   outletPayments.value = {};
   if (selectedContraBonsByOutlet.value && Object.keys(selectedContraBonsByOutlet.value).length > 0) {
@@ -886,11 +889,18 @@ function initializeOutletPayments() {
           }
         }
       }
+
+      const defaultAmount = Number(outletData.total_amount) || 0;
+      // Saat checklist berubah, selalu sync ke total CB terpilih.
+      // Bank/COA tetap dipertahankan biar tidak hilang.
+      const amount = syncAmount
+        ? defaultAmount
+        : (prev.amount != null ? prev.amount : defaultAmount);
       
       outletPayments.value[outletKey] = {
         outlet_id: outletId,
         warehouse_id: warehouseId,
-        amount: prev.amount != null ? prev.amount : (outletData.total_amount || 0),
+        amount,
         bank_id: prev.bank_id ?? null,
         selectedBank: prev.selectedBank ?? null,
         coa_id: prev.coa_id ?? null,
