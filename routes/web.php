@@ -1155,6 +1155,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/sales-leads/targets', [\App\Http\Controllers\SalesLeadController::class, 'saveTargets'])->name('sales-leads.targets');
     Route::post('/sales-leads/outlet-targets', [\App\Http\Controllers\SalesLeadController::class, 'saveOutletTargets'])->name('sales-leads.outlet-targets');
     Route::post('/sales-leads/{id}/actual', [\App\Http\Controllers\SalesLeadController::class, 'updateActual'])->name('sales-leads.actual');
+
+    Route::get('/sales-leads/reo/approvers', [\App\Http\Controllers\SalesLeadReoController::class, 'getApprovers'])->name('sales-leads.reo.approvers');
+    Route::get('/sales-leads/{salesLeadId}/reo', [\App\Http\Controllers\SalesLeadReoController::class, 'createOrShow'])->name('sales-leads.reo.open');
+    Route::post('/sales-leads/{salesLeadId}/reo', [\App\Http\Controllers\SalesLeadReoController::class, 'store'])->name('sales-leads.reo.store');
+    Route::get('/sales-lead-reos/{id}', [\App\Http\Controllers\SalesLeadReoController::class, 'show'])->name('sales-leads.reo.show');
+    Route::get('/sales-lead-reos/{id}/edit', [\App\Http\Controllers\SalesLeadReoController::class, 'edit'])->name('sales-leads.reo.edit');
+    Route::put('/sales-lead-reos/{id}', [\App\Http\Controllers\SalesLeadReoController::class, 'update'])->name('sales-leads.reo.update');
+    Route::post('/sales-lead-reos/{id}/submit', [\App\Http\Controllers\SalesLeadReoController::class, 'submit'])->name('sales-leads.reo.submit');
+    Route::post('/sales-lead-reos/{id}/approve', [\App\Http\Controllers\SalesLeadReoController::class, 'approve'])->name('sales-leads.reo.approve');
+    Route::post('/sales-lead-reos/{id}/reject', [\App\Http\Controllers\SalesLeadReoController::class, 'reject'])->name('sales-leads.reo.reject');
+    Route::get('/sales-lead-reos/{id}/pdf', [\App\Http\Controllers\SalesLeadReoController::class, 'exportPdf'])->name('sales-leads.reo.pdf');
+
     Route::resource('sales-leads', \App\Http\Controllers\SalesLeadController::class);
 
     Route::get('/one-plus-one-submissions/search-users', [\App\Http\Controllers\OnePlusOneSubmissionController::class, 'searchUsers'])->name('one-plus-one-submissions.search-users');

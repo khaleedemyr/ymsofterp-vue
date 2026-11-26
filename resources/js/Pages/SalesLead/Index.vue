@@ -447,15 +447,8 @@ const roomRequirementClass = (value) => {
   return map[value] || 'bg-gray-100 text-gray-700';
 };
 
-/** Placeholder — isi form/flow REO menyusul sesuai penjelasan berikutnya */
 const openReo = (row) => {
-  Swal.fire({
-    icon: 'info',
-    title: 'REO',
-    text: `Tombol REO untuk ${row.number} sudah tersedia. Detail isi form/flow menyusul.`,
-    confirmButtonText: 'OK',
-    confirmButtonColor: '#f59e0b',
-  });
+  router.visit(route('sales-leads.reo.open', row.id));
 };
 
 const confirmDelete = async (row) => {

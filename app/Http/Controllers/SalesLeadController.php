@@ -62,6 +62,7 @@ class SalesLeadController extends Controller
                 'outlet:id_outlet,nama_outlet',
                 'sales:id,nama_lengkap',
                 'creator:id,nama_lengkap',
+                'reo:id,sales_lead_id,number,status',
             ])
             ->orderByDesc('id')
             ->paginate(15)

@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class SalesLead extends Model
 {
@@ -148,6 +149,11 @@ class SalesLead extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function reo(): HasOne
+    {
+        return $this->hasOne(SalesLeadReo::class, 'sales_lead_id');
     }
 
     public function statusLabel(): string
