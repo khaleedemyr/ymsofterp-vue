@@ -1275,29 +1275,35 @@ async function confirmSubmit() {
 
     // Convert outletPayments object to array and append to formData
     const outletPaymentsArray = Object.entries(outletPayments.value)
-      .filter(([key, outlet]) => outlet.amount && parseFloat(outlet.amount) > 0)
-      .map(([key, outlet]) => ({
-        outlet_id: outlet.outlet_id,
-        warehouse_id: outlet.warehouse_id || null,
-        amount: outlet.amount,
-        bank_id: outlet.bank_id || null,
-        coa_id: outlet.coa_id || null,
-        location_key: key
-      }));
+      .filter(([, outlet]) => outlet.amount && parseFloat(outlet.amount) > 0)
+      .map(([key, outlet]) => {
+        const bankId = outlet.bank_id ?? outlet.selectedBank?.id ?? null;
+        const coaId = outlet.coa_id ?? outlet.selectedCoa?.id ?? null;
+        return {
+          outlet_id: outlet.outlet_id || null,
+          warehouse_id: outlet.warehouse_id || null,
+          amount: parseFloat(outlet.amount) || 0,
+          bank_id: bankId != null && typeof bankId === 'object' ? bankId.id : bankId,
+          coa_id: coaId != null && typeof coaId === 'object' ? coaId.id : coaId,
+          location_key: key,
+        };
+      });
     
     if (outletPaymentsArray.length > 0) {
       // Append each outlet payment as array item
       outletPaymentsArray.forEach((outlet, index) => {
-        formData.append(`outlet_payments[${index}][outlet_id]`, outlet.outlet_id || '');
-        if (outlet.warehouse_id) {
-          formData.append(`outlet_payments[${index}][warehouse_id]`, outlet.warehouse_id);
+        if (outlet.outlet_id) {
+          formData.append(`outlet_payments[${index}][outlet_id]`, String(outlet.outlet_id));
         }
-        formData.append(`outlet_payments[${index}][amount]`, outlet.amount);
+        if (outlet.warehouse_id) {
+          formData.append(`outlet_payments[${index}][warehouse_id]`, String(outlet.warehouse_id));
+        }
+        formData.append(`outlet_payments[${index}][amount]`, String(outlet.amount));
         if (outlet.bank_id) {
-          formData.append(`outlet_payments[${index}][bank_id]`, outlet.bank_id);
+          formData.append(`outlet_payments[${index}][bank_id]`, String(outlet.bank_id));
         }
         if (outlet.coa_id) {
-          formData.append(`outlet_payments[${index}][coa_id]`, outlet.coa_id);
+          formData.append(`outlet_payments[${index}][coa_id]`, String(outlet.coa_id));
         }
         if (outlet.location_key) {
           formData.append(`outlet_payments[${index}][location_key]`, outlet.location_key);
@@ -1320,14 +1326,20 @@ async function confirmSubmit() {
     });
   } catch (error) {
     Swal.close();
+    console.error('FoodPayment save error:', error?.response?.status, error?.response?.data || error);
+
     if (error.response?.data?.errors) {
-      // Handle validation errors
       const errors = error.response.data.errors;
-      Object.keys(errors).forEach(key => {
-        Swal.fire('Error', errors[key][0], 'error');
-      });
+      const firstKey = Object.keys(errors)[0];
+      const firstMsg = firstKey ? errors[firstKey][0] : null;
+      await Swal.fire('Error', firstMsg || 'Data tidak valid', 'error');
     } else {
-      Swal.fire('Error', `Terjadi kesalahan saat ${isEditMode.value ? 'memperbarui' : 'menyimpan'} data`, 'error');
+      const serverMsg = error.response?.data?.message;
+      await Swal.fire(
+        'Error',
+        serverMsg || `Terjadi kesalahan saat ${isEditMode.value ? 'memperbarui' : 'menyimpan'} data`,
+        'error'
+      );
     }
   } finally {
     isSubmitting.value = false;

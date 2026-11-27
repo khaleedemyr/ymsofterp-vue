@@ -14,9 +14,21 @@ class RwsRetailFoodReconciliationService
     public const AMOUNT_TOLERANCE = 5000;
 
     /**
+     * Jendela matching 1:1 tanpa fingerprint item (hari).
+     */
+    public const DAY_WINDOW_STRICT = 3;
+
+    /**
+     * Jendela matching 1:1 dengan fingerprint item: RF tgl >= RWS dan gap <= N hari.
+     * Cover input RF belakangan (bon/late input) dengan item yang sama.
+     */
+    public const DAY_WINDOW_ITEM = 30;
+
+    /**
      * RWS completed ke customer branch yang belum punya pasangan Retail Food Justus/Yuditama.
      *
-     * Matching: same-day ±tolerance, N RWS digabung 1 RF, lalu 1:1 dalam ±3 hari.
+     * Matching: same-day ±tolerance, N RWS digabung 1 RF, 1:1 ±3 hari,
+     * lalu 1:1 sampai +30 hari jika fingerprint item sama.
      *
      * @param  array{
      *     from_date?: string|null,
@@ -214,11 +226,11 @@ class RwsRetailFoodReconciliationService
             ]);
 
         if ($from) {
-            $rfFrom = date('Y-m-d', strtotime($from.' -3 days'));
+            $rfFrom = date('Y-m-d', strtotime($from.' -'.self::DAY_WINDOW_STRICT.' days'));
             $rfQuery->whereDate('rf.transaction_date', '>=', $rfFrom);
         }
         if ($to) {
-            $rfTo = date('Y-m-d', strtotime($to.' +3 days'));
+            $rfTo = date('Y-m-d', strtotime($to.' +'.self::DAY_WINDOW_ITEM.' days'));
             $rfQuery->whereDate('rf.transaction_date', '<=', $rfTo);
         }
 
@@ -320,9 +332,58 @@ class RwsRetailFoodReconciliationService
                     }
                     $fDate = substr((string) $f->transaction_date, 0, 10);
                     $dayDiff = abs((strtotime($fDate) - strtotime($wDate)) / 86400);
-                    if ($dayDiff <= 3 && abs((float) $f->total_amount - (float) $w->total_amount) <= $tol) {
-                        $storeMatch($w, $f, '1:1 ±3 hari');
+                    if ($dayDiff <= self::DAY_WINDOW_STRICT && abs((float) $f->total_amount - (float) $w->total_amount) <= $tol) {
+                        $storeMatch($w, $f, '1:1 ±'.self::DAY_WINDOW_STRICT.' hari');
                         break;
+                    }
+                }
+            }
+
+            // 4) 1:1 late RF (RWS..RWS+30) + fingerprint item sama
+            $pendingRws = $outletRws->filter(fn ($w) => ! isset($usedRws[$w->id]))->values();
+            $pendingRf = $outletRf->filter(fn ($f) => ! isset($usedRf[$f->id]))->values();
+            if ($pendingRws->isNotEmpty() && $pendingRf->isNotEmpty()) {
+                $rwsFp = $this->rwsItemFingerprints($pendingRws->pluck('id')->all());
+                $rfFp = $this->rfItemFingerprints($pendingRf->pluck('id')->all());
+
+                foreach ($pendingRws as $w) {
+                    if (isset($usedRws[$w->id])) {
+                        continue;
+                    }
+                    $fp = $rwsFp[(int) $w->id] ?? '';
+                    if ($fp === '') {
+                        continue;
+                    }
+                    $wDate = substr((string) $w->sale_date, 0, 10);
+                    $best = null;
+                    $bestScore = null;
+                    foreach ($pendingRf as $f) {
+                        if (isset($usedRf[$f->id])) {
+                            continue;
+                        }
+                        if (($rfFp[(int) $f->id] ?? '') !== $fp) {
+                            continue;
+                        }
+                        $fDate = substr((string) $f->transaction_date, 0, 10);
+                        $dayDiff = (strtotime($fDate) - strtotime($wDate)) / 86400;
+                        if ($dayDiff < 0 || $dayDiff > self::DAY_WINDOW_ITEM) {
+                            continue;
+                        }
+                        if ($dayDiff <= self::DAY_WINDOW_STRICT) {
+                            continue; // sudah dicoba di pass 3
+                        }
+                        if (abs((float) $f->total_amount - (float) $w->total_amount) > $tol) {
+                            continue;
+                        }
+                        $amtDiff = abs((float) $f->total_amount - (float) $w->total_amount);
+                        $score = [$dayDiff, $amtDiff, (int) $f->id];
+                        if ($bestScore === null || $score < $bestScore) {
+                            $best = $f;
+                            $bestScore = $score;
+                        }
+                    }
+                    if ($best) {
+                        $storeMatch($w, $best, '1:1 item +'.self::DAY_WINDOW_ITEM.' hari');
                     }
                 }
             }
@@ -432,6 +493,70 @@ class RwsRetailFoodReconciliationService
             })
             ->sortByDesc('total_amount')
             ->values();
+    }
+
+    /**
+     * @param  list<int>  $rwsIds
+     * @return array<int, string>
+     */
+    private function rwsItemFingerprints(array $rwsIds): array
+    {
+        if ($rwsIds === [] || ! Schema::hasTable('retail_warehouse_sale_items')) {
+            return [];
+        }
+
+        $rows = DB::table('retail_warehouse_sale_items as i')
+            ->leftJoin('items as it', 'i.item_id', '=', 'it.id')
+            ->whereIn('i.retail_warehouse_sale_id', $rwsIds)
+            ->get([
+                'i.retail_warehouse_sale_id',
+                'it.name',
+                'i.qty',
+                'i.unit',
+            ]);
+
+        return $rows
+            ->groupBy('retail_warehouse_sale_id')
+            ->map(fn ($group) => $this->fingerprintFromRows($group, 'name'))
+            ->all();
+    }
+
+    /**
+     * @param  list<int>  $rfIds
+     * @return array<int, string>
+     */
+    private function rfItemFingerprints(array $rfIds): array
+    {
+        if ($rfIds === [] || ! Schema::hasTable('retail_food_items')) {
+            return [];
+        }
+
+        $rows = DB::table('retail_food_items')
+            ->whereIn('retail_food_id', $rfIds)
+            ->get(['retail_food_id', 'item_name', 'qty', 'unit']);
+
+        return $rows
+            ->groupBy('retail_food_id')
+            ->map(fn ($group) => $this->fingerprintFromRows($group, 'item_name'))
+            ->all();
+    }
+
+    /**
+     * @param  Collection<int, object>  $rows
+     */
+    private function fingerprintFromRows(Collection $rows, string $nameField): string
+    {
+        return $rows
+            ->map(function ($r) use ($nameField) {
+                $name = strtolower(trim((string) ($r->{$nameField} ?? '')));
+                $qty = (float) ($r->qty ?? 0);
+                $unit = strtolower(trim((string) ($r->unit ?? '')));
+
+                return $name.'|'.$qty.'|'.$unit;
+            })
+            ->sort()
+            ->values()
+            ->implode(';');
     }
 
     /**

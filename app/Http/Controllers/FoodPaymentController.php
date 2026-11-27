@@ -440,7 +440,8 @@ class FoodPaymentController extends Controller
         try {
             $validated = $request->validate([
                 'date' => 'required|date',
-                'payment_type' => 'required|string',
+                'payment_type' => 'required|string|in:Transfer,Giro,Cash',
+                'bank_id' => 'nullable|exists:bank_accounts,id',
                 'supplier_id' => 'required|exists:suppliers,id',
                 'contra_bon_ids' => 'required|array|min:1',
                 'contra_bon_ids.*' => 'exists:food_contra_bons,id',
@@ -508,7 +509,7 @@ class FoodPaymentController extends Controller
                         $bankId = null;
                         if (in_array($validated['payment_type'], ['Transfer', 'Giro'])) {
                             if (empty($outletPayment['bank_id'])) {
-                                DB::rollback();
+                                DB::rollBack();
                                 return response()->json([
                                     'success' => false, 
                                     'message' => 'Bank harus dipilih untuk setiap outlet dengan metode pembayaran ' . $validated['payment_type'] . '.'
@@ -535,6 +536,12 @@ class FoodPaymentController extends Controller
 
             DB::commit();
             return response()->json(['success' => true]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::warning('FoodPaymentController@store - Validation failed', [
+                'errors' => $e->errors(),
+                'input' => $request->except(['bukti_transfer']),
+            ]);
+            throw $e;
         } catch (\Exception $e) {
             DB::rollBack();
             \Log::error('FoodPaymentController@store - Exception', [
