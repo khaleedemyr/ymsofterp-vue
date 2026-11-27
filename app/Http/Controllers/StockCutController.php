@@ -489,8 +489,6 @@ class StockCutController extends Controller
         $this->putStockCutProgress($progressKey, 'running', 'Memotong stok dan mencatat inventory card...', 56, [
             'phase' => 'stock_cutting',
         ]);
-        // Simpan detail stock cut untuk insert ke stock_cut_details
-        $stockCutDetails = [];
         $varianceRows = [];
         $totalKebutuhan = count($kebutuhanBahan);
         $processedKebutuhan = 0;
@@ -586,20 +584,122 @@ class StockCutController extends Controller
             
             // Hitung value baru berdasarkan qty_small dan last_cost_small
             $new_value = $new_qty_small * $stock->last_cost_small;
-            
-            DB::table('outlet_food_inventory_stocks')
-                ->where('inventory_item_id', $inventory_item_id)
-                ->where('id_outlet', $id_outlet)
-                ->where('warehouse_outlet_id', $warehouse_id)
-                ->update([
-                    'qty_small' => $new_qty_small,
-                    'qty_medium' => $new_qty_medium,
-                    'qty_large' => $new_qty_large,
-                    'value' => $new_value,
-                    // last_cost_small, last_cost_medium, last_cost_large tidak berubah karena ini transaksi OUT
-                    'updated_at' => now(),
-                ]);
-                
+
+            // Atomic per item: stok + kartu + detail (+ variance).
+            // Tanpa ini, crash di antara UPDATE stok dan INSERT kartu bikin stok berkurang
+            // tanpa jejak kartu — rollback hanya restore dari kartu → stok tidak kembali.
+            DB::transaction(function () use (
+                $inventory_item_id,
+                $id_outlet,
+                $warehouse_id,
+                $item_id,
+                $tanggal,
+                $stockCutLog,
+                $stock,
+                $qty_small,
+                $qty_medium,
+                $qty_large,
+                $qty_cut_physical_small,
+                $qty_cut_physical_medium,
+                $qty_cut_physical_large,
+                $qty_shortfall,
+                $qty_available_before,
+                $new_qty_small,
+                $new_qty_medium,
+                $new_qty_large,
+                $new_value,
+                $normalizedTypeFilterForSave,
+                $varianceService,
+                &$varianceRows
+            ) {
+                DB::table('outlet_food_inventory_stocks')
+                    ->where('inventory_item_id', $inventory_item_id)
+                    ->where('id_outlet', $id_outlet)
+                    ->where('warehouse_outlet_id', $warehouse_id)
+                    ->update([
+                        'qty_small' => $new_qty_small,
+                        'qty_medium' => $new_qty_medium,
+                        'qty_large' => $new_qty_large,
+                        'value' => $new_value,
+                        // last_cost_* tidak berubah karena transaksi OUT
+                        'updated_at' => now(),
+                    ]);
+
+                // Kartu stok: hanya qty fisik yang benar-benar terpotong (skip jika 0)
+                if ($qty_cut_physical_small > 0) {
+                    DB::table('outlet_food_inventory_cards')->insert([
+                        'inventory_item_id' => $inventory_item_id,
+                        'id_outlet' => $id_outlet,
+                        'warehouse_outlet_id' => $warehouse_id,
+                        'stock_cut_log_id' => $stockCutLog ? $stockCutLog->id : null,
+                        'date' => $tanggal,
+                        'reference_type' => 'order_items',
+                        'reference_id' => null,
+                        'out_qty_small' => $qty_cut_physical_small,
+                        'out_qty_medium' => $qty_cut_physical_medium,
+                        'out_qty_large' => $qty_cut_physical_large,
+                        'cost_per_small' => $stock->last_cost_small,
+                        'cost_per_medium' => $stock->last_cost_medium,
+                        'cost_per_large' => $stock->last_cost_large,
+                        'value_out' => $qty_cut_physical_small * $stock->last_cost_small,
+                        'saldo_qty_small' => $new_qty_small,
+                        'saldo_qty_medium' => $new_qty_medium,
+                        'saldo_qty_large' => $new_qty_large,
+                        'saldo_value' => $new_value,
+                        'description' => $qty_shortfall > 0
+                            ? 'Stock Out - Potong stock otomatis (fisik sampai 0; shortfall ' . $qty_shortfall . ' ke Laporan Minus)'
+                            : 'Stock Out - Potong stock otomatis dari order_items',
+                        'created_at' => now(),
+                    ]);
+                }
+
+                if ($stockCutLog) {
+                    DB::table('stock_cut_details')->insert([
+                        'stock_cut_log_id' => $stockCutLog->id,
+                        'inventory_item_id' => $inventory_item_id,
+                        'item_id' => $item_id,
+                        'warehouse_outlet_id' => $warehouse_id,
+                        'qty_small' => $qty_small,
+                        'qty_medium' => $qty_medium,
+                        'qty_large' => $qty_large,
+                        'cost_per_small' => $stock->last_cost_small,
+                        'cost_per_medium' => $stock->last_cost_medium,
+                        'cost_per_large' => $stock->last_cost_large,
+                        'value_out' => $qty_small * $stock->last_cost_small,
+                        'stock_before_small' => $stock->qty_small,
+                        'stock_before_medium' => $stock->qty_medium,
+                        'stock_before_large' => $stock->qty_large,
+                        'stock_after_small' => $new_qty_small,
+                        'stock_after_medium' => $new_qty_medium,
+                        'stock_after_large' => $new_qty_large,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                }
+
+                if ($qty_shortfall > 0 && $stockCutLog) {
+                    $varianceRow = [
+                        'stock_cut_log_id' => $stockCutLog->id,
+                        'outlet_id' => $id_outlet,
+                        'warehouse_outlet_id' => $warehouse_id,
+                        'inventory_item_id' => $inventory_item_id,
+                        'item_id' => $item_id,
+                        'tanggal' => $tanggal,
+                        'type_filter' => $normalizedTypeFilterForSave,
+                        'qty_needed' => $qty_small,
+                        'qty_available_before' => $qty_available_before,
+                        'qty_shortfall' => $qty_shortfall,
+                        'qty_after' => $new_qty_small,
+                        'cost_per_small' => (float) $stock->last_cost_small,
+                        'value_booked' => $qty_small * (float) $stock->last_cost_small,
+                        'shortfall_value_info' => $qty_shortfall * (float) $stock->last_cost_small,
+                        'executed_by' => auth()->id(),
+                    ];
+                    $varianceService->recordVariance($varianceRow);
+                    $varianceRows[] = $varianceRow;
+                }
+            });
+
             \Log::info('Stock cut result', [
                 'stock_before_small' => $stock->qty_small,
                 'stock_after_small' => $new_qty_small,
@@ -610,76 +710,6 @@ class StockCutController extends Controller
                 'qty_shortfall' => $qty_shortfall,
                 'last_cost_small' => $stock->last_cost_small
             ]);
-            
-            // Kartu stok: hanya qty fisik yang benar-benar terpotong (skip jika 0)
-            if ($qty_cut_physical_small > 0) {
-                DB::table('outlet_food_inventory_cards')->insert([
-                    'inventory_item_id' => $inventory_item_id,
-                    'id_outlet' => $id_outlet,
-                    'warehouse_outlet_id' => $warehouse_id,
-                    'stock_cut_log_id' => $stockCutLog ? $stockCutLog->id : null,
-                    'date' => $tanggal,
-                    'reference_type' => 'order_items',
-                    'reference_id' => null,
-                    'out_qty_small' => $qty_cut_physical_small,
-                    'out_qty_medium' => $qty_cut_physical_medium,
-                    'out_qty_large' => $qty_cut_physical_large,
-                    'cost_per_small' => $stock->last_cost_small,
-                    'cost_per_medium' => $stock->last_cost_medium,
-                    'cost_per_large' => $stock->last_cost_large,
-                    'value_out' => $qty_cut_physical_small * $stock->last_cost_small,
-                    'saldo_qty_small' => $new_qty_small,
-                    'saldo_qty_medium' => $new_qty_medium,
-                    'saldo_qty_large' => $new_qty_large,
-                    'saldo_value' => $new_value,
-                    'description' => $qty_shortfall > 0
-                        ? 'Stock Out - Potong stock otomatis (fisik sampai 0; shortfall ' . $qty_shortfall . ' ke Laporan Minus)'
-                        : 'Stock Out - Potong stock otomatis dari order_items',
-                    'created_at' => now(),
-                ]);
-            }
-
-            if ($qty_shortfall > 0) {
-                $varianceRows[] = [
-                    'stock_cut_log_id' => $stockCutLog->id,
-                    'outlet_id' => $id_outlet,
-                    'warehouse_outlet_id' => $warehouse_id,
-                    'inventory_item_id' => $inventory_item_id,
-                    'item_id' => $item_id,
-                    'tanggal' => $tanggal,
-                    'type_filter' => $normalizedTypeFilterForSave,
-                    'qty_needed' => $qty_small,
-                    'qty_available_before' => $qty_available_before,
-                    'qty_shortfall' => $qty_shortfall,
-                    'qty_after' => $new_qty_small,
-                    'cost_per_small' => (float) $stock->last_cost_small,
-                    'value_booked' => $qty_small * (float) $stock->last_cost_small,
-                    'shortfall_value_info' => $qty_shortfall * (float) $stock->last_cost_small,
-                    'executed_by' => auth()->id(),
-                ];
-            }
-            
-            // Detail teoritis: qty BOM penuh + HPP full (meski fisik hanya partial)
-            $stockCutDetails[] = [
-                'inventory_item_id' => $inventory_item_id,
-                'item_id' => $item_id,
-                'warehouse_outlet_id' => $warehouse_id,
-                'qty_small' => $qty_small,
-                'qty_medium' => $qty_medium,
-                'qty_large' => $qty_large,
-                'cost_per_small' => $stock->last_cost_small,
-                'cost_per_medium' => $stock->last_cost_medium,
-                'cost_per_large' => $stock->last_cost_large,
-                'value_out' => $qty_small * $stock->last_cost_small,
-                'stock_before_small' => $stock->qty_small,
-                'stock_before_medium' => $stock->qty_medium,
-                'stock_before_large' => $stock->qty_large,
-                'stock_after_small' => $new_qty_small,
-                'stock_after_medium' => $new_qty_medium,
-                'stock_after_large' => $new_qty_large,
-                'created_at' => now(),
-                'updated_at' => now(),
-            ];
 
             $processedKebutuhan++;
             if ($totalKebutuhan > 0 && ($processedKebutuhan === 1 || $processedKebutuhan % 5 === 0 || $processedKebutuhan === $totalKebutuhan)) {
@@ -753,20 +783,7 @@ class StockCutController extends Controller
             ]);
         }
         
-        // Insert detail stock cut ke stock_cut_details
-        if (!empty($stockCutDetails) && $stockCutLog) {
-            // Tambahkan stock_cut_log_id ke setiap detail
-            foreach ($stockCutDetails as &$detail) {
-                $detail['stock_cut_log_id'] = $stockCutLog->id;
-            }
-            
-            // Insert batch untuk performa lebih baik
-            DB::table('stock_cut_details')->insert($stockCutDetails);
-        }
-
-        foreach ($varianceRows as $varianceRow) {
-            $varianceService->recordVariance($varianceRow);
-        }
+        // Detail + variance sudah di-commit atomic per item di loop di atas.
 
         $this->putStockCutProgress($progressKey, 'success', 'Potong stock berhasil', 100, [
             'phase' => 'completed',
@@ -1704,40 +1721,38 @@ class StockCutController extends Controller
                     ->get();
             }
 
-            if ($cards->isEmpty()) {
+            // Detail dipakai fallback jika stok sempat terpotong tanpa kartu (bug lama / partial cut)
+            $details = DB::table('stock_cut_details')
+                ->where('stock_cut_log_id', $id)
+                ->lockForUpdate()
+                ->get();
+
+            if ($cards->isEmpty() && $details->isEmpty()) {
                 DB::rollBack();
 
                 return response()->json([
-                    'error' => 'Tidak ada kartu stok terkait rollback ini. Stok tidak diubah.',
+                    'error' => 'Tidak ada kartu/detail stok terkait rollback ini. Stok tidak diubah.',
                 ], 422);
             }
 
-            // Rollback: kembalikan sama seperti saat potong (small/medium/large + value)
-            foreach ($cards as $card) {
-                $outSmall = (float) ($card->out_qty_small ?? 0);
-                $outMedium = (float) ($card->out_qty_medium ?? 0);
-                $outLarge = (float) ($card->out_qty_large ?? 0);
+            $restoredKeys = [];
+            $restoreStock = function (int $inventoryItemId, int $warehouseId, float $outSmall, float $outMedium, float $outLarge) use ($id_outlet, $id, &$restoredKeys) {
+                $key = $inventoryItemId.'|'.$warehouseId;
+                if (isset($restoredKeys[$key])) {
+                    return;
+                }
 
                 $stock = DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $id_outlet)
-                    ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
+                    ->where('warehouse_outlet_id', $warehouseId)
                     ->lockForUpdate()
                     ->first();
 
                 if (! $stock) {
-                    DB::rollBack();
-
-                    \Log::error('StockCut rollback - baris stok tidak ditemukan', [
-                        'stock_cut_log_id' => $id,
-                        'inventory_item_id' => $card->inventory_item_id,
-                        'warehouse_outlet_id' => $card->warehouse_outlet_id,
-                        'card_id' => $card->id ?? null,
-                    ]);
-
-                    return response()->json([
-                        'error' => 'Rollback dibatalkan: baris stok tidak ditemukan untuk salah satu item (kartu #'.($card->id ?? '?').').',
-                    ], 500);
+                    throw new \RuntimeException(
+                        "Rollback dibatalkan: baris stok tidak ditemukan (inventory_item_id={$inventoryItemId}, warehouse={$warehouseId}, log #{$id})."
+                    );
                 }
 
                 $newQtySmall = (float) $stock->qty_small + $outSmall;
@@ -1746,9 +1761,9 @@ class StockCutController extends Controller
                 $newValue = $newQtySmall * (float) $stock->last_cost_small;
 
                 DB::table('outlet_food_inventory_stocks')
-                    ->where('inventory_item_id', $card->inventory_item_id)
+                    ->where('inventory_item_id', $inventoryItemId)
                     ->where('id_outlet', $id_outlet)
-                    ->where('warehouse_outlet_id', $card->warehouse_outlet_id)
+                    ->where('warehouse_outlet_id', $warehouseId)
                     ->update([
                         'qty_small' => $newQtySmall,
                         'qty_medium' => $newQtyMedium,
@@ -1756,6 +1771,44 @@ class StockCutController extends Controller
                         'value' => $newValue,
                         'updated_at' => now(),
                     ]);
+
+                $restoredKeys[$key] = true;
+            };
+
+            // 1) Restore dari kartu (path normal)
+            foreach ($cards as $card) {
+                $restoreStock(
+                    (int) $card->inventory_item_id,
+                    (int) $card->warehouse_outlet_id,
+                    (float) ($card->out_qty_small ?? 0),
+                    (float) ($card->out_qty_medium ?? 0),
+                    (float) ($card->out_qty_large ?? 0)
+                );
+            }
+
+            // 2) Fallback: detail punya jejak fisik cut tapi kartunya hilang/tidak terbentuk
+            $detailsRestored = 0;
+            foreach ($details as $detail) {
+                $key = ((int) $detail->inventory_item_id).'|'.((int) $detail->warehouse_outlet_id);
+                if (isset($restoredKeys[$key])) {
+                    continue;
+                }
+
+                $outSmall = max(0.0, (float) $detail->stock_before_small - (float) $detail->stock_after_small);
+                $outMedium = max(0.0, (float) $detail->stock_before_medium - (float) $detail->stock_after_medium);
+                $outLarge = max(0.0, (float) $detail->stock_before_large - (float) $detail->stock_after_large);
+                if ($outSmall <= 0 && $outMedium <= 0 && $outLarge <= 0) {
+                    continue;
+                }
+
+                $restoreStock(
+                    (int) $detail->inventory_item_id,
+                    (int) $detail->warehouse_outlet_id,
+                    $outSmall,
+                    $outMedium,
+                    $outLarge
+                );
+                $detailsRestored++;
             }
 
             // Hapus hanya kartu yang diproses (hindari delete semua kartu tanggal/outlet)
@@ -1802,6 +1855,7 @@ class StockCutController extends Controller
             }
 
             $cardsCount = $cards->count();
+            $stocksRestored = count($restoredKeys);
             $reason = $request->input('reason');
 
             // Activity log rollback
@@ -1819,6 +1873,9 @@ class StockCutController extends Controller
                         'tanggal' => $tanggal,
                         'type_filter' => $typeFilter,
                         'cards_affected' => $cardsCount,
+                        'stocks_restored' => $stocksRestored,
+                        'details_fallback_restored' => $detailsRestored,
+                        'legacy_fallback' => $isLegacyFallback,
                     ]),
                     'new_data' => json_encode([
                         'status' => 'rolled_back',
@@ -1841,7 +1898,9 @@ class StockCutController extends Controller
 
             return response()->json([
                 'success' => true,
-                'cards_affected' => $cardsCount
+                'cards_affected' => $cardsCount,
+                'stocks_restored' => $stocksRestored,
+                'details_fallback_restored' => $detailsRestored,
             ]);
         } catch (\Exception $e) {
             DB::rollBack();
